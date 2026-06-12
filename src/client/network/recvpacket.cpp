@@ -2925,7 +2925,7 @@ CRecvPACKET::Recv_gsv_EFFECT_OF_SKILL() {
 
                             /// 04/4/24
                             if (pEffectedChar->IsA(OBJ_USER))
-                                iIncValue = CCal::Get_SkillAdjustVALUE((CObjUSER*)pEffectedChar,
+                                iIncValue = CCal::Get_SkillAdjustVALUE(pEffectedChar,
                                     iSkillIDX,
                                     i,
                                     m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_nINT);
@@ -2981,7 +2981,7 @@ CRecvPACKET::Recv_gsv_EFFECT_OF_SKILL() {
                     } else if (SKILL_TYPE(iSkillIDX) == SKILL_ACTION_SELF_BOUND
                         || SKILL_TYPE(iSkillIDX) == SKILL_ACTION_TARGET_BOUND) {
                         /// hp 는 계산식 적용..
-                        int iIncValue = CCal::Get_SkillAdjustVALUE((CObjUSER*)pEffectedChar,
+                        int iIncValue = CCal::Get_SkillAdjustVALUE(pEffectedChar,
                             iSkillIDX,
                             i,
                             m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_nINT);

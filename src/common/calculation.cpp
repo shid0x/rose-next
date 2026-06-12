@@ -738,11 +738,14 @@ CCal::Get_SkillDAMAGE(CObjCHAR* pATK, CObjCHAR* pDEF, short nSkillIDX, WORD wHit
 
 //-------------------------------------------------------------------------------------------------
 int
-CCal::Get_SkillAdjustVALUE(CObjUSER* pCHAR, short nSkillIDX, short nCol, int iSpellerINT) {
+CCal::Get_SkillAdjustVALUE(CObjCHAR* pCHAR, short nSkillIDX, short nCol, int iSpellerINT) {
     int iAbilityValue;
 
 #ifndef __SERVER
-    iAbilityValue = pCHAR->GetCur_AbilityValue(SKILL_INCREASE_ABILITY(nSkillIDX, nCol));
+    // Heal results are broadcast to nearby clients, so pCHAR can be any character
+    // type (remote players are CObjAVT, not CObjUSER). Get_DefaultAbilityValue is
+    // virtual on CObjCHAR; the CObjUSER override forwards to GetCur_AbilityValue.
+    iAbilityValue = pCHAR->Get_DefaultAbilityValue(SKILL_INCREASE_ABILITY(nSkillIDX, nCol));
 #else
     iAbilityValue = pCHAR->Get_AbilityValue(SKILL_INCREASE_ABILITY(nSkillIDX, nCol));
 #endif

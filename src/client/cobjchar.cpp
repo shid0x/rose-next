@@ -1785,7 +1785,7 @@ CObjCHAR::ApplyEffectOfSkill(int iSkillIDX,
                         int iIncValue = 0;
                         /// 04/4/24
                         if (pEffectedChar->IsA(OBJ_USER)) {
-                            iIncValue = CCal::Get_SkillAdjustVALUE((CObjUSER*)pEffectedChar,
+                            iIncValue = CCal::Get_SkillAdjustVALUE(pEffectedChar,
                                 iSkillIDX,
                                 i,
                                 pEffectOfSkill->iCasterINT);
@@ -1839,7 +1839,7 @@ CObjCHAR::ApplyEffectOfSkill(int iSkillIDX,
                 } else if (SKILL_TYPE(iSkillIDX) == SKILL_ACTION_SELF_BOUND
                     || SKILL_TYPE(iSkillIDX) == SKILL_ACTION_TARGET_BOUND) {
                     /// hp 는 계산식 적용..
-                    int iIncValue = CCal::Get_SkillAdjustVALUE((CObjUSER*)pEffectedChar,
+                    int iIncValue = CCal::Get_SkillAdjustVALUE(pEffectedChar,
                         iSkillIDX,
                         i,
                         pEffectOfSkill->iCasterINT);

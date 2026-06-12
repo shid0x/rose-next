@@ -64,7 +64,7 @@ public:
 
     static int Get_RewardVALUE(BYTE btEquation, int S_REWARD, CUserDATA* pUSER, short nDupCNT);
 
-    static int Get_SkillAdjustVALUE(CObjUSER* pCHAR, short nSkillIDX, short nCol, int iSpellerINT);
+    static int Get_SkillAdjustVALUE(CObjCHAR* pCHAR, short nSkillIDX, short nCol, int iSpellerINT);
 
     static int GetMoney_WhenAPPRAISAL(int iBasePrice, int iCurDurability) {
         return (int)((iBasePrice + 10000) * (iCurDurability + 50) / 10000.f);
