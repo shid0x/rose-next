@@ -33,6 +33,7 @@
 #include "CInventory.h"
 #include "system/System_Func.h"
 
+#include "rose/combat/skill_presentation.h"
 #include "rose/common/status_effect/status_effect_flag.h"
 
 using namespace Rose::Common;
@@ -2241,18 +2242,6 @@ CObjCHAR::ApplyPresentedCombatDamage(CObjCHAR* pAtkOBJ, Rose::Combat::DamageEven
     }
 
     int hpDelta = displayDamage;
-    if (hpDelta > 0 && m_iPendingCombatHPCorrection > 0) {
-        LogString(LOG_DEBUG_,
-            "Combat HP correction folded pending: visible hp %d authoritative hp %d correction %d event %u seq %u\n",
-            visibleBefore,
-            m_iAuthoritativeHP,
-            m_iPendingCombatHPCorrection,
-            event.event_id,
-            event.defender_seq);
-        hpDelta += m_iPendingCombatHPCorrection;
-        m_iPendingCombatHPCorrection = 0;
-    }
-
     int hpAfterDelta = visibleBefore;
     if (lethal) {
         hpDelta = max(hpDelta, visibleBefore - DEAD_HP);
@@ -2280,19 +2269,35 @@ CObjCHAR::ApplyPresentedCombatDamage(CObjCHAR* pAtkOBJ, Rose::Combat::DamageEven
             lethal = true;
             hpDelta = max(hpDelta, visibleBefore - DEAD_HP);
             m_iPendingCombatHPCorrection = 0;
-        } else if (!lethal && hpDelta > 0 && hpAfterDelta > authoritativeTargetHP) {
-            const int foldedCorrection = hpAfterDelta - authoritativeTargetHP;
-            hpDelta += foldedCorrection;
-            hpAfterDelta = authoritativeTargetHP;
-            m_iPendingCombatHPCorrection = 0;
-            LogString(LOG_DEBUG_,
-                "Combat HP correction folded checkpoint: visible hp %d post delta hp %d authoritative hp %d correction %d event %u seq %u\n",
-                visibleBefore,
-                hpAfterDelta,
-                authoritativeTargetHP,
-                foldedCorrection,
-                event.event_id,
-                event.defender_seq);
+        } else if (!lethal && hpDelta > 0) {
+            if (hpAfterDelta > authoritativeTargetHP) {
+                const int foldedCorrection = hpAfterDelta - authoritativeTargetHP;
+                hpDelta += foldedCorrection;
+                hpAfterDelta = authoritativeTargetHP;
+                m_iPendingCombatHPCorrection = 0;
+                LogString(LOG_DEBUG_,
+                    "Combat HP correction folded checkpoint: visible hp %d post delta hp %d authoritative hp %d correction %d event %u seq %u\n",
+                    visibleBefore,
+                    hpAfterDelta,
+                    authoritativeTargetHP,
+                    foldedCorrection,
+                    event.event_id,
+                    event.defender_seq);
+            } else if (hpAfterDelta < authoritativeTargetHP) {
+                const int overshoot = authoritativeTargetHP - hpAfterDelta;
+                hpAfterDelta = authoritativeTargetHP;
+                m_iPendingCombatHPCorrection = 0;
+                LogString(LOG_DEBUG_,
+                    "Combat HP correction clamped overshoot: visible hp %d post delta hp %d authoritative hp %d overshoot %d event %u seq %u\n",
+                    visibleBefore,
+                    hpAfterDelta,
+                    authoritativeTargetHP,
+                    overshoot,
+                    event.event_id,
+                    event.defender_seq);
+            } else {
+                m_iPendingCombatHPCorrection = 0;
+            }
         }
     }
 
@@ -2562,9 +2567,7 @@ CObjCHAR::ConvertDamageOfSkillToDamage(gsv_DAMAGE_OF_SKILL stDamageOfSkill) {
         event.defender_id = this->Get_INDEX();
         event.raw_damage = stDamageOfSkill.m_wDamage;
         event.damage_value = Damage.m_wVALUE;
-        event.hp_after = (Damage.m_wACTION & DMG_ACT_DEAD)
-            ? DEAD_HP
-            : max(DEAD_HP + 1, this->Get_HP() - static_cast<int>(Damage.m_wVALUE));
+        event.hp_after = (Damage.m_wACTION & DMG_ACT_DEAD) ? DEAD_HP : stDamageOfSkill.m_iHP_AFTER;
         event.presentation_kind =
             IsProjectilePresentedSkillDamage(stDamageOfSkill.m_nSkillIDX)
             ? Rose::Combat::DamagePresentationKind::ProjectileImpact
@@ -2588,15 +2591,6 @@ CObjCHAR::ConvertDamageOfSkillToDamage(gsv_DAMAGE_OF_SKILL stDamageOfSkill) {
 
 bool
 CObjCHAR::IsProjectilePresentedSkillDamage(int iSkillIDX) {
-    const int iSkillType = SKILL_TYPE(iSkillIDX);
-    if (iSkillType == SKILL_ACTION_ENFORCE_BULLET || iSkillType == SKILL_ACTION_FIRE_BULLET) {
-        return true;
-    }
-
-    if (SKILL_BULLET_NO(iSkillIDX) <= 0) {
-        return false;
-    }
-
     // Target-bound (instant + duration) and target-state-duration skills —
     // e.g. Fire Ring (TYPE_09 defense-down), single-target buffs/debuffs —
     // are drained at the caster's action frame in cobjchar_actionframe.cpp
@@ -2608,15 +2602,11 @@ CObjCHAR::IsProjectilePresentedSkillDamage(int iSkillIDX) {
     // buff never lands client-side.
     //
     // Restrict projectile-impact gating to skills that genuinely launch a
-    // tracked projectile: FIRE_BULLET / ENFORCE_BULLET (above), SELF_AND_TARGET
+    // tracked projectile: FIRE_BULLET / ENFORCE_BULLET, SELF_AND_TARGET
     // (rare cross-applies that do fire), and the IMMEDIATE / Twin-Shot edge
     // case where the melee fire animation has no action frame 25 hit moment.
-    return iSkillType == SKILL_ACTION_SELF_AND_TARGET
-        // Ranged IMMEDIATE skills (e.g. Twin Shot) play a gun/bow fire animation
-        // with no action frame 25 hit moment, so ProcEffectedSkill() is never
-        // invoked. The bullet impact is the only timing signal, so route damage
-        // presentation through the projectile path.
-        || iSkillType == SKILL_ACTION_IMMEDIATE;
+    const int iSkillType = SKILL_TYPE(iSkillIDX);
+    return Rose::Combat::is_projectile_presented_skill(iSkillType, SKILL_BULLET_NO(iSkillIDX));
 }
 
 //--------------------------------------------------------------------------------

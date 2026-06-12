@@ -8,6 +8,7 @@
 
 #include "network.h"
 
+#include "rose/combat/skill_presentation.h"
 #include "rose/network/packets/combat_generated.h"
 
 #include <atomic>
@@ -706,6 +707,17 @@ CObjCHAR::Send_gsv_DAMAGE_OF_SKILL(int iSpellOBJ,
     pCPacket->m_gsv_DAMAGE_OF_SKILL.m_btSuccessBITS = btResult;
     pCPacket->m_gsv_DAMAGE_OF_SKILL.m_nINT = nSpellerINT;
     pCPacket->m_gsv_DAMAGE_OF_SKILL.m_wDamage = wDamage;
+    pCPacket->m_gsv_DAMAGE_OF_SKILL.m_iHP_AFTER = this->Get_HP();
+
+    LogString(LOG_DEBUG_,
+        "CombatTrace server skill damage: caster %d target %d skill %d raw %d damage %d hp_after %d success_bits %d\n",
+        iSpellOBJ,
+        this->Get_INDEX(),
+        nSkillIDX,
+        wDamage,
+        static_cast<int>(pCPacket->m_gsv_DAMAGE_OF_SKILL.m_Damage.m_wVALUE),
+        pCPacket->m_gsv_DAMAGE_OF_SKILL.m_iHP_AFTER,
+        static_cast<int>(btResult));
 
     if (NULL == pDropITEM) {
         pCPacket->m_HEADER.m_nSize = sizeof(gsv_DAMAGE_OF_SKILL);
@@ -1078,19 +1090,7 @@ CObjCHAR::IsProjectilePresentedSkill(short nSkillIDX) {
     //   SKILL_TYPE_13 == SKILL_ACTION_TARGET_STATE_DURATION
     //   SKILL_TYPE_19 == SKILL_ACTION_SELF_AND_TARGET
     const int iSkillType = SKILL_TYPE(nSkillIDX);
-    if (iSkillType == SKILL_TYPE_05 || iSkillType == SKILL_TYPE_06) {
-        return true;
-    }
-
-    if (SKILL_BULLET_NO(nSkillIDX) <= 0) {
-        return false;
-    }
-
-    return iSkillType == SKILL_TYPE_09
-        || iSkillType == SKILL_TYPE_11
-        || iSkillType == SKILL_TYPE_13
-        || iSkillType == SKILL_TYPE_19
-        || iSkillType == SKILL_TYPE_03;
+    return Rose::Combat::is_projectile_presented_skill(iSkillType, SKILL_BULLET_NO(nSkillIDX));
 }
 
 //-------------------------------------------------------------------------------------------------

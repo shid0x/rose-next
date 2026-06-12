@@ -74,6 +74,7 @@ Live combat is server-authoritative. The client presents server damage events; i
 - Normal attacks should send `CombatSwing` after damage is calculated. This guarantees the client queues the event before starting the swing animation that will consume it.
 - Projectile-capable damage must use `ProjectileImpact` so the client waits for bullet collision. Immediate presentation is only for true immediate effects such as status ticks, shield counters, and missing-attacker fallback.
 - Keep direct HP stat sync as reconciliation only. Combat HP decreases need a `DamageEvent` path so digits, HP, hit feedback, and death presentation stay in one transaction.
+- Legacy `GSV_DAMAGE_OF_SKILL` remains in use for several skill types. It must include the defender's post-`Apply_DAMAGE` HP in `m_iHP_AFTER`; the client converts this into `DamageEvent.hp_after` and must not infer the checkpoint from visible HP.
 
 ### AI Script Guard
 
@@ -81,7 +82,7 @@ Monster AI script action `AIACT24` / `F_AIACT24` blocks hostile `btTarget == 0` 
 
 ### Skill Damage Presentation
 
-`SKILL_TYPE_06` (projectile magic — Icebolt, Lightning, etc.) `Skill_START` must tag the `DamageEvent` with `ProjectileImpact`, not `Immediate`. `CObjCHAR::Give_DAMAGE` takes a trailing `Packets::DamagePresentationKind kind = Immediate` parameter so the projectile-magic call site can pass `ProjectileImpact` while shield-counter / status-tick / cheatcmd call sites keep the default. The classification helper `CObjCHAR::IsProjectilePresentedSkill(short)` mirrors the client's `IsProjectilePresentedSkillDamage` — keep the two in sync; both decide whether the client gates damage and effect-of-skill drains on bullet collision. SKILL_TYPE values map 1:1 to the client's `SKILL_ACTION_*` constants (same STB column 5).
+`SKILL_TYPE_06` (projectile magic — Icebolt, Lightning, etc.) `Skill_START` must tag the `DamageEvent` with `ProjectileImpact`, not `Immediate`. `CObjCHAR::Give_DAMAGE` takes a trailing `Packets::DamagePresentationKind kind = Immediate` parameter so the projectile-magic call site can pass `ProjectileImpact` while shield-counter / status-tick / cheatcmd call sites keep the default. `CObjCHAR::IsProjectilePresentedSkill(short)` wraps the shared `Rose::Combat::is_projectile_presented_skill(skill_type, bullet_no)` helper, which the client also uses. The rule is: `05/06` projectile-presented, `03/19` projectile-presented only with a bullet id, and target-bound `09/11/13` never projectile-presented because their `BULLET_NO` is an effect graphic, not a tracked projectile.
 
 ### Status Effect Application
 

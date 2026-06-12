@@ -2833,6 +2833,7 @@ CRecvPACKET::Recv_gsv_EFFECT_OF_SKILL() {
             SKILL_BULLET_NO(m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_nSkillIDX),
             static_cast<int>(m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_btSuccessBITS));
         gsv_DAMAGE_OF_SKILL damageOfSkill;
+        ZeroMemory(&damageOfSkill, sizeof(damageOfSkill));
         memcpy(&damageOfSkill,
             &(m_pRecvPacket->m_gsv_EFFECT_OF_SKILL),
             sizeof(m_pRecvPacket->m_gsv_EFFECT_OF_SKILL));
@@ -2853,6 +2854,7 @@ CRecvPACKET::Recv_gsv_EFFECT_OF_SKILL() {
     //  (	SKILL_TYPE( iDoingSkillIDX ) == SKILL_ACTION_ENFORCE_BULLET ) ) )
     {
         gsv_DAMAGE_OF_SKILL damageOfSkill;
+        ZeroMemory(&damageOfSkill, sizeof(damageOfSkill));
         memcpy(&damageOfSkill,
             &(m_pRecvPacket->m_gsv_EFFECT_OF_SKILL),
             sizeof(m_pRecvPacket->m_gsv_EFFECT_OF_SKILL));
@@ -3025,7 +3027,7 @@ CRecvPACKET::Recv_gsv_DAMAGE_OF_SKILL() {
     const bool bProjectilePresented = CObjCHAR::IsProjectilePresentedSkillDamage(iSkillIDX);
 
     LogString(LOG_DEBUG_,
-        "CombatTrace GSV_DAMAGE_OF_SKILL: caster %d target %d skill %d type %d bullet %d damage %d value %d success_bits %d projectile_presented %d\n",
+        "CombatTrace GSV_DAMAGE_OF_SKILL: caster %d target %d skill %d type %d bullet %d damage %d value %d hp_after %d success_bits %d projectile_presented %d\n",
         damageOfSkill.m_wSpellObjIDX,
         damageOfSkill.m_wObjectIDX,
         iSkillIDX,
@@ -3033,6 +3035,7 @@ CRecvPACKET::Recv_gsv_DAMAGE_OF_SKILL() {
         SKILL_BULLET_NO(iSkillIDX),
         damageOfSkill.m_wDamage,
         damageOfSkill.m_Damage.m_wVALUE,
+        damageOfSkill.m_iHP_AFTER,
         damageOfSkill.m_btSuccessBITS,
         bProjectilePresented ? 1 : 0);
 

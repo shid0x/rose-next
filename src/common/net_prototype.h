@@ -1473,6 +1473,7 @@ struct gsv_DAMAGE_OF_SKILL: public gsv_EFFECT_OF_SKILL {
         uniDAMAGE m_Damage; // 피해가 있을경우 값이 들어 있음.
         int m_wDamage;
     };
+    int m_iHP_AFTER;
     tag_DROPITEM m_DropITEM[0]; // 죽는 데미지일경우에만 값이 들어 있다. 드롭된 아이템 인덱스
 };
 struct gsv_RESULT_OF_SKILL: public t_PACKETHEADER {

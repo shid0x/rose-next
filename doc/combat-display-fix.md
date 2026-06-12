@@ -94,6 +94,14 @@ The missed-hit tracker acts as a "reservation" left by the animation. When the l
 
 Multi-hit weapons are safe: secondary hit frames may record a missed hit, but no second damage packet exists to match, so the tracker simply expires or gets overwritten by the next real attack.
 
+## Current Solution: Authoritative Skill HP Checkpoints
+
+The modern combat presenter also supports legacy `GSV_DAMAGE_OF_SKILL` packets. Those packets now carry the server's post-damage HP in `m_iHP_AFTER`, and the client copies that value into `DamageEvent.hp_after` when converting the legacy packet.
+
+This fixes an intermittent skill HP snapback where `UpdateStats.hp` could arrive while the skill payload was still waiting on the caster's action frame. The old client synthesized `hp_after` as `visible_hp - damage`, then later folded the pending reconciliation correction into the same skill hit. The bar could drop too far and snap back up on the next stat sync. The client now applies the displayed damage first and clamps/folds only the remaining difference to the authoritative checkpoint.
+
+Projectile skill classification is shared through `Rose::Combat::is_projectile_presented_skill(skill_type, bullet_no)`: skill types `05/06` are projectile-presented, `03/19` are projectile-presented only when they have a bullet id, and target-bound `09/11/13` are never projectile-presented because their bullet column refers to an effect graphic rather than a tracked projectile.
+
 ## Files Modified
 
 | File | Changes |

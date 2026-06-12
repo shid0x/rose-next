@@ -1,4 +1,5 @@
 #include "rose/combat/combat_presentation.h"
+#include "rose/combat/skill_presentation.h"
 #include "rose/server_ai/non_aggro_skill_guard.h"
 
 #include <algorithm>
@@ -159,13 +160,8 @@ private:
 
         bool lethal = e.lethal || e.hp_after <= 0
             || ((pending_authoritative_death || authoritative_hp <= 0) && display_damage > 0);
-        int hp_delta = display_damage;
         int hp_after_delta = visible_hp;
-
-        if (hp_delta > 0 && pending_correction > 0) {
-            hp_delta += pending_correction;
-            pending_correction = 0;
-        }
+        int hp_delta = display_damage;
 
         if (lethal) {
             visible_hp = 0;
@@ -182,14 +178,7 @@ private:
             ? PresentationResult::PresentedDamage
             : PresentationResult::PresentedMiss;
         if (result == PresentationResult::PresentedDamage) {
-            hp_after_delta = visible_hp - hp_delta;
-            if (hp_after_delta <= 0) {
-                lethal = true;
-                visible_hp = 0;
-                pending_correction = 0;
-                pending_authoritative_death = false;
-                return PresentationResult::PresentedDeath;
-            }
+            hp_after_delta = std::max(1, visible_hp - hp_delta);
 
             if (!queue.has_pending_damage()) {
                 const int target_hp = std::min(e.hp_after, authoritative_hp);
@@ -200,6 +189,11 @@ private:
                 }
                 if (hp_after_delta > target_hp) {
                     hp_after_delta = target_hp;
+                    pending_correction = 0;
+                } else if (hp_after_delta < target_hp) {
+                    hp_after_delta = target_hp;
+                    pending_correction = 0;
+                } else {
                     pending_correction = 0;
                 }
             }
@@ -348,8 +342,26 @@ main() {
         h.authoritative_hp = 1000;
         h.queue.push(event(1, 10, 250, 800));
         expect(h.hit(10) == PresentationResult::PresentedDamage, "damage delta should present");
-        expect(h.visible_hp == 750, "visible HP must use event damage_value without snapping up to hp_after");
-        expect(h.corrections == 0, "higher hp_after must not trigger upward correction");
+        expect(h.visible_hp == 800, "non-lethal presentation must not remain below authoritative HP");
+        expect(h.corrections == 0, "higher hp_after should clamp without creating correction");
+    }
+
+    {
+        HpHarness h;
+        h.visible_hp = 1000;
+        h.authoritative_hp = 1000;
+        h.reconcile(600);
+        expect(h.visible_hp == 1000,
+            "lower stat sync waits while legacy skill damage is still in the caster payload");
+        expect(h.pending_correction == 400, "lower stat sync stages pending correction");
+        h.queue.push(event(1, 10, 400, 600));
+        expect(h.hit(10) == PresentationResult::PresentedDamage,
+            "skill hit should present after lower stat sync");
+        expect(h.visible_hp == 600,
+            "skill hit must land on authoritative hp_after without double-subtracting correction");
+        expect(h.displayed_damage == 400,
+            "authoritative checkpoint correction must not alter the skill damage digit");
+        expect(h.pending_correction == 0, "resolved skill checkpoint clears pending correction");
     }
 
     {
@@ -648,6 +660,32 @@ main() {
             "projectile timeout must not create digits or hit feedback");
         expect(!h.queue.has_pending_damage(),
             "projectile timeout discard must unblock deferred correction");
+    }
+
+    {
+        struct Case {
+            int skill_type;
+            int bullet_no;
+            bool expected;
+            const char* message;
+        };
+
+        const Case cases[] = {
+            {5, 0, true, "enforce-bullet skills present at projectile impact"},
+            {6, 0, true, "fire-bullet skills present at projectile impact"},
+            {3, 10, true, "immediate ranged skills with bullets present at projectile impact"},
+            {3, 0, false, "immediate skills without bullets present immediately"},
+            {19, 10, true, "self-and-target skills with bullets present at projectile impact"},
+            {9, 10, false, "target-bound-duration bullet ids are effect graphics, not projectiles"},
+            {11, 10, false, "target-bound bullet ids are effect graphics, not projectiles"},
+            {13, 10, false, "target-state-duration bullet ids are effect graphics, not projectiles"},
+        };
+
+        for (const Case& c: cases) {
+            expect(Rose::Combat::is_projectile_presented_skill(c.skill_type, c.bullet_no)
+                    == c.expected,
+                c.message);
+        }
     }
 
     {
