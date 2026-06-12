@@ -48,18 +48,20 @@ Client (C++/DX9)  ←→  LoginServer  ←→  WorldServer  ←→  GameServer
 If you have [`just`](https://github.com/casey/just) installed, the whole flow is:
 
 ```powershell
-# 1. Build everything (Rust + thirdparty C++ + Rose Next C++ + assets)
-just build-all release
+# 1. Build the code (Rust + thirdparty C++ + Rose Next C++)
+just build release
 
-# 2. Set up a local dev environment (symlinks assets into dev/)
-just dev-setup
+# 2. Put your game files in data/, then pack them into the client VFS
+#    (data.idx + rose.vfs) -- see Client > Assets below
+scripts/pack.ps1
 
 # 3. Create the database (see Database below), then create an account
 just create-account you@example.com mypassword
 
-# 4. Start the servers and the client
+# 4. Start the servers, then run the client
 just server-all release
-just client release
+#    Run rosenext.exe with the data.idx + rose.vfs next to it, e.g.:
+rosenext.exe --server 127.0.0.1
 ```
 
 Available `just` recipes:
@@ -148,26 +150,49 @@ Output binaries land in `bin/release/` (`rosenext.exe`, `sho_loginserver.exe`,
 
 ### Assets
 
-The client needs baked assets to run. You can provide your own, or download the
-original ROSE Next assets from:
+The client reads its game content from a packed **VFS** (`data.idx` +
+`rose.vfs`). You supply the raw game files yourself, or download the original
+ROSE Next assets from:
 
 ```
 https://mega.nz/file/NNNjgZhR#nalV3n7ZLRz44oBhiY8qyA-kn2llt5Rn3SMtsg8gxqU
 ```
 
-Assets are baked with the `pipeline` tool driven by `assets/bake.manifest`.
-The easiest path is to run `just build-assets release` (or
-`scripts/build-assets.ps1`), which automates the process.
+Place the raw game files into the [`data/`](data/) folder (see
+[`data/README.md`](data/README.md) for the expected layout), then pack them into
+a client VFS with:
+
+```powershell
+scripts/pack.ps1                    # data/  ->  Exes/data.idx + Exes/rose.vfs
+scripts/pack.ps1 -out path/to/dir   # write the VFS somewhere else
+```
+
+`pack.ps1` packs everything in **`data/`** into a `data.idx` + `rose.vfs` pair
+using the `pipeline.exe` tool (built with the rest of the project). The output
+defaults to the `Exes/` folder, but you can send it anywhere with `-out` (and
+override the source with `-in`).
+
+To run the client, put the resulting `data.idx` and `rose.vfs` **next to
+`rosenext.exe`**, wherever you choose to run it from. (`Exes/` is just a
+convenient staging folder; there's nothing special about it.)
+
+> The separate `assets/` baking pipeline (`build-assets.ps1`, `assets/bake.manifest`)
+> is the original asset-authoring workflow and is **not** required for this
+> setup — `pack.ps1` packs the `data/` folder directly into the client VFS.
 
 ### Running
 
+Run `rosenext.exe` from any folder that contains the packed `data.idx` +
+`rose.vfs` (see Assets above):
+
 ```powershell
-just client release
+rosenext.exe --server 127.0.0.1
 ```
 
-By default the client looks for runtime game assets in `dev/game/` (created by
-`just dev-setup`). The `client` project can also be launched and debugged from
-within Visual Studio.
+The `client` project can also be launched and debugged directly from Visual
+Studio. (There is also a `just client` recipe wired to the original `dev/`
+asset-baking workflow, but for this setup running the built `rosenext.exe`
+alongside a packed VFS is the simpler path.)
 
 ### Connecting to a server
 
