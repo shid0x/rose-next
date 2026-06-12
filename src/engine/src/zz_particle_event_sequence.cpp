@@ -258,7 +258,20 @@ int zz_particle_event_sequence::GetRuntimeParticleLimit(void) const
 
 float zz_particle_event_sequence::GetAverageEmitRate(void) const
 {
-	return (m_EmitRate.m_min + m_EmitRate.m_max) * 0.5f;
+	float rate = (m_EmitRate.m_min + m_EmitRate.m_max) * 0.5f;
+
+	// The authored emit rate is not the sustained spawn rate: emission is
+	// gated by free slots, so a sequence can never exceed num_particles
+	// spawns per lifetime. Artists exploit this with "emit 1000/sec, 1 slot"
+	// to mean "respawn the single quad the instant it dies" (bonfire flame,
+	// chimney smoke). Cost models reading this rate must see the effective
+	// throughput, or such effects look like infernos and get over-throttled.
+	if (m_Lifetime.m_min > 0.0f) {
+		const float sustained_cap = (float)m_iNumParticles / m_Lifetime.m_min;
+		rate = ZZ_MIN(rate, sustained_cap);
+	}
+
+	return rate;
 }
 
 void zz_particle_event_sequence::SetRuntimeBudget(float emit_scale, int max_particles)
