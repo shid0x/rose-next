@@ -1,0 +1,14 @@
+{% extends "user/base.html" %}
+
+{% load i18n %}
+
+{% block title_detail %}{{ request.user.username }}'s {% trans "Profile" %}{% endblock %}
+
+{% block user_content %}
+<h1>Profile: {{ request.user.username }}</h1>
+<p class="subtitle">Manage</p>
+<ul>
+    <li><a href="{% url "account_change_password" %}">Change password</a></li>
+    <li><a href="{% url "account_email" %}">Change email</a></li>
+</ul>
+{% endblock %}

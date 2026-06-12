@@ -1,0 +1,35 @@
+include "common/char_move_mode.fbs";
+include "common/vec3.fbs";
+
+namespace Rose.Network.Packets;
+
+enum DamagePresentationKind : byte {
+	MeleeHitFrame = 0,
+	ProjectileImpact = 1,
+	Immediate = 2,
+	StatusTick = 3,
+	MissingAttacker = 4,
+}
+
+table DamageEvent {
+	event_id: uint32;
+	defender_seq: uint32;
+	attacker_id: uint32;
+	defender_id: uint32;
+	raw_damage: uint32;
+	damage_value: int32;
+	hp_after: int32;
+	presentation_kind: DamagePresentationKind;
+	lethal: bool;
+}
+
+table CombatSwing {
+	attacker_id: uint32;
+	defender_id: uint32;
+	target_distance: uint16;
+	target_pos: Vec3;
+	move_mode: CharacterMoveMode;
+	damage: DamageEvent;
+}
+
+root_type CombatSwing;

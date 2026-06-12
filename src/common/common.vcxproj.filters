@@ -1,0 +1,88 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="config">
+      <UniqueIdentifier>{f2e9e794-1985-4e6c-a054-4f4e3e82506e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="status_effect">
+      <UniqueIdentifier>{d2430ef2-61c7-48be-a771-93ae4eb79021}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="network">
+      <UniqueIdentifier>{94835381-bb5f-4583-96e6-78ae0ec4ba02}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="util">
+      <UniqueIdentifier>{13e1d4ad-4fb9-4503-8c22-ab0bb2cbffba}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="io">
+      <UniqueIdentifier>{9dccc8fc-9564-4d2d-9f16-22372da6b13c}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\rose\common\log.h" />
+    <ClInclude Include="include\rose\common\status_effect\goddess_effect.h">
+      <Filter>status_effect</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rose\common\status_effect\status_effect.h">
+      <Filter>status_effect</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rose\common\status_effect\status_effect_flag.h">
+      <Filter>status_effect</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rose\common\status_effect\status_effect_data.h">
+      <Filter>status_effect</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common-lib\include\rose\common\common_interface.h" />
+    <ClInclude Include="include\rose\common\util.h" />
+    <ClInclude Include="include\rose\network\packet.h">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rose\common\game_config.h">
+      <Filter>config</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rose\common\server_config.h">
+      <Filter>config</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rose\common\commands.h" />
+    <ClInclude Include="include\rose\common\game_types.h" />
+    <ClInclude Include="include\rose\common\character_stats.h" />
+    <ClInclude Include="include\rose\common\pvp_state_types.h" />
+    <ClInclude Include="include\rose\util\uuid.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rose\util\sha256.h">
+      <Filter>util</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rose\io\stb.h">
+      <Filter>io</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rose\io\reader.h">
+      <Filter>io</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rose\network\network_util.h">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rose\common\character_state.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\log.cpp" />
+    <ClCompile Include="src\goddess_effect.cpp">
+      <Filter>status_effect</Filter>
+    </ClCompile>
+    <ClCompile Include="src\util.cpp" />
+    <ClCompile Include="src\uuid.cpp">
+      <Filter>util</Filter>
+    </ClCompile>
+    <ClCompile Include="include\rose\util\sha256.cpp">
+      <Filter>util</Filter>
+    </ClCompile>
+    <ClCompile Include="src\io\stb.cpp">
+      <Filter>io</Filter>
+    </ClCompile>
+    <ClCompile Include="src\io\reader.cpp">
+      <Filter>io</Filter>
+    </ClCompile>
+    <ClCompile Include="src\network\network_util.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

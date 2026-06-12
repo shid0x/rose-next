@@ -1,0 +1,19 @@
+[package]
+name = "npc-shop-editor"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "npc-shop-editor"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+eframe = { version = "0.27", default-features = false, features = ["default_fonts", "glow"] }
+egui = "0.27"
+egui_extras = { version = "0.27", features = ["image"] }
+rfd = "0.14"
+roselib = { git = "https://github.com/rminderhoud/rose-tools" }
+byteorder = "1"
+log = "0.4"
+env_logger = "0.11"

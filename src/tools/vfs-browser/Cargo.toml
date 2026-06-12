@@ -1,0 +1,16 @@
+[package]
+name = "vfs-browser"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rose-vfs"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.27"
+ratatui = "0.26"
+rfd = "0.14"
+roselib = { git = "https://github.com/rminderhoud/rose-tools" }

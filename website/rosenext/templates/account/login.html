@@ -1,0 +1,98 @@
+{% extends "account/base.html" %}
+
+{% load i18n %}
+{% load account socialaccount %}
+
+{% block title_detail %}{% trans "Sign In" %}{% endblock %}
+
+{% block content %}
+
+<div id="login" class="columns is-centered">
+    <div class="column is-one-third">
+        <section class="section">
+            <h1 class="title">{% trans "Sign in to" %} <a href="/">ROSE Next</a></h1>
+
+            {% get_providers as socialaccount_providers %}
+
+            {% if socialaccount_providers %}
+            <p>{% blocktrans with site.name as site_name %}Please sign in with one
+                of your existing third party accounts. Or, <a href="{{ signup_url }}">sign up</a>
+                for a {{ site_name }} account and sign in below:{% endblocktrans %}</p>
+
+            <div class="socialaccount_ballot">
+
+                <ul class="socialaccount_providers">
+                    {% include "socialaccount/snippets/provider_list.html" with process="login" %}
+                </ul>
+
+                <div class="login-or">{% trans 'or' %}</div>
+
+            </div>
+
+            {% include "socialaccount/snippets/login_extra.html" %}
+            {{ form.non_field_errors }}
+            {% else %}
+            <div class="content">
+                <p>{% blocktrans %}If you have not created an account yet, then please
+                    <a href="{{ signup_url }}">sign up</a> first.{% endblocktrans %}</p>
+            </div>
+            {% endif %}
+
+            <form class="login" method="POST" action="{% url 'account_login' %}">
+                {% csrf_token %}
+
+                {% if form.non_field_errors %}
+                <div class="content has-text-danger">
+                    {% for error in form.non_field_errors %}
+                    <p>{{ error }}</p>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if redirect_field_value %}
+                <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
+                {% endif %}
+
+                <div class="field">
+                    <label for="id_login" class="label">Username</label>
+                    <div class="control">
+                        <input id="id_login" name="login"
+                            class="input  {% if form.username.errors %}is-danger{% endif %}" type="text"
+                            placeholder="username" tabindex="1">
+                    </div>
+                    {% for error in form.username.errors %}
+                    <p class="help is-danger">{{ error }}</p>
+                    {% endfor %}
+                </div>
+
+                <div class="field">
+                    <div class="level mb-2">
+                        <div class="level-left">
+                            <label for="id_password" class="label">Password</label>
+                        </div>
+                        <div class="level-right">
+                            <a href="{% url 'account_reset_password' %}">{% trans "Forgot Password?" %}</a>
+                        </div>
+                    </div>
+                    <div class="control">
+                        <input id="id_password" name="password"
+                            class="input {% if form.password.errors %}is-danger{% endif %}" type="password"
+                            placeholder="password" tabindex="2">
+                    </div>
+                    {% for error in form.password.errors %}
+                    <p class="help is-danger">{{ error }}</p>
+                    {% endfor %}
+                </div>
+
+                <div class="field">
+                    <div class="control">
+                        <button class="button is-primary" type="submit">{% trans "Sign In" %}</button>
+                    </div>
+                </div>
+
+                <input type="hidden" name="remember" type="checkbox" checked />
+            </form>
+        </section>
+    </div>
+</div>
+{% endblock %}

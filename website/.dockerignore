@@ -1,0 +1,8 @@
+.git/
+
+# Python
+__pycache__/
+*.pyc
+
+# Build scripts
+*.ps1

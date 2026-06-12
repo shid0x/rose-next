@@ -1,0 +1,36 @@
+namespace Rose.Network.Packets;
+
+table Stats {
+	str: uint16;
+	dex: uint16;
+	int: uint16;
+	con: uint16;
+	cha: uint16;
+	sen: uint16;
+
+	move_speed: uint16;
+	attack_speed: uint16;
+
+	attack_power: uint32;
+	hit_rate: uint32;
+	crit: uint16;
+	defense: uint16;
+	magic_resistance: uint16;
+	dodge: uint16;
+
+	level: uint8;
+	hp: uint32;
+	mp: uint32;
+	exp: uint32;
+	stamina: uint16;
+
+	stat_points: uint16;
+	skill_points: uint16;
+}
+
+table UpdateStats {
+	character_id: uint32;
+	stats: Stats;
+}
+
+root_type UpdateStats;

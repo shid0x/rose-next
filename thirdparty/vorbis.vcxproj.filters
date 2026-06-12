@@ -1,0 +1,130 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="libvorbis-1.2.0\lib\analysis.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\bitrate.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\block.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\codebook.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\envelope.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\floor0.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\floor1.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\info.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\lookup.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\lpc.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\lsp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\mapping0.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\mdct.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\psy.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\registry.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\res0.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\sharedbook.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\smallft.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\synthesis.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libvorbis-1.2.0\lib\window.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="libvorbis-1.2.0\lib\backends.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\bitrate.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\codebook.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\codec_internal.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\envelope.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\highlevel.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\lookup.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\lookup_data.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\lpc.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\lsp.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\masking.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\mdct.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\misc.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\os.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\psy.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\registry.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\scales.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\smallft.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="libvorbis-1.2.0\lib\window.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

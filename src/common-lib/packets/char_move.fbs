@@ -1,0 +1,18 @@
+include "common/char_move_mode.fbs";
+include "common/vec3.fbs";
+
+namespace Rose.Network.Packets;
+
+
+table CharacterMove {
+	character_id: uint32;
+
+	target_id: uint32;
+	target_pos: Vec3;
+	target_distance: float;
+
+	move_speed: uint16;
+	move_mode: CharacterMoveMode;
+}
+
+root_type CharacterMove;

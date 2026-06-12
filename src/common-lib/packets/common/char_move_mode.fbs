@@ -1,0 +1,8 @@
+namespace Rose.Network.Packets;
+
+enum CharacterMoveMode: byte {
+	Walk = 0,
+	Run = 1,
+	Drive = 2,
+	Ride = 4,
+}

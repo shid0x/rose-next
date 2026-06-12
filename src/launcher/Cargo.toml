@@ -1,0 +1,26 @@
+[package]
+name = "launcher"
+version = "0.1.0"
+authors = ["Ralph Minderhoud <ralphminderhoud@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+blake3 = "0.3"
+hex = "0.4"
+pico-args = "0.3"
+reqwest = { version = "0.10", features = ["blocking", "json"] }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "0.2", features=["full"]}
+
+[target.'cfg(windows)'.dependencies]
+native-windows-gui = { version = "1", features=["all"] }
+native-windows-derive = "1"
+winapi = { version = "0.3", features = ["winuser"] }
+
+[dev-dependencies]
+actix-rt = "1"
+actix-web = "2.0"
+serde_json = "1"
+tempfile = "3"

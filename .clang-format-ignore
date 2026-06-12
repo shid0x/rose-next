@@ -1,0 +1,14 @@
+# Custom file to ignore files and directories.
+#
+# Note: This is not a standard feature supported by clan-format but is used
+# by a custom script to ignore these location
+
+# These shouldn't be formatted since their structure needs to be
+# consistent for lua function generation
+src/client/event/quest_func.h
+src/client/system/system_func.h
+src/client/game_func.h
+
+# Don't format engine code
+src/engine/
+

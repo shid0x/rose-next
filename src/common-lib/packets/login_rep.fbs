@@ -1,0 +1,6 @@
+namespace Rose.Network.Packets;
+
+table LoginReply {
+}
+
+root_type LoginReply;

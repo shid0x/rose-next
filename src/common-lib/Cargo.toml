@@ -1,0 +1,21 @@
+[package]
+name = "rose-common"
+version = "0.1.0"
+authors = ["Ralph Minderhoud <ralphminderhoud@gmail.com>"]
+edition = "2018"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[build-dependencies]
+cbindgen = "0.12"
+flatc-rust = "0.2"
+
+[dependencies]
+chrono = "0.4"
+crossbeam = "0.7"
+libc = "0.2"
+log = { version = "0.4", features = ["std"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.5"
+yansi = "0.5"

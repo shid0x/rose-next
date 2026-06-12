@@ -1,0 +1,164 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.29509.3
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "tgamectrl", "src\tgamectrl\tgamectrl.vcxproj", "{25FC645B-A461-4FDD-848A-4F7C5522313A}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "engine", "src\engine\engine.vcxproj", "{423F6727-70C6-4D7A-97BA-97C72FBC169B}"
+	ProjectSection(ProjectDependencies) = postProject
+		{B4DDE42E-8878-441E-87AE-62B2F0E5A9CF} = {B4DDE42E-8878-441E-87AE-62B2F0E5A9CF}
+		{3D8FB37B-21F3-4DEF-9B78-6FE270C73494} = {3D8FB37B-21F3-4DEF-9B78-6FE270C73494}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "triggervfs", "src\triggervfs\triggervfs.vcxproj", "{3D8FB37B-21F3-4DEF-9B78-6FE270C73494}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "client", "src\client\client.vcxproj", "{98F25AF9-BDDD-462D-9514-9A18FE2E2692}"
+	ProjectSection(ProjectDependencies) = postProject
+		{423F6727-70C6-4D7A-97BA-97C72FBC169B} = {423F6727-70C6-4D7A-97BA-97C72FBC169B}
+		{B4DDE42E-8878-441E-87AE-62B2F0E5A9CF} = {B4DDE42E-8878-441E-87AE-62B2F0E5A9CF}
+		{25FC645B-A461-4FDD-848A-4F7C5522313A} = {25FC645B-A461-4FDD-848A-4F7C5522313A}
+		{3D8FB37B-21F3-4DEF-9B78-6FE270C73494} = {3D8FB37B-21F3-4DEF-9B78-6FE270C73494}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lib_util", "src\lib_util\lib_util.vcxproj", "{B4DDE42E-8878-441E-87AE-62B2F0E5A9CF}"
+	ProjectSection(ProjectDependencies) = postProject
+		{862A7536-0465-45D1-89DF-576AB2D865D6} = {862A7536-0465-45D1-89DF-576AB2D865D6}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "common-server", "src\common-server\common-server.vcxproj", "{07F4D39F-4AAF-4848-BEC1-F0FB9A7A69B3}"
+	ProjectSection(ProjectDependencies) = postProject
+		{862A7536-0465-45D1-89DF-576AB2D865D6} = {862A7536-0465-45D1-89DF-576AB2D865D6}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "sho_gameserver", "src\sho_gameserver\sho_gameserver.vcxproj", "{782AF9C9-40B2-4844-BE58-D73710823F16}"
+	ProjectSection(ProjectDependencies) = postProject
+		{B4DDE42E-8878-441E-87AE-62B2F0E5A9CF} = {B4DDE42E-8878-441E-87AE-62B2F0E5A9CF}
+		{862A7536-0465-45D1-89DF-576AB2D865D6} = {862A7536-0465-45D1-89DF-576AB2D865D6}
+		{07F4D39F-4AAF-4848-BEC1-F0FB9A7A69B3} = {07F4D39F-4AAF-4848-BEC1-F0FB9A7A69B3}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "common", "src\common\common.vcxproj", "{862A7536-0465-45D1-89DF-576AB2D865D6}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "sho_loginserver", "src\sho_loginserver\sho_loginserver.vcxproj", "{0E758012-2825-4521-8FDA-76CA8594D598}"
+	ProjectSection(ProjectDependencies) = postProject
+		{B4DDE42E-8878-441E-87AE-62B2F0E5A9CF} = {B4DDE42E-8878-441E-87AE-62B2F0E5A9CF}
+		{862A7536-0465-45D1-89DF-576AB2D865D6} = {862A7536-0465-45D1-89DF-576AB2D865D6}
+		{07F4D39F-4AAF-4848-BEC1-F0FB9A7A69B3} = {07F4D39F-4AAF-4848-BEC1-F0FB9A7A69B3}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "sho_worldserver", "src\sho_worldserver\sho_worldserver.vcxproj", "{6A71147E-E679-40BD-98B0-0B49AE4EEA72}"
+	ProjectSection(ProjectDependencies) = postProject
+		{B4DDE42E-8878-441E-87AE-62B2F0E5A9CF} = {B4DDE42E-8878-441E-87AE-62B2F0E5A9CF}
+		{862A7536-0465-45D1-89DF-576AB2D865D6} = {862A7536-0465-45D1-89DF-576AB2D865D6}
+		{07F4D39F-4AAF-4848-BEC1-F0FB9A7A69B3} = {07F4D39F-4AAF-4848-BEC1-F0FB9A7A69B3}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "combat_presenter_tests", "src\tests\combat_presenter\combat_presenter_tests.vcxproj", "{B9F625C5-FC41-479A-9858-45C5B5A78599}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "common-shared", "common-shared", "{3B7AC165-5D32-4DA0-B266-9AF7A1AEFDE2}"
+	ProjectSection(SolutionItems) = preProject
+		src\common\shared\cai_file.cpp = src\common\shared\cai_file.cpp
+		src\common\shared\cai_file.h = src\common\shared\cai_file.h
+		src\common\shared\cai_lib.h = src\common\shared\cai_lib.h
+		src\common\shared\ceconomy.cpp = src\common\shared\ceconomy.cpp
+		src\common\shared\ceconomy.h = src\common\shared\ceconomy.h
+		src\common\shared\choticon.cpp = src\common\shared\choticon.cpp
+		src\common\shared\choticon.h = src\common\shared\choticon.h
+		src\common\shared\cinventory.cpp = src\common\shared\cinventory.cpp
+		src\common\shared\cinventory.h = src\common\shared\cinventory.h
+		src\common\shared\citem.cpp = src\common\shared\citem.cpp
+		src\common\shared\citem.h = src\common\shared\citem.h
+		src\common\shared\cquest.cpp = src\common\shared\cquest.cpp
+		src\common\shared\cquest.h = src\common\shared\cquest.h
+		src\common\shared\cuserdata.h = src\common\shared\cuserdata.h
+		src\common\shared\cuserdata_new.cpp = src\common\shared\cuserdata_new.cpp
+		src\common\shared\datatype.h = src\common\shared\datatype.h
+		src\common\shared\io_quest.cpp = src\common\shared\io_quest.cpp
+		src\common\shared\io_quest.h = src\common\shared\io_quest.h
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "packets", "packets", "{A552ADBD-CAA6-494D-B41D-C0493B1BF092}"
+	ProjectSection(SolutionItems) = preProject
+		src\common-lib\packets\char_create_req.fbs = src\common-lib\packets\char_create_req.fbs
+		src\common-lib\packets\char_move.fbs = src\common-lib\packets\char_move.fbs
+		src\common-lib\packets\char_move_attack.fbs = src\common-lib\packets\char_move_attack.fbs
+		src\common-lib\packets\combat.fbs = src\common-lib\packets\combat.fbs
+		src\common-lib\packets\login_rep.fbs = src\common-lib\packets\login_rep.fbs
+		src\common-lib\packets\login_req.fbs = src\common-lib\packets\login_req.fbs
+		src\common-lib\packets\packet_data.fbs = src\common-lib\packets\packet_data.fbs
+		src\common-lib\packets\update_stats.fbs = src\common-lib\packets\update_stats.fbs
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "common", "common", "{58F1BCA2-0BF3-424E-8E05-0CC93EE40CE9}"
+	ProjectSection(SolutionItems) = preProject
+		src\common-lib\packets\common\char_move_mode.fbs = src\common-lib\packets\common\char_move_mode.fbs
+		src\common-lib\packets\common\vec3.fbs = src\common-lib\packets\common\vec3.fbs
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		debug|x86 = debug|x86
+		release|x86 = release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{25FC645B-A461-4FDD-848A-4F7C5522313A}.debug|x86.ActiveCfg = debug|Win32
+		{25FC645B-A461-4FDD-848A-4F7C5522313A}.debug|x86.Build.0 = debug|Win32
+		{25FC645B-A461-4FDD-848A-4F7C5522313A}.release|x86.ActiveCfg = release|Win32
+		{25FC645B-A461-4FDD-848A-4F7C5522313A}.release|x86.Build.0 = release|Win32
+		{423F6727-70C6-4D7A-97BA-97C72FBC169B}.debug|x86.ActiveCfg = debug|Win32
+		{423F6727-70C6-4D7A-97BA-97C72FBC169B}.debug|x86.Build.0 = debug|Win32
+		{423F6727-70C6-4D7A-97BA-97C72FBC169B}.release|x86.ActiveCfg = release|Win32
+		{423F6727-70C6-4D7A-97BA-97C72FBC169B}.release|x86.Build.0 = release|Win32
+		{3D8FB37B-21F3-4DEF-9B78-6FE270C73494}.debug|x86.ActiveCfg = debug|Win32
+		{3D8FB37B-21F3-4DEF-9B78-6FE270C73494}.debug|x86.Build.0 = debug|Win32
+		{3D8FB37B-21F3-4DEF-9B78-6FE270C73494}.release|x86.ActiveCfg = release|Win32
+		{3D8FB37B-21F3-4DEF-9B78-6FE270C73494}.release|x86.Build.0 = release|Win32
+		{98F25AF9-BDDD-462D-9514-9A18FE2E2692}.debug|x86.ActiveCfg = debug|Win32
+		{98F25AF9-BDDD-462D-9514-9A18FE2E2692}.debug|x86.Build.0 = debug|Win32
+		{98F25AF9-BDDD-462D-9514-9A18FE2E2692}.release|x86.ActiveCfg = release|Win32
+		{98F25AF9-BDDD-462D-9514-9A18FE2E2692}.release|x86.Build.0 = release|Win32
+		{B4DDE42E-8878-441E-87AE-62B2F0E5A9CF}.debug|x86.ActiveCfg = debug|Win32
+		{B4DDE42E-8878-441E-87AE-62B2F0E5A9CF}.debug|x86.Build.0 = debug|Win32
+		{B4DDE42E-8878-441E-87AE-62B2F0E5A9CF}.release|x86.ActiveCfg = release|Win32
+		{B4DDE42E-8878-441E-87AE-62B2F0E5A9CF}.release|x86.Build.0 = release|Win32
+		{07F4D39F-4AAF-4848-BEC1-F0FB9A7A69B3}.debug|x86.ActiveCfg = debug|Win32
+		{07F4D39F-4AAF-4848-BEC1-F0FB9A7A69B3}.debug|x86.Build.0 = debug|Win32
+		{07F4D39F-4AAF-4848-BEC1-F0FB9A7A69B3}.release|x86.ActiveCfg = release|Win32
+		{07F4D39F-4AAF-4848-BEC1-F0FB9A7A69B3}.release|x86.Build.0 = release|Win32
+		{782AF9C9-40B2-4844-BE58-D73710823F16}.debug|x86.ActiveCfg = debug|Win32
+		{782AF9C9-40B2-4844-BE58-D73710823F16}.debug|x86.Build.0 = debug|Win32
+		{782AF9C9-40B2-4844-BE58-D73710823F16}.release|x86.ActiveCfg = release|Win32
+		{782AF9C9-40B2-4844-BE58-D73710823F16}.release|x86.Build.0 = release|Win32
+		{862A7536-0465-45D1-89DF-576AB2D865D6}.debug|x86.ActiveCfg = debug|Win32
+		{862A7536-0465-45D1-89DF-576AB2D865D6}.debug|x86.Build.0 = debug|Win32
+		{862A7536-0465-45D1-89DF-576AB2D865D6}.release|x86.ActiveCfg = release|Win32
+		{862A7536-0465-45D1-89DF-576AB2D865D6}.release|x86.Build.0 = release|Win32
+		{0E758012-2825-4521-8FDA-76CA8594D598}.debug|x86.ActiveCfg = Debug|Win32
+		{0E758012-2825-4521-8FDA-76CA8594D598}.debug|x86.Build.0 = Debug|Win32
+		{0E758012-2825-4521-8FDA-76CA8594D598}.release|x86.ActiveCfg = Release|Win32
+		{0E758012-2825-4521-8FDA-76CA8594D598}.release|x86.Build.0 = Release|Win32
+		{6A71147E-E679-40BD-98B0-0B49AE4EEA72}.debug|x86.ActiveCfg = Debug|Win32
+		{6A71147E-E679-40BD-98B0-0B49AE4EEA72}.debug|x86.Build.0 = Debug|Win32
+		{6A71147E-E679-40BD-98B0-0B49AE4EEA72}.release|x86.ActiveCfg = Release|Win32
+		{6A71147E-E679-40BD-98B0-0B49AE4EEA72}.release|x86.Build.0 = Release|Win32
+		{B9F625C5-FC41-479A-9858-45C5B5A78599}.debug|x86.ActiveCfg = debug|Win32
+		{B9F625C5-FC41-479A-9858-45C5B5A78599}.debug|x86.Build.0 = debug|Win32
+		{B9F625C5-FC41-479A-9858-45C5B5A78599}.release|x86.ActiveCfg = release|Win32
+		{B9F625C5-FC41-479A-9858-45C5B5A78599}.release|x86.Build.0 = release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{58F1BCA2-0BF3-424E-8E05-0CC93EE40CE9} = {A552ADBD-CAA6-494D-B41D-C0493B1BF092}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {E7D4BF58-FB42-4410-8BDE-E698B777F7D7}
+	EndGlobalSection
+	GlobalSection(Performance) = preSolution
+		HasPerformanceSessions = true
+	EndGlobalSection
+	GlobalSection(Performance) = preSolution
+		HasPerformanceSessions = true
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,16 @@
+/* Override for for buttons in navbar */
+.navbar-dropdown form.navbar-item:hover {
+    background-color: whitesmoke;
+    color: #0a0a0a;
+}
+
+.navbar-dropdown .navbar-item input[type="submit"] {
+    background: none;
+    border: none;
+    padding: 0;
+}
+
+#hero-main {
+    background: url('/static/img/hero-main.jpg') center center;
+    background-size: cover;
+}

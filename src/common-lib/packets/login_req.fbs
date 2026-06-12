@@ -1,0 +1,8 @@
+namespace Rose.Network.Packets;
+
+table LoginRequest {
+	username: string;
+	password: string;
+}
+
+root_type LoginRequest;

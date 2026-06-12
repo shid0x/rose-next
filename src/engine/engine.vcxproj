@@ -1,0 +1,475 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="debug|Win32">
+      <Configuration>debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="release|Win32">
+      <Configuration>release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{423F6727-70C6-4D7A-97BA-97C72FBC169B}</ProjectGuid>
+    <RootNamespace>engine</RootNamespace>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectName>engine</ProjectName>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v142</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v142</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='release|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
+    <Import Project="..\rose-next.props" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='debug|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
+    <Import Project="..\rose-next.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.40219.1</_ProjectFileVersion>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">$(SolutionDir)bin\$(Configuration)\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">$(SolutionDir)build\$(Configuration)\$(ProjectName)\</IntDir>
+    <ExtensionsToDeleteOnClean Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">*.obj%3b*.ilk%3b*.tlb%3b*.tli%3b*.tlh%3b*.tmp%3b*.rsp%3b*.pgc%3b*.pgd%3b</ExtensionsToDeleteOnClean>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='debug|Win32'" />
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='release|Win32'">$(SolutionDir)bin\$(Configuration)\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='release|Win32'">$(SolutionDir)build\$(Configuration)\$(ProjectName)\</IntDir>
+    <ExtensionsToDeleteOnClean Condition="'$(Configuration)|$(Platform)'=='release|Win32'">*.obj%3b*.ilk%3b*.tlb%3b*.tli%3b*.tlh%3b*.tmp%3b*.rsp%3b*.pgc%3b*.pgd%3b</ExtensionsToDeleteOnClean>
+    <PreBuildEventUseInBuild Condition="'$(Configuration)|$(Platform)'=='release|Win32'">
+    </PreBuildEventUseInBuild>
+    <PostBuildEventUseInBuild Condition="'$(Configuration)|$(Platform)'=='release|Win32'">
+    </PostBuildEventUseInBuild>
+    <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">AllRules.ruleset</CodeAnalysisRuleSet>
+    <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='debug|Win32'" />
+    <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='debug|Win32'" />
+    <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='release|Win32'">AllRules.ruleset</CodeAnalysisRuleSet>
+    <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='release|Win32'" />
+    <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='release|Win32'" />
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='release|Win32'">znzin</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">znzin</TargetName>
+    <PostBuildEventUseInBuild Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">
+    </PostBuildEventUseInBuild>
+    <PreBuildEventUseInBuild Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">
+    </PreBuildEventUseInBuild>
+    <PreLinkEventUseInBuild Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">
+    </PreLinkEventUseInBuild>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release|Win32'">
+    <PreLinkEventUseInBuild>
+    </PreLinkEventUseInBuild>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">
+    <PreBuildEvent>
+      <Message>
+      </Message>
+      <Command>
+      </Command>
+    </PreBuildEvent>
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)include;$(SolutionDir)src\lib_util;$(SolutionDir)src\lib_util\include;$(SolutionDir)src\triggervfs\include;$(SolutionDir)thirdparty\directx9\include;$(SolutionDir)thirdparty\lua-5.0\include;$(SolutionDir)thirdparty\zlib-1.2.3;$(SolutionDir)thirdparty\zlib-1.2.3\contrib\minizip;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;ZZ_DLL_EXPORT;XXXZZ_MEM_ON;D3D_DEBUG_INFO;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MinimalRebuild>false</MinimalRebuild>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadeddebug</RuntimeLibrary>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <debugInformationFormat>ProgramDatabase</debugInformationFormat>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>triggervfs.lib;lib_util.lib;lualib5.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>$(OutDir)$(TargetName).dll</OutputFile>
+      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration);$(SolutionDir)bin\$(Configuration)\thirdparty;$(SolutionDir)thirdparty\directx9\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <IgnoreSpecificDefaultLibraries>libcp.lib;libcmt.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <GeneratedebugInformation>true</GeneratedebugInformation>
+      <ProgramDatabaseFile>$(TargetDir)$(TargetName).pdb</ProgramDatabaseFile>
+      <SubSystem>Windows</SubSystem>
+      <BaseAddress>
+      </BaseAddress>
+      <ImportLibrary>
+      </ImportLibrary>
+      <TargetMachine>MachineX86</TargetMachine>
+      <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+    </Link>
+    <PostBuildEvent>
+      <Message>
+      </Message>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release|Win32'">
+    <PreBuildEvent>
+      <Message>
+      </Message>
+      <Command>
+      </Command>
+    </PreBuildEvent>
+    <CustomBuildStep>
+      <Command>
+      </Command>
+      <Outputs>%(Outputs)</Outputs>
+    </CustomBuildStep>
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
+      <IntrinsicFunctions>false</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
+      <OmitFramePointers>false</OmitFramePointers>
+      <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)include;$(SolutionDir)src\lib_util;$(SolutionDir)src\lib_util\include;$(SolutionDir)src\triggervfs\include;$(SolutionDir)thirdparty\directx9\include;$(SolutionDir)thirdparty\lua-5.0\include;$(SolutionDir)thirdparty\zlib-1.2.3;$(SolutionDir)thirdparty\zlib-1.2.3\contrib\minizip;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;ZZ_DLL_EXPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <AssemblerOutput>
+      </AssemblerOutput>
+      <WarningLevel>Level3</WarningLevel>
+      <debugInformationFormat>ProgramDatabase</debugInformationFormat>
+      <CallingConvention>Cdecl</CallingConvention>
+    </ClCompile>
+    <ResourceCompile>
+      <ResourceOutputFileName>$(IntDir)znzin.res</ResourceOutputFileName>
+    </ResourceCompile>
+    <Link>
+      <AdditionalDependencies>triggervfs.lib;lib_util.lib;lualib5.lib;legacy_stdio_definitions.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>$(OutDir)$(TargetName).dll</OutputFile>
+      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration);$(SolutionDir)bin\$(Configuration)\thirdparty;$(SolutionDir)thirdparty\directx9\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <IgnoreSpecificDefaultLibraries>libcp.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <GeneratedebugInformation>true</GeneratedebugInformation>
+      <ProgramDatabaseFile>$(TargetDir)$(TargetName).pdb</ProgramDatabaseFile>
+      <GenerateMapFile>false</GenerateMapFile>
+      <SubSystem>Windows</SubSystem>
+      <HeapReserveSize>0</HeapReserveSize>
+      <HeapCommitSize>0</HeapCommitSize>
+      <OptimizeReferences>
+      </OptimizeReferences>
+      <EnableCOMDATFolding>
+      </EnableCOMDATFolding>
+      <BaseAddress>
+      </BaseAddress>
+      <ImportLibrary>
+      </ImportLibrary>
+      <TargetMachine>MachineX86</TargetMachine>
+      <FixedBaseAddress>
+      </FixedBaseAddress>
+      <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+    </Link>
+    <PostBuildEvent>
+      <Message>
+      </Message>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="include\zz_algebra.h" />
+    <ClInclude Include="include\zz_animatable.h" />
+    <ClInclude Include="include\zz_array.h" />
+    <ClInclude Include="include\zz_assert.h" />
+    <ClInclude Include="include\zz_autolock.h" />
+    <ClInclude Include="include\zz_bone.h" />
+    <ClInclude Include="include\zz_bvolume.h" />
+    <ClInclude Include="include\zz_bvolume_obb.h" />
+    <ClInclude Include="include\zz_camera.h" />
+    <ClInclude Include="include\zz_camera_follow.h" />
+    <ClInclude Include="include\zz_channel.h" />
+    <ClInclude Include="include\zz_channel_position.h" />
+    <ClInclude Include="include\zz_channel_rotation.h" />
+    <ClInclude Include="include\zz_channel_x.h" />
+    <ClInclude Include="include\zz_channel_xy.h" />
+    <ClInclude Include="include\zz_critical_section.h" />
+    <ClInclude Include="include\zz_cursor.h" />
+    <ClInclude Include="include\zz_db.h" />
+    <ClInclude Include="include\zz_device_resource.h" />
+    <ClInclude Include="include\zz_dx_version.h" />
+    <ClInclude Include="include\zz_error.h" />
+    <ClInclude Include="include\zz_event.h" />
+    <ClInclude Include="include\zz_font.h" />
+    <ClInclude Include="include\zz_font_d3d.h" />
+    <ClInclude Include="include\zz_font_texture.h" />
+    <ClInclude Include="include\zz_font_texture_d3d.h" />
+    <ClInclude Include="include\zz_gamma.h" />
+    <ClInclude Include="include\zz_hash_table.h" />
+    <ClInclude Include="include\zz_ik_limb.h" />
+    <ClInclude Include="include\zz_index_buffer.h" />
+    <ClInclude Include="include\zz_interface.h" />
+    <ClInclude Include="include\zz_light.h" />
+    <ClInclude Include="include\zz_light_direct.h" />
+    <ClInclude Include="include\zz_light_omni.h" />
+    <ClInclude Include="include\zz_light_point.h" />
+    <ClInclude Include="include\zz_list.h" />
+    <ClInclude Include="include\zz_lod.h" />
+    <ClInclude Include="include\zz_log.h" />
+    <ClInclude Include="include\zz_macro.h" />
+    <ClInclude Include="include\zz_manager.h" />
+    <ClInclude Include="include\zz_manager_font.h" />
+    <ClInclude Include="include\zz_manager_mesh_ishared.h" />
+    <ClInclude Include="include\zz_manager_sound.h" />
+    <ClInclude Include="include\zz_manager_texture.h" />
+    <ClInclude Include="include\zz_manager_visible.h" />
+    <ClInclude Include="include\zz_material.h" />
+    <ClInclude Include="include\zz_material_colormap.h" />
+    <ClInclude Include="include\zz_material_ocean.h" />
+    <ClInclude Include="include\zz_material_sky.h" />
+    <ClInclude Include="include\zz_material_terrain.h" />
+    <ClInclude Include="include\zz_mem.h" />
+    <ClInclude Include="include\zz_mesh.h" />
+    <ClInclude Include="include\zz_mesh_ishared.h" />
+    <ClInclude Include="include\zz_mesh_ocean.h" />
+    <ClInclude Include="include\zz_mesh_terrain.h" />
+    <ClInclude Include="include\zz_mesh_tool.h" />
+    <ClInclude Include="include\zz_minmax.h" />
+    <ClInclude Include="include\zz_misc.h" />
+    <ClInclude Include="include\zz_mode.h" />
+    <ClInclude Include="include\zz_model.h" />
+    <ClInclude Include="include\zz_morpher.h" />
+    <ClInclude Include="include\zz_motion.h" />
+    <ClInclude Include="include\zz_motion_controller.h" />
+    <ClInclude Include="include\zz_motion_mixer.h" />
+    <ClInclude Include="include\zz_motion_tool.h" />
+    <ClInclude Include="include\zz_node.h" />
+    <ClInclude Include="include\zz_node_type.h" />
+    <ClInclude Include="include\zz_ocean_block.h" />
+    <ClInclude Include="include\zz_octree.h" />
+    <ClInclude Include="include\zz_os.h" />
+    <ClInclude Include="include\zz_oskernel.h" />
+    <ClInclude Include="include\zz_particle.h" />
+    <ClInclude Include="include\zz_particle_emitter.h" />
+    <ClInclude Include="include\zz_particle_event.h" />
+    <ClInclude Include="include\zz_particle_event_sequence.h" />
+    <ClInclude Include="include\zz_path.h" />
+    <ClInclude Include="include\zz_pointer.h" />
+    <ClInclude Include="include\zz_pool.h" />
+    <ClInclude Include="include\zz_primitive.h" />
+    <ClInclude Include="include\zz_profiler.h" />
+    <ClInclude Include="include\zz_recycling_array.h" />
+    <ClInclude Include="include\zz_refcount.h" />
+    <ClInclude Include="include\zz_renderer.h" />
+    <ClInclude Include="include\zz_renderer_d3d.h" />
+    <ClInclude Include="include\zz_render_state.h" />
+    <ClInclude Include="include\zz_scene.h" />
+    <ClInclude Include="include\zz_scene_octree.h" />
+    <ClInclude Include="include\zz_script.h" />
+    <ClInclude Include="include\zz_script_lua.h">
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='release|Win32'">
+      </DeploymentContent>
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">
+      </DeploymentContent>
+      <Command Condition="'$(Configuration)|$(Platform)'=='release|Win32'">cd $(ProjectDir)include
+$(OutDir)thirdparty\lua5.exe zz_script_lua.lua</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='release|Win32'">Generating LUA Interfaces</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">cd $(ProjectDir)include
+$(OutDir)thirdparty\lua5.exe zz_script_lua.lua</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">Generating LUA Interfaces</Message>
+    </ClInclude>
+    <ClInclude Include="include\zz_script_simple.h" />
+    <ClInclude Include="include\zz_sfx.h" />
+    <ClInclude Include="include\zz_shader.h" />
+    <ClInclude Include="include\zz_shader_terrain.h" />
+    <ClInclude Include="include\zz_skeleton.h" />
+    <ClInclude Include="include\zz_sky.h" />
+    <ClInclude Include="include\zz_sound.h" />
+    <ClInclude Include="include\zz_string.h" />
+    <ClInclude Include="include\zz_system.h" />
+    <ClInclude Include="include\zz_targa.h" />
+    <ClInclude Include="include\zz_terrain.h" />
+    <ClInclude Include="include\zz_terrain_block.h" />
+    <ClInclude Include="include\zz_texture.h" />
+    <ClInclude Include="include\zz_thread.h" />
+    <ClInclude Include="include\zz_tier0.h" />
+    <ClInclude Include="include\zz_timer.h" />
+    <ClInclude Include="include\zz_trail.h" />
+    <ClInclude Include="include\zz_tree.h" />
+    <ClInclude Include="include\zz_type.h" />
+    <ClInclude Include="include\zz_unit_test.h" />
+    <ClInclude Include="include\zz_vertex_buffer.h" />
+    <ClInclude Include="include\zz_vertex_format.h" />
+    <ClInclude Include="include\zz_vfs.h" />
+    <ClInclude Include="include\zz_vfs_local.h" />
+    <ClInclude Include="include\zz_vfs_mem.h" />
+    <ClInclude Include="include\zz_vfs_pkg.h" />
+    <ClInclude Include="include\zz_vfs_thread.h" />
+    <ClInclude Include="include\zz_vfs_zip.h" />
+    <ClInclude Include="include\zz_view.h" />
+    <ClInclude Include="include\zz_viewfrustum.h" />
+    <ClInclude Include="include\zz_view_d3d.h" />
+    <ClInclude Include="include\zz_visible.h" />
+    <ClInclude Include="include\zz_waiting_line.h" />
+    <ClInclude Include="resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="bitmap1.bmp" />
+    <CustomBuild Include="include\zz_build_count.lua">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='release|Win32'">cd $(ProjectDir)include
+$(OutDir)thirdparty\lua5.exe zz_build_count.lua</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='release|Win32'">Increasing Build Count</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">cd $(ProjectDir)include
+$(OutDir)thirdparty\lua5.exe zz_build_count.lua</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">Increasing Build Count</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='release|Win32'">%(RelativeDir)zz_version_info.inc;%(Outputs)</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">%(RelativeDir)zz_version_info.inc;%(Outputs)</Outputs>
+    </CustomBuild>
+    <ClInclude Include="include\zz_script_lua.inc">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='release|Win32'">
+      </Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='release|Win32'">
+      </Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">
+      </Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">
+      </Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='release|Win32'">
+      </Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">
+      </Outputs>
+    </ClInclude>
+    <CustomBuild Include="include\zz_script_lua.lua">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='release|Win32'">cd $(ProjectDir)include
+$(OutDir)thirdparty\lua5.exe zz_script_lua.lua</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">cd $(ProjectDir)include
+$(OutDir)thirdparty\lua5.exe zz_script_lua.lua</Command>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='release|Win32'">
+      </ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">
+      </ExcludedFromBuild>
+      <Message Condition="'$(Configuration)|$(Platform)'=='release|Win32'">Generating Lua Interfaces</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='release|Win32'">%(RelativeDir)zz_script_lua.inc;%(Outputs)</Outputs>
+      <Message Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">Generating Lua Interfaces</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">%(RelativeDir)zz_script_lua.inc;%(Outputs)</Outputs>
+    </CustomBuild>
+    <None Include="include\zz_version_info.inc" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\zz_algebra.cpp" />
+    <ClCompile Include="src\zz_animatable.cpp" />
+    <ClCompile Include="src\zz_assert.cpp" />
+    <ClCompile Include="src\zz_bone.cpp" />
+    <ClCompile Include="src\zz_bvolume.cpp" />
+    <ClCompile Include="src\zz_bvolume_obb.cpp" />
+    <ClCompile Include="src\zz_camera.cpp" />
+    <ClCompile Include="src\zz_camera_follow.cpp" />
+    <ClCompile Include="src\zz_channel.cpp" />
+    <ClCompile Include="src\zz_channel_position.cpp" />
+    <ClCompile Include="src\zz_channel_rotation.cpp" />
+    <ClCompile Include="src\zz_channel_x.cpp" />
+    <ClCompile Include="src\zz_channel_xy.cpp" />
+    <ClCompile Include="src\zz_cursor.cpp" />
+    <ClCompile Include="src\zz_db.cpp" />
+    <ClCompile Include="src\zz_dx_version.cpp" />
+    <ClCompile Include="src\zz_error.cpp" />
+    <ClCompile Include="src\zz_event.cpp" />
+    <ClCompile Include="src\zz_font.cpp" />
+    <ClCompile Include="src\zz_font_d3d.cpp" />
+    <ClCompile Include="src\zz_font_texture.cpp" />
+    <ClCompile Include="src\zz_font_texture_d3d.cpp" />
+    <ClCompile Include="src\zz_gamma.cpp" />
+    <ClCompile Include="src\zz_ik_limb.cpp" />
+    <ClCompile Include="src\zz_index_buffer.cpp" />
+    <ClCompile Include="src\zz_interface.cpp" />
+    <ClCompile Include="src\zz_light.cpp" />
+    <ClCompile Include="src\zz_light_direct.cpp" />
+    <ClCompile Include="src\zz_light_omni.cpp" />
+    <ClCompile Include="src\zz_light_point.cpp" />
+    <ClCompile Include="src\zz_lod.cpp" />
+    <ClCompile Include="src\zz_log.cpp" />
+    <ClCompile Include="src\zz_main.cpp" />
+    <ClCompile Include="src\zz_manager.cpp" />
+    <ClCompile Include="src\zz_manager_font.cpp" />
+    <ClCompile Include="src\zz_manager_mesh_ishared.cpp" />
+    <ClCompile Include="src\zz_manager_sound.cpp" />
+    <ClCompile Include="src\zz_manager_texture.cpp" />
+    <ClCompile Include="src\zz_manager_visible.cpp" />
+    <ClCompile Include="src\zz_material.cpp" />
+    <ClCompile Include="src\zz_material_colormap.cpp" />
+    <ClCompile Include="src\zz_material_ocean.cpp" />
+    <ClCompile Include="src\zz_material_sky.cpp" />
+    <ClCompile Include="src\zz_material_terrain.cpp" />
+    <ClCompile Include="src\zz_mem.cpp" />
+    <ClCompile Include="src\zz_mesh.cpp" />
+    <ClCompile Include="src\zz_mesh_ishared.cpp" />
+    <ClCompile Include="src\zz_mesh_ocean.cpp" />
+    <ClCompile Include="src\zz_mesh_terrain.cpp" />
+    <ClCompile Include="src\zz_mesh_tool.cpp" />
+    <ClCompile Include="src\zz_misc.cpp" />
+    <ClCompile Include="src\zz_model.cpp" />
+    <ClCompile Include="src\zz_morpher.cpp" />
+    <ClCompile Include="src\zz_motion.cpp" />
+    <ClCompile Include="src\zz_motion_controller.cpp" />
+    <ClCompile Include="src\zz_motion_mixer.cpp" />
+    <ClCompile Include="src\zz_motion_tool.cpp" />
+    <ClCompile Include="src\zz_node.cpp" />
+    <ClCompile Include="src\zz_node_type.cpp" />
+    <ClCompile Include="src\zz_ocean_block.cpp" />
+    <ClCompile Include="src\zz_octree.cpp" />
+    <ClCompile Include="src\zz_os.cpp" />
+    <ClCompile Include="src\zz_particle.cpp" />
+    <ClCompile Include="src\zz_particle_emitter.cpp" />
+    <ClCompile Include="src\zz_particle_event.cpp" />
+    <ClCompile Include="src\zz_particle_event_sequence.cpp" />
+    <ClCompile Include="src\zz_path.cpp" />
+    <ClCompile Include="src\zz_primitive.cpp" />
+    <ClCompile Include="src\zz_profiler.cpp" />
+    <ClCompile Include="src\zz_renderer.cpp" />
+    <ClCompile Include="src\zz_renderer_d3d.cpp" />
+    <ClCompile Include="src\zz_render_state.cpp" />
+    <ClCompile Include="src\zz_resource.cpp" />
+    <ClCompile Include="src\zz_scene.cpp" />
+    <ClCompile Include="src\zz_scene_octree.cpp" />
+    <ClCompile Include="src\zz_script.cpp" />
+    <ClCompile Include="src\zz_script_lua.cpp" />
+    <ClCompile Include="src\zz_script_simple.cpp" />
+    <ClCompile Include="src\zz_sfx.cpp" />
+    <ClCompile Include="src\zz_shader.cpp" />
+    <ClCompile Include="src\zz_skeleton.cpp" />
+    <ClCompile Include="src\zz_sky.cpp" />
+    <ClCompile Include="src\zz_sound.cpp" />
+    <ClCompile Include="src\zz_string.cpp" />
+    <ClCompile Include="src\zz_system.cpp" />
+    <ClCompile Include="src\zz_targa.cpp" />
+    <ClCompile Include="src\zz_terrain.cpp" />
+    <ClCompile Include="src\zz_terrain_block.cpp" />
+    <ClCompile Include="src\zz_texture.cpp" />
+    <ClCompile Include="src\zz_thread.cpp" />
+    <ClCompile Include="src\zz_timer.cpp" />
+    <ClCompile Include="src\zz_trail.cpp" />
+    <ClCompile Include="src\zz_unit_test.cpp" />
+    <ClCompile Include="src\zz_vertex_buffer.cpp" />
+    <ClCompile Include="src\zz_vfs.cpp" />
+    <ClCompile Include="src\zz_vfs_local.cpp" />
+    <ClCompile Include="src\zz_vfs_mem.cpp" />
+    <ClCompile Include="src\zz_vfs_pkg.cpp" />
+    <ClCompile Include="src\zz_vfs_thread.cpp" />
+    <ClCompile Include="src\zz_vfs_zip.cpp" />
+    <ClCompile Include="src\zz_view.cpp" />
+    <ClCompile Include="src\zz_view_d3d.cpp" />
+    <ClCompile Include="src\zz_visible.cpp" />
+    <ClCompile Include="src\zz_waiting_line.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="dialog.rc" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

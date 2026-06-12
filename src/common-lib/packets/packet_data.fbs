@@ -1,0 +1,26 @@
+include "char_create_req.fbs";
+include "char_move.fbs";
+include "char_move_attack.fbs";
+include "combat.fbs";
+include "login_rep.fbs";
+include "login_req.fbs";
+include "update_stats.fbs";
+
+namespace Rose.Network.Packets;
+
+union PacketType {
+	CharacterCreateRequest,
+	CharacterMove,
+	CharacterMoveAttack,
+	LoginRequest,
+	LoginReply,
+	UpdateStats,
+	CombatSwing,
+	DamageEvent,
+}
+
+table PacketData {
+	data: PacketType;
+}
+
+root_type PacketData;

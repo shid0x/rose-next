@@ -1,0 +1,17 @@
+[workspace]
+members = [
+    "common-lib",
+    "pipeline",
+    "tools/vfs-browser",
+    "tools/npc-shop-editor"
+]
+exclude = [
+    "launcher",
+    "server"
+]
+
+# Enable this when you want to make changes to a local copy of rose-tools
+# and test it before publishing a new version to github
+# [patch."https://github.com/rminderhoud/rose-tools"]
+# roselib = { path = "../../../rose-tools/rose-lib" }
+# rose-conv = { path = "../../../rose-tools/rose-conv" }

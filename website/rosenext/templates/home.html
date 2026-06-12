@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% load i18n %}
+
+{% block content %}
+<section id="hero-main" class="hero is-link">
+    <div class="hero-body">
+        <div class="container">
+            <h1 class="title">
+                {% trans "Welcome to ROSE Next" %}
+            </h1>
+            <h2 class="subtitle">
+                {% trans "A free-to-play MMORPG" %}
+            </h2>
+            <div>
+                <a class="button is-primary" href="{{ settings.CLIENT_DOWNLOAD_URL }}">
+                    <span class="icon"><i class="fa fa-download"></i></span>
+                    <strong>{% trans "Download" %}</strong>
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

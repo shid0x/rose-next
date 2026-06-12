@@ -1,0 +1,74 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+1 VERSIONINFO
+FILEVERSION 0, 0, 1, 0
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904E4"
+        BEGIN
+            VALUE "CompanyName", "ROSE Next"
+            VALUE "FileDescription", "ROSE Next"
+            VALUE "ProductName", "ROSE Next"
+        END
+    END
+
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1252
+    END
+END
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Cursor
+//
+
+IDC_CURSOR_ATTACK       CURSOR                  "Res\\attack.cur"
+IDC_CURSOR_RIGHT        CURSOR                  "Res\\right.cur"
+IDC_CURSOR_NPC          CURSOR                  "Res\\npc.cur"
+IDC_CURSOR_LEFT         CURSOR                  "Res\\left.cur"
+IDC_CURSOR_ITEM_PICK    CURSOR                  "Res\\item_pick.cur"
+IDC_CURSOR_ITEM_INVEN   CURSOR                  "Res\\item_invem.cur"
+IDC_CURSOR_DEFAULT      CURSOR                  "Res\\default.cur"
+IDC_CURSOR_WHEEL        CURSOR                  "Res\\wheel.cur"
+IDC_CURSOR_USER         CURSOR                  "res\\cursor1.cur"
+IDC_CURSOR_NOUI         CURSOR                  "Res\\noui01.cur"
+IDC_CURSOR2             CURSOR                  "res\\cursor2.cur"
+IDC_CURSOR_REPAIR       CURSOR                  "Res\\repair.cur"
+IDC_IDENTIFY            CURSOR                  "Res\\identify.cur"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDI_CLIENT              ICON                    "Client.ico"
+IDI_SMALL               ICON                    "small.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Accelerator
+//
+
+IDC_CLIENT ACCELERATORS 
+BEGIN
+    "?",            IDM_WIRE,               ASCII,  ALT
+    "/",            IDM_WIRE,               ASCII,  ALT
+END
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE 
+BEGIN
+    IDS_APP_TITLE           "ROSE Next"
+    IDC_CLIENT              "ROSE Next"
+END
+

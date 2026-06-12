@@ -1,0 +1,43 @@
+/[Bb]in/
+/[Bb]uild/
+/[Dd]ist/
+/[Dd]ev/
+/[Ll]ib/
+
+# Assets build data
+.pipeline/
+
+# Visual studio
+*.vs/
+*.pch
+*.sdf
+*.vcxproj.user
+
+# Visual studio code
+.vscode/
+
+# Generated files
+*.inc
+src/common-lib/include/rose/common/common_interface.h
+src/engine/include/zz_build_count
+data/*
+Exes/*
+!Exes/server.toml
+/originalfiles/
+/rose-offline/
+# Python
+__pycache__/
+*.pyc
+/iRose-master/
+/AlternateEngine/
+# Environment
+.env
+target/
+# Rust
+/src/bin
+src/target/
+/iRose Community/
+/rose-offline-client/
+/editor3/
+/xadet/
+/project 137/

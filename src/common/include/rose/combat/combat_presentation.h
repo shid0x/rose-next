@@ -1,0 +1,106 @@
+#pragma once
+
+#include <cstdint>
+#include <vector>
+
+namespace Rose::Combat {
+
+enum class DamagePresentationKind : uint8_t {
+    MeleeHitFrame = 0,
+    ProjectileImpact = 1,
+    Immediate = 2,
+    StatusTick = 3,
+    MissingAttacker = 4,
+};
+
+enum class PresentationResult {
+    NoEvent,
+    PresentedMiss,
+    PresentedDamage,
+    PresentedDeath,
+};
+
+struct DamageEvent {
+    uint32_t event_id = 0;
+    uint32_t defender_seq = 0;
+    uint32_t attacker_id = 0;
+    uint32_t defender_id = 0;
+    uint32_t raw_damage = 0;
+    int32_t damage_value = 0;
+    int32_t hp_after = 0;
+    DamagePresentationKind presentation_kind = DamagePresentationKind::MeleeHitFrame;
+    bool lethal = false;
+};
+
+class CombatPresentationQueue {
+public:
+    void push(const DamageEvent& event) {
+        for (const auto& queued: m_events) {
+            if (queued.event_id == event.event_id && event.event_id != 0) {
+                return;
+            }
+        }
+        m_events.push_back(event);
+    }
+
+    bool pop_for_attacker(uint32_t attacker_id, DamageEvent& out) {
+        for (auto it = m_events.begin(); it != m_events.end(); ++it) {
+            if (it->attacker_id == attacker_id) {
+                out = *it;
+                m_events.erase(it);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool discard_for_attacker(uint32_t attacker_id, DamageEvent* out = nullptr) {
+        DamageEvent discarded;
+        if (!pop_for_attacker(attacker_id, discarded)) {
+            return false;
+        }
+        if (out) {
+            *out = discarded;
+        }
+        return true;
+    }
+
+    bool pop_immediate(DamageEvent& out) {
+        for (auto it = m_events.begin(); it != m_events.end(); ++it) {
+            if (it->presentation_kind != DamagePresentationKind::MeleeHitFrame
+                && it->presentation_kind != DamagePresentationKind::ProjectileImpact) {
+                out = *it;
+                m_events.erase(it);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool has_pending_damage() const {
+        for (const auto& event: m_events) {
+            if (event.damage_value > 0 || event.lethal) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void clear() { m_events.clear(); }
+    size_t size() const { return m_events.size(); }
+
+    static PresentationResult result_for(const DamageEvent& event) {
+        if (event.lethal) {
+            return PresentationResult::PresentedDeath;
+        }
+        if (event.damage_value > 0) {
+            return PresentationResult::PresentedDamage;
+        }
+        return PresentationResult::PresentedMiss;
+    }
+
+private:
+    std::vector<DamageEvent> m_events;
+};
+
+} // namespace Rose::Combat

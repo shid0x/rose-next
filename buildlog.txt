@@ -1,0 +1,292 @@
++==============================================================================+
+| Building ROSE Next                                                           |
++==============================================================================+
+Found vswhere: C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe
+Found Visual Studio: C:\Program Files (x86)\Microsoft Visual Studio\2019\Community
+Started Visual Studio shell
++------------------------------------------------------------------------------+
+| Building thirdparty                                                          |
++------------------------------------------------------------------------------+
+Microsoft (R) Build Engine version 16.11.6+a918ceb31 pour .NET Framework
+Copyright (C) Microsoft Corporation. Tous droits réservés.
+
+  ogg.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\thirdparty\ogg.lib
+  lualib5.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\thirdparty\lualib5.lib
+  lualib4.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\thirdparty\lualib4.lib
+  libpqcommon.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\Release\thirdparty\libpqcommon.lib
+  lua5.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\thirdparty\lua5.exe
+  luac5.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\thirdparty\luac5.exe
+  lua4.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\thirdparty\lua4.exe
+  vorbis.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\thirdparty\vorbis.lib
+  libpgport.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\Release\thirdparty\libpgport.lib
+  vorbisfile.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\thirdparty\vorbisfile.lib
+  libpq.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\Release\thirdparty\libpq.lib
+  luac4.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\thirdparty\luac4.exe
+  expat.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\thirdparty\expat.lib
+  fmt.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\Release\thirdparty\fmt.lib
+  zlib.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\thirdparty\zlib.lib
+  nvtristrip.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\thirdparty\nvtristrip.lib
+  flatc.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\thirdparty\flatc.exe
++------------------------------------------------------------------------------+
+| Building Rust projects                                                       |
++------------------------------------------------------------------------------+
+info: syncing channel updates for stable-i686-pc-windows-msvc
+
+  stable-i686-pc-windows-msvc unchanged - rustc 1.94.1 (e408947bf 2026-03-25)
+
+info: checking for self-update (current version: 1.29.0)
+info: component rust-std for target i686-pc-windows-msvc is up to date
+warning: unused return value of `CString::from_raw` that must be used
+  --> common-lib\src\ffi\string.rs:36:13
+   |
+36 |             CString::from_raw(self.chars); // Drop
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: call `drop(from_raw(ptr))` if you intend to drop the `CString`
+   = note: `#[warn(unused_must_use)]` (part of `#[warn(unused)]`) on by default
+help: use `let _ = ...` to ignore the resulting value
+   |
+36 |             let _ = CString::from_raw(self.chars); // Drop
+   |             +++++++
+
+warning: unused return value of `Box::<T>::from_raw` that must be used
+  --> common-lib\src\ffi\string.rs:55:5
+   |
+55 |     Box::from_raw(s); // Drop
+   |     ^^^^^^^^^^^^^^^^
+   |
+   = note: call `drop(Box::from_raw(ptr))` if you intend to drop the `Box`
+help: use `let _ = ...` to ignore the resulting value
+   |
+55 |     let _ = Box::from_raw(s); // Drop
+   |     +++++++
+
+warning: unused return value of `Box::<T>::from_raw` that must be used
+  --> common-lib\src\ffi\toml.rs:29:5
+   |
+29 |     Box::from_raw(t);
+   |     ^^^^^^^^^^^^^^^^
+   |
+   = note: call `drop(Box::from_raw(ptr))` if you intend to drop the `Box`
+help: use `let _ = ...` to ignore the resulting value
+   |
+29 |     let _ = Box::from_raw(t);
+   |     +++++++
+
+warning: `rose-common` (lib) generated 3 warnings
+    Finished `release` profile [optimized] target(s) in 0.26s
+Microsoft (R) Build Engine version 16.11.6+a918ceb31 pour .NET Framework
+Copyright (C) Microsoft Corporation. Tous droits réservés.
+
+  Build common-lib
+  triggervfs.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\triggervfs.dll
+EXEC : warning : `C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\.cargo\config` is deprecated in favor of `config.toml` [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\common\common.vcxproj]
+    |
+    = help: if you need to support cargo 1.38 or earlier, you can symlink `config` to `config.toml`
+  tgamectrl.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\tgamectrl.lib
+EXEC : warning : unused return value of `CString::from_raw` that must be used [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\common\common.vcxproj]
+    --> common-lib\src\ffi\string.rs:36:13
+     |
+  36 |             CString::from_raw(self.chars); // Drop
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: call `drop(from_raw(ptr))` if you intend to drop the `CString`
+     = note: `#[warn(unused_must_use)]` (part of `#[warn(unused)]`) on by default
+  help: use `let _ = ...` to ignore the resulting value
+     |
+  36 |             let _ = CString::from_raw(self.chars); // Drop
+     |             +++++++
+  
+EXEC : warning : unused return value of `Box::<T>::from_raw` that must be used [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\common\common.vcxproj]
+    --> common-lib\src\ffi\string.rs:55:5
+     |
+  55 |     Box::from_raw(s); // Drop
+     |     ^^^^^^^^^^^^^^^^
+     |
+     = note: call `drop(Box::from_raw(ptr))` if you intend to drop the `Box`
+  help: use `let _ = ...` to ignore the resulting value
+     |
+  55 |     let _ = Box::from_raw(s); // Drop
+     |     +++++++
+  
+EXEC : warning : unused return value of `Box::<T>::from_raw` that must be used [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\common\common.vcxproj]
+    --> common-lib\src\ffi\toml.rs:29:5
+     |
+  29 |     Box::from_raw(t);
+     |     ^^^^^^^^^^^^^^^^
+     |
+     = note: call `drop(Box::from_raw(ptr))` if you intend to drop the `Box`
+  help: use `let _ = ...` to ignore the resulting value
+     |
+  29 |     let _ = Box::from_raw(t);
+     |     +++++++
+  
+EXEC : warning : `rose-common` (lib) generated 3 warnings [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\common\common.vcxproj]
+      Finished `release` profile [optimized] target(s) in 0.25s
+  common.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\common.lib
+  common-server.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\common-server.lib
+  lib_util.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\lib_util.lib
+  Increasing Build Count
+  version_string = 22.4.9.30
+  Generating Lua Interfaces
+C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Microsoft\VC\v160\Microsoft.CppBuild.targets(1091,5): warning MSB8027: Deux ou plusieurs fichiers avec le nom etc_math.cpp généreront des sorties vers le même emplacement. Cela peut entraîner une génération incorrecte. Les fichiers impliqués sont ..\common\etc_math.cpp, src\etc_math.cpp. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\sho_worldserver\sho_worldserver.vcxproj]
+C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Microsoft\VC\v160\Microsoft.CppBuild.targets(1091,5): warning MSB8027: Deux ou plusieurs fichiers avec le nom cchatroom.cpp généreront des sorties vers le même emplacement. Cela peut entraîner une génération incorrecte. Les fichiers impliqués sont src\cchatroom.cpp, src\srv_common\cchatroom.cpp. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\sho_gameserver\sho_gameserver.vcxproj]
+  sho_loginserver.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\Release\sho_loginserver.exe
+  sho_worldserver.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\Release\sho_worldserver.exe
+  sho_gameserver.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\sho_gameserver.exe
+  zz_assert.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\src\zz_assert.cpp(94,2): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\engine.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\src\zz_assert.cpp(118,2): warning C4996: 'vsprintf': This function or variable may be unsafe. Consider using vsprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\engine.vcxproj]
+  zz_log.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\include\zz_node.h(410,2): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\engine.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\src\zz_log.cpp(103,9): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\engine.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\src\zz_log.cpp(106,15): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\engine.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\src\zz_log.cpp(199,2): warning C4996: 'vsprintf': This function or variable may be unsafe. Consider using vsprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\engine.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\src\zz_log.cpp(260,2): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\engine.vcxproj]
+  zz_script_lua.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\include\zz_node.h(410,2): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\engine.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\src\zz_script_lua.cpp(167,3): warning C4996: 'strcpy': This function or variable may be unsafe. Consider using strcpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\engine.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\src\zz_script_lua.cpp(228,3): warning C4996: 'strcpy': This function or variable may be unsafe. Consider using strcpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\engine.vcxproj]
+  zz_system.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\include\zz_node.h(410,2): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\engine.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\include\zz_profiler.h(96,4): warning C4996: 'strcpy': This function or variable may be unsafe. Consider using strcpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\engine.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\src\zz_system.cpp(80,2): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\engine.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\src\zz_system.cpp(81,2): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\engine\engine.vcxproj]
+  Génération de code en cours...
+  lib_util.lib(classhash.obj) : .netmodule ou module MSIL compilé avec /GL trouvé ; redémarrage de l'édition de liens avec /LTCG ; ajoutez /LTCG à la ligne de commande de l'édition de liens pour améliorer les performances de l'Éditeur de liens
+     Création de la bibliothèque C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\znzin.lib et de l'objet C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\znzin.exp
+  Génération de code en cours
+  Fin de la génération du code
+  engine.vcxproj -> C:\Users\Thomas\Desktop\Rose\rose-next-classic\bin\release\znzin.dll
+  Generating lua script interfaces...
+  calculation.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\common\calculation.cpp(168,29): warning C4018: '>=' : incompatibilité signed/unsigned [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+  CGameStateAutoConnect.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\system\CGameStateAutoConnect.cpp(146,26): warning C4018: '<' : incompatibilité signed/unsigned [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+  CD3DUtil.cpp
+  CDSound.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Util\CDSound.cpp(63,18): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+  classCRC.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Util\classCRC.cpp(803,10): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+  classLUA.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Util\classLUA.cpp(61,9): warning C4996: 'strcpy': This function or variable may be unsafe. Consider using strcpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Util\classLUA.cpp(98,10): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+  CGameStateMoveMain.cpp
+  CGameStateNull.cpp
+  SystemProcScript.cpp
+  IO_Event.cpp
+  IO_MATERIAL.CPP
+  TODO:: CMatLIST::Free() SAFE_DELETE( pData->m_DATA ); --> C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\IO_MATERIAL.CPP
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\IO_MATERIAL.CPP(204,14): warning C4996: 'strcmpi': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strcmpi. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+  winMAIN.cpp
+  CRequireMaterial.cpp
+  CSeparate.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\GameData\CSeparate.cpp(174,48): warning C4018: '>' : incompatibilité signed/unsigned [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+  ServerList.cpp
+  CTEventUpgrade.cpp
+  CModelCHAR.cpp
+  CObjCART.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\CObjCART.cpp(541,5): warning C5033: 'register' n'est plus une classe de stockage prise en charge [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\CObjCART.cpp(552,9): warning C5033: 'register' n'est plus une classe de stockage prise en charge [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+  ObjCommand.cpp
+  CTFontImpl.cpp
+  Génération de code en cours...
+  Compilation en cours...
+  CTSoundImpl.cpp
+  IO_ImageRes.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Interface\IO_ImageRes.cpp(55,17): warning C4996: 'stricmp': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _stricmp. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Interface\IO_ImageRes.cpp(66,9): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+  TypeResource.cpp
+  CITState.cpp
+  CChatRoomDlg.cpp
+  í~"ìz¬ ëª¨ë"  ì±"íO.ë°©ì?? ê³µê°oë°©ìo¼ë¡oíoë<¤.
+  CClanDlg.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Interface\DLGs\CClanDlg.cpp(37,41): warning C4838: la conversion de 'LONG' en 'float' requiert une conversion restrictive [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Interface\DLGs\CClanDlg.cpp(37,41): warning C4244: 'initialisation' : conversion de 'LONG' en 'float', perte possible de données [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Interface\DLGs\CClanDlg.cpp(37,62): warning C4838: la conversion de 'LONG' en 'float' requiert une conversion restrictive [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Interface\DLGs\CClanDlg.cpp(37,62): warning C4244: 'initialisation' : conversion de 'LONG' en 'float', perte possible de données [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Interface\DLGs\CClanDlg.cpp(202,44): warning C4996: 'strcmpi': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strcmpi. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Interface\DLGs\CClanDlg.cpp(232,44): warning C4996: 'strcmpi': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strcmpi. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Interface\DLGs\CClanDlg.cpp(248,36): warning C4996: 'strcmpi': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strcmpi. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Interface\DLGs\CClanDlg.cpp(270,28): warning C4996: 'strcmpi': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strcmpi. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Interface\DLGs\CClanDlg.cpp(476,37): warning C4996: 'strcmpi': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strcmpi. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Interface\DLGs\CClanDlg.cpp(497,37): warning C4996: 'strcmpi': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strcmpi. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Interface\DLGs\CClanDlg.cpp(539,37): warning C4996: 'strcmpi': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strcmpi. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Interface\DLGs\CClanDlg.cpp(560,37): warning C4996: 'strcmpi': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strcmpi. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Interface\DLGs\CClanDlg.cpp(582,37): warning C4996: 'strcmpi': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strcmpi. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+  CPrivateStoreDlg.cpp
+  CQuestDlg.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Interface\DLGs\CQuestDlg.cpp(353,17): warning C4996: 'itoa': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _itoa. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+  InventoryDLG.cpp
+  MakeDLG.cpp
+  CQuestListItem.cpp
+  CSkillListCellRenderer.cpp
+  EffectString.cpp
+  Gf_system.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Event\Gf_system.cpp(215,5): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+  QF_CONVERSATION.CPP
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Event\QF_CONVERSATION.CPP(85,35): warning C4244: 'argument' : conversion de 'int' en 'float', perte possible de données [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Event\QF_CONVERSATION.CPP(214,22): warning C4244: '=' : conversion de 'int' en 'float', perte possible de données [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Event\QF_CONVERSATION.CPP(215,22): warning C4244: '=' : conversion de 'int' en 'float', perte possible de données [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Event\QF_CONVERSATION.CPP(216,53): warning C4244: 'argument' : conversion de 'int' en 'float', perte possible de données [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Event\QF_CONVERSATION.CPP(216,47): warning C4244: 'argument' : conversion de 'int' en 'float', perte possible de données [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+  LUA_Init.cpp
+  CNetwork.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\CNetwork.cpp(791,48): warning C4244: 'argument' : conversion de 'float' en 'WORD', perte possible de données [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\CNetwork.cpp(815,68): warning C4244: 'argument' : conversion de 'float' en 'WORD', perte possible de données [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\CNetwork.cpp(845,15): error C2248: 'CObjCHAR::m_dwLastHPSyncTime' : impossible d'accéder à protected membre déclaré(e) dans la classe 'CObjCHAR' [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\CObjCHAR.h(774): message : voir la déclaration de 'CObjCHAR::m_dwLastHPSyncTime' [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\common\cregenarea.h(7): message : voir la déclaration de 'CObjCHAR' [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+  RecvPACKET.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(117,21): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(119,21): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(129,21): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(131,21): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(168,9): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+  TODO:: ë°>ì?? ê³µì§? ì'¬í­ ì²~ë¦¬...C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp
+  TODO:: ì¼?ë¦­í"°ì-? ë?Tìz' ì ?ìs©í  ë¶?ë¶" í.OìS¤íS¸ ì^ë?oê³³..C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(990,13): warning C4996: 'strcmpi': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strcmpi. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(991,13): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(995,17): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1915,20): warning C4244: 'initialisation' : conversion de '__int64' en 'long', perte possible de données [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1921,17): warning C4477: 'sprintf' : la chaîne de format '%d' nécessite un argument de type 'int', mais l'argument variadique 1 est de type '__int64' [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1921,17): message : utilisez '%lld' dans la chaîne de format [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1921,17): message : utilisez '%I64d' dans la chaîne de format [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1921,17): warning C4477: 'sprintf' : la chaîne de format '%d' nécessite un argument de type 'int', mais l'argument variadique 2 est de type '__int64' [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1921,17): message : utilisez '%lld' dans la chaîne de format [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1921,17): message : utilisez '%I64d' dans la chaîne de format [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1943,20): warning C4244: 'initialisation' : conversion de '__int64' en 'long', perte possible de données [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1948,17): warning C4477: 'sprintf' : la chaîne de format '%d' nécessite un argument de type 'int', mais l'argument variadique 1 est de type '__int64' [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1948,17): message : utilisez '%lld' dans la chaîne de format [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1948,17): message : utilisez '%I64d' dans la chaîne de format [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1948,17): warning C4477: 'sprintf' : la chaîne de format '%d' nécessite un argument de type 'int', mais l'argument variadique 2 est de type '__int64' [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1948,17): message : utilisez '%lld' dans la chaîne de format [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1948,17): message : utilisez '%I64d' dans la chaîne de format [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1963,44): warning C4244: 'argument' : conversion de '__int64' en 'int', perte possible de données [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1920,13): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1934,13): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1947,13): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(1988,13): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(3409,21): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(3538,21): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(3561,21): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(3601,17): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(3660,17): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(3916,13): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(3919,13): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(3923,17): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(3927,13): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(3930,13): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(3934,17): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(5066,21): warning C4996: 'strcmpi': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strcmpi. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(5188,21): warning C4996: 'strcmpi': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strcmpi. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(5207,21): warning C4996: 'strcmpi': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strcmpi. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(5705,31): warning C4996: 'strtok': This function or variable may be unsafe. Consider using strtok_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(5711,29): warning C4996: 'strtok': This function or variable may be unsafe. Consider using strtok_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(5815,29): warning C4996: 'strtok': This function or variable may be unsafe. Consider using strtok_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(5833,31): warning C4996: 'strtok': This function or variable may be unsafe. Consider using strtok_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(5839,29): warning C4996: 'strtok': This function or variable may be unsafe. Consider using strtok_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(5900,29): warning C4996: 'strtok': This function or variable may be unsafe. Consider using strtok_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\Network\RecvPACKET.cpp(6226,13): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [C:\Users\Thomas\Desktop\Rose\rose-next-classic\src\client\client.vcxproj]
+  ISFX.cpp
+  Génération de code en cours...

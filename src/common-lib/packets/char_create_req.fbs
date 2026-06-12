@@ -1,0 +1,11 @@
+namespace Rose.Network.Packets;
+
+table CharacterCreateRequest {
+	name: string;
+	hair_id: short;
+	face_id: short;
+	job_id: short;
+	gender_id: ubyte;
+}
+
+root_type CharacterCreateRequest;

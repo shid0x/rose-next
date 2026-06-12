@@ -1,0 +1,251 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="debug|Win32">
+      <Configuration>debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="release|Win32">
+      <Configuration>release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\common-server\include\cthreadguild.h" />
+    <ClInclude Include="..\common-server\include\cthreadmsgr.h" />
+    <ClInclude Include="..\common\calculation.h" />
+    <ClInclude Include="..\common\include\rose\common\rosenext_config.h" />
+    <ClInclude Include="..\common\net_prototype.h" />
+    <ClInclude Include="..\common\shared\cai_file.h" />
+    <ClInclude Include="..\common\shared\cai_lib.h" />
+    <ClInclude Include="..\common\shared\ceconomy.h" />
+    <ClInclude Include="..\common\shared\choticon.h" />
+    <ClInclude Include="..\common\shared\cinventory.h" />
+    <ClInclude Include="..\common\shared\citem.h" />
+    <ClInclude Include="..\common\shared\cquest.h" />
+    <ClInclude Include="..\common\shared\cuserdata.h" />
+    <ClInclude Include="..\common\shared\datatype.h" />
+    <ClInclude Include="..\common\shared\io_quest.h" />
+    <ClInclude Include="src\cchardata.h" />
+    <ClInclude Include="src\cchatroom.h" />
+    <ClInclude Include="src\cgameobj.h" />
+    <ClInclude Include="src\network.h" />
+    <ClInclude Include="src\status_effects.h" />
+    <ClInclude Include="src\cobjavt.h" />
+    <ClInclude Include="src\cobjchar.h" />
+    <ClInclude Include="src\cobjevent.h" />
+    <ClInclude Include="src\cobjitem.h" />
+    <ClInclude Include="src\cobjnpc.h" />
+    <ClInclude Include="src\common\cobjai.h" />
+    <ClInclude Include="src\common\cregenarea.h" />
+    <ClInclude Include="src\common\io_ai.h" />
+    <ClInclude Include="src\common\io_motion.h" />
+    <ClInclude Include="src\common\io_skill.h" />
+    <ClInclude Include="src\def_stb.h" />
+    <ClInclude Include="src\etc_math.h" />
+    <ClInclude Include="src\gs_listuser.h" />
+    <ClInclude Include="src\gs_party.h" />
+    <ClInclude Include="src\gs_socketlsv.h" />
+    <ClInclude Include="src\gs_threadsql.h" />
+    <ClInclude Include="src\gs_threadzone.h" />
+    <ClInclude Include="src\gs_user.h" />
+    <ClInclude Include="src\lib_gsmain.h" />
+    <ClInclude Include="src\md5.h" />
+    <ClInclude Include="src\object.h" />
+    <ClInclude Include="src\srv_common\cchatroom.h" />
+    <ClInclude Include="src\srv_common\cobjvar.h" />
+    <ClInclude Include="src\stdafx.h" />
+    <ClInclude Include="src\zonefile.h" />
+    <ClInclude Include="src\zonelist.h" />
+    <ClInclude Include="src\zonesector.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\common-server\src\cthreadguild.cpp" />
+    <ClCompile Include="..\common-server\src\cthreadmsgr.cpp" />
+    <ClCompile Include="..\common\calculation.cpp" />
+    <ClCompile Include="..\common\shared\cai_file.cpp" />
+    <ClCompile Include="..\common\shared\ceconomy.cpp" />
+    <ClCompile Include="..\common\shared\choticon.cpp" />
+    <ClCompile Include="..\common\shared\cinventory.cpp" />
+    <ClCompile Include="..\common\shared\citem.cpp" />
+    <ClCompile Include="..\common\shared\cquest.cpp" />
+    <ClCompile Include="..\common\shared\cuserdata_new.cpp" />
+    <ClCompile Include="..\common\shared\io_quest.cpp" />
+    <ClCompile Include="src\ai_lib\ai_action.cpp" />
+    <ClCompile Include="src\ai_lib\ai_condition.cpp" />
+    <ClCompile Include="src\cchardata.cpp" />
+    <ClCompile Include="src\cchatroom.cpp" />
+    <ClCompile Include="src\cgameobj.cpp" />
+    <ClCompile Include="src\cheatcmd.cpp" />
+    <ClCompile Include="src\network.cpp" />
+    <ClCompile Include="src\status_effects.cpp" />
+    <ClCompile Include="src\cobjavt.cpp" />
+    <ClCompile Include="src\cobjchar.cpp" />
+    <ClCompile Include="src\cobjevent.cpp" />
+    <ClCompile Include="src\cobjitem.cpp" />
+    <ClCompile Include="src\cobjnpc.cpp" />
+    <ClCompile Include="src\common\cobjai.cpp" />
+    <ClCompile Include="src\common\cregenarea.cpp" />
+    <ClCompile Include="src\common\cuserdata.cpp" />
+    <ClCompile Include="src\common\io_ai.cpp" />
+    <ClCompile Include="src\common\io_motion.cpp" />
+    <ClCompile Include="src\common\io_skill.cpp" />
+    <ClCompile Include="src\etc_math.cpp" />
+    <ClCompile Include="src\gs_listuser.cpp" />
+    <ClCompile Include="src\gs_party.cpp" />
+    <ClCompile Include="src\gs_socketlsv.cpp" />
+    <ClCompile Include="src\gs_threadsql.cpp" />
+    <ClCompile Include="src\gs_threadzone.cpp" />
+    <ClCompile Include="src\gs_user.cpp" />
+    <ClCompile Include="src\lib_gsmain.cpp" />
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\md5.cpp" />
+    <ClCompile Include="src\object.cpp" />
+    <ClCompile Include="src\srv_common\cchatroom.cpp" />
+    <ClCompile Include="src\stdafx.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='release|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="src\zonefile.cpp" />
+    <ClCompile Include="src\zonelist.cpp" />
+    <ClCompile Include="src\zonesector.cpp" />
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{782AF9C9-40B2-4844-BE58-D73710823F16}</ProjectGuid>
+    <RootNamespace>SHO_GS_LIB</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>sho_gameserver</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <PlatformToolset>v142</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <PlatformToolset>v142</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='debug|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
+    <Import Project="..\rose-next.props" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='release|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.CPP.UpgradeFromVC71.props" />
+    <Import Project="..\rose-next.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.40219.1</_ProjectFileVersion>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='release|Win32'">$(SolutionDir)bin\$(Configuration)\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='release|Win32'">$(SolutionDir)build\$(Configuration)\$(ProjectName)\</IntDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">$(SolutionDir)bin\$(Configuration)\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">$(SolutionDir)build\$(Configuration)\$(ProjectName)\</IntDir>
+    <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">AllRules.ruleset</CodeAnalysisRuleSet>
+    <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='debug|Win32'" />
+    <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='debug|Win32'" />
+    <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='release|Win32'">AllRules.ruleset</CodeAnalysisRuleSet>
+    <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='release|Win32'" />
+    <CodeAnalysisRuleAssemblies Condition="'$(Configuration)|$(Platform)'=='release|Win32'" />
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release|Win32'">
+    <ClCompile>
+      <Optimization>MinSpace</Optimization>
+      <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\common;$(SolutionDir)src\common-server;$(SolutionDir)src\common-server\include;$(ProjectDir)src\srv_common;$(ProjectDir)src\ai_lib;$(SolutionDir)src\lib_util;$(SolutionDir)src\lib_util\include;$(SolutionDir)src\common;$(SolutionDir)src\common\include;$(SolutionDir)src\common\shared;$(SolutionDir)src\Client\Util;$(SolutionDir)src\Client\Common;$(SolutionDir)src\common-lib\include;$(SolutionDir)thirdparty\flatbuffers-1.11.0\include;$(SolutionDir)thirdparty\fmt-6.2.1\include;$(SolutionDir)thirdparty\json-3.7.3\include;$(GeneratedDirCommon);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>__SERVER;__GAMESERVER;Ndebug;WIN32;_LIB;__USE_CHEAT;_PA;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MinimalRebuild>false</MinimalRebuild>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName).pch</PrecompiledHeaderOutputFile>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)vc$(PlatformToolsetVersion).pdb</ProgramDataBaseFileName>
+      <BrowseInformation>true</BrowseInformation>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <debugInformationFormat>ProgramDatabase</debugInformationFormat>
+      <CompileAs>Default</CompileAs>
+      <ShowIncludes>false</ShowIncludes>
+      <MultiProcessorCompilation>false</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>Ndebug;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Culture>0x0412</Culture>
+    </ResourceCompile>
+    <Lib>
+      <OutputFile>$(OutDir)$(TargetName).lib</OutputFile>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <AdditionalDependencies>
+      </AdditionalDependencies>
+      <AdditionalLibraryDirectories>
+      </AdditionalLibraryDirectories>
+    </Lib>
+    <Link>
+      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration);$(SolutionDir)bin\i686-pc-windows-msvc\$(Configuration)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>common.lib;common-server.lib;lib_util.lib;winmm.lib;ntdll.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PreBuildEvent>
+      <Command>
+      </Command>
+    </PreBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\common;$(SolutionDir)src\common-server;$(SolutionDir)src\common-server\include;$(ProjectDir)src\srv_common;$(ProjectDir)src\ai_lib;$(SolutionDir)src\lib_util;$(SolutionDir)src\lib_util\include;$(SolutionDir)src\common;$(SolutionDir)src\common\include;$(SolutionDir)src\common\shared;$(SolutionDir)src\Client\Util;$(SolutionDir)src\Client\Common;$(SolutionDir)src\common-lib\include;$(SolutionDir)thirdparty\flatbuffers-1.11.0\include;$(SolutionDir)thirdparty\fmt-6.2.1\include;$(SolutionDir)thirdparty\json-3.7.3\include;$(GeneratedDirCommon);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>__SERVER;__GAMESERVER;_debug;WIN32;_LIB;__USE_CHEAT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MinimalRebuild>false</MinimalRebuild>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadeddebug</RuntimeLibrary>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName).pch</PrecompiledHeaderOutputFile>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <BrowseInformation>true</BrowseInformation>
+      <WarningLevel>Level3</WarningLevel>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <debugInformationFormat>ProgramDatabase</debugInformationFormat>
+      <CompileAs>Default</CompileAs>
+      <ShowIncludes>false</ShowIncludes>
+      <MultiProcessorCompilation>false</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>_debug;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Culture>0x0412</Culture>
+    </ResourceCompile>
+    <Lib>
+      <OutputFile>$(OutDir)$(TargetName).lib</OutputFile>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <AdditionalDependencies>
+      </AdditionalDependencies>
+      <AdditionalLibraryDirectories>
+      </AdditionalLibraryDirectories>
+    </Lib>
+    <Link>
+      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration);$(SolutionDir)bin\i686-pc-windows-msvc\$(Configuration)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>common.lib;common-server.lib;lib_util.lib;winmm.lib;ntdll.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PreBuildEvent>
+      <Command>
+      </Command>
+    </PreBuildEvent>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

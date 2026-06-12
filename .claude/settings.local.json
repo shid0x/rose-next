@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r \"@\\\\|0x40\\\\|64\" /c/Users/Thomas/Desktop/Rose/rose-next-classic/src/client/interface/externalui/*.cpp)",
+      "Bash(find /c/Users/Thomas/Desktop/Rose/rose-next-classic/src -type f \\\\\\( -name \"*.cpp\" -o -name \"*.h\" \\\\\\) -exec grep -l \"SetType\\\\|TES_\" {} \\\\;)",
+      "Bash(xargs grep:*)",
+      "Bash(python3)",
+      "Bash(grep -E \"\\\\.\\(cpp|h\\)$\")",
+      "Bash(grep -rn \"SetType\\\\|TES_\" /c/Users/Thomas/Desktop/Rose/rose-next-classic/src/client/interface/externalui/*.cpp)",
+      "Bash(grep -rn \"0x40\\\\|\\\\\\\\@\\\\|@ symbol\\\\|at symbol\\\\|special\\\\|punct\" /c/Users/Thomas/Desktop/Rose/rose-next-classic/src/tgamectrl/src/teditbox.cpp)",
+      "Bash(grep -rn \"\\\\\\\\x40\\\\|\\\\\\\\\\(64\\\\\\\\\\)\" /c/Users/Thomas/Desktop/Rose/rose-next-classic/src/tgamectrl/src/teditbox.cpp)"
+    ]
+  }
+}

@@ -1,0 +1,38 @@
+[database]
+connection_string = "postgres://postgres:0809@localhost/rose-next"
+
+[loginserver]
+ip = "127.0.0.1"
+port = 29000
+server_port = 19000
+password = "rose-next"
+log_level = 2
+log_path = "C:/Users/Thomas/Desktop/Rose/rose-next-classic/Exes/log/loginserver.log"
+minimum_access_level = 1
+max_users = 0
+
+[worldserver]
+ip = "127.0.0.1"
+port = 29100
+server_port = 19001
+world_name = "1Rose Next"
+data_dir = "C:/Users/Thomas/Desktop/Rose/rose-next-classic/data"
+clanmark_dir = "C:/Users/Thomas/Desktop/Rose/rose-next-classic/data/clanmark"
+log_level = 2
+log_path = "C:/Users/Thomas/Desktop/Rose/rose-next-classic/Exes/log/worldserver.log"
+
+[gameserver]
+ip = "127.0.0.1"
+port = 29200
+server_name = "Channel 1"
+data_dir = "C:/Users/Thomas/Desktop/Rose/rose-next-classic/data"
+clanmark_dir = "C:/Users/Thomas/Desktop/Rose/rose-next-classic/data/clanmark"
+log_level = 2
+log_path = "C:/Users/Thomas/Desktop/Rose/rose-next-classic/Exes/log/gameserver.log"
+
+[game]
+base_move_speed = 200
+base_attack_power = 70
+base_attack_speed = 35
+base_hit = 80
+base_crit = 0
