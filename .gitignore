@@ -20,7 +20,14 @@
 *.inc
 src/common-lib/include/rose/common/common_interface.h
 src/engine/include/zz_build_count
+# Game data: contents are NOT tracked. Only the folder structure (one
+# .gitkeep per top-level dir) and data/README.md are kept so people know
+# where to place their own data files.
 data/*
+!data/README.md
+!data/*/
+data/*/*
+!data/*/.gitkeep
 Exes/*
 !Exes/server.toml
 /originalfiles/
