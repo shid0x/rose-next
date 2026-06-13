@@ -3374,6 +3374,7 @@ CObjCHAR::Proc(void) {
         Rose::Combat::DamageEvent staleDeathEvent;
         if (m_CombatDamageQueue.pop_stale_lethal(dwCurrentTime,
                 kPendingAuthoritativeDeathTimeoutMs,
+                DEAD_HP,
                 staleDeathEvent)) {
             CObjCHAR* pAtkOBJ = g_pObjMGR->Get_CharOBJ(staleDeathEvent.attacker_id, true);
             LogString(LOG_DEBUG_,

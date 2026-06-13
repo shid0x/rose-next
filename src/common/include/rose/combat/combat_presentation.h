@@ -78,12 +78,12 @@ public:
         return false;
     }
 
-    bool pop_stale_lethal(uint32_t now_ms, uint32_t grace_ms, DamageEvent& out) {
+    bool pop_stale_lethal(uint32_t now_ms, uint32_t grace_ms, int32_t dead_hp, DamageEvent& out) {
         for (auto it = m_events.begin(); it != m_events.end(); ++it) {
             if (it->presentation_kind != DamagePresentationKind::MeleeHitFrame) {
                 continue;
             }
-            if (!it->lethal && it->hp_after > 0) {
+            if (!it->lethal && it->hp_after > dead_hp) {
                 continue;
             }
             if ((now_ms - it->queued_at_ms) < grace_ms) {

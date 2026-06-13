@@ -139,8 +139,9 @@ struct HpHarness {
     }
 
     PresentationResult present_stale_lethal(uint32_t now_ms, uint32_t grace_ms) {
+        static const int kDeadHp = 0;
         DamageEvent e;
-        if (!queue.pop_stale_lethal(now_ms, grace_ms, e)) {
+        if (!queue.pop_stale_lethal(now_ms, grace_ms, kDeadHp, e)) {
             return PresentationResult::NoEvent;
         }
 
