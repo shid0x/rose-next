@@ -102,18 +102,34 @@ This fixes an intermittent skill HP snapback where `UpdateStats.hp` could arrive
 
 Projectile skill classification is shared through `Rose::Combat::is_projectile_presented_skill(skill_type, bullet_no)`: skill types `05/06` are projectile-presented, `03/19` are projectile-presented only when they have a bullet id, and target-bound `09/11/13` are never projectile-presented because their bullet column refers to an effect graphic rather than a tracked projectile.
 
+## Current Solution: Spectator Stale Death Fallback
+
+Two-player testing exposed a spectator-only death presentation failure. Player 2 could receive the server-authoritative lethal event for a monster killed by Player 1, but Player 2's local representation of Player 1 sometimes never consumed that queued event at the expected hit frame. The monster was dead server-side, dealt no real damage, and could not be attacked, but remained visually alive and kept animating on Player 2's client.
+
+The fix keeps hit-frame timing as the primary path and adds a narrow fallback:
+
+1. `DamageEvent` has a client-local `queued_at_ms` timestamp. `CObjCHAR::PushCombatDamageEvent()` stamps it when the event enters `m_CombatDamageQueue`; it is not serialized over the network.
+2. Non-avatar lethal defenders are pre-marked with `m_bDead = true` when the lethal event is queued, matching legacy receive-path behavior.
+3. `CombatPresentationQueue::pop_stale_lethal()` only pops lethal or dead-HP `MeleeHitFrame` events after the 1500 ms grace window. `CObjCHAR::Proc()` uses that helper for non-avatar defenders that are still visibly alive, then runs normal `ApplyPresentedCombatDamage()` so `Dead()` remains the single visual-death chokepoint and the original final-hit digit is preserved.
+4. `ProjectileImpact` deaths are excluded from this generic fallback. They must wait for projectile impact. If projectile creation/impact is explicitly discarded, `DiscardQueuedCombatDamageFromAttacker()` now presents lethal remote defender deaths, while nonlethal projectile discards remain silent and avatar pending-death behavior is unchanged.
+
+This avoids making all lethal packets immediate, which would desynchronize normal hit/projectile presentation, while preventing spectators from being stranded with a visually alive monster that the server has already killed.
+
 ## Files Modified
 
 | File | Changes |
 |------|---------|
+| `src/common/include/rose/combat/combat_presentation.h` | Added client-local `DamageEvent::queued_at_ms` and `CombatPresentationQueue::pop_stale_lethal()` for remote stale melee death recovery |
 | `src/client/cobjchar.h` | Added `m_dwLastHPSyncTime` field, `SetLastHPSyncTime()` setter, `pHPSynced` param on `PopCurrentAttackerDamage()`, `m_iLastMissedHitAttacker` and `m_dwLastMissedHitTime` fields |
-| `src/client/cobjchar.cpp` | Constructor init, sync detection in `PopCurrentAttackerDamage()`, conditional `Apply_DAMAGE()` in `Hitted()` (both branches) with missed-hit recording, missed-hit recovery in `PushDamageToList()`, sync check in `ProcDamageTimeOut()` |
+| `src/client/cobjchar.cpp` | Constructor init, sync detection in `PopCurrentAttackerDamage()`, conditional `Apply_DAMAGE()` in `Hitted()` (both branches) with missed-hit recording, missed-hit recovery in `PushDamageToList()`, sync check in `ProcDamageTimeOut()`, queued lethal timestamping, remote stale melee death fallback, and lethal remote projectile-discard death presentation |
 | `src/client/network/cnetwork.cpp` | `recv_update_stats` uses `SetLastHPSyncTime()` instead of `ClearAllDamage()` |
 | `src/client/network/recvpacket.cpp` | `Recv_gsv_DAMAGE()` dual-index push for pet/cart attacks |
 | `src/sho_gameserver/src/cobjchar.cpp` | `Apply_DAMAGE()` returns `SEND_DAMAGE_TO_TARGET` for misses |
+| `src/tests/combat_presenter/combat_presenter_tests.cpp` | Added stale lethal melee, projectile exclusion, and lethal/nonlethal projectile discard regression coverage |
 
 ## Known Limitations
 
 - **Minor timing mismatch:** Approximately 1 in 6 attacks may show the damage number slightly before the hit animation completes. This occurs when the `UpdateStats` packet arrives and the damage entry gets marked as synced before the animation's hit keyframe fires, causing `Hitted()` to display the digit on a slightly earlier frame. This is low-visibility in normal play and does not affect gameplay correctness.
 - **Late-packet display position:** When the missed-hit recovery fires in `PushDamageToList()`, the damage digit is placed at the character's current position via `CreateImmediateDigitEffect()`, which may differ slightly from where the hit animation occurred. The difference is negligible in practice.
+- **Spectator fallback delay:** A remote monster death whose hit-frame consumer is lost may appear up to ~1.5 s late on spectator clients. This delay is intentional so normal hit-frame and projectile-impact presentation still wins when it arrives correctly.
 - **`RecoverHP()` / `ReviseHP` mechanism is dead code:** The legacy HP correction system (`SetReviseHP`, `RecoverHP`) is never called from the game loop. HP correction relies entirely on the `UpdateStats` packet path.

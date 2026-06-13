@@ -138,6 +138,49 @@ struct HpHarness {
         pending_correction = 0;
     }
 
+    PresentationResult present_stale_lethal(uint32_t now_ms, uint32_t grace_ms) {
+        DamageEvent e;
+        if (!queue.pop_stale_lethal(now_ms, grace_ms, e)) {
+            return PresentationResult::NoEvent;
+        }
+
+        set_authoritative_from_event(e);
+        displayed_damage = std::max(0, e.damage_value);
+        ++displayed_digits;
+
+        if (e.lethal || e.hp_after <= 0) {
+            visible_hp = 0;
+            pending_authoritative_death = false;
+            pending_correction = 0;
+            return PresentationResult::PresentedDeath;
+        }
+
+        return displayed_damage > 0
+            ? PresentationResult::PresentedDamage
+            : PresentationResult::PresentedMiss;
+    }
+
+    PresentationResult discard_from_attacker(uint32_t attacker, bool is_avatar) {
+        DamageEvent e;
+        if (!queue.discard_for_attacker(attacker, &e)) {
+            return PresentationResult::NoEvent;
+        }
+
+        if (!is_avatar && visible_hp > 0 && (e.lethal || e.hp_after <= 0)) {
+            set_authoritative_from_event(e);
+            displayed_damage = std::max(0, e.damage_value);
+            ++displayed_digits;
+            visible_hp = 0;
+            pending_authoritative_death = false;
+            pending_correction = 0;
+            return PresentationResult::PresentedDeath;
+        }
+
+        set_authoritative_from_event(e);
+        defer_if_idle();
+        return CombatPresentationQueue::result_for(e);
+    }
+
 private:
     PresentationResult hit_internal(uint32_t attacker, bool suppress_for_pending_dead_attacker, HpHarness* pending_dead_attacker) {
         DamageEvent e;
@@ -575,6 +618,71 @@ main() {
         expect(player.visible_hp == 0, "mutual death should kill the pending-dead player immediately");
         expect(!player.pending_authoritative_death,
             "mutual death should clear the player's pending death flag");
+    }
+
+    {
+        HpHarness monster;
+        DamageEvent lethal = event(1, 10, 35, 0, true);
+        lethal.queued_at_ms = 1000;
+        monster.queue.push(lethal);
+        expect(monster.present_stale_lethal(2600, 1500) == PresentationResult::PresentedDeath,
+            "stale lethal melee event should present death after grace window");
+        expect(monster.visible_hp == 0, "stale lethal melee fallback should kill the defender");
+        expect(monster.displayed_damage == 35,
+            "stale lethal melee fallback should show the normal final-hit digit");
+    }
+
+    {
+        HpHarness monster;
+        DamageEvent lethal = event(1, 10, 35, 0, true);
+        lethal.queued_at_ms = 1000;
+        monster.queue.push(lethal);
+        expect(monster.present_stale_lethal(2499, 1500) == PresentationResult::NoEvent,
+            "fresh lethal melee event should not present before grace window");
+        expect(monster.visible_hp == 100,
+            "fresh lethal melee event should leave visible HP for the normal hit frame");
+        expect(monster.hit(10) == PresentationResult::PresentedDeath,
+            "fresh lethal melee event should remain queued for hit-frame presentation");
+    }
+
+    {
+        HpHarness monster;
+        DamageEvent projectile = event(1, 10, 35, 0, true);
+        projectile.presentation_kind = DamagePresentationKind::ProjectileImpact;
+        projectile.queued_at_ms = 1000;
+        monster.queue.push(projectile);
+        expect(monster.present_stale_lethal(3000, 1500) == PresentationResult::NoEvent,
+            "stale lethal fallback must not steal projectile-impact deaths");
+        expect(monster.visible_hp == 100,
+            "projectile lethal event should wait for projectile impact");
+        expect(monster.hit(10) == PresentationResult::PresentedDeath,
+            "projectile lethal event should remain queued for its impact consumer");
+    }
+
+    {
+        HpHarness monster;
+        DamageEvent projectile = event(1, 10, 35, 0, true);
+        projectile.presentation_kind = DamagePresentationKind::ProjectileImpact;
+        monster.queue.push(projectile);
+        expect(monster.discard_from_attacker(10, false) == PresentationResult::PresentedDeath,
+            "lethal projectile discard should kill a remote defender");
+        expect(monster.visible_hp == 0,
+            "remote defender should not stay visually alive after lethal projectile discard");
+        expect(monster.displayed_damage == 35,
+            "lethal projectile discard should show the normal final-hit digit");
+    }
+
+    {
+        HpHarness monster;
+        DamageEvent projectile = event(1, 10, 8, 92);
+        projectile.presentation_kind = DamagePresentationKind::ProjectileImpact;
+        monster.queue.push(projectile);
+        expect(monster.discard_from_attacker(10, false) == PresentationResult::PresentedDamage,
+            "nonlethal projectile discard should not present feedback");
+        expect(monster.visible_hp == 100,
+            "nonlethal projectile discard should not move visible HP");
+        expect(monster.displayed_digits == 0,
+            "nonlethal projectile discard should not create digits");
     }
 
     {

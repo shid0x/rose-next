@@ -2005,15 +2005,21 @@ CObjCHAR::ProcEffectedSkill(bool bProjectileImpact,
 
 void
 CObjCHAR::PushCombatDamageEvent(const Rose::Combat::DamageEvent& event) {
-    m_CombatDamageQueue.push(event);
+    Rose::Combat::DamageEvent queuedEvent = event;
+    queuedEvent.queued_at_ms = g_GameDATA.GetGameTime();
+    m_CombatDamageQueue.push(queuedEvent);
 
     // The server has already committed a lethal hit on the local avatar. If the
     // presentation animation is destroyed before its hit frame (dropped swing
     // command, lost projectile, despawned attacker), no future event will fold
     // this death in -- arm the Proc() pending-death backstop now. Normal hit
     // frame presentation clears the flag well before the timeout fires.
-    if (this == g_pAVATAR && (event.lethal || event.hp_after <= DEAD_HP)) {
-        MarkPendingAuthoritativeDeath("lethal event queued");
+    if (queuedEvent.lethal || queuedEvent.hp_after <= DEAD_HP) {
+        if (this == g_pAVATAR) {
+            MarkPendingAuthoritativeDeath("lethal event queued");
+        } else {
+            m_bDead = true;
+        }
     }
 }
 
@@ -2391,6 +2397,23 @@ CObjCHAR::DiscardQueuedCombatDamageFromAttacker(CObjCHAR* pAtkOBJ) {
     const int iAttacker = pAtkOBJ ? pAtkOBJ->Get_INDEX() : 0;
     if (!m_CombatDamageQueue.discard_for_attacker(iAttacker, &event)) {
         return Rose::Combat::PresentationResult::NoEvent;
+    }
+
+    if (this != g_pAVATAR
+        && this->Get_HP() > DEAD_HP
+        && (event.lethal || event.hp_after <= DEAD_HP)) {
+        LogString(LOG_DEBUG_,
+            "CombatTrace lethal queued projectile damage presented on discard: attacker %d target %d kind %d damage %d hp_after %d event %u seq %u\n",
+            iAttacker,
+            this->Get_INDEX(),
+            static_cast<int>(event.presentation_kind),
+            event.damage_value,
+            event.hp_after,
+            event.event_id,
+            event.defender_seq);
+        ApplyPresentedCombatDamage(pAtkOBJ, event);
+        CreateImmediateDigitEffect(event.raw_damage);
+        return Rose::Combat::CombatPresentationQueue::result_for(event);
     }
 
     SetAuthoritativeHPFromDamageEvent(event);
@@ -3345,6 +3368,26 @@ CObjCHAR::Proc(void) {
         && (dwCurrentTime - m_dwPendingAuthoritativeDeathTime)
             >= kPendingAuthoritativeDeathTimeoutMs) {
         PresentPendingAuthoritativeDeath(NULL, "pending death timeout");
+    }
+
+    if (this != g_pAVATAR && this->Get_HP() > DEAD_HP) {
+        Rose::Combat::DamageEvent staleDeathEvent;
+        if (m_CombatDamageQueue.pop_stale_lethal(dwCurrentTime,
+                kPendingAuthoritativeDeathTimeoutMs,
+                staleDeathEvent)) {
+            CObjCHAR* pAtkOBJ = g_pObjMGR->Get_CharOBJ(staleDeathEvent.attacker_id, true);
+            LogString(LOG_DEBUG_,
+                "CombatTrace stale lethal melee event presented: attacker %d target %d event %u seq %u damage %d hp_after %d queue %d\n",
+                staleDeathEvent.attacker_id,
+                this->Get_INDEX(),
+                staleDeathEvent.event_id,
+                staleDeathEvent.defender_seq,
+                staleDeathEvent.damage_value,
+                staleDeathEvent.hp_after,
+                static_cast<int>(m_CombatDamageQueue.size()));
+            ApplyPresentedCombatDamage(pAtkOBJ, staleDeathEvent);
+            CreateImmediateDigitEffect(staleDeathEvent.raw_damage);
+        }
     }
 
     g_pObjMGR->AddViewObject(m_nIndex);

@@ -25,6 +25,7 @@ struct DamageEvent {
     uint32_t defender_seq = 0;
     uint32_t attacker_id = 0;
     uint32_t defender_id = 0;
+    uint32_t queued_at_ms = 0;
     uint32_t raw_damage = 0;
     int32_t damage_value = 0;
     int32_t hp_after = 0;
@@ -73,6 +74,25 @@ public:
                 m_events.erase(it);
                 return true;
             }
+        }
+        return false;
+    }
+
+    bool pop_stale_lethal(uint32_t now_ms, uint32_t grace_ms, DamageEvent& out) {
+        for (auto it = m_events.begin(); it != m_events.end(); ++it) {
+            if (it->presentation_kind != DamagePresentationKind::MeleeHitFrame) {
+                continue;
+            }
+            if (!it->lethal && it->hp_after > 0) {
+                continue;
+            }
+            if ((now_ms - it->queued_at_ms) < grace_ms) {
+                continue;
+            }
+
+            out = *it;
+            m_events.erase(it);
+            return true;
         }
         return false;
     }
