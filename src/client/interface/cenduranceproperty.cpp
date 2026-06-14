@@ -1039,6 +1039,8 @@ CEnduranceSkill::CreateEnduranceEntity(CObjCHAR* pObjCHAR,
 
         /// 수면
         case ING_SLEEP: {
+            m_pObjCHAR->CancelInterruptedCombatSwingPresentation("sleep");
+
             /// 이미 캐스팅이 시작되었고, 결과를 받지 못ㅎㅆ다면.. 캐스팅 취소....
             if (m_pObjCHAR->m_bCastingSTART && m_pObjCHAR->bCanActionActiveSkill()) {
                 m_pObjCHAR->PushCommandStop();
@@ -1051,6 +1053,8 @@ CEnduranceSkill::CreateEnduranceEntity(CObjCHAR* pObjCHAR,
 
         /// 기절
         case ING_FAINTING: {
+            m_pObjCHAR->CancelInterruptedCombatSwingPresentation("faint");
+
             /// 이미 캐스팅이 시작되었고, 결과를 받지 못ㅎㅆ다면.. 캐스팅 취소....
             if (m_pObjCHAR->m_bCastingSTART && m_pObjCHAR->bCanActionActiveSkill()) {
                 m_pObjCHAR->PushCommandStop();

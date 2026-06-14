@@ -201,9 +201,64 @@ CObjCHAR::StartConfirmedCombatSwing(int iServerTarget,
     CObjCHAR* pTarget = g_pObjMGR->Get_ClientCharOBJ(iServerTarget, true);
     if (pTarget) {
         pTarget->PushCombatDamageEvent(event);
+        m_dwPendingCombatSwingEventId = event.event_id;
+        m_iPendingCombatSwingDefenderIndex = pTarget->Get_INDEX();
+        m_bPendingCombatSwingProjectile =
+            event.presentation_kind == Rose::Combat::DamagePresentationKind::ProjectileImpact;
+        m_bPendingCombatSwingProjectileSpawned = false;
+    } else {
+        ClearPendingCombatSwingPresentation();
     }
 
     this->SetCMD_ATTACK(iServerTarget, wSrvDIST, PosGOTO);
+}
+
+void
+CObjCHAR::MarkPendingCombatSwingProjectileSpawned() {
+    if (m_dwPendingCombatSwingEventId == 0 || !m_bPendingCombatSwingProjectile) {
+        return;
+    }
+
+    m_bPendingCombatSwingProjectileSpawned = true;
+}
+
+void
+CObjCHAR::ClearPendingCombatSwingPresentation(uint32_t eventId) {
+    if (eventId != 0 && m_dwPendingCombatSwingEventId != eventId) {
+        return;
+    }
+
+    m_dwPendingCombatSwingEventId = 0;
+    m_iPendingCombatSwingDefenderIndex = 0;
+    m_bPendingCombatSwingProjectile = false;
+    m_bPendingCombatSwingProjectileSpawned = false;
+}
+
+void
+CObjCHAR::CancelInterruptedCombatSwingPresentation(const char* reason) {
+    if (m_dwPendingCombatSwingEventId == 0 || m_iPendingCombatSwingDefenderIndex == 0) {
+        return;
+    }
+
+    if (m_bPendingCombatSwingProjectile && m_bPendingCombatSwingProjectileSpawned) {
+        LogString(LOG_DEBUG_,
+            "CombatTrace interrupted swing kept for spawned projectile: attacker %d defender %d event %u reason %s\n",
+            this->Get_INDEX(),
+            m_iPendingCombatSwingDefenderIndex,
+            m_dwPendingCombatSwingEventId,
+            reason ? reason : "");
+        return;
+    }
+
+    const uint32_t eventId = m_dwPendingCombatSwingEventId;
+    CObjCHAR* pDefender = g_pObjMGR->Get_CharOBJ(m_iPendingCombatSwingDefenderIndex, true);
+    ClearPendingCombatSwingPresentation();
+
+    if (!pDefender) {
+        return;
+    }
+
+    pDefender->DiscardQueuedCombatDamageEvent(eventId, this, reason);
 }
 
 //--------------------------------------------------------------------------------
@@ -285,6 +340,10 @@ CObjCHAR::CObjCHAR(): m_EndurancePack(this), m_ChangeActionMode(this), m_ObjVibr
     m_iPendingCombatHPCorrection = 0;
     m_bPendingAuthoritativeDeath = false;
     m_dwPendingAuthoritativeDeathTime = 0;
+    m_dwPendingCombatSwingEventId = 0;
+    m_iPendingCombatSwingDefenderIndex = 0;
+    m_bPendingCombatSwingProjectile = false;
+    m_bPendingCombatSwingProjectileSpawned = false;
     m_iPendingMountedAttackTarget = 0;
     m_dwPendingMountedAttackTime = 0;
 
@@ -2454,6 +2513,9 @@ CObjCHAR::PresentQueuedCombatDamageFromAttacker(CObjCHAR* pAtkOBJ) {
         static_cast<int>(event.presentation_kind),
         event.damage_value,
         event.hp_after);
+    if (pAtkOBJ) {
+        pAtkOBJ->ClearPendingCombatSwingPresentation(event.event_id);
+    }
     ApplyPresentedCombatDamage(pAtkOBJ, event);
     CreateImmediateDigitEffect(event.raw_damage);
     return Rose::Combat::CombatPresentationQueue::result_for(event);
@@ -2465,6 +2527,10 @@ CObjCHAR::DiscardQueuedCombatDamageFromAttacker(CObjCHAR* pAtkOBJ) {
     const int iAttacker = pAtkOBJ ? pAtkOBJ->Get_INDEX() : 0;
     if (!m_CombatDamageQueue.discard_for_attacker(iAttacker, &event)) {
         return Rose::Combat::PresentationResult::NoEvent;
+    }
+
+    if (pAtkOBJ) {
+        pAtkOBJ->ClearPendingCombatSwingPresentation(event.event_id);
     }
 
     if (this != g_pAVATAR
@@ -2495,6 +2561,75 @@ CObjCHAR::DiscardQueuedCombatDamageFromAttacker(CObjCHAR* pAtkOBJ) {
         event.hp_after,
         event.event_id,
         event.defender_seq);
+    return Rose::Combat::CombatPresentationQueue::result_for(event);
+}
+
+Rose::Combat::PresentationResult
+CObjCHAR::DiscardQueuedCombatDamageEvent(uint32_t eventId, CObjCHAR* pAtkOBJ, const char* reason) {
+    Rose::Combat::DamageEvent event;
+    if (!m_CombatDamageQueue.discard_event(eventId, &event)) {
+        LogString(LOG_DEBUG_,
+            "CombatTrace queued damage discard missed event: attacker %d target %d event %u reason %s queue %d\n",
+            pAtkOBJ ? pAtkOBJ->Get_INDEX() : 0,
+            this->Get_INDEX(),
+            eventId,
+            reason ? reason : "",
+            static_cast<int>(m_CombatDamageQueue.size()));
+        return Rose::Combat::PresentationResult::NoEvent;
+    }
+
+    if (pAtkOBJ) {
+        pAtkOBJ->ClearPendingCombatSwingPresentation(event.event_id);
+    }
+
+    if (this == g_pAVATAR && (event.lethal || event.hp_after <= DEAD_HP)) {
+        SetAuthoritativeHPFromDamageEvent(event);
+        MarkPendingAuthoritativeDeath(reason ? reason : "queued lethal damage discarded");
+        PresentPendingAuthoritativeDeath(pAtkOBJ,
+            reason ? reason : "queued lethal damage discarded");
+        LogString(LOG_DEBUG_,
+            "CombatTrace lethal avatar queued damage presented on exact discard: attacker %d target %d kind %d damage %d hp_after %d event %u seq %u reason %s\n",
+            pAtkOBJ ? pAtkOBJ->Get_INDEX() : 0,
+            this->Get_INDEX(),
+            static_cast<int>(event.presentation_kind),
+            event.damage_value,
+            event.hp_after,
+            event.event_id,
+            event.defender_seq,
+            reason ? reason : "");
+        return Rose::Combat::CombatPresentationQueue::result_for(event);
+    }
+
+    if (this != g_pAVATAR
+        && this->Get_HP() > DEAD_HP
+        && (event.lethal || event.hp_after <= DEAD_HP)) {
+        LogString(LOG_DEBUG_,
+            "CombatTrace lethal queued damage presented on exact discard: attacker %d target %d kind %d damage %d hp_after %d event %u seq %u reason %s\n",
+            pAtkOBJ ? pAtkOBJ->Get_INDEX() : 0,
+            this->Get_INDEX(),
+            static_cast<int>(event.presentation_kind),
+            event.damage_value,
+            event.hp_after,
+            event.event_id,
+            event.defender_seq,
+            reason ? reason : "");
+        ApplyPresentedCombatDamage(pAtkOBJ, event);
+        CreateImmediateDigitEffect(event.raw_damage);
+        return Rose::Combat::CombatPresentationQueue::result_for(event);
+    }
+
+    SetAuthoritativeHPFromDamageEvent(event);
+    DeferCombatHPDriftIfIdle(reason ? reason : "queued damage discarded");
+    LogString(LOG_DEBUG_,
+        "CombatTrace queued damage discarded without presentation: attacker %d target %d kind %d damage %d hp_after %d event %u seq %u reason %s\n",
+        pAtkOBJ ? pAtkOBJ->Get_INDEX() : 0,
+        this->Get_INDEX(),
+        static_cast<int>(event.presentation_kind),
+        event.damage_value,
+        event.hp_after,
+        event.event_id,
+        event.defender_seq,
+        reason ? reason : "");
     return Rose::Combat::CombatPresentationQueue::result_for(event);
 }
 
@@ -2867,6 +3002,8 @@ CObjCHAR::Hitted(CObjCHAR* pFromOBJ,
         if (presentation == Rose::Combat::PresentationResult::NoEvent) {
             return true;
         }
+
+        pFromOBJ->ClearPendingCombatSwingPresentation(damageEvent.event_id);
 
         const bool bSuppressOutgoingForPendingDeath =
             ShouldSuppressOutgoingDamageForPendingDeath(pFromOBJ);

@@ -127,17 +127,33 @@ The fix keeps hit-frame timing as the primary path and adds a narrow fallback:
 
 This avoids making all lethal packets immediate, which would desynchronize normal hit/projectile presentation, while preventing spectators from being stranded with a visually alive monster that the server has already killed.
 
+## Current Solution: Hard-Control Interrupted Projectile Swings
+
+Projectile normal attacks are especially easy to strand because the server applies HP at swing start, while the client waits for a later bullet impact. A slow projectile monster can start a confirmed attack, queue a `ProjectileImpact` event on the avatar, then get stunned before its client motion reaches the projectile spawn frame. Without cleanup, that stale event sits at the front of the avatar queue. The next real hit pops the old event, the new event remains queued, and the local HP bar stays one attack behind because checkpoint folding is gated while pending damage remains.
+
+The fix treats sleep/faint as an explicit presentation interruption:
+
+1. `StartConfirmedCombatSwing()` records the attacker's current server event id, defender, and whether the event is projectile-presented.
+2. Successful normal projectile creation in `ActionBow`, `ActionGun`, and pet weapon fire marks that pending swing as projectile-spawned. Once a bullet exists, the queued event stays owned by the real impact callback.
+3. Sleep/faint status creation calls `CancelInterruptedCombatSwingPresentation()` before `SetCMD_STOP()`. If no projectile was spawned, the defender discards exactly that queued event through `CombatPresentationQueue::discard_event()`.
+4. `DiscardQueuedCombatDamageEvent()` keeps digits honest: nonlethal avatar damage silently lowers authoritative shadow HP and stages drift for the next real hit; lethal avatar damage immediately runs the pending-death path so the player is not left alive-client / dead-server; lethal remote defender damage still presents death.
+5. `Hitted()` and discard paths clear the attacker's pending swing state by event id, so a later faint cannot keep poking at an already-consumed event.
+
+This is deliberately narrower than reviving timeout or missed-hit recovery. It only acts when the client knows a specific server-authored swing was interrupted before its visual consumer could exist.
+
 ## Files Modified
 
 | File | Changes |
 |------|---------|
-| `src/common/include/rose/combat/combat_presentation.h` | Added client-local `DamageEvent::queued_at_ms`, `DamageEvent::arrival_seq`, and `CombatPresentationQueue::pop_stale_lethal()` for remote stale melee death recovery |
-| `src/client/cobjchar.h` | Added `m_dwLastHPSyncTime` field, `SetLastHPSyncTime()` setter, `pHPSynced` param on `PopCurrentAttackerDamage()`, `m_iLastMissedHitAttacker` and `m_dwLastMissedHitTime` fields; heal-in-flight `arrival_seq` skill-payload field, `NextHPAuthoritySeq()`, `m_dwLastAuthoritativeSyncSeq`, and `ConvertDamageOfSkillToDamage(..., arrivalSeq)` |
-| `src/client/cobjchar.cpp` | Constructor init, sync detection in `PopCurrentAttackerDamage()`, conditional `Apply_DAMAGE()` in `Hitted()` (both branches) with missed-hit recording, missed-hit recovery in `PushDamageToList()`, sync check in `ProcDamageTimeOut()`, queued lethal timestamping, remote stale melee death fallback, lethal remote projectile-discard death presentation, heal-in-flight arrival-order guard, and the stale-healed visible floor for hits still in flight |
+| `src/common/include/rose/combat/combat_presentation.h` | Added client-local `DamageEvent::queued_at_ms`, `DamageEvent::arrival_seq`, `CombatPresentationQueue::pop_stale_lethal()` for remote stale melee death recovery, and `CombatPresentationQueue::discard_event()` for exact interrupted-swing cleanup |
+| `src/client/cobjchar.h` | Added `m_dwLastHPSyncTime` field, `SetLastHPSyncTime()` setter, `pHPSynced` param on `PopCurrentAttackerDamage()`, `m_iLastMissedHitAttacker` and `m_dwLastMissedHitTime` fields; heal-in-flight `arrival_seq` skill-payload field, `NextHPAuthoritySeq()`, `m_dwLastAuthoritativeSyncSeq`, `ConvertDamageOfSkillToDamage(..., arrivalSeq)`, and pending confirmed-swing tracking for hard-control interruption |
+| `src/client/cobjchar.cpp` | Constructor init, sync detection in `PopCurrentAttackerDamage()`, conditional `Apply_DAMAGE()` in `Hitted()` (both branches) with missed-hit recording, missed-hit recovery in `PushDamageToList()`, sync check in `ProcDamageTimeOut()`, queued lethal timestamping, remote stale melee death fallback, lethal remote projectile-discard death presentation, heal-in-flight arrival-order guard, stale-healed visible floor for hits still in flight, exact interrupted-swing discard, and lethal avatar hard-control death presentation |
+| `src/client/cobjchar_actionframe.cpp` | Marks confirmed projectile normal swings once their bow/gun/pet projectile actually spawns, so later hard-control stops do not steal in-flight projectile damage |
+| `src/client/interface/cenduranceproperty.cpp` | Sleep/faint status creation cancels an unspawned confirmed swing presentation before stopping the attacker |
 | `src/client/network/cnetwork.cpp` | `recv_update_stats` uses `SetLastHPSyncTime()` instead of `ClearAllDamage()` |
 | `src/client/network/recvpacket.cpp` | `Recv_gsv_DAMAGE()` dual-index push for pet/cart attacks |
 | `src/sho_gameserver/src/cobjchar.cpp` | `Apply_DAMAGE()` returns `SEND_DAMAGE_TO_TARGET` for misses |
-| `src/tests/combat_presenter/combat_presenter_tests.cpp` | Added stale lethal melee, projectile exclusion, lethal/nonlethal projectile discard, heal-in-flight checkpoint, and multi-hit-in-flight stale-healed floor regression coverage |
+| `src/tests/combat_presenter/combat_presenter_tests.cpp` | Added stale lethal melee, projectile exclusion, lethal/nonlethal projectile discard, heal-in-flight checkpoint, multi-hit-in-flight stale-healed floor, and hard-control interrupted projectile regression coverage |
 
 ## Known Limitations
 
@@ -145,4 +161,5 @@ This avoids making all lethal packets immediate, which would desynchronize norma
 - **Late-packet display position:** When the missed-hit recovery fires in `PushDamageToList()`, the damage digit is placed at the character's current position via `CreateImmediateDigitEffect()`, which may differ slightly from where the hit animation occurred. The difference is negligible in practice.
 - **Spectator fallback delay:** A remote monster death whose hit-frame consumer is lost may appear up to ~1.5 s late on spectator clients. This delay is intentional so normal hit-frame and projectile-impact presentation still wins when it arrives correctly.
 - **Sub-frame heal/checkpoint race (~0.1 s):** The arrival-order guard and stale-healed floor resolve the bar within the same `ApplyPresentedCombatDamage` call, but if the stale checkpoint presents one or two frames *before* the heal `UpdateStats` actually arrives, the bar can still flash down briefly until the sync lands and a later reconcile raises it. The window is bounded to a couple of frames and the digit is always correct. A purely cosmetic eased/"rolling" HP bar at the draw layer (`cnamebox.cpp` / avatar gauge, smoothing the drawn fill toward `Get_HP()` without touching authoritative HP, digits, or death) would absorb this residual without changing combat authority.
+- **Single pending normal swing per attacker:** hard-control interruption tracks one current confirmed normal swing on the attacker. This matches the slow projectile-monster failure mode; an exotic fast attacker that receives another confirmed swing before the previous one can present would only exact-track the newest swing.
 - **`RecoverHP()` / `ReviseHP` mechanism is dead code:** The legacy HP correction system (`SetReviseHP`, `RecoverHP`) is never called from the game loop. HP correction relies entirely on the `UpdateStats` packet path.

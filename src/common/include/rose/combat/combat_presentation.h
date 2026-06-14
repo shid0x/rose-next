@@ -72,6 +72,25 @@ public:
         return true;
     }
 
+    bool discard_event(uint32_t event_id, DamageEvent* out = nullptr) {
+        if (event_id == 0) {
+            return false;
+        }
+
+        for (auto it = m_events.begin(); it != m_events.end(); ++it) {
+            if (it->event_id != event_id) {
+                continue;
+            }
+
+            if (out) {
+                *out = *it;
+            }
+            m_events.erase(it);
+            return true;
+        }
+        return false;
+    }
+
     bool pop_immediate(DamageEvent& out) {
         for (auto it = m_events.begin(); it != m_events.end(); ++it) {
             if (it->presentation_kind != DamagePresentationKind::MeleeHitFrame

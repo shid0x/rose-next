@@ -33,10 +33,14 @@ CObjCHAR::FireBulletWithPetWeapon(CObjCHAR* pTarget) {
 
             if (!g_pBltMGR->Add_BULLET(this, pTarget, iBulletNO, true, btPoint)) {
                 pTarget->DiscardQueuedCombatDamageFromAttacker(this);
+            } else {
+                MarkPendingCombatSwingProjectileSpawned();
             }
 #else
             if (!g_pBltMGR->Add_BULLET(this, pTarget, iBulletNO, true, 8)) {
                 pTarget->DiscardQueuedCombatDamageFromAttacker(this);
+            } else {
+                MarkPendingCombatSwingProjectileSpawned();
             }
 #endif
         }
@@ -365,8 +369,11 @@ CObjCHAR::ActionBow(int iActionIDX) {
                 if (pTarget && iBulletIDX) {
                     if (!g_pBltMGR->Add_BULLET(this, pTarget, iBulletIDX)) {
                         pTarget->DiscardQueuedCombatDamageFromAttacker(this);
-                    } else if (IsA(OBJ_USER)) {
-                        g_pAVATAR->SubActiveBulletQuantity();
+                    } else {
+                        MarkPendingCombatSwingProjectileSpawned();
+                        if (IsA(OBJ_USER)) {
+                            g_pAVATAR->SubActiveBulletQuantity();
+                        }
                     }
                 }
 
@@ -435,8 +442,11 @@ CObjCHAR::ActionGun(int iActionIDX) {
                 if (pTarget && iBulletIDX) {
                     if (!g_pBltMGR->Add_BULLET(this, pTarget, iBulletIDX)) {
                         pTarget->DiscardQueuedCombatDamageFromAttacker(this);
-                    } else if (IsA(OBJ_USER)) {
-                        g_pAVATAR->SubActiveBulletQuantity();
+                    } else {
+                        MarkPendingCombatSwingProjectileSpawned();
+                        if (IsA(OBJ_USER)) {
+                            g_pAVATAR->SubActiveBulletQuantity();
+                        }
                     }
                 }
 

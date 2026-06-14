@@ -192,6 +192,34 @@ struct HpHarness {
         return CombatPresentationQueue::result_for(e);
     }
 
+    PresentationResult discard_event(uint32_t event_id, bool is_avatar) {
+        DamageEvent e;
+        if (!queue.discard_event(event_id, &e)) {
+            return PresentationResult::NoEvent;
+        }
+
+        if (is_avatar && (e.lethal || e.hp_after <= 0)) {
+            set_authoritative_from_event(e);
+            pending_authoritative_death = true;
+            present_pending_authoritative_death();
+            return PresentationResult::PresentedDeath;
+        }
+
+        if (!is_avatar && visible_hp > 0 && (e.lethal || e.hp_after <= 0)) {
+            set_authoritative_from_event(e);
+            displayed_damage = std::max(0, e.damage_value);
+            ++displayed_digits;
+            visible_hp = 0;
+            pending_authoritative_death = false;
+            pending_correction = 0;
+            return PresentationResult::PresentedDeath;
+        }
+
+        set_authoritative_from_event(e);
+        defer_if_idle();
+        return CombatPresentationQueue::result_for(e);
+    }
+
 private:
     PresentationResult hit_internal(uint32_t attacker, bool suppress_for_pending_dead_attacker, HpHarness* pending_dead_attacker) {
         DamageEvent e;
@@ -782,6 +810,49 @@ main() {
     }
 
     {
+        HpHarness player;
+        DamageEvent interrupted = event(1, 10, 12, 88);
+        interrupted.presentation_kind = DamagePresentationKind::ProjectileImpact;
+        player.queue.push(interrupted);
+
+        expect(player.discard_event(1, true) == PresentationResult::PresentedDamage,
+            "hard-control interruption should discard the exact orphaned projectile swing event");
+        expect(player.visible_hp == 100,
+            "interrupted projectile discard should not show a phantom HP drop");
+        expect(player.pending_correction == 12,
+            "interrupted projectile discard should stage the server-applied HP drift");
+
+        DamageEvent next = event(2, 10, 8, 80);
+        next.presentation_kind = DamagePresentationKind::ProjectileImpact;
+        player.queue.push(next);
+
+        expect(player.hit(10) == PresentationResult::PresentedDamage,
+            "next projectile impact should consume its own event, not the interrupted one");
+        expect(player.displayed_damage == 8,
+            "next projectile impact should show only the new hit digit");
+        expect(player.visible_hp == 80,
+            "next projectile impact should fold the interrupted server HP drift");
+        expect(!player.queue.has_pending_damage(),
+            "discarded interrupted swing must not leave the avatar one attack behind");
+    }
+
+    {
+        HpHarness player;
+        DamageEvent lethal = event(1, 10, 100, 0, true);
+        lethal.presentation_kind = DamagePresentationKind::ProjectileImpact;
+        player.queue.push(lethal);
+
+        expect(player.discard_event(1, true) == PresentationResult::PresentedDeath,
+            "lethal hard-control interruption should present avatar death immediately");
+        expect(player.visible_hp == 0,
+            "lethal interrupted projectile discard should not strand the avatar alive-client");
+        expect(!player.pending_authoritative_death,
+            "immediate lethal discard presentation should clear pending death");
+        expect(player.pending_correction == 0,
+            "lethal interrupted projectile discard should not leave HP drift pending");
+    }
+
+    {
         CombatPresentationQueue q;
         DamageEvent e = event(1, 0, 8, 92);
         e.presentation_kind = DamagePresentationKind::MissingAttacker;
@@ -824,6 +895,31 @@ main() {
         DamageEvent out;
         expect(!q.pop_for_attacker(10, out), "discarded projectile must not present later");
         expect(!q.has_pending_damage(), "discarded projectile must not block deferred correction");
+    }
+
+    {
+        CombatPresentationQueue q;
+        DamageEvent old_projectile = event(1, 10, 8, 92);
+        old_projectile.presentation_kind = DamagePresentationKind::ProjectileImpact;
+        q.push(old_projectile);
+
+        DamageEvent interrupted = event(2, 10, 6, 86);
+        interrupted.presentation_kind = DamagePresentationKind::ProjectileImpact;
+        q.push(interrupted);
+
+        DamageEvent discarded;
+        expect(q.discard_event(2, &discarded),
+            "hard-control cancellation should discard the interrupted exact event id");
+        expect(discarded.event_id == 2,
+            "exact discard should return the interrupted event");
+
+        DamageEvent out;
+        expect(q.pop_for_attacker(10, out),
+            "older spawned projectile from the same attacker should remain queued");
+        expect(out.event_id == 1,
+            "exact discard must not steal another projectile from the same attacker");
+        expect(!q.has_pending_damage(),
+            "all projectile damage should be consumed after exact discard plus real impact");
     }
 
     {

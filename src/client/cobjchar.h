@@ -306,6 +306,9 @@ public:
         WORD wSrvDIST,
         const D3DVECTOR& PosGOTO,
         const Rose::Combat::DamageEvent& event);
+    void MarkPendingCombatSwingProjectileSpawned();
+    void ClearPendingCombatSwingPresentation(uint32_t eventId = 0);
+    void CancelInterruptedCombatSwingPresentation(const char* reason);
     /*override*/ bool Attack_START(CObjCHAR* pTarget);
     /*override*/ bool Skill_START(CObjCHAR* pTarget);
     /*override*/ bool Casting_START(CObjCHAR* pTarget);
@@ -494,6 +497,9 @@ public:
     Rose::Combat::PresentationResult PresentImmediateCombatDamage(CObjCHAR* pAtkOBJ);
     Rose::Combat::PresentationResult PresentQueuedCombatDamageFromAttacker(CObjCHAR* pAtkOBJ);
     Rose::Combat::PresentationResult DiscardQueuedCombatDamageFromAttacker(CObjCHAR* pAtkOBJ);
+    Rose::Combat::PresentationResult DiscardQueuedCombatDamageEvent(uint32_t eventId,
+        CObjCHAR* pAtkOBJ,
+        const char* reason);
     /// Drain every combat event this attacker queued on us that can no longer be
     /// presented (attacker died before its hit frame). Folds the lost HP into the
     /// reconciliation drift so the next presented hit absorbs it silently.
@@ -820,6 +826,10 @@ protected:
     int m_iPendingCombatHPCorrection;
     bool m_bPendingAuthoritativeDeath;
     DWORD m_dwPendingAuthoritativeDeathTime; /// Tick when pending authoritative death was first flagged (0 = not pending). Backstop timeout source.
+    uint32_t m_dwPendingCombatSwingEventId;
+    int m_iPendingCombatSwingDefenderIndex;
+    bool m_bPendingCombatSwingProjectile;
+    bool m_bPendingCombatSwingProjectileSpawned;
     int m_AruaAddMoveSpeed; /// 아루아 여신상태 일경우 증가되는 이동속도
     int m_iPendingMountedAttackTarget; /// Pending mounted attack target while command propagation catches up
     DWORD m_dwPendingMountedAttackTime; /// Timestamp of pending mounted attack
