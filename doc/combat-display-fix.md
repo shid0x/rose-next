@@ -102,6 +102,18 @@ This fixes an intermittent skill HP snapback where `UpdateStats.hp` could arrive
 
 Projectile skill classification is shared through `Rose::Combat::is_projectile_presented_skill(skill_type, bullet_no)`: skill types `05/06` are projectile-presented, `03/19` are projectile-presented only when they have a bullet id, and target-bound `09/11/13` are never projectile-presented because their bullet column refers to an effect graphic rather than a tracked projectile.
 
+## Current Solution: Heal-in-Flight Checkpoint Staleness
+
+`DamageEvent.hp_after` is an *absolute* checkpoint — the authoritative HP at the instant the server applied the hit. But presentation is deferred to the animation/impact frame, and a heal / potion / regen `UpdateStats` (or `GSV_SET_HPnMP`) sync can arrive on the same TCP game socket during that window, raising HP above the checkpoint. Presenting the hit would then drop the bar to the stale (lower) checkpoint and snap it back up on the next sync. This is most visible when a pot heals to full while a monster's skill is mid-charge.
+
+Two layers handle it:
+
+1. **Arrival-order guard.** `DamageEvent.arrival_seq` is a client-local monotonic stamp captured at packet *receive* via `CObjCHAR::NextHPAuthoritySeq()` — in `PushEffectedSkillToList` for deferred skills so the source-packet order survives `ConvertDamageOfSkillToDamage`, and in `PushCombatDamageEvent` for immediate paths. `Reconcile_HP()` stamps `m_dwLastAuthoritativeSyncSeq` on every authoritative sync. In `ApplyPresentedCombatDamage`, the checkpoint is treated as stale-healed when `m_dwLastAuthoritativeSyncSeq > event.arrival_seq && m_iAuthoritativeHP > event.hp_after`. The presenter then honors the fresher authoritative HP instead of the stale checkpoint; the digit still shows the full `damage_value`. The guard never fires for normal hits (no later sync) or when the later sync is *lower* (more damage — handled by the existing checkpoint fold), so single-socket TCP arrival order is the only ordering assumption. `arrival_seq` is client-local and is not serialized.
+
+2. **Visible floor with hits still in flight.** The overshoot-clamp that raises the bar to the fresher authoritative HP only runs when `m_CombatDamageQueue` is otherwise empty — the checkpoint fold is gated on `!has_pending_damage()` to avoid double-applying corrections across multiple in-flight hits. With another hit still queued (a multi-hit skill, or a melee swing queued alongside the skill) that block is skipped, so a stale-healed checkpoint would still dip the bar by the digit and snap back up on the next reconcile. After the guard proves the checkpoint is stale-healed, `ApplyPresentedCombatDamage` floors the visible bar at `min(visibleBefore, m_iAuthoritativeHP)` regardless of queue state. The floor is bounded by `visibleBefore` so a damage presentation never visibly heals, the digit is unchanged, and lethal hits are excluded (death already forces the bar empty).
+
+This keeps the bar tracking the freshest authoritative HP through a heal-during-deferred-hit without inventing client HP math: it only ever *declines* to drop the bar below a value the server already confirmed.
+
 ## Current Solution: Spectator Stale Death Fallback
 
 Two-player testing exposed a spectator-only death presentation failure. Player 2 could receive the server-authoritative lethal event for a monster killed by Player 1, but Player 2's local representation of Player 1 sometimes never consumed that queued event at the expected hit frame. The monster was dead server-side, dealt no real damage, and could not be attacked, but remained visually alive and kept animating on Player 2's client.
@@ -119,17 +131,18 @@ This avoids making all lethal packets immediate, which would desynchronize norma
 
 | File | Changes |
 |------|---------|
-| `src/common/include/rose/combat/combat_presentation.h` | Added client-local `DamageEvent::queued_at_ms` and `CombatPresentationQueue::pop_stale_lethal()` for remote stale melee death recovery |
-| `src/client/cobjchar.h` | Added `m_dwLastHPSyncTime` field, `SetLastHPSyncTime()` setter, `pHPSynced` param on `PopCurrentAttackerDamage()`, `m_iLastMissedHitAttacker` and `m_dwLastMissedHitTime` fields |
-| `src/client/cobjchar.cpp` | Constructor init, sync detection in `PopCurrentAttackerDamage()`, conditional `Apply_DAMAGE()` in `Hitted()` (both branches) with missed-hit recording, missed-hit recovery in `PushDamageToList()`, sync check in `ProcDamageTimeOut()`, queued lethal timestamping, remote stale melee death fallback, and lethal remote projectile-discard death presentation |
+| `src/common/include/rose/combat/combat_presentation.h` | Added client-local `DamageEvent::queued_at_ms`, `DamageEvent::arrival_seq`, and `CombatPresentationQueue::pop_stale_lethal()` for remote stale melee death recovery |
+| `src/client/cobjchar.h` | Added `m_dwLastHPSyncTime` field, `SetLastHPSyncTime()` setter, `pHPSynced` param on `PopCurrentAttackerDamage()`, `m_iLastMissedHitAttacker` and `m_dwLastMissedHitTime` fields; heal-in-flight `arrival_seq` skill-payload field, `NextHPAuthoritySeq()`, `m_dwLastAuthoritativeSyncSeq`, and `ConvertDamageOfSkillToDamage(..., arrivalSeq)` |
+| `src/client/cobjchar.cpp` | Constructor init, sync detection in `PopCurrentAttackerDamage()`, conditional `Apply_DAMAGE()` in `Hitted()` (both branches) with missed-hit recording, missed-hit recovery in `PushDamageToList()`, sync check in `ProcDamageTimeOut()`, queued lethal timestamping, remote stale melee death fallback, lethal remote projectile-discard death presentation, heal-in-flight arrival-order guard, and the stale-healed visible floor for hits still in flight |
 | `src/client/network/cnetwork.cpp` | `recv_update_stats` uses `SetLastHPSyncTime()` instead of `ClearAllDamage()` |
 | `src/client/network/recvpacket.cpp` | `Recv_gsv_DAMAGE()` dual-index push for pet/cart attacks |
 | `src/sho_gameserver/src/cobjchar.cpp` | `Apply_DAMAGE()` returns `SEND_DAMAGE_TO_TARGET` for misses |
-| `src/tests/combat_presenter/combat_presenter_tests.cpp` | Added stale lethal melee, projectile exclusion, and lethal/nonlethal projectile discard regression coverage |
+| `src/tests/combat_presenter/combat_presenter_tests.cpp` | Added stale lethal melee, projectile exclusion, lethal/nonlethal projectile discard, heal-in-flight checkpoint, and multi-hit-in-flight stale-healed floor regression coverage |
 
 ## Known Limitations
 
 - **Minor timing mismatch:** Approximately 1 in 6 attacks may show the damage number slightly before the hit animation completes. This occurs when the `UpdateStats` packet arrives and the damage entry gets marked as synced before the animation's hit keyframe fires, causing `Hitted()` to display the digit on a slightly earlier frame. This is low-visibility in normal play and does not affect gameplay correctness.
 - **Late-packet display position:** When the missed-hit recovery fires in `PushDamageToList()`, the damage digit is placed at the character's current position via `CreateImmediateDigitEffect()`, which may differ slightly from where the hit animation occurred. The difference is negligible in practice.
 - **Spectator fallback delay:** A remote monster death whose hit-frame consumer is lost may appear up to ~1.5 s late on spectator clients. This delay is intentional so normal hit-frame and projectile-impact presentation still wins when it arrives correctly.
+- **Sub-frame heal/checkpoint race (~0.1 s):** The arrival-order guard and stale-healed floor resolve the bar within the same `ApplyPresentedCombatDamage` call, but if the stale checkpoint presents one or two frames *before* the heal `UpdateStats` actually arrives, the bar can still flash down briefly until the sync lands and a later reconcile raises it. The window is bounded to a couple of frames and the digit is always correct. A purely cosmetic eased/"rolling" HP bar at the draw layer (`cnamebox.cpp` / avatar gauge, smoothing the drawn fill toward `Get_HP()` without touching authoritative HP, digits, or death) would absorb this residual without changing combat authority.
 - **`RecoverHP()` / `ReviseHP` mechanism is dead code:** The legacy HP correction system (`SetReviseHP`, `RecoverHP`) is never called from the game loop. HP correction relies entirely on the `UpdateStats` packet path.

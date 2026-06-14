@@ -433,6 +433,7 @@ private:
         bool bDamageEventAlreadyQueued;
         bool bWaitForProjectileImpact;
         int iCasterINT; /// 시전자의 INT 계산식에 필요
+        uint32_t arrival_seq; /// receive-time HP-authority stamp (see NextHPAuthoritySeq)
 
         gsv_DAMAGE_OF_SKILL
             EffectOfSkill; /// damage_of_skill 이 effect_of_skill 을 상속받았으므로 편이를 위해서
@@ -519,8 +520,15 @@ public:
     void CreateImmediateDigitEffect(int wDamage);
 
     /// Damage_of_Skill => 일반 데미지로 전환저장..
-    void ConvertDamageOfSkillToDamage(gsv_DAMAGE_OF_SKILL stDamageOfSkill);
+    /// arrivalSeq carries the receive-time HP-authority stamp for deferred skill
+    /// hits; 0 means "stamp now" (immediate paths) and is filled in by
+    /// PushCombatDamageEvent.
+    void ConvertDamageOfSkillToDamage(gsv_DAMAGE_OF_SKILL stDamageOfSkill, uint32_t arrivalSeq = 0);
     static bool IsProjectilePresentedSkillDamage(int iSkillIDX);
+
+    /// Monotonic client-side arrival-order counter for HP-authoritative packets.
+    /// Used to detect a sync/heal that supersedes a deferred damage checkpoint.
+    static uint32_t NextHPAuthoritySeq();
     /////////////////////////////////////////////////////////////////////////////////
 
     /////////////////////////////////////////////////////////////////////////////////
@@ -802,6 +810,11 @@ protected:
     int m_iAuthoritativeHP;
     bool m_bHasAuthoritativeHP;
     uint32_t m_dwLastAuthoritativeDamageSeq;
+    // Arrival-order stamp of the most recent authoritative HP sync (Reconcile_HP:
+    // UpdateStats / GSV_SET_HPnMP). A queued damage event whose arrival_seq is older
+    // than this had its hp_after checkpoint superseded by a later sync (e.g. a heal
+    // that landed while the hit was still deferred to its animation frame).
+    uint32_t m_dwLastAuthoritativeSyncSeq;
     uint32_t m_dwLastPresentedDamageEventId;
     uint32_t m_dwLastPresentedDamageSeq;
     int m_iPendingCombatHPCorrection;

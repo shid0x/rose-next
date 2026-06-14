@@ -22,6 +22,14 @@ expect(bool condition, const char* message) {
     }
 }
 
+// Mirrors CObjCHAR::NextHPAuthoritySeq: a monotonic arrival-order stamp shared by
+// queued damage events (captured at receive) and authoritative syncs.
+uint32_t g_test_hp_authority_seq = 0;
+uint32_t
+next_hp_authority_seq() {
+    return ++g_test_hp_authority_seq;
+}
+
 DamageEvent
 event(uint32_t id, uint32_t attacker, int damage, int hp_after, bool lethal = false) {
     DamageEvent e;
@@ -42,6 +50,7 @@ struct HpHarness {
     int authoritative_hp = 100;
     bool has_authoritative_hp = true;
     uint32_t authoritative_seq = 0;
+    uint32_t last_sync_seq = 0;
     int corrections = 0;
     int pending_correction = 0;
     int displayed_damage = -1;
@@ -67,6 +76,7 @@ struct HpHarness {
     }
 
     void reconcile(int hp) {
+        last_sync_seq = next_hp_authority_seq();
         authoritative_hp = hp;
         has_authoritative_hp = true;
         if (hp >= visible_hp) {
@@ -188,7 +198,18 @@ private:
         if (!queue.pop_for_attacker(attacker, e)) {
             return PresentationResult::NoEvent;
         }
-        set_authoritative_from_event(e);
+
+        // Mirrors ApplyPresentedCombatDamage: a later authoritative sync that raised
+        // HP above this event's checkpoint marks the checkpoint stale.
+        const bool stale_healed_checkpoint =
+            has_authoritative_hp
+            && e.arrival_seq != 0
+            && last_sync_seq > e.arrival_seq
+            && authoritative_hp > e.hp_after;
+
+        if (!stale_healed_checkpoint) {
+            set_authoritative_from_event(e);
+        }
 
         if (suppress_for_pending_dead_attacker && pending_dead_attacker
             && pending_dead_attacker->pending_authoritative_death && !e.lethal && e.hp_after > 0) {
@@ -225,7 +246,8 @@ private:
             hp_after_delta = std::max(1, visible_hp - hp_delta);
 
             if (!queue.has_pending_damage()) {
-                const int target_hp = std::min(e.hp_after, authoritative_hp);
+                const int checkpoint_hp = stale_healed_checkpoint ? authoritative_hp : e.hp_after;
+                const int target_hp = std::min(checkpoint_hp, authoritative_hp);
                 if (target_hp <= 0) {
                     visible_hp = 0;
                     pending_correction = 0;
@@ -240,6 +262,13 @@ private:
                 } else {
                     pending_correction = 0;
                 }
+            }
+
+            // Heal-in-flight visible floor independent of queue state (mirrors
+            // ApplyPresentedCombatDamage): a stale-healed checkpoint must not dip the
+            // bar below the fresher authoritative HP even while another hit is queued.
+            if (stale_healed_checkpoint && has_authoritative_hp) {
+                hp_after_delta = std::max(hp_after_delta, std::min(visible_hp, authoritative_hp));
             }
 
             visible_hp = hp_after_delta;
@@ -388,6 +417,72 @@ main() {
         expect(h.hit(10) == PresentationResult::PresentedDamage, "damage delta should present");
         expect(h.visible_hp == 800, "non-lethal presentation must not remain below authoritative HP");
         expect(h.corrections == 0, "higher hp_after should clamp without creating correction");
+    }
+
+    {
+        // Heal-in-flight: a deferred skill hit (checkpoint 600) is superseded by a
+        // heal sync (900) that arrives while the hit waits on its animation frame.
+        // The fresher authoritative HP must win so the bar does not dip to 600 and
+        // snap back to 900; the digit still shows the full 400.
+        HpHarness h;
+        h.visible_hp = 1000;
+        h.authoritative_hp = 1000;
+
+        DamageEvent skill = event(1, 10, 400, 600);
+        skill.arrival_seq = next_hp_authority_seq(); // captured at receive
+        h.queue.push(skill);
+
+        h.reconcile(900); // heal lands after the hit was received, before its frame
+        expect(h.visible_hp == 1000, "heal below gated visible HP must not move the bar yet");
+        expect(h.last_sync_seq > skill.arrival_seq, "heal sync must out-rank the deferred hit");
+
+        expect(h.hit(10) == PresentationResult::PresentedDamage, "deferred skill hit presents");
+        expect(h.visible_hp == 900, "stale checkpoint must yield to the fresher healed HP (no snapback)");
+        expect(h.displayed_damage == 400, "healed checkpoint must not alter the skill damage digit");
+    }
+
+    {
+        // Heal-in-flight with another hit still queued. The overshoot-clamp only runs
+        // once the queue drains, so before the visible-floor fix the bar dipped by this
+        // digit and snapped back up on the next reconcile. The stale-healed floor must
+        // hold the bar at the fresher healed HP even while a second hit is pending.
+        // Repro: pot back to full while a monster's multi-hit skill is mid-charge.
+        HpHarness h;
+        h.visible_hp = 1000;
+        h.authoritative_hp = 1000;
+
+        DamageEvent skill = event(1, 10, 400, 600);
+        skill.arrival_seq = next_hp_authority_seq();
+        h.queue.push(skill);
+
+        // Second in-flight hit keeps has_pending_damage() true when the skill presents.
+        DamageEvent second = event(2, 10, 150, 450);
+        second.arrival_seq = next_hp_authority_seq();
+        h.queue.push(second);
+
+        h.reconcile(1000); // pot back to full after both hits were received
+        expect(h.last_sync_seq > skill.arrival_seq, "heal must out-rank the deferred skill hit");
+
+        expect(h.hit(10) == PresentationResult::PresentedDamage, "first deferred hit presents");
+        expect(h.visible_hp == 1000,
+            "stale-healed checkpoint must hold the bar at full even with a second hit queued (no dip-then-snap)");
+        expect(h.displayed_damage == 400,
+            "healed checkpoint must not alter the skill damage digit");
+    }
+
+    {
+        // Control: same hit with no intervening heal must still drop to its
+        // checkpoint. The guard must not fire when no later sync superseded it.
+        HpHarness h;
+        h.visible_hp = 1000;
+        h.authoritative_hp = 1000;
+
+        DamageEvent skill = event(1, 10, 400, 600);
+        skill.arrival_seq = next_hp_authority_seq();
+        h.queue.push(skill);
+
+        expect(h.hit(10) == PresentationResult::PresentedDamage, "deferred skill hit presents");
+        expect(h.visible_hp == 600, "without a later heal the bar lands on the checkpoint");
     }
 
     {

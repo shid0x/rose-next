@@ -279,6 +279,7 @@ CObjCHAR::CObjCHAR(): m_EndurancePack(this), m_ChangeActionMode(this), m_ObjVibr
     m_iAuthoritativeHP = 0;
     m_bHasAuthoritativeHP = false;
     m_dwLastAuthoritativeDamageSeq = 0;
+    m_dwLastAuthoritativeSyncSeq = 0;
     m_dwLastPresentedDamageEventId = 0;
     m_dwLastPresentedDamageSeq = 0;
     m_iPendingCombatHPCorrection = 0;
@@ -1515,6 +1516,10 @@ CObjCHAR::PushEffectedSkillToList(int iSkillIDX,
     steffectOfSkill.bDamageEventAlreadyQueued = bDamageEventAlreadyQueued;
     steffectOfSkill.bWaitForProjectileImpact = bWaitForProjectileImpact;
     steffectOfSkill.iCasterINT = iCasterINT;
+    // Captured at packet receive (this call runs synchronously from the recv
+    // handler), so the deferred conversion at the caster's action frame keeps the
+    // source packet's arrival order rather than the later present-time order.
+    steffectOfSkill.arrival_seq = NextHPAuthoritySeq();
 
     steffectOfSkill.EffectOfSkill = EffectedSkill;
 
@@ -1893,7 +1898,8 @@ CObjCHAR::ProcOneEffectedSkill(stEFFECT_OF_SKILL* pEffectOfSkill) {
         D3DXVECTOR3 pos = pChar->Get_CurPOS();
 
         if (!pEffectOfSkill->bDamageEventAlreadyQueued) {
-            pChar->ConvertDamageOfSkillToDamage(pEffectOfSkill->EffectOfSkill);
+            pChar->ConvertDamageOfSkillToDamage(pEffectOfSkill->EffectOfSkill,
+                pEffectOfSkill->arrival_seq);
             pChar->PresentImmediateCombatDamage(this);
         } else {
             LogString(LOG_DEBUG_,
@@ -2003,10 +2009,27 @@ CObjCHAR::ProcEffectedSkill(bool bProjectileImpact,
     return bResult;
 }
 
+// Process-wide arrival-order counter for HP-authoritative packets. The client is
+// single-threaded for packet processing, so a strictly increasing value assigned in
+// processing order reflects causal (TCP) arrival order across all defenders.
+static uint32_t s_dwHPAuthoritySeq = 0;
+
+uint32_t
+CObjCHAR::NextHPAuthoritySeq() {
+    return ++s_dwHPAuthoritySeq;
+}
+
 void
 CObjCHAR::PushCombatDamageEvent(const Rose::Combat::DamageEvent& event) {
     Rose::Combat::DamageEvent queuedEvent = event;
     queuedEvent.queued_at_ms = g_GameDATA.GetGameTime();
+    // Immediate paths (FlatBuffer DamageEvent/CombatSwing, legacy melee) queue at
+    // receive time, so stamp the arrival order here. Deferred skill hits set
+    // arrival_seq at receive (carried through ConvertDamageOfSkillToDamage) and are
+    // left untouched.
+    if (queuedEvent.arrival_seq == 0) {
+        queuedEvent.arrival_seq = NextHPAuthoritySeq();
+    }
     m_CombatDamageQueue.push(queuedEvent);
 
     // The server has already committed a lethal hit on the local avatar. If the
@@ -2233,7 +2256,35 @@ CObjCHAR::ApplyPresentedCombatFeedback(CObjCHAR* pAtkOBJ,
 
 void
 CObjCHAR::ApplyPresentedCombatDamage(CObjCHAR* pAtkOBJ, Rose::Combat::DamageEvent& event) {
-    SetAuthoritativeHPFromDamageEvent(event);
+    // Heal-in-flight guard. This event's hp_after was the authoritative HP at the
+    // instant the server applied the hit, but presentation is deferred to the
+    // animation/impact frame. If a later authoritative sync (heal, potion, regen)
+    // arrived in that window AND raised HP above the checkpoint, the checkpoint is
+    // stale: dropping the bar to it would overshoot down and snap back up on the
+    // next sync. Detect via arrival order (TCP-ordered, single-threaded receive) and
+    // honor the fresher authoritative HP instead. Only fires when the fresher value
+    // is higher than the checkpoint, so normal "no sync yet" hits are untouched and
+    // later-and-lower syncs keep flowing through the existing checkpoint fold.
+    const bool bStaleHealedCheckpoint =
+        m_bHasAuthoritativeHP
+        && event.arrival_seq != 0
+        && m_dwLastAuthoritativeSyncSeq > event.arrival_seq
+        && m_iAuthoritativeHP > event.hp_after;
+
+    if (!bStaleHealedCheckpoint) {
+        SetAuthoritativeHPFromDamageEvent(event);
+    } else {
+        LogString(LOG_DEBUG_,
+            "Combat HP heal-in-flight guard: target %d event %u seq %u arrival %u last sync %u stale hp_after %d fresher authoritative hp %d visible hp %d\n",
+            this->Get_INDEX(),
+            event.event_id,
+            event.defender_seq,
+            event.arrival_seq,
+            m_dwLastAuthoritativeSyncSeq,
+            event.hp_after,
+            m_iAuthoritativeHP,
+            this->Get_HP());
+    }
     m_dwLastPresentedDamageEventId = event.event_id;
     m_dwLastPresentedDamageSeq = event.defender_seq;
 
@@ -2257,7 +2308,10 @@ CObjCHAR::ApplyPresentedCombatDamage(CObjCHAR* pAtkOBJ, Rose::Combat::DamageEven
     }
 
     if (!m_CombatDamageQueue.has_pending_damage()) {
-        int authoritativeTargetHP = event.hp_after;
+        // For a stale-healed checkpoint the freshest truth is the later sync's HP,
+        // not the event's outdated hp_after. The overshoot-clamp below then raises
+        // the visible bar to it (digit still shows the full hit).
+        int authoritativeTargetHP = bStaleHealedCheckpoint ? m_iAuthoritativeHP : event.hp_after;
         if (m_bHasAuthoritativeHP) {
             authoritativeTargetHP = min(authoritativeTargetHP, m_iAuthoritativeHP);
         }
@@ -2305,6 +2359,20 @@ CObjCHAR::ApplyPresentedCombatDamage(CObjCHAR* pAtkOBJ, Rose::Combat::DamageEven
                 m_iPendingCombatHPCorrection = 0;
             }
         }
+    }
+
+    // Heal-in-flight visible floor (independent of queue state). The overshoot-clamp
+    // above only raises the bar to the fresher authoritative HP when the queue is
+    // otherwise empty. With another hit still in flight (multi-hit skill, or a melee
+    // swing queued alongside the skill) that block is skipped, so a stale-healed
+    // checkpoint would still dip the bar by this digit and snap back up on the next
+    // reconcile -- the exact artifact the guard exists to prevent. The guard already
+    // proved a later sync superseded this checkpoint and raised HP above it, so hold
+    // the visible bar at the fresher authoritative HP now. Bounded by visibleBefore so
+    // a damage presentation never visibly heals; digit is unchanged; lethal already
+    // forced death above.
+    if (bStaleHealedCheckpoint && !lethal && m_bHasAuthoritativeHP) {
+        hpAfterDelta = max(hpAfterDelta, min(visibleBefore, m_iAuthoritativeHP));
     }
 
     uniDAMAGE displayedDamage;
@@ -2572,7 +2640,7 @@ CObjCHAR::HasPendingMountedAttackTarget(int iServerTarget, DWORD dwNow, DWORD dw
 //--------------------------------------------------------------------------------
 
 void
-CObjCHAR::ConvertDamageOfSkillToDamage(gsv_DAMAGE_OF_SKILL stDamageOfSkill) {
+CObjCHAR::ConvertDamageOfSkillToDamage(gsv_DAMAGE_OF_SKILL stDamageOfSkill, uint32_t arrivalSeq) {
     uniDAMAGE Damage;
     Damage.m_wDamage = stDamageOfSkill.m_wDamage;
 
@@ -2591,6 +2659,9 @@ CObjCHAR::ConvertDamageOfSkillToDamage(gsv_DAMAGE_OF_SKILL stDamageOfSkill) {
         event.raw_damage = stDamageOfSkill.m_wDamage;
         event.damage_value = Damage.m_wVALUE;
         event.hp_after = (Damage.m_wACTION & DMG_ACT_DEAD) ? DEAD_HP : stDamageOfSkill.m_iHP_AFTER;
+        // arrivalSeq != 0 for deferred hits (captured at receive); 0 lets
+        // PushCombatDamageEvent stamp it now for immediate skill paths.
+        event.arrival_seq = arrivalSeq;
         event.presentation_kind =
             IsProjectilePresentedSkillDamage(stDamageOfSkill.m_nSkillIDX)
             ? Rose::Combat::DamagePresentationKind::ProjectileImpact
@@ -4381,6 +4452,10 @@ CObjCHAR::SetReviseHP(int hp) {
 
 void
 CObjCHAR::Reconcile_HP(int hp) {
+    // Every authoritative HP sync (UpdateStats / GSV_SET_HPnMP) advances the arrival
+    // stamp. A damage event queued before this sync now has an older arrival_seq and
+    // its hp_after checkpoint is treated as superseded in ApplyPresentedCombatDamage.
+    m_dwLastAuthoritativeSyncSeq = NextHPAuthoritySeq();
     SetAuthoritativeHP(hp);
     if (hp >= Get_HP()) {
         m_iPendingCombatHPCorrection = 0;

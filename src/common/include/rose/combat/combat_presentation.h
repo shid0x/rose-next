@@ -26,6 +26,12 @@ struct DamageEvent {
     uint32_t attacker_id = 0;
     uint32_t defender_id = 0;
     uint32_t queued_at_ms = 0;
+    // Client-local arrival-order stamp of the server packet that produced this
+    // event's hp_after checkpoint. Captured at packet receive (not at queue time)
+    // so a deferred skill hit keeps the order of its source packet. Compared
+    // against CObjCHAR::m_dwLastAuthoritativeSyncSeq to detect a heal/sync that
+    // superseded the checkpoint. Not wire data; must not be serialized.
+    uint32_t arrival_seq = 0;
     uint32_t raw_damage = 0;
     int32_t damage_value = 0;
     int32_t hp_after = 0;
