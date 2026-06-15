@@ -637,15 +637,24 @@ CObjSUMMON::Proc() {
 
     CAI_OBJ* pOwner = this->Get_CALLER();
 
-    if (this->Get_HP() > 0 && IsStationarySummonNpc(this->m_nCharIdx)) {
+    // Owner-validity / owner-death despawn applies to ALL summons (mobile and
+    // stationary). Summons share the fate of their summoner: when the owner
+    // dies, the phantom swords / companions must die with them rather than keep
+    // fighting while the player is a ghost or has respawned. The distance-based
+    // despawn below remains stationary-only (mobile summons follow the owner and
+    // so can't be "left behind").
+    if (this->Get_HP() > 0) {
         CObjCHAR* pOwnerChar = (CObjCHAR*)pOwner;
         bool bDespawn = false;
         if (!pOwnerChar
             || pOwnerChar->Get_CharHASH() != this->GetCallerHASH()
-            || pOwnerChar->GetZONE() != this->GetZONE()) {
-            // Owner is gone, replaced, or in a different zone.
+            || pOwnerChar->GetZONE() != this->GetZONE()
+            || pOwnerChar->Get_HP() <= DEAD_HP) {
+            // Owner is gone, replaced, in a different zone, or dead. Detect death
+            // via HP (== DEAD_HP), not FLAG_ING_FAINTING — that flag is shared by
+            // stun and death, so it would wrongly despawn summons on a mere stun.
             bDespawn = true;
-        } else {
+        } else if (IsStationarySummonNpc(this->m_nCharIdx)) {
             float dx = this->Get_CurXPOS() - pOwnerChar->Get_CurXPOS();
             float dy = this->Get_CurYPOS() - pOwnerChar->Get_CurYPOS();
             if (dx * dx + dy * dy
