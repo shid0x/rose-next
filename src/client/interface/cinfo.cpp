@@ -25,6 +25,22 @@ IsBlankText(const char* pszTxt) {
     return true;
 }
 
+/// Strip inline category-color markup bytes (TIP_CAT / TIP_END) so width and
+/// length are measured on the visible text only. CTString::Draw consumes the
+/// markup; the stored line keeps it, but layout must ignore it.
+std::string
+StripTipMarkup(const char* pszTxt) {
+    std::string out;
+    if (pszTxt == NULL)
+        return out;
+    out.reserve(strlen(pszTxt));
+    for (const char* p = pszTxt; *p; ++p) {
+        if (*p != TIP_CAT[0] && *p != TIP_END[0])
+            out.push_back(*p);
+    }
+    return out;
+}
+
 ///명시적 개행을 지원하고, 단어(공백) 단위로 픽셀 너비에 맞춰 자른다.
 ///공백 없이 너무 긴 어절( CJK 등 )은 글자 단위( 코드페이지 인식 )로 자른다
 std::vector<std::string>
@@ -194,7 +210,8 @@ CInfo::AddString(const char* pszTxt, DWORD color, HNODE hFont, UINT uFormat) {
         return;
     }
 
-    if (getFontTextExtent(hFont, pszTxt).cx + 5 <= kMaxToolTipLineWidth) {
+    std::string strMeasure = StripTipMarkup(pszTxt);
+    if (getFontTextExtent(hFont, strMeasure.c_str()).cx + 5 <= kMaxToolTipLineWidth) {
         AppendLine(pszTxt, color, hFont, uFormat);
         return;
     }
@@ -231,19 +248,21 @@ CInfo::AppendLine(const char* pszTxt, DWORD color, HNODE hFont, UINT uFormat) {
     stLine Line;
     Line.bWrapToWidth = false;
 
-    if (IsBlankText(pszTxt)) {
+    std::string strMeasure = StripTipMarkup(pszTxt);
+
+    if (IsBlankText(strMeasure.c_str())) {
         ///빈 줄은 전체 한 줄 대신 좁은 구분 간격으로 표시한다
         Line.nHeight = kSeparatorRowHeight;
     } else {
         Line.nHeight = kTextRowHeight;
 
-        SIZE sizeString = getFontTextExtent(hFont, pszTxt);
+        SIZE sizeString = getFontTextExtent(hFont, strMeasure.c_str());
 
         if (m_iWidth < sizeString.cx + 5)
             m_iWidth = sizeString.cx + 5;
 
-        if (strlen(pszTxt) > m_uMaxSizeString)
-            m_uMaxSizeString = strlen(pszTxt);
+        if (strMeasure.size() > m_uMaxSizeString)
+            m_uMaxSizeString = strMeasure.size();
     }
 
     m_iHeight += Line.nHeight;

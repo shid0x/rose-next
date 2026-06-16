@@ -230,16 +230,18 @@ CItem::AddItemName(tagITEM& sItem, CInfo& Info) {
 
 void
 CItem::AddItemWeight(tagITEM& sItem, CInfo& Info) {
-    Info.AddString(
-        CStr::Printf("%s:%d", STR_WEIGHT, ITEM_WEIGHT(sItem.GetTYPE(), sItem.GetItemNO())));
+    Info.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %d",
+        STR_WEIGHT,
+        ITEM_WEIGHT(sItem.GetTYPE(), sItem.GetItemNO())));
 }
 
 void
 CItem::AddItemPatUseFuelRate(tagITEM& sItem, CInfo& Info) {
     if (PAT_ITEM_USE_FUEL_RATE(sItem.GetItemNO()) <= 0)
         return;
-    Info.AddString(
-        CStr::Printf("%s : %d", STR_WASTE_FUEL, PAT_ITEM_USE_FUEL_RATE(sItem.GetItemNO())),
+    Info.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %d",
+                       STR_WASTE_FUEL,
+                       PAT_ITEM_USE_FUEL_RATE(sItem.GetItemNO())),
         g_dwWHITE);
 }
 
@@ -247,8 +249,9 @@ void
 CItem::AddItemPatAttackRange(tagITEM& sItem, CInfo& Info) {
     if (PAT_ITEM_ATK_RANGE(sItem.GetItemNO()) <= 0)
         return;
-    Info.AddString(
-        CStr::Printf("%s: %dM", STR_ATTACK_RANGE, PAT_ITEM_ATK_RANGE(sItem.GetItemNO()) / 100),
+    Info.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %dM",
+                       STR_ATTACK_RANGE,
+                       PAT_ITEM_ATK_RANGE(sItem.GetItemNO()) / 100),
         g_dwWHITE);
 }
 
@@ -256,7 +259,7 @@ void
 CItem::AddItemPatCartGauage(tagITEM& sItem, CInfo& Info) {
     if (PAT_ITEM_CART_GAUAGE(sItem.GetItemNO()) <= 0)
         return;
-    Info.AddString(CStr::Printf("%s: %d",
+    Info.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %d",
                        CStringManager::GetSingleton().GetAbility(AT_PATHP),
                        PAT_ITEM_CART_GAUAGE(sItem.GetItemNO())),
         g_dwWHITE);
@@ -278,7 +281,7 @@ CItem::AddItemPatAttackPowSpeed(tagITEM& sItem, CInfo& Info) {
         strAttackSpeed.c_str())
         );
     */
-    Info.AddString(CStr::Printf("%s:%d",
+    Info.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %d",
         CStringManager::GetSingleton().GetAbility(AT_ATK),
         GetAttackPower(sItem)));
 }
@@ -291,7 +294,9 @@ CItem::AddItemPatDesc(tagITEM& sItem, CInfo& Info) {
 
 void
 CItem::AddItemPatVer(tagITEM& sItem, CInfo& Info) {
-    Info.AddString(CStr::Printf("%s: %d", STR_RIDE_PART_VER, PAT_ITEM_PART_VER(sItem.GetItemNO())),
+    Info.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %d",
+                       STR_RIDE_PART_VER,
+                       PAT_ITEM_PART_VER(sItem.GetItemNO())),
         g_dwWHITE);
 }
 
@@ -301,14 +306,14 @@ CItem::AddItemPatClass(tagITEM& sItem, CInfo& Info) {
 
     //분류,명중력
     if (iClass == TUNING_PART_WEAPON_CASTLEGEAR) {
-        Info.AddString(CStr::Printf("%s:%s %s:%d",
+        Info.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %s  " TIP_CAT "%s" TIP_END ": %d",
             STR_ITEM_TYPE,
             CStringManager::GetSingleton().GetItemType(
                 ITEM_TYPE(sItem.GetTYPE(), sItem.GetItemNO())),
             CStringManager::GetSingleton().GetAbility(AT_HIT),
             (int)(ITEM_QUALITY(sItem.GetTYPE(), sItem.GetItemNO()) * 1.2)));
     } else {
-        Info.AddString(CStr::Printf("%s:%s",
+        Info.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %s",
             STR_ITEM_TYPE,
             CStringManager::GetSingleton().GetItemType(
                 ITEM_TYPE(sItem.GetTYPE(), sItem.GetItemNO()))));
@@ -440,7 +445,7 @@ CItem::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
 
             //분류,명중력
             std::string strTemp;
-            strTemp = CStr::Printf("%s:%s %s:",
+            strTemp = CStr::Printf(TIP_CAT "%s" TIP_END ": %s  " TIP_CAT "%s" TIP_END ": ",
                 STR_ITEM_TYPE,
                 CStringManager::GetSingleton().GetItemType(ITEM_TYPE(nItemType, nItemIdx)),
                 CStringManager::GetSingleton().GetAbility(AT_HIT));
@@ -458,14 +463,15 @@ CItem::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
             std::string strAttackSpeed;
             GetAttackSpeedString(WEAPON_ATTACK_SPEED(nItemIdx), strAttackSpeed);
             //공격력,공격속도
-            ToolTip.AddString(CStr::Printf("%s:%d  %s:%s",
+            ToolTip.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %d  " TIP_CAT "%s" TIP_END ": %s",
                 CStringManager::GetSingleton().GetAbility(AT_ATK),
                 GetAttackPower(sItem) + ITEMGRADE_ATK(sItem.GetGrade()),
                 CStringManager::GetSingleton().GetAbility(AT_ATK_SPD),
                 strAttackSpeed.c_str()));
             //공격거리
             ToolTip.AddString(
-                CStr::Printf("%s%dM", STR_ATTACK_RANGE, WEAPON_ATTACK_RANGE(nItemIdx) / 100),
+                CStr::Printf(TIP_CAT "%s" TIP_END ": %dM", STR_ATTACK_RANGE,
+                    WEAPON_ATTACK_RANGE(nItemIdx) / 100),
                 g_dwWHITE);
 
             if (bIsDetail) {
@@ -636,7 +642,7 @@ CItem::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
 
             switch (ITEM_TYPE(nItemType, nItemIdx)) {
                 case USE_ITEM_FUEL: {
-                    ToolTip.AddString(CStr::Printf("%s : %d",
+                    ToolTip.AddString(CStr::Printf("%s: %d",
                         CStringManager::GetSingleton().GetItemType(USE_ITEM_FUEL),
                         USEITEM_ADD_DATA_VALUE(nItemIdx)));
 
@@ -671,7 +677,7 @@ CItem::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                                 dwColor = g_dwGREEN;
                             else
                                 dwColor = g_dwRED;
-                            ToolTip.AddString(CStr::Printf("[%s:%s %d]",
+                            ToolTip.AddString(CStr::Printf("[%s: %s %d]",
                                                   STR_CONSUME_ABILITY,
                                                   CStringManager::GetSingleton().GetAbility(AT_MP),
                                                   iRequireMp),
@@ -696,7 +702,7 @@ CItem::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                                         dwColor = g_dwRED;
 
                                     ToolTip.AddString(
-                                        CStr::Printf("[%s:%s %d]",
+                                        CStr::Printf("[%s: %s %d]",
                                             STR_CONSUME_ABILITY,
                                             CStringManager::GetSingleton().GetAbility(
                                                 SKILL_USE_PROPERTY(iSkillNo, iUseProperty)),
@@ -776,13 +782,15 @@ CItem::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
 
                 //분류,명중력
                 if (iClass == TUNING_PART_WEAPON_CASTLEGEAR) {
-                    ToolTip.AddString(CStr::Printf("%s:%s %s:%d",
-                        STR_ITEM_TYPE,
-                        CStringManager::GetSingleton().GetItemType(ITEM_TYPE(nItemType, nItemIdx)),
-                        CStringManager::GetSingleton().GetAbility(AT_HIT),
-                        (int)(ITEM_QUALITY(nItemType, nItemIdx) * 1.2)));
+                    ToolTip.AddString(
+                        CStr::Printf(TIP_CAT "%s" TIP_END ": %s  " TIP_CAT "%s" TIP_END ": %d",
+                            STR_ITEM_TYPE,
+                            CStringManager::GetSingleton().GetItemType(
+                                ITEM_TYPE(nItemType, nItemIdx)),
+                            CStringManager::GetSingleton().GetAbility(AT_HIT),
+                            (int)(ITEM_QUALITY(nItemType, nItemIdx) * 1.2)));
                 } else {
-                    ToolTip.AddString(CStr::Printf("%s:%s",
+                    ToolTip.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %s",
                         STR_ITEM_TYPE,
                         CStringManager::GetSingleton().GetItemType(
                             ITEM_TYPE(nItemType, nItemIdx))));
@@ -794,19 +802,21 @@ CItem::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                     std::string strAttackSpeed;
                     GetAttackSpeedString(PAT_ITEM_ATK_SPD(nItemIdx), strAttackSpeed);
                     // ATTACK POWER, ATTACK SPEED
-                    ToolTip.AddString(CStr::Printf("%s:%d %s:%s",
-                        CStringManager::GetSingleton().GetAbility(AT_ATK),
-                        GetAttackPower(sItem),
-                        CStringManager::GetSingleton().GetAbility(AT_ATK_SPD),
-                        strAttackSpeed.c_str()));
+                    ToolTip.AddString(
+                        CStr::Printf(TIP_CAT "%s" TIP_END ": %d  " TIP_CAT "%s" TIP_END ": %s",
+                            CStringManager::GetSingleton().GetAbility(AT_ATK),
+                            GetAttackPower(sItem),
+                            CStringManager::GetSingleton().GetAbility(AT_ATK_SPD),
+                            strAttackSpeed.c_str()));
                     // ATTACK RANGE
-                    ToolTip.AddString(CStr::Printf("%s: %dM",
+                    ToolTip.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %dM",
                                           STR_ATTACK_RANGE,
                                           PAT_ITEM_ATK_RANGE(nItemIdx) / 100),
                         g_dwWHITE);
                     // WASTE FUEL
-                    ToolTip.AddString(
-                        CStr::Printf("%s : %d", STR_WASTE_FUEL, PAT_ITEM_USE_FUEL_RATE(nItemIdx)),
+                    ToolTip.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %d",
+                                          STR_WASTE_FUEL,
+                                          PAT_ITEM_USE_FUEL_RATE(nItemIdx)),
                         g_dwWHITE);
                 }
 
@@ -818,14 +828,14 @@ CItem::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                 switch ((iClass % 100) / 10) {
                     case 2: /// ENGINE
                     {
-                        ToolTip.AddString(CStr::Printf("%s:%d%%",
+                        ToolTip.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %d%%",
                             CStringManager::GetSingleton().GetAbility(AT_SPEED),
                             PAT_ITEM_MOV_SPD(sItem.GetItemNO())));
                     } break;
                     case 1: /// BODY
                     {
                         if (PAT_ITEM_USE_FUEL_RATE(nItemIdx))
-                            ToolTip.AddString(CStr::Printf("%s:%d",
+                            ToolTip.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %d",
                                                   STR_WASTE_FUEL,
                                                   PAT_ITEM_USE_FUEL_RATE(nItemIdx)),
                                 g_dwWHITE);
@@ -838,8 +848,9 @@ CItem::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
             }
             AddItemPatAddAbility(sItem, ToolTip);
 
-            ToolTip.AddString(
-                CStr::Printf("%s: %d", STR_RIDE_PART_VER, PAT_ITEM_PART_VER(sItem.GetItemNO())));
+            ToolTip.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %d",
+                STR_RIDE_PART_VER,
+                PAT_ITEM_PART_VER(sItem.GetItemNO())));
 
             /// AddItemDefaultBottomText( sItem, ToolTip );2004/7/30 - 현재 설명을 보이려고 할때
             /// 에러남.
@@ -923,7 +934,7 @@ CItem::AddItemDefaultTopTextDefenceItem(tagITEM& sItem, CInfo& Info) {
     // );
 
     if (sItem.GetTYPE() != ITEM_TYPE_RIDE_PART) {
-        stdTemp = CStr::Printf("%s:%s %s:",
+        stdTemp = CStr::Printf(TIP_CAT "%s" TIP_END ": %s  " TIP_CAT "%s" TIP_END ": ",
             STR_ITEM_TYPE,
             CStringManager::GetSingleton().GetItemType(
                 ITEM_TYPE(sItem.GetTYPE(), sItem.GetItemNO())),
@@ -935,7 +946,7 @@ CItem::AddItemDefaultTopTextDefenceItem(tagITEM& sItem, CInfo& Info) {
         else
             stdTemp.append(CStr::Printf("%d", sItem.GetAvoidRate()));
     } else {
-        stdTemp = CStr::Printf("%s:%s",
+        stdTemp = CStr::Printf(TIP_CAT "%s" TIP_END ": %s",
             STR_ITEM_TYPE,
             CStringManager::GetSingleton().GetItemType(
                 ITEM_TYPE(sItem.GetTYPE(), sItem.GetItemNO())));
@@ -958,7 +969,7 @@ CItem::AddItemDefaultTopText(tagITEM& sItem, CInfo& Info) {
         GetItemNameColor(sItem.GetTYPE(), sItem.GetItemNO()),
         g_GameDATA.m_hFONT[FONT_NORMAL_BOLD]);
     ///분류,무게
-    char* pszBuf = CStr::Printf("%s:%s %s:%d",
+    char* pszBuf = CStr::Printf(TIP_CAT "%s" TIP_END ": %s  " TIP_CAT "%s" TIP_END ": %d",
         STR_ITEM_TYPE,
         CStringManager::GetSingleton().GetItemType(ITEM_TYPE(sItem.GetTYPE(), sItem.GetItemNO())),
         STR_QUALITY,
@@ -970,8 +981,9 @@ CItem::AddItemDefaultTopText(tagITEM& sItem, CInfo& Info) {
 void
 CItem::AddItemDefaultBottomText(tagITEM& sItem, CInfo& Info) {
     // 무게
-    char* pszBuf =
-        CStr::Printf("%s:%d", STR_WEIGHT, ITEM_WEIGHT(sItem.GetTYPE(), sItem.GetItemNO()));
+    char* pszBuf = CStr::Printf(TIP_CAT "%s" TIP_END ": %d",
+        STR_WEIGHT,
+        ITEM_WEIGHT(sItem.GetTYPE(), sItem.GetItemNO()));
 
     Info.AddString(pszBuf);
 
@@ -988,7 +1000,7 @@ CItem::AddItemEquipRequireCondition(tagITEM& sItem, CInfo& Info) {
             break;
         case ITEM_TYPE_RIDE_PART:
             if (PAT_ITEM_NEED_ABILITY_IDX(sItem.GetItemNO())) {
-                pszBuf = CStr::Printf("[%s:%s %d]",
+                pszBuf = CStr::Printf("[%s: %s %d]",
                     STR_EQUIP_CONDITION,
                     CStringManager::GetSingleton().GetAbility(
                         PAT_ITEM_NEED_ABILITY_IDX(sItem.GetItemNO())),
@@ -1006,7 +1018,7 @@ CItem::AddItemEquipRequireCondition(tagITEM& sItem, CInfo& Info) {
         default: {
             for (int i = 0; i < ITEM_NEED_DATA_CNT; ++i) {
                 if (ITEM_NEED_DATA_TYPE(sItem.GetTYPE(), sItem.GetItemNO(), i)) {
-                    pszBuf = CStr::Printf("[%s:%s %d]",
+                    pszBuf = CStr::Printf("[%s: %s %d]",
                         STR_EQUIP_CONDITION,
                         CStringManager::GetSingleton().GetAbility(
                             ITEM_NEED_DATA_TYPE(sItem.GetTYPE(), sItem.GetItemNO(), i)),
@@ -1133,18 +1145,22 @@ CItem::AddItemDefence(tagITEM& sItem, CInfo& Info) {
     short nItemIdx = sItem.GetItemNO();
 
     std::string stdTemp;
+    stdTemp.append(TIP_CAT);
     stdTemp.append(CStringManager::GetSingleton().GetAbility(AT_DEF));
+    stdTemp.append(TIP_END);
     if (sItem.GetGrade())
-        stdTemp.append(CStr::Printf(":%d ", GetDefence(sItem) + ITEMGRADE_DEF(sItem.GetGrade())));
+        stdTemp.append(CStr::Printf(": %d ", GetDefence(sItem) + ITEMGRADE_DEF(sItem.GetGrade())));
     else
-        stdTemp.append(CStr::Printf(":%d ", GetDefence(sItem)));
+        stdTemp.append(CStr::Printf(": %d ", GetDefence(sItem)));
 
+    stdTemp.append(TIP_CAT);
     stdTemp.append(CStringManager::GetSingleton().GetAbility(AT_RES));
+    stdTemp.append(TIP_END);
     if (sItem.GetGrade())
-        stdTemp.append(CStr::Printf(":%d",
+        stdTemp.append(CStr::Printf(": %d",
             ITEM_RESISTENCE(nItemType, nItemIdx) + ITEMGRADE_RES(sItem.GetGrade())));
     else
-        stdTemp.append(CStr::Printf(":%d", ITEM_RESISTENCE(nItemType, nItemIdx)));
+        stdTemp.append(CStr::Printf(": %d", ITEM_RESISTENCE(nItemType, nItemIdx)));
 
     Info.AddString(stdTemp.c_str());
 }
@@ -1163,7 +1179,7 @@ CItem::AddItemUseNeedData(tagITEM& sItem, CInfo& Info) {
                 dwColor = g_dwWHITE;
 
             CStringManager& StringMgr = CStringManager::GetSingleton();
-            char* pszBuf = CStr::Printf("%s : %s",
+            char* pszBuf = CStr::Printf("%s: %s",
                 StringMgr.GetAbility(iNeedDataType),
                 StringMgr.GetPlanetName(iPlanetNo));
             Info.AddString(pszBuf, dwColor);
@@ -1171,7 +1187,7 @@ CItem::AddItemUseNeedData(tagITEM& sItem, CInfo& Info) {
             if (g_pAVATAR->Get_AbilityValue(iNeedDataType) >= iNeedDataValue)
                 dwColor = g_dwGREEN;
 
-            Info.AddString(CStr::Printf("[%s:%s %d]",
+            Info.AddString(CStr::Printf("[%s: %s %d]",
                                STR_USE_REQUIRE,
                                CStringManager::GetSingleton().GetAbility(iNeedDataType),
                                iNeedDataValue),
@@ -1206,7 +1222,7 @@ CItem::AddItemMoveSpeed(tagITEM& sItem, CInfo& Info) {
         case ITEM_TYPE_RIDE_PART:
 
             if (PAT_ITEM_MOV_SPD(sItem.GetItemNO()) > 0) {
-                Info.AddString(CStr::Printf("%s:%d%%",
+                Info.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %d%%",
                     CStringManager::GetSingleton().GetAbility(AT_SPEED),
                     PAT_ITEM_MOV_SPD(sItem.GetItemNO())));
             }
@@ -1381,8 +1397,11 @@ CItem::AddItemLifeDuration(tagITEM& sItem, CInfo& Info) {
         pszLife = STR_FUEL;
     }
 
-    Info.AddString(
-        CStr::Printf("%s:%3d%%   %s:%3d", pszLife, iLife, STR_DURABILITY, sItem.GetDurability()));
+    Info.AddString(CStr::Printf(TIP_CAT "%s" TIP_END ": %3d%%   " TIP_CAT "%s" TIP_END ": %3d",
+        pszLife,
+        iLife,
+        STR_DURABILITY,
+        sItem.GetDurability()));
 }
 
 void
