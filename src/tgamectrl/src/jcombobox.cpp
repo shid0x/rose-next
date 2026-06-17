@@ -4,6 +4,7 @@
 #include "TButton.h"
 #include "TImage.h"
 #include "jlistbox.h"
+#include "tstatic.h"
 #include "ITFont.h"
 #include "TControlMgr.h"
 #include <assert.h>
@@ -84,6 +85,9 @@ CJComboBox::DrawSelectedItem() {
             m_pFontMgr->SetTransformSprite((float)m_sPosition.x, (float)m_sPosition.y);
             CWinCtrl* pDrawComponent = m_pListBox->GetRendererComponent(pItem, false, false);
             pDrawComponent->SetPosition(ptDraw);
+            ///박스 너비를 넘는 긴 이름이 다이얼로그 위로 넘치지 않도록 잘라낸다
+            if (pDrawComponent->GetControlType() == CTRL_STATIC)
+                ((CTStatic*)pDrawComponent)->SetClipWidth(m_iWidth - ptDraw.x);
             pDrawComponent->Draw();
         }
     }

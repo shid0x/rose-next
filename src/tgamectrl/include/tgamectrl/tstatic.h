@@ -33,6 +33,9 @@ public:
     void SetFont(int iFont);
     int GetFont();
 
+    /// 0이면 무제한( 기존 동작 ). 양수면 그 픽셀 너비에 맞춰 한 줄로 자르고 말줄임표를 붙인다
+    void SetClipWidth(int iWidth) { m_iClipWidth = iWidth; }
+
     std::vector<CWinCtrl*> GetChildren() override;
 
     enum eTextAlign { LEFT, CENTER, RIGHT };
@@ -44,5 +47,6 @@ protected:
     std::string m_strText;
     ITFont* m_pFontImpl;
     int m_iFont;
+    int m_iClipWidth;
 };
 #endif /// TSTATIC

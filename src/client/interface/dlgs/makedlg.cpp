@@ -278,6 +278,41 @@ CMakeDLG::Update(POINT ptMouse) {
         }
         itor++;
     }
+
+    ///말줄임표로 잘린 콤보( 아이템 종류 / 아이템 이름 ) 위에서는 전체 이름을 툴팁으로 보여준다
+    const int iComboIDs[] = {IID_COMBOBOX_CLASS, IID_COMBOBOX_ITEM};
+    for (int i = 0; i < 2; ++i) {
+        CWinCtrl* pCtrl = Find(iComboIDs[i]);
+        if (pCtrl == NULL || pCtrl->GetControlType() != CTRL_JCOMBOBOX)
+            continue;
+
+        CJComboBox* pCombo = (CJComboBox*)pCtrl;
+        if (pCombo->IsShowDropBox()) ///드랍박스가 열려있을때는 콤보 툴팁을 띄우지 않는다
+            continue;
+
+        const CTObject* pSel = pCombo->GetSelectedItem();
+        if (pSel == NULL)
+            continue;
+
+        const char* pszName = ((CTContainerItem*)pSel)->GetIndetify();
+        if (pszName == NULL || pszName[0] == '\0')
+            continue;
+
+        ///콤보의 텍스트 영역( 시작 여백 2px )보다 이름이 길때만 잘린 것이다
+        const int iTextInset = 2;
+        int iTextWidth = pCombo->GetWidth() - iTextInset;
+        SIZE size = getFontTextExtent(g_GameDATA.m_hFONT[FONT_NORMAL], pszName);
+        if (size.cx <= iTextWidth)
+            continue;
+
+        POINT ptCombo = pCombo->GetPosition();
+        RECT rcCombo = {ptCombo.x, ptCombo.y, ptCombo.x + pCombo->GetWidth(),
+            ptCombo.y + pCombo->GetHeight()};
+        if (PtInRect(&rcCombo, ptMouse)) {
+            CToolTipMgr::GetInstance().RegToolTip(ptCombo.x - 20, ptCombo.y - 20, pszName);
+            return;
+        }
+    }
 }
 
 void

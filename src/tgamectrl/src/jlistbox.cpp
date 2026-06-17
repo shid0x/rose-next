@@ -7,6 +7,7 @@
 #include "tcontainer.h"
 #include "IListCellRenderer.h"
 #include "TControlMgr.h"
+#include "tstatic.h"
 #include "ITFont.h"
 #include <assert.h>
 
@@ -68,6 +69,10 @@ CJListBox::Draw() {
         pDrawCtrl =
             m_pListCellRenderer->GetListCellRendererComponent(pObject, bSelectedItemIndex, false);
         pDrawCtrl->SetPosition(ptDraw);
+        ///드랍박스 너비를 넘는 긴 이름이 패널 밖으로 넘치지 않도록 잘라낸다.
+        ///리스트는 패널보다 약간 안쪽으로 들어가 그려지므로 우측 여백을 빼준다
+        if (pDrawCtrl->GetControlType() == CTRL_STATIC)
+            ((CTStatic*)pDrawCtrl)->SetClipWidth(m_iWidth - 8);
         pDrawCtrl->Draw();
         ptDraw.y += m_iCellHeight;
     }
