@@ -31,7 +31,16 @@ CObjCART::~CObjCART(void) {
         m_pObjParent = NULL;
     }
 
-    this->StopSound(m_iOldCartState);
+    // Stop every looping cart sound on teardown, not just the tracked state.
+    // The move/engine loops are DSBPLAY_LOOPING buffers; if the active loop is
+    // not stopped here it keeps playing forever. Relying on m_iOldCartState
+    // leaked the move ("steps") loop whenever the cart was destroyed while in
+    // CART_STATE_MOVE — e.g. dismount mid-combat, or cart re-creation that
+    // bare-deletes the object (CObjAVT::CreateCart) and never runs UnLinkChild.
+    // CART_STATE_MOVE stops PAT_MOVE_SOUND and CART_STATE_STOP stops
+    // PAT_STOP_SOUND, which together cover every loop the cart can start.
+    this->StopSound(CART_STATE_MOVE);
+    this->StopSound(CART_STATE_STOP);
 
     //-----------------------------------------------------------------
     //박지호
@@ -315,6 +324,22 @@ CObjCART::StopSound(int iCurrentState) {
 }
 
 void
+CObjCART::UpdateStateSound() {
+    // The move/engine sounds are looping buffers. Re-issuing the same cart
+    // state (a fresh MOVE while already moving, repeated STOP while idle, etc.)
+    // is common during continuous movement / chasing. Stopping and replaying
+    // the loop in that case restarts it from frame 0 and produces an audible
+    // stutter on small or continuous steps, so only swap loops when the state
+    // genuinely changed. State transitions still pair Stop(old)+Play(new).
+    if (m_iOldCartState == m_iCurrentCartState) {
+        return;
+    }
+
+    StopSound(m_iOldCartState);
+    PlaySound(m_iCurrentCartState);
+}
+
+void
 CObjCART::StopPartSound(int iPart, int iCurrentState) {
     switch (iCurrentState) {
         case CART_STATE_STOP: {
@@ -406,8 +431,7 @@ CObjCART::SetCMD_MOVE(const D3DVECTOR& PosTO, BYTE btRunMODE) {
     m_iOldCartState = m_iCurrentCartState;
     m_iCurrentCartState = CART_STATE_MOVE;
 
-    StopSound(m_iOldCartState);
-    PlaySound(m_iCurrentCartState);
+    UpdateStateSound();
     return true;
 }
 
@@ -432,8 +456,7 @@ CObjCART::SetCMD_MOVE(WORD wSrvDIST, const D3DVECTOR& PosTO, int iServerTarget) 
     m_iOldCartState = m_iCurrentCartState;
     m_iCurrentCartState = CART_STATE_MOVE;
 
-    StopSound(m_iOldCartState);
-    PlaySound(m_iCurrentCartState);
+    UpdateStateSound();
 }
 
 bool
@@ -457,8 +480,7 @@ CObjCART::SetCMD_STOP(void) {
     m_iOldCartState = m_iCurrentCartState;
     m_iCurrentCartState = CART_STATE_STOP;
 
-    StopSound(m_iOldCartState);
-    PlaySound(m_iCurrentCartState);
+    UpdateStateSound();
     return true;
 }
 
@@ -491,8 +513,7 @@ CObjCART::SetCMD_ATTACK(int iServerTarget, WORD wSrvDIST, const D3DVECTOR& PosGO
     m_iOldCartState = m_iCurrentCartState;
     m_iCurrentCartState = CART_STATE_ATTACK;
 
-    StopSound(m_iOldCartState);
-    PlaySound(m_iCurrentCartState);
+    UpdateStateSound();
 }
 
 float

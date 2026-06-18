@@ -86,6 +86,11 @@ public:
     void StopSound(int iCurrentState);
     void StopPartSound(int iPart, int iCurrentState);
 
+    /// Swap the looping cart sound for a state transition, but only when the
+    /// state actually changed. Restarting the same loop on every (re-issued)
+    /// command would retrigger the move/engine loop from frame 0 and stutter.
+    void UpdateStateSound();
+
     //////////////////////////////////////////////////////////////////////////////////////////
     /// < Inherited from CGameOBJ virtual functions
     /// <

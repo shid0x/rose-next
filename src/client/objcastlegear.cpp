@@ -66,6 +66,5 @@ CObjCastleGear::SetCMD_ATTACK(int iServerTarget, WORD wSrvDIST, const D3DVECTOR&
     m_iOldCartState = m_iCurrentCartState;
     m_iCurrentCartState = CART_STATE_ATTACK;
 
-    StopSound(m_iOldCartState);
-    PlaySound(m_iCurrentCartState);
+    UpdateStateSound();
 }
