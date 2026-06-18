@@ -320,10 +320,19 @@ CClanDlg::DrawInfomation() {
         ::setTransformSprite(mat);
         //	DebugBreak();
 
-        ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL], true, 15, 73, g_dwBLACK, STR_CLAN_NAME);
+        // Labels are right-aligned to just left of the value boxes (which start at
+        // x~83). Longer translated labels then grow into the empty left margin instead
+        // of overlapping the value box. Single line, ~16px tall to match value rows.
+        RECT rcLabel;
+        const int LABEL_L = 2, LABEL_R = 80;
+        const unsigned DT_LABEL = DT_RIGHT | DT_SINGLELINE;
+
+        SetRect(&rcLabel, LABEL_L, 73, LABEL_R, 73 + 16);
+        ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL], true, &rcLabel, g_dwBLACK, DT_LABEL, STR_CLAN_NAME);
         ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL], true, 88, 73, g_dwWHITE, Clan.GetName());
 
-        ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL], true, 15, 94, g_dwBLACK, STR_CLAN_LEV);
+        SetRect(&rcLabel, LABEL_L, 94, LABEL_R, 94 + 16);
+        ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL], true, &rcLabel, g_dwBLACK, DT_LABEL, STR_CLAN_LEV);
         ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
             true,
             88,
@@ -332,7 +341,8 @@ CClanDlg::DrawInfomation() {
             "%d",
             Clan.GetLevel());
 
-        ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL], true, 15, 115, g_dwBLACK, STR_CLAN_POINT);
+        SetRect(&rcLabel, LABEL_L, 115, LABEL_R, 115 + 16);
+        ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL], true, &rcLabel, g_dwBLACK, DT_LABEL, STR_CLAN_POINT);
         ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
             true,
             88,
@@ -341,7 +351,8 @@ CClanDlg::DrawInfomation() {
             "%d",
             Clan.GetPoint());
 
-        ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL], true, 15, 135, g_dwBLACK, STR_CLAN_SLOGAN);
+        SetRect(&rcLabel, LABEL_L, 135, LABEL_R, 135 + 16);
+        ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL], true, &rcLabel, g_dwBLACK, DT_LABEL, STR_CLAN_SLOGAN);
 
         RECT rcDraw = {88, 135, 210, 180};
         ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL],
@@ -351,7 +362,8 @@ CClanDlg::DrawInfomation() {
             DT_WORDBREAK,
             Clan.GetSlogan());
 
-        ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL], true, 15, 187, g_dwBLACK, STR_CLAN_MONEY);
+        SetRect(&rcLabel, LABEL_L, 187, LABEL_R, 187 + 16);
+        ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL], true, &rcLabel, g_dwBLACK, DT_LABEL, STR_CLAN_MONEY);
         ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
             true,
             88,
@@ -360,11 +372,12 @@ CClanDlg::DrawInfomation() {
             "%d",
             Clan.GetMoney());
 
+        SetRect(&rcLabel, LABEL_L, 208, LABEL_R, 208 + 16);
         ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL],
             true,
-            15,
-            208,
+            &rcLabel,
             g_dwBLACK,
+            DT_LABEL,
             STR_CLAN_MEMBER_COUNT);
         SetRect(&rcDraw, 88, 208, 210, 230);
         ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
@@ -376,7 +389,8 @@ CClanDlg::DrawInfomation() {
             Clan.GetMemberCount(),
             Clan.GetMemberMaxCount());
 
-        ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL], true, 15, 248, g_dwBLACK, STR_CLAN_ALLYED);
+        SetRect(&rcLabel, LABEL_L, 248, LABEL_R, 248 + 16);
+        ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL], true, &rcLabel, g_dwBLACK, DT_LABEL, STR_CLAN_ALLYED);
         ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL], true, 88, 248, g_dwWHITE, Clan.GetAllyName(0));
         //		::drawFont( g_GameDATA.m_hFONT[ FONT_NORMAL ], true, 71,229, g_dwWHITE,
         // Clan.GetAllyName(1) );
