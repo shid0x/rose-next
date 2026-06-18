@@ -82,6 +82,10 @@ public:
     //
     void PlaySound(t_sounddata* pData, long lVolume, long lPan, DWORD dwFlags);
     void StopSound(t_sounddata* pData);
+    // Reset the play cursor of every mixed buffer to the start. DirectSound's
+    // Stop() leaves the cursor where it was, so a later Play() resumes mid-clip;
+    // call this before Play to force playback from the beginning.
+    void RewindSound(t_sounddata* pData);
     DWORD GetStatus(t_sounddata* pData); // Return IDirectSoundBuffer8::GetStatus( &DWORD );
 
     short GetMaxMixCount(t_sounddata* pData);

@@ -522,6 +522,17 @@ CDSOUND::StopSound(t_sounddata* pData) {
 }
 
 //-------------------------------------------------------------------------------------------------
+void
+CDSOUND::RewindSound(t_sounddata* pData) {
+    while (pData != NULL) {
+        if (pData->m_pDSB != NULL)
+            pData->m_pDSB->SetCurrentPosition(0);
+
+        pData = pData->m_pNext;
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
 CD3DSOUND::CD3DSOUND() {
     m_pDSListener = NULL;

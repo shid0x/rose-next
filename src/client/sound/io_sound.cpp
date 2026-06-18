@@ -237,6 +237,11 @@ CSoundLIST::IDX_PlaySound3DLoop(short nIndex,
     m_fMaxDistance = SOUND_DEFAULT_MAX_DISTANCE;
     m_SOUND.SetMaxDistance(pSoundData->m_pSoundData, m_fMaxDistance);
 
+    // Start the loop from the beginning. DirectSound's Stop() leaves the play
+    // cursor in place, so without this a cart that takes a small step (move
+    // loop stopped part-way) would resume mid-clip on the next step instead of
+    // restarting the sound.
+    m_SOUND.RewindSound(pSoundData->m_pSoundData);
     m_SOUND.PlaySound(pSoundData->m_pSoundData, m_iSoundVol, SOUND_PAN_CENTER, DSBPLAY_LOOPING);
     return true;
 }
