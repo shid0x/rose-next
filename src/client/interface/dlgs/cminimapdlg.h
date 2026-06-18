@@ -80,6 +80,8 @@ private:
     bool m_bExpand; ///현재 크게 보이는가?
     bool m_bMinimize; ///현재 캡션만 보이는가?
 
+    int m_iPosFix; /// 미니맵 텍스쳐 출력 너비 보정값(상태별: 작을때 80, 확장시 110) - m_bExpand와 동기화되어야 한다.
+
     CSinglelineString m_zonename; /// 존네임 스트링
 
     /// 스크립트로 미니맵위에 특별한 표시를 추가시 저장 컨테이너

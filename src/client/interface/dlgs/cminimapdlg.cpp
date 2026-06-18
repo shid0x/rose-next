@@ -46,7 +46,6 @@
 
 const int c_iCaptionHeight = 21;
 const int c_iMargin = 1;
-int c_iPosFix = 80;
 const RECT c_draw_zonename_rect_expand = {5, 5, 5 + 170, 5 + 16};
 const RECT c_draw_zonename_rect_normal = {5, 5, 5 + 100, 5 + 16};
 
@@ -79,6 +78,10 @@ CMinimapDLG::CMinimapDLG() {
 
     m_bExpand = false; ///현재 크게 보이는가?
     m_bMinimize = false; ///현재 캡션만 보이는가?
+
+    m_iPosFix = 80; /// m_bExpand(false=작은맵)에 맞춘 기본 보정값
+
+
 
     m_indicator = new CTAnimation;
 
@@ -141,6 +144,14 @@ CMinimapDLG::SetMinimap(const char* pFname,
     m_zonename.set_string(ZONE_NAME(g_pTerrain->GetZoneNO()),
         m_bExpand ? c_draw_zonename_rect_expand : c_draw_zonename_rect_normal,
         FONT_NORMAL);
+
+    /// The minimap sprite is intentionally drawn wider than the dialog frame; that overdraw is
+    /// only hidden when the dialog is flush against the right screen edge. InitInterfacePos anchors
+    /// it once at startup using g_pCApp->GetWIDTH(), which can differ from the live render width
+    /// (getScreenWidth()) before the device resolution is final, leaving it slightly off so the
+    /// overflow shows on-screen until the user resizes. Re-anchor here (as Expand/Reduct do) so
+    /// every zone entry/warp pins it to the right edge using the live screen width.
+    RefreshDlg();
 
     return true;
 }
@@ -220,7 +231,7 @@ CMinimapDLG::Draw() {
         rcMinimap.top =
             ((long)(fSpriteCenterY - (m_iHeight - c_iCaptionHeight) / (2 * m_fCurrentScale)));
         rcMinimap.right =
-            ((long)(rcMinimap.left + m_iWidth / m_fCurrentScale) - c_iMargin * 2) + +c_iPosFix;
+            ((long)(rcMinimap.left + m_iWidth / m_fCurrentScale) - c_iMargin * 2) + +m_iPosFix;
         rcMinimap.bottom =
             (long)(rcMinimap.top + (m_iHeight - c_iCaptionHeight) / m_fCurrentScale) - c_iMargin;
 
@@ -752,7 +763,7 @@ CMinimapDLG::Expand() {
             SetWidth(pCtrl->GetWidth());
             SetHeight(pCtrl->GetHeight());
         }
-        c_iPosFix = 110;
+        m_iPosFix = 110;
     }
 
     POINT ptNewPos = {getScreenWidth() - m_iWidth, m_sPosition.y};
@@ -784,7 +795,7 @@ CMinimapDLG::Reduct() {
             SetWidth(pCtrl->GetWidth());
             SetHeight(pCtrl->GetHeight());
         }
-        c_iPosFix = 80;
+        m_iPosFix = 80;
     }
 
     POINT ptNewPos = {getScreenWidth() - m_iWidth, m_sPosition.y};
@@ -803,7 +814,7 @@ CMinimapDLG::ToggleShowMinimapSmall() {
             SetWidth(pCtrl->GetWidth());
             SetHeight(pCtrl->GetHeight());
         }
-        c_iPosFix = 80;
+        m_iPosFix = 80;
 
         if (pCtrl = FindPaneChild(IID_PANE_SMALL, IID_PANE_SMALL_CHILDPANE))
             pCtrl->Show();
@@ -826,7 +837,7 @@ CMinimapDLG::ToggleShowMinimapBig() {
             SetWidth(pCtrl->GetWidth());
             SetHeight(pCtrl->GetHeight());
         }
-        c_iPosFix = 110;
+        m_iPosFix = 110;
 
         if (pCtrl = FindPaneChild(IID_PANE_BIG, IID_PANE_BIG_CHILDPANE))
             pCtrl->Show();
