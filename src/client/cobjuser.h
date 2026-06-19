@@ -28,10 +28,22 @@ struct SummonMobInfo {
 
     int iSkillIDX;
 
+    /// 소환 시점에 서버와 동일한 공식으로 계산된 스케일 능력치.
+    /// (소환몹의 실제 전투력은 NPC 기본값이 아니라 소환 스킬레벨 + 소환 당시
+    ///  오너 레벨로 스케일되므로, 플레이어 진행도에 따라 의미있는 값을 표시한다.)
+    int iSummonLevel; /// 소환몹 레벨 = 소환 당시 오너 레벨
+    int iAtk;
+    int iDef;
+    int iRes;
+
     SummonMobInfo() {
         iIndex = 0;
         iCapacity = 0;
         iSkillIDX = 0;
+        iSummonLevel = 0;
+        iAtk = 0;
+        iDef = 0;
+        iRes = 0;
     }
 };
 
@@ -219,6 +231,10 @@ public:
     void AddSummonedMob(int iIndex, int iSkillIDX);
     void SubSummonedMob(int iIndex);
     bool GetSummonedMobInfo(int iIndex, SummonMobInfo& mobInfo);
+    /// 소환 시점에 계산된 스케일 능력치를 해당 소환몹 엔트리에 저장한다.
+    void SetSummonedMobStats(int iIndex, int iSummonLevel, int iAtk, int iDef, int iRes);
+    /// 소환몹 정보 패널이 순회할 수 있도록 리스트를 노출한다 (server object index 목록)
+    const std::list<SummonMobInfo>& GetSummonedMobList() const { return m_SummonedMobList; }
     //-------------------------------------------------------------------------------------
 
     //-------------------------------------------------------------------------------------------------

@@ -629,6 +629,9 @@
     <ClCompile Include="Interface\CNameBox.cpp">
       <Filter>Source Files\Interface</Filter>
     </ClCompile>
+    <ClCompile Include="Interface\CSummonInfoPanel.cpp">
+      <Filter>Source Files\Interface</Filter>
+    </ClCompile>
     <ClCompile Include="Interface\CTDrawImpl.cpp">
       <Filter>Source Files\Interface</Filter>
     </ClCompile>
@@ -1772,6 +1775,9 @@
       <Filter>Source Files\Interface</Filter>
     </ClInclude>
     <ClInclude Include="Interface\CNameBox.h">
+      <Filter>Source Files\Interface</Filter>
+    </ClInclude>
+    <ClInclude Include="Interface\CSummonInfoPanel.h">
       <Filter>Source Files\Interface</Filter>
     </ClInclude>
     <ClInclude Include="Interface\CTDrawImpl.h">

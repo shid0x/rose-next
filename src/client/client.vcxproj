@@ -428,6 +428,7 @@
     <ClCompile Include="Interface\ClanMarkTransfer.cpp" />
     <ClCompile Include="Interface\CLoading.cpp" />
     <ClCompile Include="Interface\CNameBox.cpp" />
+    <ClCompile Include="Interface\CSummonInfoPanel.cpp" />
     <ClCompile Include="Interface\CTDrawImpl.cpp" />
     <ClCompile Include="Interface\CTFontImpl.cpp" />
     <ClCompile Include="Interface\CToolTipMgr.cpp" />
@@ -822,6 +823,7 @@
     <ClInclude Include="Interface\ClanMarkTransfer.h" />
     <ClInclude Include="Interface\CLoading.h" />
     <ClInclude Include="Interface\CNameBox.h" />
+    <ClInclude Include="Interface\CSummonInfoPanel.h" />
     <ClInclude Include="Interface\CTDrawImpl.h" />
     <ClInclude Include="Interface\CTFontImpl.h" />
     <ClInclude Include="Interface\CToolTipMgr.h" />

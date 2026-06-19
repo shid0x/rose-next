@@ -764,6 +764,23 @@ CObjUSER::SubSummonedMob(int iIndex) {
     }
 }
 
+void
+CObjUSER::SetSummonedMobStats(int iIndex, int iSummonLevel, int iAtk, int iDef, int iRes) {
+    std::list<SummonMobInfo>::iterator begin = m_SummonedMobList.begin();
+
+    for (; begin != m_SummonedMobList.end(); ++begin) {
+        SummonMobInfo& monInfo = *begin;
+
+        if (monInfo.iIndex == iIndex) {
+            monInfo.iSummonLevel = iSummonLevel;
+            monInfo.iAtk = iAtk;
+            monInfo.iDef = iDef;
+            monInfo.iRes = iRes;
+            break;
+        }
+    }
+}
+
 bool
 CObjUSER::GetSummonedMobInfo(int iIndex, SummonMobInfo& mobInfo) {
     /// 이미 있는놈이라면..

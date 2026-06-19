@@ -5,6 +5,7 @@
 #include "CNameBox.h"
 #include "CDigitEffect.h"
 #include "PersonalStoreManager.h"
+#include "CSummonInfoPanel.h"
 
 #include "CObjCHAR.h"
 
@@ -14,6 +15,7 @@ private:
     CNameBox m_NameBox;
     CDigitEffect m_DigitEffect;
     CPersonalStoreManager m_PersonalStoreManager;
+    CSummonInfoPanel m_SummonPanel;
 
 public:
     CUIMediator();
@@ -33,6 +35,12 @@ public:
     void AddPersonalStoreIndex(int iObjIDX);
     void SubPersonalStoreIndex(int iObjIDX);
     void ResetPersonalStore();
+
+    /// 소환몹 정보 패널 드래그 입력 (CGameStateMain 의 즉시 메시지 경로에서 호출)
+    bool SummonPanelLButtonDown(int x, int y) { return m_SummonPanel.OnLButtonDown(x, y); }
+    bool SummonPanelMouseMove(int x, int y) { return m_SummonPanel.OnMouseMove(x, y); }
+    bool SummonPanelLButtonUp(int x, int y) { return m_SummonPanel.OnLButtonUp(x, y); }
+    bool IsSummonPanelDragging() { return m_SummonPanel.IsDragging(); }
 };
 
 extern CUIMediator g_UIMed;

@@ -1388,13 +1388,28 @@ CRecvPACKET::Recv_gsv_MOB_CHAR() {
                 if (iDoingSkillIDX) {
 
                     int iSkillLevel = SKILL_LEVEL(iDoingSkillIDX);
-                    int iMaxHP = (int)(NPC_HP(m_pRecvPacket->m_gsv_MOB_CHAR.m_nCharIdx)
-                        * (iSkillLevel + 16) * (g_pAVATAR->Get_LEVEL() + 85) / 2600.f);
+                    int iOwnerLevel = g_pAVATAR->Get_LEVEL();
+                    short nMobCharNo = m_pRecvPacket->m_gsv_MOB_CHAR.m_nCharIdx;
+                    int iMaxHP =
+                        (int)(NPC_HP(nMobCharNo) * (iSkillLevel + 16) * (iOwnerLevel + 85) / 2600.f);
 
                     CObjCHAR* pMobChar = g_pObjMGR->Get_CharOBJ(nCObj, true);
                     if (pMobChar) {
                         ((CObjMOB*)pMobChar)->Set_MaxHP(iMaxHP);
                     }
+
+                    /// 소환몹 정보 패널용 스케일 능력치. 서버 CObjSUMMON::SetCallerOBJ 와
+                    /// 동일한 공식(소환 스킬레벨 + 소환 당시 오너 레벨)으로 계산해 저장한다.
+                    /// 소환몹 레벨은 서버에서 오너 레벨로 설정된다(m_iLevel = ownerLevel).
+                    int iAtk =
+                        (int)(NPC_ATK(nMobCharNo) * (iSkillLevel + 22) * (iOwnerLevel + 100) / 4000.f);
+                    int iDef =
+                        (int)(NPC_DEF(nMobCharNo) * (iSkillLevel + 30) * (iOwnerLevel + 80) / 4400.f);
+                    int iRes =
+                        (int)(NPC_RES(nMobCharNo) * (iSkillLevel + 24) * (iOwnerLevel + 90) / 3600.f);
+                    ((CObjUSER*)pChar)
+                        ->SetSummonedMobStats(m_pRecvPacket->m_gsv_MOB_CHAR.m_wObjectIDX,
+                            iOwnerLevel, iAtk, iDef, iRes);
                 } else {
                     assert(0 && "This is summoned mob, but don't have owner");
                 }

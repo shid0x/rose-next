@@ -175,6 +175,14 @@ CTRL+click lets a player command their summons (move / attack) instead of moving
 
 Sends go through `CSendPACKET::Send_cli_SUMMON_CONTROL_MOVE` / `_ATTACK` (`network/sendpacket.cpp`) using the shared `CLI_SUMMON_CONTROL` packet. The server is authoritative for which summons obey and how; see the gameserver `CLAUDE.md` "Summon Control" section (including the `IsMovablePOS` gotcha that made move orders look random).
 
+## Summon Info Panel
+
+`CSummonInfoPanel` (`interface/csummoninfopanel.cpp/h`, owned by `CUIMediator` as `m_SummonPanel`) is a draggable overlay listing the player's active summons (name, ATK/DEF/LV/RES, HP bar). It is **not** a tgamectrl dialog — it draws directly with `g_DrawImpl.DrawFit` (`ID_BLACK_PANEL` background, `UI00_GUAGE_*` HP bar) + `drawFont`, like the monster-HP namebox feature, so it needs **no XML resource**. Drawn inside the HUD sprite block via `CUIMediator::Draw()`.
+
+- Visible only when `g_pAVATAR->GetCur_SummonCNT() > 0`; one box per summon, stacked vertically. Summon object indices come from `CObjUSER::GetSummonedMobList()` (the same `m_SummonedMobList` the summon counter/CTRL-click control use); each index resolves to a live `CObjMOB` via `g_pObjMGR->Get_ClientCharOBJ`.
+- **Stats are the server-scaled values, not the raw NPC table.** A summon's real combat power is scaled at creation by summon-skill level + owner level (server `CObjSUMMON::SetCallerOBJ`, `cobjnpc.cpp`). The client replicates those exact formulas once at summon time in `recvpacket.cpp` (right next to the pre-existing MaxHP scaling) and stores ATK/DEF/RES + the summon level (= owner level at summon) into `SummonMobInfo` via `SetSummonedMobStats`. **If you change the scaling formula on the server, change it here too** — the two are intentionally duplicated. HP/MaxHP are read live from the object (MaxHP was already set scaled at `ADD_CHAR`).
+- **Drag** is handled in `CGameStateMain::ProcWndMsgInstant` (the synchronous consume path): `WM_LBUTTONDOWN` over the stack starts a drag and returns 1 so the click never reaches avatar-move / dialog hit-testing; `WM_MOUSEMOVE + MK_LBUTTON` while dragging moves the panel; `WM_LBUTTONUP` ends it. Position is in-memory only (resets each launch, default right side below the minimap) — not persisted to INI.
+
 ## Frame Timing & Timer Precision
 
 `g_GameDATA.GetElapsedFrameTime()` ([game.cpp:172,180](src/client/game.cpp#L172)) is built on `timeGetTime()`. By default Windows quantizes `timeGetTime()` to the system tick (~15.6 ms), which dominates anything driven by per-frame dt above 60 fps:
