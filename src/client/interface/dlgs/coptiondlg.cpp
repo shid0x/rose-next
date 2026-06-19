@@ -575,6 +575,13 @@ COptionDlg::ChangePlayOption() {
             else
                 m_PlayOption.iShowNpcName = 0;
         }
+
+        /// 타겟몹 HP 숫자 표시 (rose-next.ini [PLAY] SHOWMOBHP). 스킨에 따라 없을 수 있음.
+        pCtrl = pContainer->Find(IID_CHECKBOX_SHOWMOBHP);
+        if (pCtrl && pCtrl->GetControlType() == CTRL_CHECKBOX) {
+            CTCheckBox* pCheckBox = (CTCheckBox*)pCtrl;
+            g_ClientStorage.m_bShowMobHp = pCheckBox->IsCheck();
+        }
     }
 }
 void
@@ -876,6 +883,15 @@ COptionDlg::GetCurrentOption() {
                 pCheckBox->SetUncheck();
         }
 
+        pCtrl = pContainer->Find(IID_CHECKBOX_SHOWMOBHP);
+        if (pCtrl && pCtrl->GetControlType() == CTRL_CHECKBOX) {
+            CTCheckBox* pCheckBox = (CTCheckBox*)pCtrl;
+            if (g_ClientStorage.IsShowMobHp())
+                pCheckBox->SetCheck();
+            else
+                pCheckBox->SetUncheck();
+        }
+
         /// Keyboard
         pContainer = pPane->GetTabContainer(IID_TABKEYBOARD);
         assert(pContainer);
@@ -1099,5 +1115,30 @@ COptionDlg::Draw() {
             136,
             g_dwBLACK,
             STR_NORMALCHATTING_MODE);
+    }
+
+    /// PLAY 탭: 새로 추가한 "몹 HP 표시" 체크박스 라벨을 직접 그린다
+    /// (다른 두 체크박스 라벨은 PANE 이미지에 구워져 있음).
+    if (IID_TABPLAY == m_iTab) {
+        CWinCtrl* pCtrl = Find(IID_TABBEDPANE);
+        if (pCtrl && pCtrl->GetControlType() == CTRL_TABBEDPANE) {
+            CTabbedPane* pPane = (CTabbedPane*)pCtrl;
+            CJContainer* pContainer = pPane->GetTabContainer(IID_TABPLAY);
+            if (pContainer) {
+                CWinCtrl* pChk = pContainer->Find(IID_CHECKBOX_SHOWMOBHP);
+                if (pChk) {
+                    POINT pt = pChk->GetPosition();
+                    D3DXMATRIX mat;
+                    D3DXMatrixTranslation(&mat, (float)(pt.x + 18), (float)(pt.y + 1), 0.0f);
+                    ::setTransformSprite(mat);
+                    ::drawFont(g_GameDATA.m_hFONT[FONT_SMALL],
+                        true,
+                        0,
+                        0,
+                        g_dwBLACK,
+                        "Show monster HP");
+                }
+            }
+        }
     }
 }

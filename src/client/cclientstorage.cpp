@@ -232,6 +232,8 @@ CClientStorage::Save() {
 
     WriteBool("PLAY", "SHOWMYNAME", m_PlayOption.iShowMyName);
 
+    WriteBool("PLAY", "SHOWMOBHP", m_bShowMobHp);
+
     ///<-community option
     itoa(m_CommunityOption.iWhisper, szTemp, 10);
     WritePrivateProfileString("COMMUNITY", "WHISPER", szTemp, g_szIniFileName);
