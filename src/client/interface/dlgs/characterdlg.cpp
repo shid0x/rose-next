@@ -21,6 +21,54 @@
 #include "tgamectrl/jcontainer.h"
 #include "tgamectrl/resourcemgr.h"
 
+namespace {
+/// Plain-English explanation of each base ability, shown as a tooltip when the
+/// player hovers the stat name/value on the ABILITY tab. Each entry is a bold
+/// title, a one-line summary, then the concrete things the stat feeds into.
+/// Rows are ordered top-to-bottom exactly as DrawAbilityInfo() draws them.
+struct StatToolTip {
+    const char* pszTitle;
+    const char* pszSummary;
+    const char* pszEffects[4]; ///< NULL-terminated bullet list
+};
+
+const StatToolTip kStatToolTips[6] = {
+    {"Strength (STR)",
+        "Boosts melee weapons and toughness.",
+        {"Melee attack power (swords, axes, spears)",
+            "Maximum HP",
+            "Defense",
+            "Carry weight"}},
+    {"Dexterity (DEX)",
+        "Improves ranged attack and evasion.",
+        {"Bow attack power", "Dodge rate (avoid enemy hits)", NULL, NULL}},
+    {"Intelligence (INT)",
+        "Powers magic and your MP pool.",
+        {"Maximum MP",
+            "Magic weapon attack power (wands, staves)",
+            "Magic resistance",
+            NULL}},
+    {"Concentration (CON)",
+        "Helps you land hits and recover.",
+        {"Accuracy (hit rate)",
+            "Gun attack power",
+            "HP & MP recovery speed",
+            NULL}},
+    {"Charm (CHA)",
+        "Improves dealings with NPCs.",
+        {"Quest & NPC reward bonuses",
+            "Better trading prices",
+            "Most useful for merchant classes",
+            NULL}},
+    {"Sensibility (SEN)",
+        "Sharpens critical and ranged/magic power.",
+        {"Critical hit rate", "Magic & ranged weapon attack power", NULL, NULL}},
+};
+
+/// Top Y (dialog-relative) of each stat value drawn in DrawAbilityInfo().
+const int kStatRowY[6] = {67, 88, 109, 130, 151, 172};
+} // namespace
+
 CCharacterDLG::CCharacterDLG(int iType) {
     m_iGuageBlueGID = 0;
     m_iGuageYellowGID = 0;
@@ -308,6 +356,37 @@ CCharacterDLG::Update(POINT ptMouse) {
                     default:
                         break;
                 }
+            }
+
+            /// Hovering a stat name/value (left column) shows what the stat
+            /// does. The numbers are drawn text, not controls, so hit-test the
+            /// row band directly. The band stops short of the "+" buttons
+            /// (x>=95) so their existing required-point tooltip still wins.
+            for (int i = 0; i < 6; ++i) {
+                RECT rc;
+                rc.left = m_sPosition.x + 12;
+                rc.right = m_sPosition.x + 92;
+                rc.top = m_sPosition.y + kStatRowY[i] - 4;
+                rc.bottom = m_sPosition.y + kStatRowY[i] + 17;
+
+                if (ptMouse.x < rc.left || ptMouse.x >= rc.right || ptMouse.y < rc.top
+                    || ptMouse.y >= rc.bottom)
+                    continue;
+
+                const StatToolTip& Tip = kStatToolTips[i];
+                CInfo Info;
+                Info.AddString(Tip.pszTitle,
+                    D3DCOLOR_ARGB(255, 255, 221, 102),
+                    g_GameDATA.m_hFONT[FONT_NORMAL_BOLD]);
+                Info.AddString(Tip.pszSummary, g_dwWHITE);
+                Info.AddString(""); ///separator gap
+                for (int e = 0; e < 4 && Tip.pszEffects[e]; ++e)
+                    Info.AddString(CStr::Printf("- %s", Tip.pszEffects[e]), g_dwBlueToolTip);
+
+                POINT pt = {ptMouse.x + 20, ptMouse.y};
+                Info.SetPosition(pt);
+                CToolTipMgr::GetInstance().RegistInfo(Info);
+                break;
             }
             break;
         }
