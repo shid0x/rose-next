@@ -67,6 +67,71 @@ const StatToolTip kStatToolTips[6] = {
 
 /// Top Y (dialog-relative) of each stat value drawn in DrawAbilityInfo().
 const int kStatRowY[6] = {67, 88, 109, 130, 151, 172};
+
+/// Right column: the derived combat stats the base abilities feed into.
+/// Ordered top-to-bottom exactly as DrawAbilityInfo() draws them.
+const StatToolTip kDerivedToolTips[8] = {
+    {"Attack Power",
+        "How hard your attacks hit.",
+        {"More damage on every normal attack",
+            "Grows with your weapon and its main stat (STR/DEX/INT...)",
+            NULL,
+            NULL}},
+    {"Defense",
+        "Reduces physical damage you take.",
+        {"Lowers damage from melee/physical hits",
+            "Comes from armor, plus STR and level",
+            NULL,
+            NULL}},
+    {"Magic Resistance",
+        "Reduces magic damage you take.",
+        {"Lowers damage from spells", "Comes from gear, plus INT and level", NULL, NULL}},
+    {"Accuracy",
+        "How reliably you land hits.",
+        {"Higher chance to hit (vs the enemy's dodge)",
+            "Raised mainly by CON and your weapon",
+            NULL,
+            NULL}},
+    {"Critical",
+        "Chance to score critical hits.",
+        {"Critical hits deal extra damage", "Raised mainly by SEN (and some CON)", NULL, NULL}},
+    {"Dodge",
+        "How well you avoid enemy attacks.",
+        {"Higher chance to evade incoming hits",
+            "Raised mainly by DEX, armor and level",
+            NULL,
+            NULL}},
+    {"Attack Speed",
+        "How fast you attack.",
+        {"More swings over time means more damage",
+            "Set by your weapon (and some buffs)",
+            NULL,
+            NULL}},
+    {"Move Speed",
+        "How fast you move.",
+        {"Faster running and travel", "Raised by boots (and some buffs)", NULL, NULL}},
+};
+
+/// Top Y (dialog-relative) of each derived stat value (right column).
+const int kDerivedRowY[8] = {67, 88, 109, 130, 151, 172, 193, 214};
+
+/// Build and register the hover tooltip for one stat: bold title, plain
+/// summary, a blank gap, then the bullet list of concrete effects.
+void
+RegStatToolTip(const StatToolTip& Tip, POINT ptMouse) {
+    CInfo Info;
+    Info.AddString(Tip.pszTitle,
+        D3DCOLOR_ARGB(255, 255, 221, 102),
+        g_GameDATA.m_hFONT[FONT_NORMAL_BOLD]);
+    Info.AddString(Tip.pszSummary, g_dwWHITE);
+    Info.AddString(""); ///separator gap
+    for (int e = 0; e < 4 && Tip.pszEffects[e]; ++e)
+        Info.AddString(CStr::Printf("- %s", Tip.pszEffects[e]), g_dwBlueToolTip);
+
+    POINT pt = {ptMouse.x + 20, ptMouse.y};
+    Info.SetPosition(pt);
+    CToolTipMgr::GetInstance().RegistInfo(Info);
+}
 } // namespace
 
 CCharacterDLG::CCharacterDLG(int iType) {
@@ -358,34 +423,28 @@ CCharacterDLG::Update(POINT ptMouse) {
                 }
             }
 
-            /// Hovering a stat name/value (left column) shows what the stat
-            /// does. The numbers are drawn text, not controls, so hit-test the
-            /// row band directly. The band stops short of the "+" buttons
-            /// (x>=95) so their existing required-point tooltip still wins.
+            /// Hovering a stat name/value shows what the stat does. The numbers
+            /// are drawn text, not controls, so hit-test the row bands directly.
+            /// Left column = base abilities; the band stops short of the "+"
+            /// buttons (x>=95) so their required-point tooltip still wins.
             for (int i = 0; i < 6; ++i) {
-                RECT rc;
-                rc.left = m_sPosition.x + 12;
-                rc.right = m_sPosition.x + 92;
-                rc.top = m_sPosition.y + kStatRowY[i] - 4;
-                rc.bottom = m_sPosition.y + kStatRowY[i] + 17;
-
-                if (ptMouse.x < rc.left || ptMouse.x >= rc.right || ptMouse.y < rc.top
-                    || ptMouse.y >= rc.bottom)
+                if (ptMouse.x < m_sPosition.x + 12 || ptMouse.x >= m_sPosition.x + 92
+                    || ptMouse.y < m_sPosition.y + kStatRowY[i] - 4
+                    || ptMouse.y >= m_sPosition.y + kStatRowY[i] + 17)
                     continue;
 
-                const StatToolTip& Tip = kStatToolTips[i];
-                CInfo Info;
-                Info.AddString(Tip.pszTitle,
-                    D3DCOLOR_ARGB(255, 255, 221, 102),
-                    g_GameDATA.m_hFONT[FONT_NORMAL_BOLD]);
-                Info.AddString(Tip.pszSummary, g_dwWHITE);
-                Info.AddString(""); ///separator gap
-                for (int e = 0; e < 4 && Tip.pszEffects[e]; ++e)
-                    Info.AddString(CStr::Printf("- %s", Tip.pszEffects[e]), g_dwBlueToolTip);
+                RegStatToolTip(kStatToolTips[i], ptMouse);
+                break;
+            }
 
-                POINT pt = {ptMouse.x + 20, ptMouse.y};
-                Info.SetPosition(pt);
-                CToolTipMgr::GetInstance().RegistInfo(Info);
+            /// Right column = the derived combat stats.
+            for (int i = 0; i < 8; ++i) {
+                if (ptMouse.x < m_sPosition.x + 120 || ptMouse.x >= m_sPosition.x + 211
+                    || ptMouse.y < m_sPosition.y + kDerivedRowY[i] - 4
+                    || ptMouse.y >= m_sPosition.y + kDerivedRowY[i] + 17)
+                    continue;
+
+                RegStatToolTip(kDerivedToolTips[i], ptMouse);
                 break;
             }
             break;
