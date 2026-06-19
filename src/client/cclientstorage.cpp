@@ -20,6 +20,7 @@ CClientStorage::CClientStorage(void) {
     m_VideoOption.iUseRoughMap = 1;
 
     m_bShowPartyMemberHpGuage = true;
+    m_bShowMobHp = true;
     m_bHasSavedDialogPos = false;
     m_iQuickBarDlgType = CQuickBAR::TYPE_HORIZONTAL;
     m_iQuickBarExtDlgType = CQuickBAR::TYPE_HORIZONTAL;
@@ -108,6 +109,7 @@ CClientStorage::Load() {
     m_PlayOption.iShowMobName =
         GetPrivateProfileInt("PLAY", "SHOWMOBNAME", c_iDefaultShowName, g_szIniFileName);
     m_PlayOption.iShowMyName = ReadBool("PLAY", "SHOWMYNAME", false);
+    m_bShowMobHp = ReadBool("PLAY", "SHOWMOBHP", true);
 
     m_CommunityOption.iWhisper = GetPrivateProfileInt("COMMUNITY", "WHISPER", 1, g_szIniFileName);
     m_CommunityOption.iAddFriend =

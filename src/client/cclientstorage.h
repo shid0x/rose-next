@@ -136,6 +136,7 @@ public:
     bool IsShowNpcName();
     bool IsShowPcName();
     bool IsShowMobName();
+    bool IsShowMobHp() { return m_bShowMobHp; }
 
     ///*********************************************************************/
     /// Party
@@ -204,6 +205,8 @@ public:
     t_OptionKeyboard m_KeyboardOption;
 
     bool m_bShowPartyMemberHpGuage;
+    // Show targeted monster's current/max HP as text over its lifebar ([PLAY] SHOWMOBHP)
+    bool m_bShowMobHp;
     int m_iQuickBarDlgType; /// Vertical, Horizontal
     int m_iQuickBarExtDlgType; /// 2nd skillbar Vertical, Horizontal
     int m_iChatDlgType; /// Small, Big

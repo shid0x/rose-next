@@ -320,6 +320,29 @@ CNameBox::DrawMobName(float x, float y, float z, CObjCHAR* pCharOBJ, bool bTarge
             IMAGE_RES_UI,
             CResourceMgr::GetInstance()->GetImageNID(IMAGE_RES_UI, "UI00_GUAGE_RED"));
 
+        /// 타겟몹의 현재/최대 HP를 게이지 위에 숫자로 표시 (rose-next.ini [PLAY] SHOWMOBHP)
+        if (g_ClientStorage.IsShowMobHp()) {
+            char szHP[32];
+            _snprintf(szHP, sizeof(szHP), "%d/%d", iHP, iMaxHP);
+            szHP[sizeof(szHP) - 1] = '\0';
+
+            const int iHeightGuage = 16;
+            D3DXMATRIX matHP;
+            D3DXMatrixTranslation(&matHP,
+                x - iWidthGuage / 2,
+                y - NAMEBOX_HEIGHT / 2 + 4,
+                z);
+            ::setTransformSprite(matHP);
+
+            RECT rcHP = {0, 0, iWidthGuage, iHeightGuage};
+            ::drawFont(g_GameDATA.m_hFONT[FONT_OUTLINE_11_BOLD],
+                true,
+                &rcHP,
+                g_dwWHITE,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+                szHP);
+        }
+
         char* pszMobName = pCharOBJ->Get_NAME();
         if (pszMobName) {
             SIZE size = getFontTextExtent(g_GameDATA.m_hFONT[FONT_NORMAL_OUTLINE], pszMobName);
