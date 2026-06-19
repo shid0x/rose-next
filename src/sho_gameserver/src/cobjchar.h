@@ -69,7 +69,6 @@ private:
 
     bool Send_gsv_STOP();
     bool Send_gsv_MOUSECMD(int iTargetObject);
-    bool Send_gsv_MOVE();
     bool Send_gsv_ATTACK(int iTargetObject);
     bool Send_gsv_DAMAGE2Sector(int iAttackObject, int wDamage, CObjITEM* pDropITEM);
     bool Send_gsv_DAMAGE2Target(CObjCHAR* pAtkOBJ, int wDamage);
@@ -79,6 +78,10 @@ private:
     bool Send_combat_swing(CObjCHAR* pTarget, uniDAMAGE sDamage);
 
 protected:
+    // Protected so CObjSUMMON::PlayerOrderMoveTo can broadcast a tolerant
+    // (non-IsMovablePOS-gated) player-ordered move.
+    bool Send_gsv_MOVE();
+
     bool Send_gsv_TOGGLE(BYTE btTYPE, bool bUpdateSpeed);
     bool Send_gsv_SELF_SKILL(short nSkillIDX, short nNpcSkillMotion = -1);
     bool Send_gsv_TARGET_SKILL(short nSkillIDX, short nNpcSkillMotion = -1);

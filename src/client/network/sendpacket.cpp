@@ -484,6 +484,45 @@ CSendPACKET::Send_cli_CANTMOVE() {
 }
 
 //-------------------------------------------------------------------------------------------------
+/// CTRL+click : order all of the player's summons to move to a position.
+void
+CSendPACKET::Send_cli_SUMMON_CONTROL_MOVE(D3DVECTOR& PosTO) {
+#ifndef __VIRTUAL_SERVER
+    if (g_pNet->m_bWarping)
+        return;
+
+    m_pSendPacket->m_HEADER.m_wType = CLI_SUMMON_CONTROL;
+    m_pSendPacket->m_HEADER.m_nSize = sizeof(cli_SUMMON_CONTROL);
+    m_pSendPacket->m_cli_SUMMON_CONTROL.m_btCMD = SUMMON_CTRL_MOVE;
+    m_pSendPacket->m_cli_SUMMON_CONTROL.m_wTargetObjectIDX = 0;
+    m_pSendPacket->m_cli_SUMMON_CONTROL.m_PosTO.x = PosTO.x;
+    m_pSendPacket->m_cli_SUMMON_CONTROL.m_PosTO.y = PosTO.y;
+
+    this->Send_PACKET(m_pSendPacket);
+#endif
+}
+
+//-------------------------------------------------------------------------------------------------
+/// CTRL+click : order all of the player's summons to attack a target.
+void
+CSendPACKET::Send_cli_SUMMON_CONTROL_ATTACK(int iClientTarget) {
+#ifndef __VIRTUAL_SERVER
+    if (g_pNet->m_bWarping)
+        return;
+
+    m_pSendPacket->m_HEADER.m_wType = CLI_SUMMON_CONTROL;
+    m_pSendPacket->m_HEADER.m_nSize = sizeof(cli_SUMMON_CONTROL);
+    m_pSendPacket->m_cli_SUMMON_CONTROL.m_btCMD = SUMMON_CTRL_ATTACK;
+    m_pSendPacket->m_cli_SUMMON_CONTROL.m_wTargetObjectIDX =
+        g_pObjMGR->Get_ServerObjectIndex(iClientTarget);
+    m_pSendPacket->m_cli_SUMMON_CONTROL.m_PosTO.x = 0.f;
+    m_pSendPacket->m_cli_SUMMON_CONTROL.m_PosTO.y = 0.f;
+
+    this->Send_PACKET(m_pSendPacket);
+#endif
+}
+
+//-------------------------------------------------------------------------------------------------
 void
 CSendPACKET::Send_cli_ATTACK(int iClientTarget) {
 #ifdef __VIRTUAL_SERVER

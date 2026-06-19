@@ -144,6 +144,10 @@ using namespace Rose::Common;
 #define CLI_SUMMON_CMD 0x0775
 #define GSV_SUMMON_CMD 0x0775
 
+// CTRL+click summon control (move / attack). Distinct from the legacy unused
+// CLI_SUMMON_CMD stance packet above.
+#define CLI_SUMMON_CONTROL 0x0776
+
 // 0x77
 
 #define CLI_SET_MOTION 0x0781
@@ -1094,6 +1098,16 @@ struct cli_SUMMON_CMD: public t_PACKETHEADER {
 #define SUMMON_CMD_ATTACK 0x00
 #define SUMMON_CMD_DEFENSE 0x01
 #define SUMMON_CMD_STANDING 0x02
+
+// CTRL+click direct control of the player's summons. m_btCMD selects whether the
+// summons should move to m_PosTO or attack m_wTargetObjectIDX (server index).
+struct cli_SUMMON_CONTROL: public t_PACKETHEADER {
+    BYTE m_btCMD;
+    WORD m_wTargetObjectIDX; // attack target (server index), used by ATTACK
+    tPOINTF m_PosTO; // destination, used by MOVE
+};
+#define SUMMON_CTRL_MOVE 0x00
+#define SUMMON_CTRL_ATTACK 0x01
 
 // 자신의 현재 경험치를 갱신한다.
 struct gsv_SETEXP: public t_PACKETHEADER {
@@ -2871,6 +2885,7 @@ struct t_PACKET {
         gsv_SCREEN_SHOT_TIME m_gsv_SCREEN_SHOT_TIME;
 
         cli_SUMMON_CMD m_cli_SUMMON_CMD;
+        cli_SUMMON_CONTROL m_cli_SUMMON_CONTROL;
         // gsv_SUMMON_CMD			m_gsv_SUMMON_CMD;
         gsv_PATSTATE_CHANGE m_gsv_PATSTATE_CHANGE;
 

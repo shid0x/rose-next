@@ -165,6 +165,16 @@ The queued path for mouse messages calls `g_itMGR.MsgProc` → `CITStateNormal::
 
 Left-click, hover, and non-drag cursor motion all still flow through the queued path (UI must see them). Only `WM_MOUSEMOVE + MK_RBUTTON` is consumed early.
 
+## Summon Control (CTRL+Click)
+
+CTRL+click lets a player command their summons (move / attack) instead of moving the avatar. The logic is in `CUserInputState::TrySummonControlClick` (`jcommandstate.cpp`), called at the top of **both** `ClickObject` and `DBClickObject` for the active `CSevenHeartUserInput` (and `CDefaultUserInput`):
+
+- It is consumed (returns true, avatar does **not** move) only when the player owns a summon (`GetCur_SummonCNT() > 0`), is not riding, and CTRL is held (`wParam & MK_CONTROL`). Otherwise it returns false and legacy CTRL+click behavior (HP peek, drop-item info, item pickup, NPC/player clicks) is unchanged.
+- CTRL+click on terrain (`OBJ_GROUND`/`OBJ_CNST`) → `Send_cli_SUMMON_CONTROL_MOVE`. CTRL+click on a hostile `OBJ_MOB` → `Send_cli_SUMMON_CONTROL_ATTACK`. Other object types are **not** consumed (return false) so their existing CTRL+click behavior is preserved.
+- **Both** click paths must be hooked: rapid repositioning (RTS-style) is delivered by Windows as `WM_LBUTTONDBLCLK` → `DBClickObject`. Hooking only `ClickObject` makes every other rapid click move the avatar instead of the summon.
+
+Sends go through `CSendPACKET::Send_cli_SUMMON_CONTROL_MOVE` / `_ATTACK` (`network/sendpacket.cpp`) using the shared `CLI_SUMMON_CONTROL` packet. The server is authoritative for which summons obey and how; see the gameserver `CLAUDE.md` "Summon Control" section (including the `IsMovablePOS` gotcha that made move orders look random).
+
 ## Frame Timing & Timer Precision
 
 `g_GameDATA.GetElapsedFrameTime()` ([game.cpp:172,180](src/client/game.cpp#L172)) is built on `timeGetTime()`. By default Windows quantizes `timeGetTime()` to the system tick (~15.6 ms), which dominates anything driven by per-frame dt above 60 fps:

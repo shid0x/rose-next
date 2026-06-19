@@ -170,6 +170,11 @@ public:
     CObjCHAR* FindNextCHAR();
 
     void Kill_AllMOB(classUSER* pUSER, bool drop_items);
+
+    // CTRL+click summon control: order every summon owned by pOwner to move to a
+    // position or attack a target. Returns the number of summons commanded.
+    int CommandSummons_MoveTo(CObjCHAR* pOwner, float fXPos, float fYPos);
+    int CommandSummons_Attack(CObjCHAR* pOwner, CObjCHAR* pTarget);
     bool Toggle_REGEN() {
         m_bEnableREGEN = !m_bEnableREGEN;
         return m_bEnableREGEN;

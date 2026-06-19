@@ -223,12 +223,38 @@ private:
     int m_iOriAVOID;
 
 public:
-    CObjSUMMON() { m_iCallerUserObjIDX = 0; }
+    CObjSUMMON(): m_dwManualOrderUntil(0) { m_iCallerUserObjIDX = 0; }
     int Proc();
     BYTE m_btSummonCMD;
 
     int m_iCallerUserObjIDX; // 소환 시킨 주인
     t_HASHKEY m_HashCALLER; // 주인 케릭 해쉬
+
+    // CTRL+click manual control. While a manual order is active the summon
+    // ignores its follow-the-owner loop and its AIP auto-aggro so the player's
+    // explicit move/attack order is honored, then it returns to normal behavior.
+    DWORD m_dwManualOrderUntil;
+    static const DWORD MANUAL_ORDER_MS = 5000; // hold ~5s, then resume following
+    void SetManualOrder() { m_dwManualOrderUntil = ::timeGetTime() + MANUAL_ORDER_MS; }
+    bool IsManualOrderActive() {
+        return m_dwManualOrderUntil != 0
+            && (long)(::timeGetTime() - m_dwManualOrderUntil) < 0;
+    }
+    bool IsStationary();
+
+    // Tolerant player-ordered move: unlike SetCMD_MOVE2D it does NOT reject
+    // positions the server marks non-walkable. The player clicked valid terrain
+    // and expects the summon to head there, matching the avatar's own
+    // click-to-move (which has no IsMovablePOS gate). Best-effort pathing.
+    bool PlayerOrderMoveTo(float fXPos, float fYPos);
+
+    // Suppress AIP auto-target acquisition while under a manual order so a
+    // commanded move isn't immediately interrupted by nearby monsters.
+    void Do_StopAI(void) {
+        if (IsManualOrderActive())
+            return;
+        CObjMOB::Do_StopAI();
+    }
 
     // 소환 시킨 주인 설정. 2005-06-30(kchs)추가수정: 소환몹 능력치 수정에 따른 주인 아바타 데이터
     // 필요..

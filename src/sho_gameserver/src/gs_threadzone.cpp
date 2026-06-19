@@ -970,6 +970,74 @@ CZoneTHREAD::Kill_AllMOB(classUSER* pUSER, bool drop_items) {
 }
 
 //-------------------------------------------------------------------------------------------------
+/// Returns true if pMob is a live, mobile summon owned by pOwner.
+static CObjSUMMON*
+GetControllableSummon(CGameOBJ* pObj, CObjCHAR* pOwner) {
+    if (!pObj || !pObj->IsA(OBJ_MOB))
+        return NULL;
+
+    CObjMOB* pMob = (CObjMOB*)pObj;
+    if (pMob->Get_HP() <= 0)
+        return NULL;
+
+    // Only summons have a non-zero caller index; match it (and the owner hash to
+    // be safe against object-index reuse) to this owner.
+    if (pMob->GetCallerUsrIDX() != pOwner->Get_INDEX())
+        return NULL;
+
+    CObjSUMMON* pSummon = (CObjSUMMON*)pMob;
+    if (pSummon->GetCallerHASH() != pOwner->Get_CharHASH())
+        return NULL;
+
+    return pSummon;
+}
+
+//-------------------------------------------------------------------------------------------------
+int
+CZoneTHREAD::CommandSummons_MoveTo(CObjCHAR* pOwner, float fXPos, float fYPos) {
+    if (!pOwner)
+        return 0;
+
+    int iCommanded = 0;
+    classDLLNODE<CGameOBJ*>* pObjNODE = m_ObjLIST.GetHeadNode();
+    while (pObjNODE) {
+        CObjSUMMON* pSummon = GetControllableSummon(pObjNODE->DATA, pOwner);
+        if (pSummon && !pSummon->IsStationary()) {
+            // Mark the manual order first so the follow loop is suppressed, then
+            // redirect. PlayerOrderMoveTo (unlike SetCMD_MOVE2D) does not reject
+            // non-walkable cells, so player clicks are always honored. It also
+            // clears any current target (move command, target 0).
+            pSummon->SetManualOrder();
+            pSummon->PlayerOrderMoveTo(fXPos, fYPos);
+            ++iCommanded;
+        }
+        pObjNODE = m_ObjLIST.GetNextNode(pObjNODE);
+    }
+    return iCommanded;
+}
+
+//-------------------------------------------------------------------------------------------------
+int
+CZoneTHREAD::CommandSummons_Attack(CObjCHAR* pOwner, CObjCHAR* pTarget) {
+    if (!pOwner || !pTarget)
+        return 0;
+
+    int iCommanded = 0;
+    classDLLNODE<CGameOBJ*>* pObjNODE = m_ObjLIST.GetHeadNode();
+    while (pObjNODE) {
+        CObjSUMMON* pSummon = GetControllableSummon(pObjNODE->DATA, pOwner);
+        if (pSummon) {
+            // SetCMD_RUNnATTACK is the AI attack entry point (chase + attack).
+            pSummon->SetCMD_RUNnATTACK(pTarget->Get_INDEX());
+            pSummon->SetManualOrder();
+            ++iCommanded;
+        }
+        pObjNODE = m_ObjLIST.GetNextNode(pObjNODE);
+    }
+    return iCommanded;
+}
+
+//-------------------------------------------------------------------------------------------------
 void
 CZoneTHREAD::Reset_REGEN() {
     classDLLNODE<CRegenPOINT*>* pRegenNODE;

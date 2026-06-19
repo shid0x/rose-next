@@ -124,6 +124,14 @@ public:
     void
     PVPTarget_Click(int iTargetType, int iTargetObj, D3DVECTOR& pickPos, bool bDBClick = false);
     static bool IsEnemy(CObjCHAR* pTargetAVT);
+
+    //----------------------------------------------------------------------------------------------------
+    /// CTRL+click summon control. Returns true if the click was consumed as a
+    /// summon order (CTRL held and the player owns at least one summon), in which
+    /// case the avatar must NOT also move/attack. Returns false to keep the
+    /// existing (non-summon) CTRL+click behavior unchanged.
+    //----------------------------------------------------------------------------------------------------
+    bool TrySummonControlClick(int iTarget, D3DVECTOR& pickPos, WPARAM wVKeyState);
 };
 
 //----------------------------------------------------------------------------------------------------

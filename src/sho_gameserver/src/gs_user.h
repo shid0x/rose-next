@@ -463,6 +463,7 @@ public:
     bool Recv_cli_CHECK_AUTH(t_PACKET* pPacket);
 
     bool Recv_cli_SUMMON_CMD(t_PACKET* pPacket);
+    bool Recv_cli_SUMMON_CONTROL(t_PACKET* pPacket);
 
     bool Recv_cli_SCREEN_SHOT_TIME(t_PACKET* pPacket);
     bool Send_gsv_SCREEN_SHOT_TIME();

@@ -7727,6 +7727,53 @@ classUSER::Recv_cli_SUMMON_CMD(t_PACKET* pPacket) {
 }
 
 //-------------------------------------------------------------------------------------------------
+/// CTRL+click direct control of the player's summons (move / attack).
+bool
+classUSER::Recv_cli_SUMMON_CONTROL(t_PACKET* pPacket) {
+    // No summons -> nothing to command.
+    if (this->GetCur_SummonCNT() <= 0)
+        return true;
+
+    // Disabled while stunned / sleeping / overweight, like other commands.
+    if (this->m_IngSTATUS.IsIgnoreSTATUS())
+        return true;
+
+    CZoneTHREAD* pZone = this->GetZONE();
+    if (!pZone)
+        return true;
+
+    switch (pPacket->m_cli_SUMMON_CONTROL.m_btCMD) {
+        case SUMMON_CTRL_ATTACK: {
+            int iTargetIDX = pPacket->m_cli_SUMMON_CONTROL.m_wTargetObjectIDX;
+            CObjCHAR* pTarget = g_pObjMGR->Get_ClientCharOBJ(iTargetIDX, true);
+            if (!pTarget || pTarget->Get_HP() <= 0 || pTarget->GetZONE() != pZone)
+                return true;
+
+            // Only hostile monsters are valid summon targets (never the owner,
+            // party members, or the player's own summons).
+            if (!pTarget->IsA(OBJ_MOB) || this->Is_ALLIED(pTarget))
+                return true;
+
+            pZone->CommandSummons_Attack(this, pTarget);
+        } break;
+
+        case SUMMON_CTRL_MOVE: {
+            float fX = pPacket->m_cli_SUMMON_CONTROL.m_PosTO.x;
+            float fY = pPacket->m_cli_SUMMON_CONTROL.m_PosTO.y;
+
+            // Reject bogus / far positions, mirroring Recv_cli_MOUSECMD.
+            int iDistance = distance((int)m_PosCUR.x, (int)m_PosCUR.y, (int)fX, (int)fY);
+            if (iDistance > 15000) // 150 m
+                return true;
+
+            pZone->CommandSummons_MoveTo(this, fX, fY);
+        } break;
+    }
+
+    return true;
+}
+
+//-------------------------------------------------------------------------------------------------
 /// 월드 서버에서 받은 패킷 처리...
 bool
 classUSER::HandleWorldPACKET(void) {
@@ -8072,6 +8119,9 @@ classUSER::Proc_ZonePACKET(t_PACKET* pPacket) {
 
         case CLI_SUMMON_CMD:
             return Recv_cli_SUMMON_CMD(pPacket);
+
+        case CLI_SUMMON_CONTROL:
+            return Recv_cli_SUMMON_CONTROL(pPacket);
 
             /*
         case CLI_ADD_QUEST :

@@ -55,6 +55,10 @@ public:
     void Send_cli_MOUSECMD(int iClientTarget, D3DVECTOR& PosTO);
     void Send_cli_CANTMOVE();
 
+    // CTRL+click summon control
+    void Send_cli_SUMMON_CONTROL_MOVE(D3DVECTOR& PosTO);
+    void Send_cli_SUMMON_CONTROL_ATTACK(int iClientTarget);
+
     void Send_cli_STORE_TRADE_REQ(WORD wNPCObjIDX,
         char cBuyCNT,
         char cSellCNT,

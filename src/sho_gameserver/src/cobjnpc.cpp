@@ -595,6 +595,25 @@ IsStationarySummonNpc(short nCharIdx) {
     return NPC_WALK_SPEED(nCharIdx) <= 0 && NPC_RUN_SPEED(nCharIdx) <= 0;
 }
 
+bool
+CObjSUMMON::IsStationary() {
+    return IsStationarySummonNpc(this->m_nCharIdx);
+}
+
+bool
+CObjSUMMON::PlayerOrderMoveTo(float fXPos, float fYPos) {
+    // Same as CObjCHAR::SetCMD_MOVE2D but WITHOUT the IsMovablePOS rejection, so
+    // the summon honors player CTRL+click moves onto cells the server marks
+    // non-walkable. The player clicked valid-looking terrain and the avatar's own
+    // click-to-move has no such gate, so the summon should behave the same.
+    // CObjAI::SetCMD_MOVE2D sets the run/destination state; Send_gsv_MOVE
+    // broadcasts it to nearby clients so the move is actually shown.
+    if (CObjAI::SetCMD_MOVE2D(fXPos, fYPos, 1 /* run */)) {
+        return this->Send_gsv_MOVE();
+    }
+    return false;
+}
+
 void
 CObjSUMMON::update_speed() {
     // Stationary summons keep the base 0 speed from the NPC table.
@@ -702,7 +721,8 @@ CObjSUMMON::Proc() {
     // Stationary summons (NPC walk+run speed == 0) skip the follow loop entirely.
     // Their AI script still runs through CObjCHAR::Proc() below, so pulsing
     // heal/aura behavior (e.g. Bonfire via SUR_FIRE1.AIP) is unaffected.
-    if (pOwner && !this->Get_TARGET() && !IsStationarySummonNpc(this->m_nCharIdx)) {
+    if (pOwner && !this->Get_TARGET() && !IsStationarySummonNpc(this->m_nCharIdx)
+        && !this->IsManualOrderActive()) {
         WORD wCmd = this->Get_COMMAND();
         if (wCmd == CMD_STOP || wCmd == CMD_MOVE) {
             ULONG ulNow = ::timeGetTime();
