@@ -3,7 +3,8 @@ members = [
     "common-lib",
     "pipeline",
     "tools/vfs-browser",
-    "tools/npc-shop-editor"
+    "tools/npc-shop-editor",
+    "tools/quest-editor"
 ]
 exclude = [
     "launcher",

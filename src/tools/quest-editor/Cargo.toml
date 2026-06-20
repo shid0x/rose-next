@@ -1,0 +1,31 @@
+[package]
+name = "quest-editor"
+version = "0.1.0"
+edition = "2021"
+# `cargo run -p quest-editor` runs the CLI; the wizard is `--bin quest-editor-ui`.
+default-run = "quest-editor"
+
+# Library target holds the reusable QSD codec + (later) data/generation layers,
+# so both the binary and the integration tests can use it.
+[lib]
+name = "quest_editor"
+path = "src/lib.rs"
+
+[[bin]]
+name = "quest-editor"
+path = "src/main.rs"
+
+# Phase 5: the friendly creation wizard (separate GUI binary so the CLI stays
+# a plain console app). windows_subsystem="windows" is set in the bin itself.
+[[bin]]
+name = "quest-editor-ui"
+path = "src/bin/quest-editor-ui.rs"
+
+[dependencies]
+anyhow = "1"
+# Phase 2: STB/STL reading (same crate the npc-shop-editor uses).
+roselib = { git = "https://github.com/rminderhoud/rose-tools" }
+# Phase 5: egui wizard UI (same versions as npc-shop-editor).
+eframe = { version = "0.27", default-features = false, features = ["default_fonts", "glow"] }
+egui = "0.27"
+rfd = "0.14"
