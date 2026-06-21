@@ -6,6 +6,7 @@
 
 pub mod data;
 pub mod gen;
+pub mod manifest;
 pub mod qsd;
 pub mod ui;
 pub mod verify;

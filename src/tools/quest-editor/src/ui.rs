@@ -11,12 +11,19 @@ use eframe::egui;
 
 use crate::data::{DataSet, Item, ItemCategory, Monster};
 use crate::gen::{generate, QuestKind, QuestSpec};
-use crate::write::apply_quest;
+use crate::write::{apply_quest, delete_quest, list_editor_quests};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum QuestType {
     Hunt,
     Fetch,
+}
+
+/// Top-level view: make a new quest, or manage the ones the editor made.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum View {
+    Create,
+    Manage,
 }
 
 const MAX_TOKEN_ITEM_ID: i32 = 999; // type*1000+id encoding limit (reward items)
@@ -52,6 +59,11 @@ struct CreatedSummary {
     register_trigger: String,
     changes: Vec<String>,
     backups: Vec<PathBuf>,
+    /// Whether this was a dry run (an edit always commits, regardless of the
+    /// dry-run toggle, because it already deleted the old quest).
+    effective_dry: bool,
+    /// True if this was an edit (delete old + create new) rather than a fresh create.
+    was_edit: bool,
 }
 
 struct QuestCreator {
@@ -94,6 +106,13 @@ struct QuestCreator {
     token_icon: String, // optional icon-number override (blank = template's icon)
     dry_run: bool,
 
+    // create vs manage; when `editing` is set the form is editing that quest SN
+    // (saving deletes the old one and creates a fresh one).
+    view: View,
+    editing: Option<i32>,
+    manage_status: Option<String>,
+    confirm_delete: Option<i32>,
+
     screen: Screen,
     error: Option<String>,
 }
@@ -130,6 +149,10 @@ impl Default for QuestCreator {
             hide_in_use: false,
             token_icon: String::new(),
             dry_run: false,
+            view: View::Create,
+            editing: None,
+            manage_status: None,
+            confirm_delete: None,
             screen: Screen::Form,
             error: None,
         }
@@ -163,11 +186,34 @@ impl eframe::App for QuestCreator {
                 self.ui_pick_folder(ui);
                 return;
             }
-            match &self.screen {
-                Screen::Form => {
+            if let Screen::Created { .. } = self.screen {
+                self.ui_created(ui);
+                return;
+            }
+            // Create / Manage tabs (only on the form screen).
+            ui.horizontal(|ui| {
+                if ui
+                    .selectable_label(self.view == View::Create, "➕  Create")
+                    .clicked()
+                {
+                    self.view = View::Create;
+                }
+                if ui
+                    .selectable_label(self.view == View::Manage, "🗂  Manage")
+                    .clicked()
+                {
+                    self.view = View::Manage;
+                    self.manage_status = None;
+                }
+            });
+            ui.separator();
+            match self.view {
+                View::Create => {
                     egui::ScrollArea::vertical().show(ui, |ui| self.ui_form(ui));
                 }
-                Screen::Created { .. } => self.ui_created(ui),
+                View::Manage => {
+                    egui::ScrollArea::vertical().show(ui, |ui| self.ui_manage(ui));
+                }
             }
         });
     }
@@ -228,6 +274,27 @@ impl QuestCreator {
         self.maybe_refresh_text();
 
         ui.add_space(6.0);
+
+        // Editing banner.
+        if let Some(sn) = self.editing {
+            egui::Frame::group(ui.style())
+                .fill(egui::Color32::from_rgb(40, 44, 60))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "✏ Editing quest #{sn} — saving deletes it and creates an updated copy."
+                            ))
+                            .color(egui::Color32::from_rgb(150, 190, 255)),
+                        );
+                        if ui.button("Cancel edit").clicked() {
+                            self.editing = None;
+                            self.view = View::Manage;
+                        }
+                    });
+                });
+            ui.add_space(4.0);
+        }
 
         // Quest type chooser.
         ui.horizontal(|ui| {
@@ -634,7 +701,9 @@ impl QuestCreator {
 
         let can_create = !crate::verify::has_errors(&issues);
         ui.horizontal(|ui| {
-            let label = if self.dry_run {
+            let label = if self.editing.is_some() {
+                "💾  Save changes"
+            } else if self.dry_run {
                 "🔍  Preview changes (no write)"
             } else {
                 "✅  Create Quest"
@@ -662,8 +731,10 @@ impl QuestCreator {
         let summary = &summary;
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.add_space(8.0);
-            ui.heading(if self.dry_run {
+            ui.heading(if summary.effective_dry {
                 "🔍 Dry run — nothing was written"
+            } else if summary.was_edit {
+                "✅ Quest updated!"
             } else {
                 "✅ Quest created!"
             });
@@ -691,7 +762,7 @@ impl QuestCreator {
                 );
             }
 
-            if !self.dry_run {
+            if !summary.effective_dry {
                 ui.add_space(12.0);
                 ui.label(egui::RichText::new("Next steps").strong());
                 ui.label("1. Bake/deploy your data to the client VFS, and restart the servers.");
@@ -727,6 +798,181 @@ impl QuestCreator {
                 self.error = None;
             }
         });
+    }
+
+    fn ui_manage(&mut self, ui: &mut egui::Ui) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        ui.add_space(6.0);
+        ui.label(egui::RichText::new("Quests you created with this tool").strong());
+        ui.label(
+            egui::RichText::new(
+                "Edit re-creates a quest (it gets a new number). Delete removes it and frees its monster.",
+            )
+            .weak()
+            .small(),
+        );
+        ui.add_space(6.0);
+
+        if let Some(status) = self.manage_status.clone() {
+            ui.colored_label(egui::Color32::from_rgb(120, 190, 120), status);
+            ui.add_space(4.0);
+        }
+
+        let quests = match list_editor_quests(&root) {
+            Ok(q) => q,
+            Err(e) => {
+                ui.colored_label(egui::Color32::LIGHT_RED, format!("{e:#}"));
+                return;
+            }
+        };
+        if quests.is_empty() {
+            ui.add_space(10.0);
+            ui.weak("No editor-created quests found — make one in the Create tab.");
+            return;
+        }
+
+        let mut do_edit: Option<QuestSpec> = None;
+        let mut do_delete: Option<i32> = None;
+        egui::Grid::new("manage_grid")
+            .num_columns(4)
+            .spacing([14.0, 6.0])
+            .striped(true)
+            .show(ui, |ui| {
+                ui.label(egui::RichText::new("Quest").strong());
+                ui.label(egui::RichText::new("Type").strong());
+                ui.label(egui::RichText::new("Goal").strong());
+                ui.label("");
+                ui.end_row();
+                for q in &quests {
+                    let sn = q.quest_sn;
+                    ui.label(format!("#{}  {}", sn, q.title));
+                    let (ty, goal) = match &q.spec {
+                        Some(spec) => match &spec.kind {
+                            QuestKind::Hunt { monster_id, .. } => (
+                                "Hunt".to_string(),
+                                format!("kill {}× {}", spec.count, self.monster_name(*monster_id)),
+                            ),
+                            QuestKind::Fetch { item_name, .. } => {
+                                ("Fetch".to_string(), format!("bring {}× {}", spec.count, item_name))
+                            }
+                        },
+                        None => ("—".to_string(), "(older quest — delete only)".to_string()),
+                    };
+                    ui.label(ty);
+                    ui.label(egui::RichText::new(goal).weak());
+                    ui.horizontal(|ui| {
+                        match &q.spec {
+                            Some(spec) => {
+                                if ui.button("✏ Edit").clicked() {
+                                    do_edit = Some(spec.clone());
+                                }
+                            }
+                            None => {
+                                ui.add_enabled(false, egui::Button::new("✏ Edit"))
+                                    .on_disabled_hover_text(
+                                        "Made before manifests — delete and recreate to change it.",
+                                    );
+                            }
+                        }
+                        if self.confirm_delete == Some(sn) {
+                            if ui
+                                .button(egui::RichText::new("Confirm").color(egui::Color32::WHITE))
+                                .clicked()
+                            {
+                                do_delete = Some(sn);
+                            }
+                            if ui.button("Cancel").clicked() {
+                                self.confirm_delete = None;
+                            }
+                        } else if ui.button("🗑 Delete").clicked() {
+                            self.confirm_delete = Some(sn);
+                        }
+                    });
+                    ui.end_row();
+                }
+            });
+
+        if let Some(spec) = do_edit {
+            self.load_spec_into_form(&spec);
+            self.editing = Some(spec.quest_sn);
+            self.confirm_delete = None;
+            self.manage_status = None;
+            self.view = View::Create;
+        }
+        if let Some(sn) = do_delete {
+            self.confirm_delete = None;
+            match delete_quest(&root, sn, false) {
+                Ok(rep) => {
+                    self.manage_status =
+                        Some(format!("Deleted quest #{sn} ({} change(s)).", rep.changes.len()));
+                    self.load_root(&root); // refresh data + manifest list
+                }
+                Err(e) => self.manage_status = Some(format!("Delete failed: {e:#}")),
+            }
+        }
+    }
+
+    fn monster_name(&self, id: i32) -> String {
+        self.data
+            .as_ref()
+            .and_then(|d| d.find_monster(id))
+            .map(|m| m.name.clone())
+            .unwrap_or_else(|| format!("monster {id}"))
+    }
+
+    /// Pre-fill the form from a saved spec (for editing).
+    fn load_spec_into_form(&mut self, spec: &QuestSpec) {
+        self.kill_count = spec.count;
+        self.reward_exp = spec.reward_exp;
+        self.reward_zuly = spec.reward_zuly;
+        match spec.reward_item {
+            Some((sn, qty)) => {
+                self.reward_item_enabled = true;
+                if let Some((cat, id)) = decode_item_sn(sn) {
+                    self.reward_item_category = cat;
+                    self.reward_item_id = Some(id);
+                }
+                self.reward_item_qty = qty as i32;
+            }
+            None => {
+                self.reward_item_enabled = false;
+                self.reward_item_id = None;
+            }
+        }
+        self.title = spec.title.clone();
+        self.start_text = spec.start_text.clone();
+        self.progress_text = spec.progress_text.clone();
+        self.complete_text = spec.complete_text.clone();
+        self.auto_text = false; // keep the loaded text as-is
+        self.text_basis = None;
+        match &spec.kind {
+            QuestKind::Hunt {
+                monster_id,
+                token_name,
+                token_desc,
+                token_icon,
+                ..
+            } => {
+                self.quest_type = QuestType::Hunt;
+                // 0 = monster couldn't be reconstructed; leave unselected.
+                self.selected_monster = (*monster_id > 0).then_some(*monster_id);
+                self.token_name = token_name.clone();
+                self.token_desc = token_desc.clone();
+                self.token_icon = token_icon.map(|i| i.to_string()).unwrap_or_default();
+            }
+            QuestKind::Fetch {
+                item_sn, consume, ..
+            } => {
+                self.quest_type = QuestType::Fetch;
+                if let Some((cat, id)) = decode_item_sn(*item_sn) {
+                    self.fetch_item_category = cat;
+                    self.fetch_item_id = Some(id);
+                }
+                self.fetch_consume = *consume;
+            }
+        }
     }
 
     // --- helpers ---
@@ -845,13 +1091,37 @@ impl QuestCreator {
     }
 
     fn do_create(&mut self) {
-        let (Some(root), Some(spec)) = (self.root.clone(), self.build_spec()) else {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        // Editing = delete the old quest first (always a real write), then create
+        // a fresh one. Reload data in between so the new SN / token id are correct.
+        let editing = self.editing.take();
+        let mut pre_changes = Vec::new();
+        if let Some(old_sn) = editing {
+            match delete_quest(&root, old_sn, false) {
+                Ok(rep) => pre_changes = rep.changes,
+                Err(e) => {
+                    self.editing = Some(old_sn);
+                    self.error = Some(format!("edit: could not remove old quest #{old_sn}: {e:#}"));
+                    return;
+                }
+            }
+            self.load_root(&root);
+            self.view = View::Create;
+        }
+
+        let Some(spec) = self.build_spec() else {
+            self.error = Some("pick a monster / item first".into());
             return;
         };
         let gen = generate(&spec);
-        match apply_quest(&root, &spec, &gen, self.dry_run) {
-            Ok(report) => {
+        let dry = self.dry_run && editing.is_none();
+        match apply_quest(&root, &spec, &gen, dry) {
+            Ok(mut report) => {
                 self.error = None;
+                let mut changes = pre_changes;
+                changes.append(&mut report.changes);
                 self.screen = Screen::Created {
                     summary: CreatedSummary {
                         quest_sn: spec.quest_sn,
@@ -860,8 +1130,10 @@ impl QuestCreator {
                         count: spec.count,
                         complete_trigger: gen.complete_trigger.clone(),
                         register_trigger: gen.register_trigger.clone(),
-                        changes: report.changes,
+                        changes,
                         backups: report.backups,
+                        effective_dry: dry,
+                        was_edit: editing.is_some(),
                     },
                 };
             }
@@ -912,4 +1184,14 @@ fn monster_label(m: &Monster) -> String {
 
 fn item_label(it: &Item) -> String {
     format!("{:>4}  {}", it.id, it.name)
+}
+
+/// Decode a packed item SN (`type*1000+id`) into (category, id).
+fn decode_item_sn(sn: i32) -> Option<(ItemCategory, i32)> {
+    let (ty, id) = (sn / 1000, sn % 1000);
+    ItemCategory::ALL
+        .iter()
+        .copied()
+        .find(|c| *c as i32 == ty)
+        .map(|c| (c, id))
 }

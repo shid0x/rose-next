@@ -12,6 +12,7 @@
 //! All edits are validated first; if any guard fails we bail before writing a
 //! single byte.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -302,6 +303,7 @@ pub fn apply_quest(
     }
 
     if dry_run {
+        changes.push(format!("WRITE manifest QX-{}.qe.json", spec.quest_sn));
         return Ok(WriteReport {
             dry_run: true,
             changes,
@@ -350,11 +352,397 @@ pub fn apply_quest(
             .with_context(|| format!("writing host QSD {}", p.display()))?;
     }
 
+    // Sidecar manifest so the wizard can later list / edit / delete this quest.
+    match crate::manifest::write_manifest(root, spec) {
+        Ok(p) => changes.push(format!("WRITE manifest {}", p.display())),
+        Err(e) => eprintln!("warning: could not write quest manifest: {e:#}"),
+    }
+
     Ok(WriteReport {
         dry_run: false,
         changes,
         backups,
     })
+}
+
+/// Delete an editor-created quest (`QX-<sn>.QSD`). Reconstructs what to undo from
+/// the data + naming conventions, so it works with or without a manifest (the
+/// manifest is removed too when present). Refuses to touch a quest the editor
+/// didn't create.
+pub fn delete_quest(root: &Path, quest_sn: i32, dry_run: bool) -> Result<WriteReport> {
+    let stb_dir = resolve_stb_dir(root)?;
+    let questdata_dir = stb_dir
+        .parent()
+        .ok_or_else(|| anyhow!("STB dir has no parent"))?
+        .join("QUESTDATA");
+
+    let quest_path = file_ci(&stb_dir, "LIST_QUEST.STB")?;
+    let qdata_path = file_ci(&stb_dir, "LIST_QUESTDATA.STB")?;
+    let mut quest = load_stb(&quest_path)?;
+    let mut qdata = load_stb(&qdata_path)?;
+
+    let qsd_name = format!("QX-{quest_sn}.QSD");
+    let qsd_file = questdata_dir.join(&qsd_name);
+    let kill_trigger = format!("{quest_sn}-2");
+
+    // Guard: only editor-created quests (a LIST_QUESTDATA row points at our QSD,
+    // or the file exists).
+    let qdata_row_idx = qdata.data.iter().position(|r| {
+        cell(r, QDATA_COL_PATH)
+            .rsplit(['\\', '/'])
+            .next()
+            .is_some_and(|f| f.eq_ignore_ascii_case(&qsd_name))
+    });
+    if qdata_row_idx.is_none() && !qsd_file.exists() {
+        bail!("quest {quest_sn} doesn't look editor-created (no {qsd_name}); refusing to delete");
+    }
+
+    let mut changes = Vec::new();
+
+    // 1) Blank the LIST_QUEST row (kept in place — removing would shift later SNs).
+    if (quest_sn as usize) < quest.data.len() {
+        quest.data[quest_sn as usize] = empty_row(quest.cols());
+        changes.push(format!("BLANK LIST_QUEST row {quest_sn}"));
+    }
+
+    // 2) Remove the LIST_QUESTDATA row (a load list — index doesn't matter).
+    if let Some(i) = qdata_row_idx {
+        qdata.data.remove(i);
+        changes.push(format!("REMOVE LIST_QUESTDATA row -> {qsd_name}"));
+    }
+
+    // 3) Hunt cleanup: token row (reclaims the id) + monster un-wiring.
+    let qitem_path = file_ci(&stb_dir, "LIST_QUESTITEM.STB")?;
+    let mut qitem = load_stb(&qitem_path)?;
+    let mut qitem_changed = false;
+    if let Some(t) = qitem.data.iter().position(|r| {
+        cell(r, QITEM_COL_BELONGING_QUEST).trim().parse::<i32>().ok() == Some(quest_sn)
+    }) {
+        qitem.data[t] = empty_row(qitem.cols());
+        qitem_changed = true;
+        changes.push(format!("BLANK LIST_QUESTITEM row {t} (token)"));
+    }
+
+    // Un-wire the monster: either we claimed its col-41, or we chained into a host.
+    let npc_path = file_ci(&stb_dir, "LIST_NPC.STB")?;
+    let mut npc = load_stb(&npc_path)?;
+    let mut npc_changed = false;
+    let mut host_qsd_edit: Option<(PathBuf, crate::qsd::QsdFile)> = None;
+    if let Some(mrow) = npc
+        .data
+        .iter()
+        .position(|r| cell(r, NPC_COL_DEAD_EVENT).trim() == kill_trigger.as_str())
+    {
+        // Claimed: the kill trigger lived in our own (about-to-be-removed) QSD.
+        set_cell(&mut npc.data[mrow], NPC_COL_DEAD_EVENT, "");
+        npc_changed = true;
+        changes.push(format!("CLEAR LIST_NPC row {mrow} col-41 (was \"{kill_trigger}\")"));
+    } else if let Ok((host_path, mut host, pi, ti)) = find_host_qsd(&questdata_dir, &kill_trigger) {
+        // Chained: remove our trigger and hand its `check_next` back to the
+        // predecessor (the exact inverse of the insertion in apply_quest).
+        if ti > 0 {
+            let cn = host.patterns[pi].triggers[ti].check_next;
+            host.patterns[pi].triggers[ti - 1].check_next = cn;
+        }
+        host.patterns[pi].triggers.remove(ti);
+        changes.push(format!(
+            "UNCHAIN \"{kill_trigger}\" from {}",
+            host_path.file_name().and_then(|s| s.to_str()).unwrap_or("?")
+        ));
+        host_qsd_edit = Some((host_path, host));
+    }
+
+    let manifest = crate::manifest::manifest_path(root, quest_sn)
+        .ok()
+        .filter(|p| p.exists());
+
+    if dry_run {
+        if qsd_file.exists() {
+            changes.push(format!("DELETE {}", qsd_file.display()));
+        }
+        if let Some(m) = &manifest {
+            changes.push(format!("DELETE {}", m.display()));
+        }
+        return Ok(WriteReport {
+            dry_run: true,
+            changes,
+            backups: Vec::new(),
+        });
+    }
+
+    // --- commit: back up everything touched, then write / remove ---
+    let mut backups = Vec::new();
+    let mut to_backup: Vec<PathBuf> = vec![quest_path.clone(), qdata_path.clone()];
+    if qitem_changed {
+        to_backup.push(qitem_path.clone());
+    }
+    if npc_changed {
+        to_backup.push(npc_path.clone());
+    }
+    if let Some((p, _)) = &host_qsd_edit {
+        to_backup.push(p.clone());
+    }
+    if qsd_file.exists() {
+        to_backup.push(qsd_file.clone());
+    }
+    for p in &to_backup {
+        if let Some(b) = backup_once(p)? {
+            backups.push(b);
+        }
+    }
+
+    write_stb(&mut quest, &quest_path)?;
+    write_stb(&mut qdata, &qdata_path)?;
+    if qitem_changed {
+        write_stb(&mut qitem, &qitem_path)?;
+    }
+    if npc_changed {
+        write_stb(&mut npc, &npc_path)?;
+    }
+    if let Some((p, host)) = host_qsd_edit {
+        host.write_file(&p)
+            .with_context(|| format!("writing host QSD {}", p.display()))?;
+    }
+    if qsd_file.exists() {
+        fs::remove_file(&qsd_file).with_context(|| format!("removing {}", qsd_file.display()))?;
+        changes.push(format!("DELETE {}", qsd_file.display()));
+    }
+    if let Some(m) = manifest {
+        fs::remove_file(&m).ok();
+        changes.push(format!("DELETE {}", m.display()));
+    }
+
+    Ok(WriteReport {
+        dry_run: false,
+        changes,
+        backups,
+    })
+}
+
+/// A quest the editor created, for the Manage list. `spec` is present only when a
+/// sidecar manifest exists (required to pre-fill the edit form); without it the
+/// quest can still be deleted.
+pub struct EditorQuest {
+    pub quest_sn: i32,
+    pub title: String,
+    pub spec: Option<crate::gen::QuestSpec>,
+}
+
+/// `QX-<sn>.QSD` (any case) -> sn.
+fn editor_quest_sn(path_cell: &str) -> Option<i32> {
+    let file = path_cell.rsplit(['\\', '/']).next()?;
+    let upper = file.to_ascii_uppercase();
+    upper
+        .strip_prefix("QX-")?
+        .strip_suffix(".QSD")?
+        .parse::<i32>()
+        .ok()
+}
+
+/// Every editor-created quest found in the data: the `QX-<sn>.QSD` rows of
+/// LIST_QUESTDATA, plus any orphaned manifests. Sorted by SN.
+pub fn list_editor_quests(root: &Path) -> Result<Vec<EditorQuest>> {
+    let stb_dir = resolve_stb_dir(root)?;
+    let quest = load_stb(&file_ci(&stb_dir, "LIST_QUEST.STB")?)?;
+    let qdata = load_stb(&file_ci(&stb_dir, "LIST_QUESTDATA.STB")?)?;
+
+    let mut sns: BTreeSet<i32> = BTreeSet::new();
+    for r in &qdata.data {
+        if let Some(sn) = editor_quest_sn(cell(r, QDATA_COL_PATH)) {
+            sns.insert(sn);
+        }
+    }
+    for m in crate::manifest::list_manifests(root) {
+        sns.insert(m.spec.quest_sn);
+    }
+
+    Ok(sns
+        .into_iter()
+        .map(|sn| {
+            let title = quest
+                .data
+                .get(sn as usize)
+                .map(|r| cell(r, QUEST_COL_NAME).trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| format!("Quest #{sn}"));
+            // Prefer the saved manifest; otherwise reconstruct the spec from the
+            // generated data so older (pre-manifest) quests are still editable.
+            let spec = crate::manifest::read_manifest(root, sn)
+                .ok()
+                .map(|m| m.spec)
+                .or_else(|| reconstruct_spec(root, sn).ok());
+            EditorQuest {
+                quest_sn: sn,
+                title,
+                spec,
+            }
+        })
+        .collect())
+}
+
+fn rd_u8(p: &[u8], o: usize) -> u8 {
+    p.get(o).copied().unwrap_or(0)
+}
+fn rd_i16(p: &[u8], o: usize) -> i16 {
+    p.get(o..o + 2).map_or(0, |b| i16::from_le_bytes([b[0], b[1]]))
+}
+fn rd_i32(p: &[u8], o: usize) -> i32 {
+    p.get(o..o + 4)
+        .map_or(0, |b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+}
+
+/// Rebuild a [`QuestSpec`] from the data the editor generated for `quest_sn`
+/// (used when there's no manifest). Parses the quest's own `QX-<sn>.QSD` (the
+/// complete trigger carries the count + rewards), the token quest-item row, the
+/// monster wiring, and the STL text. Best-effort: text/monster may be imperfect,
+/// but the structural fields come straight from the data.
+pub fn reconstruct_spec(root: &Path, quest_sn: i32) -> Result<crate::gen::QuestSpec> {
+    use crate::gen::{QuestKind, QuestSpec};
+
+    let stb_dir = resolve_stb_dir(root)?;
+    let questdata_dir = stb_dir
+        .parent()
+        .ok_or_else(|| anyhow!("STB dir has no parent"))?
+        .join("QUESTDATA");
+    let qsd_file = questdata_dir.join(format!("QX-{quest_sn}.QSD"));
+    let qsd = crate::qsd::QsdFile::read_file(&qsd_file)
+        .map_err(|e| anyhow!("reading {}: {e}", qsd_file.display()))?;
+
+    // The complete trigger is the one that Finishes the quest (REWD_000 op 0).
+    let complete = qsd
+        .patterns
+        .iter()
+        .flat_map(|p| p.triggers.iter())
+        .find(|t| t.rewards.iter().any(|e| e.etype == 0 && rd_u8(&e.payload, 4) == 0))
+        .ok_or_else(|| anyhow!("no complete trigger in {}", qsd_file.display()))?;
+
+    // Count + the checked item (token for Hunt, the item for Fetch) from COND_004.
+    let cond4 = complete
+        .conditions
+        .iter()
+        .find(|e| e.etype == 4)
+        .ok_or_else(|| anyhow!("no item-count condition in complete trigger"))?;
+    let checked_item_sn = rd_i32(&cond4.payload, 4);
+    let count = rd_i32(&cond4.payload, 12);
+
+    // Rewards (REWD_005 exp/zuly, REWD_001 give = reward item / op-0 = consume).
+    let mut reward_exp = 0;
+    let mut reward_zuly = 0;
+    let mut reward_item = None;
+    let mut consume = false;
+    for e in &complete.rewards {
+        match e.etype {
+            5 => match rd_u8(&e.payload, 0) {
+                0 => reward_exp = rd_i32(&e.payload, 4),
+                1 => reward_zuly = rd_i32(&e.payload, 4),
+                _ => {}
+            },
+            1 => match rd_u8(&e.payload, 4) {
+                1 => reward_item = Some((rd_i32(&e.payload, 0), rd_i16(&e.payload, 6))),
+                0 => consume = true,
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
+    // Hunt iff a token quest-item belongs to this quest.
+    let qitem = load_stb(&file_ci(&stb_dir, "LIST_QUESTITEM.STB")?)?;
+    let token_row = qitem.data.iter().find(|r| {
+        cell(r, QITEM_COL_BELONGING_QUEST).trim().parse::<i32>().ok() == Some(quest_sn)
+    });
+
+    let kind = if let Some(trow) = token_row {
+        QuestKind::Hunt {
+            monster_id: monster_for_kill_trigger(&stb_dir, &questdata_dir, quest_sn).unwrap_or(0),
+            token_item_sn: checked_item_sn,
+            token_name: cell(trow, QITEM_COL_NAME).to_string(),
+            token_desc: stl_item_desc(&stb_dir, "LIST_QUESTITEM_S.STL", &format!("QITEM_{quest_sn}"))
+                .unwrap_or_default(),
+            token_icon: cell(trow, QITEM_COL_ICON).trim().parse::<i32>().ok(),
+            chain_into_existing: false, // recomputed from the monster on save
+        }
+    } else {
+        QuestKind::Fetch {
+            item_sn: checked_item_sn,
+            item_name: String::new(), // the UI re-derives this from the item id
+            consume,
+        }
+    };
+
+    let (title, start_text, progress_text, complete_text) =
+        stl_quest_texts(&stb_dir, quest_sn).unwrap_or_else(|_| {
+            (format!("Quest #{quest_sn}"), String::new(), String::new(), String::new())
+        });
+
+    Ok(QuestSpec {
+        quest_sn,
+        kind,
+        count,
+        reward_exp,
+        reward_zuly,
+        reward_item,
+        title,
+        start_text,
+        progress_text,
+        complete_text,
+    })
+}
+
+/// The monster whose dead event fires `<sn>-2`: either it claims col-41 directly,
+/// or our trigger was spliced into its chain (walk back to the chain head).
+fn monster_for_kill_trigger(stb_dir: &Path, questdata_dir: &Path, quest_sn: i32) -> Option<i32> {
+    let kill = format!("{quest_sn}-2");
+    let npc = load_stb(&file_ci(stb_dir, "LIST_NPC.STB").ok()?).ok()?;
+    let id_of = |r: &Vec<String>| r.first().and_then(|s| s.trim().parse::<i32>().ok());
+
+    if let Some(r) = npc.data.iter().find(|r| cell(r, NPC_COL_DEAD_EVENT).trim() == kill) {
+        return id_of(r);
+    }
+    // Chained: find our trigger, walk back over the check_next run to the head.
+    let (_, host, pi, ti) = find_host_qsd(questdata_dir, &kill).ok()?;
+    let triggers = &host.patterns[pi].triggers;
+    let mut j = ti;
+    while j > 0 && triggers[j - 1].check_next != 0 {
+        j -= 1;
+    }
+    let head = triggers[j].name.strip_suffix(b"\0").unwrap_or(&triggers[j].name);
+    npc.data
+        .iter()
+        .find(|r| cell(r, NPC_COL_DEAD_EVENT).trim().as_bytes() == head)
+        .and_then(id_of)
+}
+
+/// Read the 4 quest texts (title / start / progress / complete) from LIST_QUEST_S
+/// for `QE_<sn>`. Keys and rows are parallel (the writer appends them together).
+fn stl_quest_texts(stb_dir: &Path, quest_sn: i32) -> Result<(String, String, String, String)> {
+    let stl = load_stl(&file_ci(stb_dir, "LIST_QUEST_S.STL")?)?;
+    let key = format!("QE_{quest_sn}");
+    let idx = stl
+        .keys
+        .iter()
+        .position(|k| k.name == key)
+        .ok_or_else(|| anyhow!("no STL key {key}"))?;
+    let lt = stl.language_tables.first().ok_or_else(|| anyhow!("no language table"))?;
+    match lt.rows.get(idx) {
+        Some(StringTableRow::QuestRow(q)) => Ok((
+            q.text.clone(),
+            q.start_message.clone(),
+            q.description.clone(),
+            q.end_message.clone(),
+        )),
+        _ => bail!("STL row for {key} is not a quest row"),
+    }
+}
+
+/// Read an item-table STL description for `key` (e.g. the token's `QITEM_<sn>`).
+fn stl_item_desc(stb_dir: &Path, stl_name: &str, key: &str) -> Option<String> {
+    let stl = load_stl(&file_ci(stb_dir, stl_name).ok()?).ok()?;
+    let idx = stl.keys.iter().position(|k| k.name == key)?;
+    match stl.language_tables.first()?.rows.get(idx) {
+        Some(StringTableRow::ItemRow(it)) => Some(it.description.clone()),
+        _ => None,
+    }
 }
 
 // --- helpers ---------------------------------------------------------------

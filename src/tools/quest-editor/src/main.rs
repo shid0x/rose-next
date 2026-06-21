@@ -17,7 +17,7 @@ use quest_editor::data::DataSet;
 use quest_editor::gen::{generate, GeneratedQuest, QuestKind, QuestSpec};
 use quest_editor::qsd::QsdFile;
 use quest_editor::verify::{self, Level};
-use quest_editor::write::apply_quest;
+use quest_editor::write::{apply_quest, delete_quest};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -31,6 +31,8 @@ fn main() -> ExitCode {
         Some("gen") => cmd_gen(&args[1..]),
         Some("create") => cmd_create(&args[1..]),
         Some("create-fetch") => cmd_create_fetch(&args[1..]),
+        Some("list") => cmd_list(args.get(1)),
+        Some("delete") => cmd_delete(&args[1..]),
         _ => {
             eprintln!("usage:");
             eprintln!("  quest-editor verify <dir>   round-trip every .QSD, report drift");
@@ -48,6 +50,11 @@ fn main() -> ExitCode {
             eprintln!(
                 "  quest-editor create-fetch <root> <item_sn> <count> [exp] [zuly] [--write]\n\
                  \x20                            generate + apply a Fetch quest (item_sn = type*1000+id)"
+            );
+            eprintln!("  quest-editor list   <root>            list editor-created quests (from manifests)");
+            eprintln!(
+                "  quest-editor delete <root> <quest_sn> [--write]\n\
+                 \x20                            remove an editor-created quest (dry-run unless --write)"
             );
             return ExitCode::FAILURE;
         }
@@ -395,6 +402,43 @@ fn cmd_create(args: &[String]) -> Result<bool> {
             "\ntest in-game: register quest {} via GM cheat, kill {}x {name}, then /QUEST {}",
             spec.quest_sn, ha.count, gen.complete_trigger
         );
+    }
+    Ok(true)
+}
+
+fn cmd_list(root: Option<&String>) -> Result<bool> {
+    let root = PathBuf::from(root.context("usage: list <root>")?);
+    let quests = quest_editor::write::list_editor_quests(&root)?;
+    if quests.is_empty() {
+        println!("(no editor-created quests found)");
+        return Ok(true);
+    }
+    println!("{} editor-created quest(s):", quests.len());
+    for q in &quests {
+        let detail = match &q.spec {
+            Some(s) => match &s.kind {
+                QuestKind::Hunt { monster_id, .. } => format!("Hunt monster {monster_id} x{}", s.count),
+                QuestKind::Fetch { item_sn, .. } => format!("Fetch item {item_sn} x{}", s.count),
+            },
+            None => "(no manifest — delete only)".to_string(),
+        };
+        println!("  #{:<5} {:<28} {detail}", q.quest_sn, q.title);
+    }
+    Ok(true)
+}
+
+fn cmd_delete(args: &[String]) -> Result<bool> {
+    let write = args.iter().any(|a| a == "--write");
+    let pos: Vec<String> = args.iter().filter(|a| !a.starts_with("--")).cloned().collect();
+    if pos.len() < 2 {
+        bail!("usage: delete <root> <quest_sn> [--write]");
+    }
+    let root = PathBuf::from(&pos[0]);
+    let quest_sn: i32 = pos[1].parse().context("quest_sn")?;
+    let report = delete_quest(&root, quest_sn, !write)?;
+    report.print();
+    if report.dry_run {
+        println!("\n(re-run with --write to apply)");
     }
     Ok(true)
 }

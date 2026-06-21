@@ -260,6 +260,50 @@ item `13:129`. (Validate the id exists in the item DB when generating.)
 
 ## Status log
 
+### 2026-06-21 — Tier 3: edit / delete (+ sidecar manifests)
+
+Created quests now drop a sidecar manifest `QUESTDATA/_quest-editor/QX-<sn>.qe.json`
+(serde JSON of the `QuestSpec`; the game ignores the `_` subdir). New `manifest.rs`
+(write/read/list). `write::apply_quest` writes it on success.
+
+`write::delete_quest(root, sn, dry_run)` reconstructs the undo from the SN + naming
+(works with or without a manifest): removes `QX-<sn>.QSD`, drops the LIST_QUESTDATA
+row, blanks the LIST_QUEST row + the token LIST_QUESTITEM row (reclaims the id), and
+un-wires the monster — clears col-41 if it equals `<sn>-2` (claimed), else finds
+`<sn>-2` in a host QSD and removes it, handing its `check_next` back to the
+predecessor (chained; exact inverse of the splice). Removes the manifest. All `.bak`.
+Refuses non-editor quests (guards on `QX-<sn>.QSD`). STL keys are left as harmless
+orphans (removal would shift row indices).
+
+CLI: `list <root>` and `delete <root> <sn> [--write]`. Wizard: a **Create /
+Manage** tab pair; Manage lists editor quests with Edit / Delete (two-click
+confirm). **Edit** = `load_spec_into_form` prefill → on save, delete-old +
+create-new (fresh SN; edit always commits). `CreatedSummary` gained
+`effective_dry` / `was_edit`.
+
+`write::list_editor_quests` scans LIST_QUESTDATA for `QX-<sn>.QSD` rows (∪ orphan
+manifests), so the Manage list shows **every** editor quest, not just ones with a
+manifest. Only template Hunt/Fetch quests the tool made are listed; retail QSDs are
+never touched (no template to regenerate).
+
+`write::reconstruct_spec(root, sn)` rebuilds a `QuestSpec` from the generated data
+when there's no manifest, so **pre-manifest quests are editable too**: the complete
+trigger (found by its REWD_000 Finish) gives count + checked-item (COND_004) and
+rewards (REWD_005 exp/zuly, REWD_001 give/consume); Hunt-vs-Fetch from a token
+LIST_QUESTITEM row; monster from col-41 (claimed) or by walking the host chain back
+to its head (chained); text from the `QE_<sn>` STL row (keys/rows are parallel).
+`list_editor_quests` falls back to it (`manifest.or_else(reconstruct)`). Validated:
+the real committed quests #5502 / #5503 (no manifests) reconstruct with the correct
+monster (incl. the chained #5503 → monster 12), count, and type. Best-effort: if the
+monster can't be resolved it comes back unselected for the user to re-pick.
+
+Validated on temp copies: create (Hunt-free / Hunt-chained / Fetch) → list → delete
+each → **host QN-001.QSD restored byte-exact**, all 222 QSDs round-trip, manifests
+removed, list empty. Edit (delete #5504 + recreate #5505 count 9) leaves clean,
+round-tripping data. 7 unit tests pass. **Repeatable one-time flag deferred** to the
+NPC-dialog work (needs the global character-switch pool `COND_014`/`REWD_015`; no
+enforcement point without an NPC offer; all quests are repeatable today).
+
 ### 2026-06-21 — Tier 2 #5: trigger chaining (use any monster)
 
 A Hunt quest can now target a monster that already has a dead-event trigger.

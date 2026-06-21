@@ -2893,6 +2893,8 @@ dependencies = [
  "egui",
  "rfd",
  "roselib",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

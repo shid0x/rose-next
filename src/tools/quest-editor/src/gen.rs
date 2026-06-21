@@ -203,7 +203,7 @@ pub fn rewd_zuly(zuly: i32) -> Entity {
 // ---------------------------------------------------------------------------
 
 /// What the quest asks the player to do.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum QuestKind {
     /// "Kill N of monster X." Each kill drops one dedicated token quest-item;
     /// completion checks for N tokens. The token item is created by the writer.
@@ -234,7 +234,7 @@ pub enum QuestKind {
 }
 
 /// Inputs for generating a quest (Hunt or Fetch).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct QuestSpec {
     /// Quest SN (== the new LIST_QUEST.STB row index).
     pub quest_sn: i32,

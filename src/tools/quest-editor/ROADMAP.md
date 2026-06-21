@@ -5,8 +5,8 @@ accepted/completed via GM commands, with a named token quest-item. Append-only
 writers with `.bak`, dry-run, and an egui wizard. Known limit: one quest per
 monster (the col-41 ownership rule), and no NPC dialogs.
 
-Below is the planned work, by tier. **Tier 1 complete; Tier 2 #5 (chaining) done.
-Next decision: Tier 2 #4 (NPC dialogs).**
+Below is the planned work, by tier. **Tier 1 complete; Tier 2 #5 (chaining) done;
+Tier 3 edit/delete done. Next decision: Tier 2 #4 (NPC dialogs).**
 
 ## Tier 1 — Quick wins (finish the MVP, low risk)
 
@@ -52,11 +52,24 @@ Next decision: Tier 2 #4 (NPC dialogs).**
 
 ## Tier 3 — Polish / nice-to-haves
 
+- **Edit / delete a generated quest** — ✅ done (2026-06-21). Each create now drops
+  a sidecar manifest (`QUESTDATA/_quest-editor/QX-<sn>.qe.json`, ignored by the
+  game) holding the `QuestSpec`. A wizard **Manage** tab lists them with Edit /
+  Delete; CLI adds `list` + `delete`. **Delete** reconstructs the undo from the
+  SN + naming (works without a manifest): removes the QSD, drops the
+  LIST_QUESTDATA row, blanks the LIST_QUEST + token rows, and un-wires the monster
+  — clearing col-41 (claimed) or removing the spliced trigger and handing its
+  `check_next` back to the predecessor (chained). Verified: deleting a chained
+  quest restores the host QSD **byte-exact**. **Edit** = prefill the form from the
+  manifest, then delete-old + create-new (so the quest gets a fresh SN). All `.bak`.
+- **Repeatable / one-time flag** — *deferred to the NPC-dialog work.* All generated
+  quests are already repeatable (complete `Finish`es the slot; register has no
+  guard). True one-time needs a persistent character quest-switch (`COND_014` /
+  `REWD_015`) from the global 512-switch pool with collision-free allocation, and
+  it has no enforcement point until an NPC gates the offer — so it lands with #4.
 - **Icon picker** for the token (visual grid; reuse the shop editor's icon code).
-- **Edit / delete a generated quest** (today it's append-only).
 - **Live "0/N" counter in the journal** — switch to / add the counter-var model
   (`REWD_002`) instead of pure item-collection. Cosmetic.
-- **Repeatable / one-time flag** — engine supports it; just wiring.
 - **Multiple objectives** (kill A and B; fetch X and Y).
 
 ## Recommended order
