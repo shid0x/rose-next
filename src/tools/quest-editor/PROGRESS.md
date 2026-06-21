@@ -260,6 +260,34 @@ item `13:129`. (Validate the id exists in the item DB when generating.)
 
 ## Status log
 
+### 2026-06-21 — Tier 2 #5: trigger chaining (use any monster)
+
+A Hunt quest can now target a monster that already has a dead-event trigger.
+Mechanism (verified against `io_quest.cpp` CheckQUEST + `lib_gsmain.cpp` startup
+walk): the dead event fires the col-41 trigger and, on a conditions-mismatch with
+`check_next` set, follows `m_pNextTrigger` to the next trigger *in the same
+pattern*. So all kill triggers for a monster must live in one pattern, chained via
+`check_next`. There is no cross-QSD fail-chain.
+
+Implementation:
+- `gen.rs`: `QuestKind::Hunt` gains `chain_into_existing: bool`. When set,
+  `generate_hunt` puts only register + complete in this quest's QSD and returns
+  the kill trigger in `GeneratedQuest::host_kill_trigger` for splicing.
+- `write.rs`: `find_host_qsd()` scans `QUESTDATA/*.QSD` for the trigger named by
+  the monster's col-41. The kill trigger is inserted right after that entry; our
+  trigger inherits the entry's original `check_next`; the entry's is set to 1.
+  col-41 / LIST_NPC is left untouched. Host QSD backed up + rewritten.
+- `verify.rs` / `ui.rs` / `main.rs`: occupied monsters are allowed (auto chain
+  flag); wizard shows `[+chain]` + a "modifies the existing quest file" warning.
+
+Validated on a temp copy: chaining onto Mini-Jelly Bean (col-41 `5033-32`, host
+`QN-001.QSD`) produced chain `5033-32 → 5503-2(ours) → 5051-33 → 5051-34`, the
+original order preserved, all 222 QSDs still round-trip byte-exact, LIST_NPC
+unchanged. 7 unit tests pass (added `chaining_hunt_splits_out_the_kill_trigger`).
+**Validated in-game on 2026-06-21:** created a new Hunt quest on a monster that
+was already used by another quest, killed it, and the chained kill trigger
+credited correctly.
+
 ### 2026-06-21 — Tier 1 #3: verify/lint step (Tier 1 complete)
 
 Added `src/verify.rs`: `verify(&DataSet, &QuestSpec, &GeneratedQuest) ->

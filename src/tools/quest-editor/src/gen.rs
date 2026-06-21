@@ -216,6 +216,10 @@ pub enum QuestKind {
         token_desc: String,
         /// Icon override for the token; `None` keeps the cloned template icon.
         token_icon: Option<i32>,
+        /// The monster already has a dead-event trigger — chain our kill trigger
+        /// onto its existing chain (inserted into the host QSD) instead of
+        /// claiming col 41. See the writer.
+        chain_into_existing: bool,
     },
     /// "Bring N of an existing item X." No monster, no token; completion checks
     /// the player's inventory and (optionally) consumes the items on turn-in.
@@ -261,8 +265,12 @@ pub struct GeneratedQuest {
 
     pub register_trigger: String,
     pub complete_trigger: String,
-    /// Hunt only: the trigger wired into the monster's col 41.
+    /// Hunt only: the kill trigger's name.
     pub kill_trigger: Option<String>,
+    /// Hunt + chaining only: the kill `Trigger` to insert into the monster's
+    /// existing host QSD (instead of putting it in this quest's QSD and claiming
+    /// col 41). `None` for the non-chaining case (the kill trigger is in `qsd`).
+    pub host_kill_trigger: Option<Trigger>,
     /// Quest SN / row to append in LIST_Quest.STB.
     pub quest_sn: i32,
 }
@@ -328,18 +336,25 @@ fn qsd_for(spec: &QuestSpec, triggers: Vec<Trigger>) -> QsdFile {
 pub fn generate(spec: &QuestSpec) -> GeneratedQuest {
     match &spec.kind {
         QuestKind::Hunt {
-            token_item_sn, ..
-        } => generate_hunt(spec, *token_item_sn),
+            token_item_sn,
+            chain_into_existing,
+            ..
+        } => generate_hunt(spec, *token_item_sn, *chain_into_existing),
         QuestKind::Fetch {
             item_sn, consume, ..
         } => generate_fetch(spec, *item_sn, *consume),
     }
 }
 
-/// Hunt: register / kill (col-41) / complete. Each kill grants a token while the
-/// player holds `< N`; completion checks `>= N`. The token is a quest-type item,
-/// so Finish/Init clears it — no explicit removal needed.
-fn generate_hunt(spec: &QuestSpec, token_item_sn: i32) -> GeneratedQuest {
+/// Hunt: register / kill / complete. Each kill grants a token while the player
+/// holds `< N`; completion checks `>= N`. The token is a quest-type item, so
+/// Finish/Init clears it — no explicit removal needed.
+///
+/// When `chain` is false the kill trigger goes in this quest's QSD and claims the
+/// monster's col 41. When true the kill trigger is returned in
+/// `host_kill_trigger` for the writer to splice into the monster's existing chain
+/// (and this quest's QSD holds only register + complete).
+fn generate_hunt(spec: &QuestSpec, token_item_sn: i32, chain: bool) -> GeneratedQuest {
     let register_trigger = trigger_name(spec.quest_sn, 1);
     let kill_trigger = trigger_name(spec.quest_sn, 2);
     let complete_trigger = trigger_name(spec.quest_sn, 3);
@@ -366,17 +381,18 @@ fn generate_hunt(spec: &QuestSpec, token_item_sn: i32) -> GeneratedQuest {
         rewards: complete_reward_list(spec, vec![]),
     };
 
+    let register = register_trigger_entity(spec, &register_trigger);
+    let (triggers, host_kill_trigger) = if chain {
+        (vec![register, t_complete], Some(t_kill))
+    } else {
+        (vec![register, t_kill, t_complete], None)
+    };
+
     GeneratedQuest {
-        qsd: qsd_for(
-            spec,
-            vec![
-                register_trigger_entity(spec, &register_trigger),
-                t_kill,
-                t_complete,
-            ],
-        ),
+        qsd: qsd_for(spec, triggers),
         qsd_filename: format!("QX-{}.QSD", spec.quest_sn),
         kill_trigger: Some(kill_trigger),
+        host_kill_trigger,
         quest_sn: spec.quest_sn,
         register_trigger,
         complete_trigger,
@@ -412,6 +428,7 @@ fn generate_fetch(spec: &QuestSpec, item_sn: i32, consume: bool) -> GeneratedQue
         ),
         qsd_filename: format!("QX-{}.QSD", spec.quest_sn),
         kill_trigger: None,
+        host_kill_trigger: None,
         quest_sn: spec.quest_sn,
         register_trigger,
         complete_trigger,
@@ -472,6 +489,7 @@ mod tests {
                 token_name: "Mark".into(),
                 token_desc: String::new(),
                 token_icon: None,
+                chain_into_existing: false,
             },
             count,
             reward_exp: 500,
@@ -517,6 +535,37 @@ mod tests {
         let gen = generate(&spec);
         // complete: just select + finish = 2 rewds
         assert_eq!(gen.qsd.patterns[0].triggers[2].rewards.len(), 2);
+    }
+
+    #[test]
+    fn chaining_hunt_splits_out_the_kill_trigger() {
+        let mut spec = hunt_spec(5503, 1, 13_968, 3);
+        if let QuestKind::Hunt {
+            chain_into_existing, ..
+        } = &mut spec.kind
+        {
+            *chain_into_existing = true;
+        }
+        let gen = generate(&spec);
+
+        // This quest's own QSD holds only register + complete (no kill trigger).
+        let triggers = &gen.qsd.patterns[0].triggers;
+        assert_eq!(triggers.len(), 2);
+        assert_eq!(triggers[0].conditions.len(), 0); // register
+        assert_eq!(triggers[1].conditions.len(), 2); // complete
+
+        // The kill trigger comes out separately for host insertion.
+        let kill = gen.host_kill_trigger.expect("host kill trigger");
+        assert_eq!(kill.name, name_bytes("5503-2"));
+        assert_eq!(kill.conditions.len(), 2);
+        assert_eq!(kill.rewards.len(), 2);
+        assert_eq!(gen.kill_trigger.as_deref(), Some("5503-2"));
+
+        // Splicing it into a host pattern must still round-trip through the codec.
+        let mut host = qsd_for(&spec, vec![triggers[0].clone()]);
+        host.patterns[0].triggers.push(kill);
+        let bytes = host.to_bytes();
+        assert_eq!(QsdFile::parse(&bytes).unwrap().to_bytes(), bytes);
     }
 
     #[test]

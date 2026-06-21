@@ -334,17 +334,12 @@ fn build_hunt(ha: &HuntArgs) -> Result<(DataSet, QuestSpec, GeneratedQuest, Stri
         .find_monster(ha.monster_id)
         .ok_or_else(|| anyhow::anyhow!("no monster with id {}", ha.monster_id))?;
 
-    if !monster.dead_event_is_free() {
-        bail!(
-            "monster {} \"{}\" already has a dead-event trigger (\"{}\"); \
-             pick a monster with a free col-41 slot",
-            monster.id,
-            monster.name,
-            monster.dead_event
-        );
-    }
-
     let name = monster.name.clone();
+    // If the monster already has a dead-event trigger, chain onto it.
+    let chain = !monster.dead_event_is_free();
+    if chain {
+        println!("(note: {name} already has a quest hook \"{}\" — chaining onto it)", monster.dead_event);
+    }
     let spec = QuestSpec {
         quest_sn: ds.next_free_quest_sn(),
         kind: QuestKind::Hunt {
@@ -353,6 +348,7 @@ fn build_hunt(ha: &HuntArgs) -> Result<(DataSet, QuestSpec, GeneratedQuest, Stri
             token_name: format!("{name} Mark"),
             token_desc: format!("Proof of a defeated {name}."),
             token_icon: None,
+            chain_into_existing: chain,
         },
         count: ha.count,
         reward_exp: ha.exp,

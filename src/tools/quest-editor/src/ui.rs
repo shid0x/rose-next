@@ -366,7 +366,7 @@ impl QuestCreator {
             .show(ui, |ui| {
                 ui.checkbox(
                     &mut self.hide_in_use,
-                    "Hide monsters that already have a quest hook (can't be used)",
+                    "Hide monsters that already have a quest (the [+chain] ones)",
                 );
                 ui.checkbox(
                     &mut self.dry_run,
@@ -448,11 +448,8 @@ impl QuestCreator {
                 ui.label(egui::RichText::new(format!("Selected: {}", m.name)).strong());
                 if !m.dead_event_is_free() {
                     ui.colored_label(
-                        egui::Color32::from_rgb(220, 120, 60),
-                        format!(
-                            "⚠ This monster already has a quest hook (\"{}\"). Pick another.",
-                            m.dead_event
-                        ),
+                        egui::Color32::from_rgb(120, 170, 255),
+                        "ℹ This monster already has a quest — yours will be chained onto it.",
                     );
                 }
             }
@@ -607,9 +604,12 @@ impl QuestCreator {
                 self.objective_name().unwrap_or_default(),
                 self.reward_summary()
             ));
-            let files = match self.quest_type {
-                QuestType::Hunt => "LIST_Quest / LIST_NPC / LIST_QUESTITEM / STL",
-                QuestType::Fetch => "LIST_Quest / LIST_QuestDATA / STL",
+            let files = match &spec.kind {
+                QuestKind::Hunt { chain_into_existing: true, .. } => {
+                    "LIST_Quest / LIST_QUESTITEM / STL + the monster's existing quest file"
+                }
+                QuestKind::Hunt { .. } => "LIST_Quest / LIST_NPC / LIST_QUESTITEM / STL",
+                QuestKind::Fetch { .. } => "LIST_Quest / LIST_QuestDATA / STL",
             };
             ui.label(
                 egui::RichText::new(format!(
@@ -798,17 +798,25 @@ impl QuestCreator {
     fn build_spec(&self) -> Option<QuestSpec> {
         let ds = self.data.as_ref()?;
         let kind = match self.quest_type {
-            QuestType::Hunt => QuestKind::Hunt {
-                monster_id: self.selected_monster?,
-                token_item_sn: ds.next_free_token_item_sn(),
-                token_name: if self.token_name.trim().is_empty() {
-                    "Quest Token".to_string()
-                } else {
-                    self.token_name.clone()
-                },
-                token_desc: self.token_desc.clone(),
-                token_icon: self.token_icon.trim().parse::<i32>().ok(),
-            },
+            QuestType::Hunt => {
+                let monster_id = self.selected_monster?;
+                let free = ds
+                    .find_monster(monster_id)
+                    .map(|m| m.dead_event_is_free())
+                    .unwrap_or(true);
+                QuestKind::Hunt {
+                    monster_id,
+                    token_item_sn: ds.next_free_token_item_sn(),
+                    token_name: if self.token_name.trim().is_empty() {
+                        "Quest Token".to_string()
+                    } else {
+                        self.token_name.clone()
+                    },
+                    token_desc: self.token_desc.clone(),
+                    token_icon: self.token_icon.trim().parse::<i32>().ok(),
+                    chain_into_existing: !free,
+                }
+            }
             QuestType::Fetch => {
                 let id = self.fetch_item_id?;
                 QuestKind::Fetch {
@@ -898,7 +906,7 @@ impl QuestCreator {
 }
 
 fn monster_label(m: &Monster) -> String {
-    let tag = if m.dead_event_is_free() { "" } else { "  [in use]" };
+    let tag = if m.dead_event_is_free() { "" } else { "  [+chain]" };
     format!("{:>5}  {}  (Lv {}){}", m.id, m.name, m.level, tag)
 }
 

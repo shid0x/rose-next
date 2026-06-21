@@ -85,6 +85,7 @@ pub fn verify(ds: &DataSet, spec: &QuestSpec, gen: &GeneratedQuest) -> Vec<Issue
         QuestKind::Hunt {
             monster_id,
             token_item_sn,
+            chain_into_existing,
             ..
         } => {
             // Token must fit a free quest-item slot (type 13, id <= 999).
@@ -97,14 +98,24 @@ pub fn verify(ds: &DataSet, spec: &QuestSpec, gen: &GeneratedQuest) -> Vec<Issue
                     "Token item id is out of date — reload the data folder.",
                 ));
             }
-            // Monster must exist and have a free dead-event slot.
+            // Monster must exist; if it already has a hook we chain onto it.
             match ds.find_monster(*monster_id) {
                 None => out.push(Issue::err(format!("Monster {monster_id} not found."))),
-                Some(m) if !m.dead_event_is_free() => out.push(Issue::err(format!(
-                    "{} already has a quest hook — pick another monster.",
-                    m.name
-                ))),
-                _ => {}
+                Some(m) => {
+                    let free = m.dead_event_is_free();
+                    if !free && !*chain_into_existing {
+                        out.push(Issue::err(format!(
+                            "{} already has a quest hook — it will be chained automatically.",
+                            m.name
+                        )));
+                    } else if *chain_into_existing {
+                        out.push(Issue::warn(format!(
+                            "{} already has a quest — your kill trigger will be chained onto it \
+                             (its quest file is modified, with a .bak backup).",
+                            m.name
+                        )));
+                    }
+                }
             }
         }
         QuestKind::Fetch { item_sn, .. } => match decode_item(*item_sn) {

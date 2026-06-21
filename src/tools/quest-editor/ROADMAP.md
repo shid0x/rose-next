@@ -5,7 +5,8 @@ accepted/completed via GM commands, with a named token quest-item. Append-only
 writers with `.bak`, dry-run, and an egui wizard. Known limit: one quest per
 monster (the col-41 ownership rule), and no NPC dialogs.
 
-Below is the planned work, by tier. **Tier 1 complete. Next decision: Tier 2.**
+Below is the planned work, by tier. **Tier 1 complete; Tier 2 #5 (chaining) done.
+Next decision: Tier 2 #4 (NPC dialogs).**
 
 ## Tier 1 — Quick wins (finish the MVP, low risk)
 
@@ -34,10 +35,20 @@ Below is the planned work, by tier. **Tier 1 complete. Next decision: Tier 2.**
    event wiring). Two sub-options: (a) append a quest branch to an NPC's existing
    `.CON` (medium), or (b) generate a new dialog from scratch (largest). Multi-week;
    deserves its own go/no-go decision before starting.
-5. **Trigger chaining (use *any* monster).** Lets a Hunt quest target a monster
-   that already has a dead-event hook (Choropy, Pumpkins, etc.) by appending onto
-   its `m_pNextTrigger` chain instead of refusing. Breaks strict append-only
-   (read-modifies an existing QSD), so medium effort + medium risk. ~2–3 days.
+5. **Trigger chaining (use *any* monster).** — ✅ done (2026-06-21).
+   A Hunt quest can now target a monster that already has a dead-event hook. The
+   writer finds the host `.QSD` holding the monster's col-41 trigger and splices
+   our kill trigger in **right after** that entry: our trigger inherits the
+   entry's original `check_next`, and the entry's `check_next` is flipped to 1 —
+   so the original chain is preserved and ours is just tried next on a
+   conditions-mismatch. col-41 / LIST_NPC is left untouched. The generator emits
+   the kill trigger separately (`GeneratedQuest::host_kill_trigger`) so this
+   quest's own QSD holds only register + complete. Host QSD is backed up to `.bak`
+   and the modified file is re-verified to round-trip. The wizard auto-detects
+   occupied monsters (`[+chain]` tag), sets the chain flag, and shows a warning
+   that an existing quest file will be modified. Caveat: if a player holds two
+   quests on the same monster, the kill credits whichever trigger comes first in
+   the chain (retail behaves the same).
 
 ## Tier 3 — Polish / nice-to-haves
 

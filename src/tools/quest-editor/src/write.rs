@@ -166,11 +166,12 @@ pub fn apply_quest(
         stl.language_tables.len()
     ));
 
-    // --- Hunt-specific: token quest-item + col-41 merge + token STL. Held as
-    //     Options so the commit only backs up/writes the files that changed. ---
+    // --- Hunt-specific: token quest-item + (col-41 merge OR host-QSD chain) +
+    //     token STL. Held as Options so the commit only writes what changed. ---
     let mut hunt_qitem: Option<(PathBuf, STB)> = None;
     let mut hunt_npc: Option<(PathBuf, STB)> = None;
     let mut hunt_qitem_stl: Option<(PathBuf, STL)> = None;
+    let mut hunt_host_qsd: Option<(PathBuf, crate::qsd::QsdFile)> = None;
 
     if let QuestKind::Hunt {
         monster_id,
@@ -178,6 +179,7 @@ pub fn apply_quest(
         token_name,
         token_desc,
         token_icon,
+        chain_into_existing,
     } = &spec.kind
     {
         let token_type = token_item_sn / 1000;
@@ -221,12 +223,17 @@ pub fn apply_quest(
             .iter()
             .position(|r| r.first().and_then(|s| s.trim().parse::<i32>().ok()) == Some(*monster_id))
             .ok_or_else(|| anyhow!("monster {monster_id} not found in LIST_NPC"))?;
-        let existing_de = cell(&npc.data[monster_row], NPC_COL_DEAD_EVENT);
-        if !existing_de.trim().is_empty() {
+        let existing_de = cell(&npc.data[monster_row], NPC_COL_DEAD_EVENT)
+            .trim()
+            .to_string();
+        if !chain_into_existing && !existing_de.is_empty() {
             bail!(
                 "monster {monster_id} already has a dead-event trigger (\"{existing_de}\"); \
-                 refusing to overwrite (ownership rule)"
+                 enable chaining to add to it (ownership rule)"
             );
+        }
+        if *chain_into_existing && existing_de.is_empty() {
+            bail!("monster {monster_id} has no existing trigger to chain onto");
         }
         if qitem_stl.keys.iter().any(|k| k.name == token_stl_key) {
             bail!("quest-item STL key already exists: {token_stl_key}");
@@ -249,11 +256,31 @@ pub fn apply_quest(
             "SET LIST_QUESTITEM row {token_id} = token \"{token_name}\" (SN {token_item_sn})"
         ));
 
-        // 6) col-41 merge.
-        set_cell(&mut npc.data[monster_row], NPC_COL_DEAD_EVENT, kill_trigger);
-        changes.push(format!(
-            "MERGE LIST_NPC row {monster_row} (npc {monster_id}) col-41 = \"{kill_trigger}\""
-        ));
+        // 6) Wire the kill trigger: claim col-41 (free monster) or splice into
+        //    the monster's existing dead-event chain (chaining).
+        if *chain_into_existing {
+            let mut our_kill = gen
+                .host_kill_trigger
+                .clone()
+                .ok_or_else(|| anyhow!("chaining requested but no kill trigger was generated"))?;
+            let (host_path, mut host_qsd, pi, ti) = find_host_qsd(&questdata_dir, &existing_de)?;
+            // Our trigger inherits the entry's original `check_next` (so the rest
+            // of the chain is preserved), and the entry now chains to ours.
+            our_kill.check_next = host_qsd.patterns[pi].triggers[ti].check_next;
+            host_qsd.patterns[pi].triggers[ti].check_next = 1;
+            host_qsd.patterns[pi].triggers.insert(ti + 1, our_kill);
+            changes.push(format!(
+                "CHAIN kill trigger \"{kill_trigger}\" into {} after \"{existing_de}\"",
+                host_path.file_name().and_then(|s| s.to_str()).unwrap_or("?")
+            ));
+            hunt_host_qsd = Some((host_path, host_qsd));
+        } else {
+            set_cell(&mut npc.data[monster_row], NPC_COL_DEAD_EVENT, kill_trigger);
+            changes.push(format!(
+                "MERGE LIST_NPC row {monster_row} (npc {monster_id}) col-41 = \"{kill_trigger}\""
+            ));
+            hunt_npc = Some((npc_path, npc));
+        }
 
         // 7) token STL.
         qitem_stl.keys.push(StringTableKey {
@@ -271,7 +298,6 @@ pub fn apply_quest(
         ));
 
         hunt_qitem = Some((qitem_path, qitem));
-        hunt_npc = Some((npc_path, npc));
         hunt_qitem_stl = Some((qitem_stl_path, qitem_stl));
     }
 
@@ -295,6 +321,9 @@ pub fn apply_quest(
     if let Some((p, _)) = &hunt_qitem_stl {
         to_backup.push(p);
     }
+    if let Some((p, _)) = &hunt_host_qsd {
+        to_backup.push(p);
+    }
     for p in to_backup {
         if let Some(b) = backup_once(p)? {
             backups.push(b);
@@ -315,6 +344,10 @@ pub fn apply_quest(
     }
     if let Some((p, mut s)) = hunt_qitem_stl {
         write_stl(&mut s, &p)?;
+    }
+    if let Some((p, host)) = hunt_host_qsd {
+        host.write_file(&p)
+            .with_context(|| format!("writing host QSD {}", p.display()))?;
     }
 
     Ok(WriteReport {
@@ -351,6 +384,44 @@ fn template_row<F: Fn(&[String]) -> bool>(stb: &STB, pred: F) -> Option<Vec<Stri
 
 fn cell_is_int(row: &[String], i: usize) -> bool {
     cell(row, i).trim().parse::<i32>().is_ok()
+}
+
+/// Find which `.QSD` under `questdata_dir` defines a trigger named `entry_name`,
+/// returning (path, parsed file, pattern index, trigger index). Used to splice a
+/// new kill trigger into a monster's existing dead-event chain.
+fn find_host_qsd(
+    questdata_dir: &Path,
+    entry_name: &str,
+) -> Result<(PathBuf, crate::qsd::QsdFile, usize, usize)> {
+    let target = entry_name.trim().as_bytes();
+    for entry in fs::read_dir(questdata_dir)
+        .with_context(|| format!("reading {}", questdata_dir.display()))?
+    {
+        let path = entry?.path();
+        let is_qsd = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("qsd"));
+        if !is_qsd {
+            continue;
+        }
+        let qsd = match crate::qsd::QsdFile::read_file(&path) {
+            Ok(q) => q,
+            Err(_) => continue, // skip unparseable files
+        };
+        for (pi, pat) in qsd.patterns.iter().enumerate() {
+            for (ti, t) in pat.triggers.iter().enumerate() {
+                let name = t.name.strip_suffix(b"\0").unwrap_or(&t.name);
+                if name == target {
+                    return Ok((path, qsd, pi, ti));
+                }
+            }
+        }
+    }
+    bail!(
+        "could not find the host trigger \"{entry_name}\" in any .QSD under {}",
+        questdata_dir.display()
+    )
 }
 
 fn file_ci(dir: &Path, name: &str) -> Result<PathBuf> {
