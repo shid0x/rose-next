@@ -14,9 +14,10 @@ use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
 use quest_editor::data::DataSet;
-use quest_editor::gen::{generate_hunt, GeneratedQuest, HuntQuestSpec};
+use quest_editor::gen::{generate, GeneratedQuest, QuestKind, QuestSpec};
 use quest_editor::qsd::QsdFile;
-use quest_editor::write::apply_hunt_quest;
+use quest_editor::verify::{self, Level};
+use quest_editor::write::apply_quest;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -29,6 +30,7 @@ fn main() -> ExitCode {
         Some("stlcheck") => cmd_stlcheck(&args[1..]),
         Some("gen") => cmd_gen(&args[1..]),
         Some("create") => cmd_create(&args[1..]),
+        Some("create-fetch") => cmd_create_fetch(&args[1..]),
         _ => {
             eprintln!("usage:");
             eprintln!("  quest-editor verify <dir>   round-trip every .QSD, report drift");
@@ -42,6 +44,10 @@ fn main() -> ExitCode {
             eprintln!(
                 "  quest-editor create <root> <monster_id> <count> [exp] [zuly] [--write]\n\
                  \x20                            generate + apply a Hunt quest (dry-run unless --write)"
+            );
+            eprintln!(
+                "  quest-editor create-fetch <root> <item_sn> <count> [exp] [zuly] [--write]\n\
+                 \x20                            generate + apply a Fetch quest (item_sn = type*1000+id)"
             );
             return ExitCode::FAILURE;
         }
@@ -322,7 +328,7 @@ fn parse_hunt_args(args: &[String]) -> Result<HuntArgs> {
 
 /// Load data, enforce the ownership rule, and build the spec + generated quest.
 /// Returns the monster name too (for display).
-fn build_hunt(ha: &HuntArgs) -> Result<(DataSet, HuntQuestSpec, GeneratedQuest, String)> {
+fn build_hunt(ha: &HuntArgs) -> Result<(DataSet, QuestSpec, GeneratedQuest, String)> {
     let ds = DataSet::load(&ha.root)?;
     let monster = ds
         .find_monster(ha.monster_id)
@@ -339,11 +345,16 @@ fn build_hunt(ha: &HuntArgs) -> Result<(DataSet, HuntQuestSpec, GeneratedQuest, 
     }
 
     let name = monster.name.clone();
-    let spec = HuntQuestSpec {
+    let spec = QuestSpec {
         quest_sn: ds.next_free_quest_sn(),
-        monster_id: monster.id,
-        token_item_sn: ds.next_free_token_item_sn(),
-        kill_count: ha.count,
+        kind: QuestKind::Hunt {
+            monster_id: monster.id,
+            token_item_sn: ds.next_free_token_item_sn(),
+            token_name: format!("{name} Mark"),
+            token_desc: format!("Proof of a defeated {name}."),
+            token_icon: None,
+        },
+        count: ha.count,
         reward_exp: ha.exp,
         reward_zuly: ha.zuly,
         reward_item: None,
@@ -351,22 +362,35 @@ fn build_hunt(ha: &HuntArgs) -> Result<(DataSet, HuntQuestSpec, GeneratedQuest, 
         start_text: format!("Defeat {} {name}.", ha.count),
         progress_text: format!("Keep hunting {name}."),
         complete_text: "Quest complete!".into(),
-        token_name: format!("{name} Mark"),
-        token_desc: format!("Proof of a defeated {name}."),
-        token_icon: None,
     };
-    let gen = generate_hunt(&spec);
+    let gen = generate(&spec);
     Ok((ds, spec, gen, name))
+}
+
+/// Print verify issues; returns false if there were any errors.
+fn report_issues(ds: &DataSet, spec: &QuestSpec, gen: &GeneratedQuest) -> bool {
+    let issues = verify::verify(ds, spec, gen);
+    for i in &issues {
+        let tag = match i.level {
+            Level::Error => "ERROR",
+            Level::Warning => "warn",
+        };
+        println!("  [{tag}] {}", i.message);
+    }
+    !verify::has_errors(&issues)
 }
 
 fn cmd_create(args: &[String]) -> Result<bool> {
     let write = args.iter().any(|a| a == "--write");
     let positional: Vec<String> = args.iter().filter(|a| !a.starts_with("--")).cloned().collect();
     let ha = parse_hunt_args(&positional)?;
-    let (_ds, spec, gen, name) = build_hunt(&ha)?;
+    let (ds, spec, gen, name) = build_hunt(&ha)?;
 
     println!("quest {} \"Hunt: {name}\" -> monster {}", spec.quest_sn, ha.monster_id);
-    let report = apply_hunt_quest(&ha.root, &spec, &gen, !write)?;
+    if !report_issues(&ds, &spec, &gen) {
+        bail!("validation failed — nothing written");
+    }
+    let report = apply_quest(&ha.root, &spec, &gen, !write)?;
     report.print();
     if report.dry_run {
         println!("\n(re-run with --write to apply)");
@@ -374,6 +398,63 @@ fn cmd_create(args: &[String]) -> Result<bool> {
         println!(
             "\ntest in-game: register quest {} via GM cheat, kill {}x {name}, then /QUEST {}",
             spec.quest_sn, ha.count, gen.complete_trigger
+        );
+    }
+    Ok(true)
+}
+
+fn cmd_create_fetch(args: &[String]) -> Result<bool> {
+    let write = args.iter().any(|a| a == "--write");
+    let pos: Vec<String> = args.iter().filter(|a| !a.starts_with("--")).cloned().collect();
+    if pos.len() < 3 {
+        bail!("usage: create-fetch <root> <item_sn> <count> [exp] [zuly] [--write]");
+    }
+    let root = PathBuf::from(&pos[0]);
+    let item_sn: i32 = pos[1].parse().context("item_sn")?;
+    let count: i32 = pos[2].parse().context("count")?;
+    let exp: i32 = pos.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
+    let zuly: i32 = pos.get(4).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+    let ds = DataSet::load(&root)?;
+    // Resolve a display name for the item (type*1000+id).
+    let (cat_id, id) = (item_sn / 1000, item_sn % 1000);
+    let item_name = ds
+        .item_db
+        .all()
+        .find(|it| it.category as i32 == cat_id && it.id == id)
+        .map(|it| it.name.clone())
+        .unwrap_or_else(|| format!("item {item_sn}"));
+
+    let spec = QuestSpec {
+        quest_sn: ds.next_free_quest_sn(),
+        kind: QuestKind::Fetch {
+            item_sn,
+            item_name: item_name.clone(),
+            consume: true,
+        },
+        count,
+        reward_exp: exp,
+        reward_zuly: zuly,
+        reward_item: None,
+        title: format!("Gather: {item_name}"),
+        start_text: format!("Bring {count} {item_name}."),
+        progress_text: format!("Collect {count} {item_name}."),
+        complete_text: "Thank you, adventurer!".into(),
+    };
+    let gen = generate(&spec);
+
+    println!("quest {} \"Gather: {item_name}\" -> bring {count}x item {item_sn}", spec.quest_sn);
+    if !report_issues(&ds, &spec, &gen) {
+        bail!("validation failed — nothing written");
+    }
+    let report = apply_quest(&root, &spec, &gen, !write)?;
+    report.print();
+    if report.dry_run {
+        println!("\n(re-run with --write to apply)");
+    } else {
+        println!(
+            "\ntest in-game: /QUEST {} to register, get {count}x {item_name}, then /QUEST {}",
+            gen.register_trigger, gen.complete_trigger
         );
     }
     Ok(true)
@@ -418,7 +499,12 @@ fn cmd_stlcheck(args: &[String]) -> Result<bool> {
 
 fn cmd_gen(args: &[String]) -> Result<bool> {
     let ha = parse_hunt_args(args)?;
-    let (_ds, _spec, gen, name) = build_hunt(&ha)?;
+    let (_ds, spec, gen, name) = build_hunt(&ha)?;
+    let token_sn = match &spec.kind {
+        QuestKind::Hunt { token_item_sn, .. } => *token_item_sn,
+        _ => 0,
+    };
+    let kill_trigger = gen.kill_trigger.clone().unwrap_or_default();
     let monster_name = name;
     let count = ha.count;
     let exp = ha.exp;
@@ -428,16 +514,13 @@ fn cmd_gen(args: &[String]) -> Result<bool> {
     println!("=== generated Hunt quest (PREVIEW — nothing written) ===");
     println!("quest SN:        {}", gen.quest_sn);
     println!("target monster:  {monster_id} \"{monster_name}\"");
-    println!("token item SN:   {} (new quest-item)", gen.token_item_sn);
+    println!("token item SN:   {token_sn} (new quest-item)");
     println!("kill count:      {count}");
     println!("rewards:         exp={exp} zuly={zuly}");
     println!("QSD file:        {}", gen.qsd_filename);
-    println!(
-        "NPC col-41:      set npc {} -> \"{}\"",
-        gen.npc_col41_assignment.0, gen.npc_col41_assignment.1
-    );
+    println!("NPC col-41:      set npc {monster_id} -> \"{kill_trigger}\"");
     println!("triggers:        register=\"{}\" kill=\"{}\" complete=\"{}\"",
-        gen.register_trigger, gen.kill_trigger, gen.complete_trigger);
+        gen.register_trigger, kill_trigger, gen.complete_trigger);
     println!(
         "\ntest in-game (no dialogs needed):\n  \
          /<cheat> QUEST {sn}        register the quest\n  \

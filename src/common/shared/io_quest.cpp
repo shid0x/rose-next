@@ -2466,7 +2466,10 @@ F_QSTREWD032(uniQstENTITY* pREWD, tQST_PARAM* pPARAM, bool bDoReward) {
 
     pREWD->m_Rewd032.iCompareValue;
 
-    sITEM.Init(pREWD->m_Rewd032.uiItemSN, 1 /*pREWD->m_Rewd001.nDupCNT*/);
+    // Cast to int so overload resolution picks Init(int packedSN, qty); an
+    // unsigned arg would wrongly bind to Init(item_type, item_no, ...). Same trap
+    // as REWD_001 (see reference_item_init_overload_trap).
+    sITEM.Init(static_cast<int>(pREWD->m_Rewd032.uiItemSN), 1 /*pREWD->m_Rewd001.nDupCNT*/);
     if (0 == sITEM.GetHEADER()) {
         return false;
     }

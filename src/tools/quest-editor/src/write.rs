@@ -21,7 +21,7 @@ use roselib::files::{STB, STL};
 use roselib::io::RoseFile;
 
 use crate::data::resolve_stb_dir;
-use crate::gen::{GeneratedQuest, HuntQuestSpec};
+use crate::gen::{GeneratedQuest, QuestKind, QuestSpec};
 
 // roselib column indices (game col + 1; root column is index 0).
 const QUEST_COL_NAME: usize = 1;
@@ -73,10 +73,10 @@ impl WriteReport {
     }
 }
 
-/// Apply (or preview) all the data changes for a generated Hunt quest.
-pub fn apply_hunt_quest(
+/// Apply (or preview) all the data changes for a generated quest (Hunt or Fetch).
+pub fn apply_quest(
     root: &Path,
-    spec: &HuntQuestSpec,
+    spec: &QuestSpec,
     gen: &GeneratedQuest,
     dry_run: bool,
 ) -> Result<WriteReport> {
@@ -86,46 +86,19 @@ pub fn apply_hunt_quest(
         .ok_or_else(|| anyhow!("STB dir has no parent"))?
         .join("QUESTDATA");
 
-    // --- load everything fresh (we mutate + write these) ---
+    // --- common files (always changed) ---
     let quest_path = file_ci(&stb_dir, "LIST_QUEST.STB")?;
     let qdata_path = file_ci(&stb_dir, "LIST_QUESTDATA.STB")?;
-    let qitem_path = file_ci(&stb_dir, "LIST_QUESTITEM.STB")?;
-    let npc_path = file_ci(&stb_dir, "LIST_NPC.STB")?;
     let stl_path = file_ci(&stb_dir, "LIST_QUEST_S.STL")?;
-    let qitem_stl_path = file_ci(&stb_dir, "LIST_QUESTITEM_S.STL")?;
-
     let mut quest = load_stb(&quest_path)?;
     let mut qdata = load_stb(&qdata_path)?;
-    let mut qitem = load_stb(&qitem_path)?;
-    let mut npc = load_stb(&npc_path)?;
     let mut stl = load_stl(&stl_path)?;
-    let mut qitem_stl = load_stl(&qitem_stl_path)?;
 
     let qsd_file = questdata_dir.join(&gen.qsd_filename);
     let qsd_rel = format!("3DDATA\\QUESTDATA\\{}", gen.qsd_filename);
-    let stl_key = format!("QEST_HUNT_{}", spec.quest_sn);
-    let token_stl_key = format!("QITEM_HUNT_{}", spec.quest_sn);
+    let stl_key = format!("QE_{}", spec.quest_sn);
 
-    // --- token item id/type from the SN (type*1000+id; id must be <= 999) ---
-    let token_type = spec.token_item_sn / 1000;
-    let token_id = (spec.token_item_sn % 1000) as usize;
-    if token_type != QUEST_ITEM_TYPE {
-        bail!(
-            "token item SN {} is not a quest item (type {} != {})",
-            spec.token_item_sn,
-            token_type,
-            QUEST_ITEM_TYPE
-        );
-    }
-    if token_id > 999 {
-        bail!("token item id {token_id} exceeds 999 (type*1000+id encoding limit)");
-    }
-
-    // ----------------------------------------------------------------------
-    // Validate every guard BEFORE mutating anything.
-    // ----------------------------------------------------------------------
-
-    // Quest SN must be the append index.
+    // --- common validation ---
     if gen.quest_sn as usize != quest.data.len() {
         bail!(
             "quest SN {} != LIST_QUEST row count {} — data changed since generation; regenerate",
@@ -133,51 +106,16 @@ pub fn apply_hunt_quest(
             quest.data.len()
         );
     }
-    // Token row must exist as an empty placeholder (id <= 999, < row count).
-    if token_id >= qitem.data.len() {
-        bail!(
-            "token item id {token_id} is beyond LIST_QUESTITEM ({} rows); no free placeholder \
-             row <= 999 — cannot allocate a token without breaking the type*1000+id encoding",
-            qitem.data.len()
-        );
-    }
-    if !cell(&qitem.data[token_id], QITEM_COL_NAME).is_empty() {
-        bail!(
-            "token item row {token_id} is already in use (\"{}\")",
-            cell(&qitem.data[token_id], QITEM_COL_NAME)
-        );
-    }
-    // Monster col-41 must be free (the ownership rule).
-    let (monster_id, kill_trigger) = &gen.npc_col41_assignment;
-    let monster_row = npc
-        .data
-        .iter()
-        .position(|r| r.first().and_then(|s| s.trim().parse::<i32>().ok()) == Some(*monster_id))
-        .ok_or_else(|| anyhow!("monster {monster_id} not found in LIST_NPC"))?;
-    let existing_de = cell(&npc.data[monster_row], NPC_COL_DEAD_EVENT);
-    if !existing_de.trim().is_empty() {
-        bail!(
-            "monster {monster_id} already has a dead-event trigger (\"{existing_de}\"); refusing \
-             to overwrite (ownership rule)"
-        );
-    }
-    // QSD file must not already exist.
     if qsd_file.exists() {
         bail!("QSD file already exists: {}", qsd_file.display());
     }
-    // STL keys must be unique.
     if stl.keys.iter().any(|k| k.name == stl_key) {
         bail!("STL key already exists: {stl_key}");
-    }
-    if qitem_stl.keys.iter().any(|k| k.name == token_stl_key) {
-        bail!("quest-item STL key already exists: {token_stl_key}");
     }
 
     let mut changes = Vec::new();
 
-    // ----------------------------------------------------------------------
     // 1) New QSD file.
-    // ----------------------------------------------------------------------
     let qsd_bytes = gen.qsd.to_bytes();
     changes.push(format!(
         "CREATE {} ({} bytes, {} triggers)",
@@ -186,29 +124,23 @@ pub fn apply_hunt_quest(
         gen.qsd.patterns.iter().map(|p| p.triggers.len()).sum::<usize>()
     ));
 
-    // ----------------------------------------------------------------------
     // 2) LIST_QUESTDATA: append row registering the QSD.
-    // ----------------------------------------------------------------------
     let mut qdata_row = empty_row(qdata.cols());
     set_cell(&mut qdata_row, 0, &format!("QX-{}", spec.quest_sn));
     set_cell(&mut qdata_row, QDATA_COL_PATH, &qsd_rel);
     qdata.data.push(qdata_row);
     changes.push(format!("APPEND LIST_QUESTDATA row -> \"{qsd_rel}\""));
 
-    // ----------------------------------------------------------------------
-    // 3) LIST_QUEST: append row at index == quest_sn (clone a template).
-    // ----------------------------------------------------------------------
-    // Template: a real individual quest (Application==0) with a numeric icon —
-    // skips the schema/description row whose cells are comment strings.
+    // 3) LIST_QUEST: append row at index == quest_sn (clone a real template).
     let mut quest_row = template_row(&quest, |r| {
         !cell(r, QUEST_COL_NAME).trim().is_empty()
             && cell(r, QUEST_COL_APPLICATION).trim() == "0"
             && cell_is_int(r, QUEST_COL_ICON)
     })
     .context("no individual-quest template row to clone")?;
-    set_cell(&mut quest_row, 0, ""); // root stays empty (SN == row index)
+    set_cell(&mut quest_row, 0, "");
     set_cell(&mut quest_row, QUEST_COL_NAME, &spec.title);
-    set_cell(&mut quest_row, QUEST_COL_TIME, "0"); // no time limit
+    set_cell(&mut quest_row, QUEST_COL_TIME, "0");
     set_cell(&mut quest_row, QUEST_COL_STL_LINK, &stl_key);
     quest.data.push(quest_row);
     changes.push(format!(
@@ -216,37 +148,7 @@ pub fn apply_hunt_quest(
         spec.quest_sn, spec.title, stl_key
     ));
 
-    // ----------------------------------------------------------------------
-    // 4) LIST_QUESTITEM: fill the placeholder token row (clone a template).
-    // ----------------------------------------------------------------------
-    let mut token_row = template_row(&qitem, |r| {
-        !cell(r, QITEM_COL_NAME).trim().is_empty() && cell_is_int(r, QITEM_COL_TYPE)
-    })
-    .context("no quest-item template row to clone")?;
-    set_cell(&mut token_row, 0, "");
-    set_cell(&mut token_row, QITEM_COL_NAME, &spec.token_name); // server-side name
-    set_cell(&mut token_row, QITEM_COL_BELONGING_QUEST, &spec.quest_sn.to_string());
-    set_cell(&mut token_row, QITEM_COL_STL_LINK, &token_stl_key); // client name via STL
-    if let Some(icon) = spec.token_icon {
-        set_cell(&mut token_row, QITEM_COL_ICON, &icon.to_string());
-    }
-    qitem.data[token_id] = token_row;
-    changes.push(format!(
-        "SET LIST_QUESTITEM row {token_id} = token \"{}\" (SN {}, belongs to quest {})",
-        spec.token_name, spec.token_item_sn, spec.quest_sn
-    ));
-
-    // ----------------------------------------------------------------------
-    // 5) LIST_NPC: merge col-41 dead-event on the monster.
-    // ----------------------------------------------------------------------
-    set_cell(&mut npc.data[monster_row], NPC_COL_DEAD_EVENT, kill_trigger);
-    changes.push(format!(
-        "MERGE LIST_NPC row {monster_row} (npc {monster_id}) col-41 dead-event = \"{kill_trigger}\""
-    ));
-
-    // ----------------------------------------------------------------------
-    // 6) LIST_QUEST_S.STL: append key + a row per language.
-    // ----------------------------------------------------------------------
+    // 4) LIST_QUEST_S.STL: append key + a row per language.
     stl.keys.push(StringTableKey {
         id: spec.quest_sn as u32,
         name: stl_key.clone(),
@@ -264,23 +166,114 @@ pub fn apply_hunt_quest(
         stl.language_tables.len()
     ));
 
-    // ----------------------------------------------------------------------
-    // 7) LIST_QUESTITEM_S.STL: append key + row so the token has a real name.
-    // ----------------------------------------------------------------------
-    qitem_stl.keys.push(StringTableKey {
-        id: spec.token_item_sn as u32,
-        name: token_stl_key.clone(),
-    });
-    for lt in &mut qitem_stl.language_tables {
-        lt.rows.push(StringTableRow::ItemRow(ItemRowData {
-            text: spec.token_name.clone(),
-            description: spec.token_desc.clone(),
-        }));
+    // --- Hunt-specific: token quest-item + col-41 merge + token STL. Held as
+    //     Options so the commit only backs up/writes the files that changed. ---
+    let mut hunt_qitem: Option<(PathBuf, STB)> = None;
+    let mut hunt_npc: Option<(PathBuf, STB)> = None;
+    let mut hunt_qitem_stl: Option<(PathBuf, STL)> = None;
+
+    if let QuestKind::Hunt {
+        monster_id,
+        token_item_sn,
+        token_name,
+        token_desc,
+        token_icon,
+    } = &spec.kind
+    {
+        let token_type = token_item_sn / 1000;
+        let token_id = (token_item_sn % 1000) as usize;
+        if token_type != QUEST_ITEM_TYPE {
+            bail!(
+                "token item SN {token_item_sn} is not a quest item (type {token_type} != {QUEST_ITEM_TYPE})"
+            );
+        }
+        if token_id > 999 {
+            bail!("token item id {token_id} exceeds 999 (type*1000+id encoding limit)");
+        }
+
+        let qitem_path = file_ci(&stb_dir, "LIST_QUESTITEM.STB")?;
+        let npc_path = file_ci(&stb_dir, "LIST_NPC.STB")?;
+        let qitem_stl_path = file_ci(&stb_dir, "LIST_QUESTITEM_S.STL")?;
+        let mut qitem = load_stb(&qitem_path)?;
+        let mut npc = load_stb(&npc_path)?;
+        let mut qitem_stl = load_stl(&qitem_stl_path)?;
+        let token_stl_key = format!("QITEM_{}", spec.quest_sn);
+
+        // Hunt validation.
+        if token_id >= qitem.data.len() {
+            bail!(
+                "token item id {token_id} is beyond LIST_QUESTITEM ({} rows); no free placeholder",
+                qitem.data.len()
+            );
+        }
+        if !cell(&qitem.data[token_id], QITEM_COL_NAME).is_empty() {
+            bail!(
+                "token item row {token_id} is already in use (\"{}\")",
+                cell(&qitem.data[token_id], QITEM_COL_NAME)
+            );
+        }
+        let kill_trigger = gen
+            .kill_trigger
+            .as_ref()
+            .ok_or_else(|| anyhow!("hunt quest has no kill trigger"))?;
+        let monster_row = npc
+            .data
+            .iter()
+            .position(|r| r.first().and_then(|s| s.trim().parse::<i32>().ok()) == Some(*monster_id))
+            .ok_or_else(|| anyhow!("monster {monster_id} not found in LIST_NPC"))?;
+        let existing_de = cell(&npc.data[monster_row], NPC_COL_DEAD_EVENT);
+        if !existing_de.trim().is_empty() {
+            bail!(
+                "monster {monster_id} already has a dead-event trigger (\"{existing_de}\"); \
+                 refusing to overwrite (ownership rule)"
+            );
+        }
+        if qitem_stl.keys.iter().any(|k| k.name == token_stl_key) {
+            bail!("quest-item STL key already exists: {token_stl_key}");
+        }
+
+        // 5) token row.
+        let mut token_row = template_row(&qitem, |r| {
+            !cell(r, QITEM_COL_NAME).trim().is_empty() && cell_is_int(r, QITEM_COL_TYPE)
+        })
+        .context("no quest-item template row to clone")?;
+        set_cell(&mut token_row, 0, "");
+        set_cell(&mut token_row, QITEM_COL_NAME, token_name);
+        set_cell(&mut token_row, QITEM_COL_BELONGING_QUEST, &spec.quest_sn.to_string());
+        set_cell(&mut token_row, QITEM_COL_STL_LINK, &token_stl_key);
+        if let Some(icon) = token_icon {
+            set_cell(&mut token_row, QITEM_COL_ICON, &icon.to_string());
+        }
+        qitem.data[token_id] = token_row;
+        changes.push(format!(
+            "SET LIST_QUESTITEM row {token_id} = token \"{token_name}\" (SN {token_item_sn})"
+        ));
+
+        // 6) col-41 merge.
+        set_cell(&mut npc.data[monster_row], NPC_COL_DEAD_EVENT, kill_trigger);
+        changes.push(format!(
+            "MERGE LIST_NPC row {monster_row} (npc {monster_id}) col-41 = \"{kill_trigger}\""
+        ));
+
+        // 7) token STL.
+        qitem_stl.keys.push(StringTableKey {
+            id: *token_item_sn as u32,
+            name: token_stl_key.clone(),
+        });
+        for lt in &mut qitem_stl.language_tables {
+            lt.rows.push(StringTableRow::ItemRow(ItemRowData {
+                text: token_name.clone(),
+                description: token_desc.clone(),
+            }));
+        }
+        changes.push(format!(
+            "APPEND LIST_QUESTITEM_S.STL key \"{token_stl_key}\" -> \"{token_name}\""
+        ));
+
+        hunt_qitem = Some((qitem_path, qitem));
+        hunt_npc = Some((npc_path, npc));
+        hunt_qitem_stl = Some((qitem_stl_path, qitem_stl));
     }
-    changes.push(format!(
-        "APPEND LIST_QUESTITEM_S.STL key \"{token_stl_key}\" -> \"{}\"",
-        spec.token_name
-    ));
 
     if dry_run {
         return Ok(WriteReport {
@@ -290,18 +283,19 @@ pub fn apply_hunt_quest(
         });
     }
 
-    // ----------------------------------------------------------------------
-    // Commit: back up existing files, then write. The new QSD has no backup.
-    // ----------------------------------------------------------------------
+    // --- commit: back up then write only the files that changed ---
     let mut backups = Vec::new();
-    for p in [
-        &quest_path,
-        &qdata_path,
-        &qitem_path,
-        &npc_path,
-        &stl_path,
-        &qitem_stl_path,
-    ] {
+    let mut to_backup: Vec<&Path> = vec![&quest_path, &qdata_path, &stl_path];
+    if let Some((p, _)) = &hunt_qitem {
+        to_backup.push(p);
+    }
+    if let Some((p, _)) = &hunt_npc {
+        to_backup.push(p);
+    }
+    if let Some((p, _)) = &hunt_qitem_stl {
+        to_backup.push(p);
+    }
+    for p in to_backup {
         if let Some(b) = backup_once(p)? {
             backups.push(b);
         }
@@ -310,13 +304,18 @@ pub fn apply_hunt_quest(
     fs::create_dir_all(&questdata_dir).ok();
     fs::write(&qsd_file, &qsd_bytes)
         .with_context(|| format!("writing {}", qsd_file.display()))?;
-
     write_stb(&mut quest, &quest_path)?;
     write_stb(&mut qdata, &qdata_path)?;
-    write_stb(&mut qitem, &qitem_path)?;
-    write_stb(&mut npc, &npc_path)?;
     write_stl(&mut stl, &stl_path)?;
-    write_stl(&mut qitem_stl, &qitem_stl_path)?;
+    if let Some((p, mut s)) = hunt_qitem {
+        write_stb(&mut s, &p)?;
+    }
+    if let Some((p, mut s)) = hunt_npc {
+        write_stb(&mut s, &p)?;
+    }
+    if let Some((p, mut s)) = hunt_qitem_stl {
+        write_stl(&mut s, &p)?;
+    }
 
     Ok(WriteReport {
         dry_run: false,

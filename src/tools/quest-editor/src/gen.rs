@@ -199,20 +199,44 @@ pub fn rewd_zuly(zuly: i32) -> Entity {
 }
 
 // ---------------------------------------------------------------------------
-// Hunt template
+// Templates
 // ---------------------------------------------------------------------------
 
-/// Inputs for generating a "kill N of monster X" quest.
+/// What the quest asks the player to do.
 #[derive(Debug, Clone)]
-pub struct HuntQuestSpec {
+pub enum QuestKind {
+    /// "Kill N of monster X." Each kill drops one dedicated token quest-item;
+    /// completion checks for N tokens. The token item is created by the writer.
+    Hunt {
+        /// Target monster's NPC id (kill trigger is wired into its col 41).
+        monster_id: i32,
+        /// Dedicated token quest-item SN (`type*1000+id`, type 13). One per quest.
+        token_item_sn: i32,
+        token_name: String,
+        token_desc: String,
+        /// Icon override for the token; `None` keeps the cloned template icon.
+        token_icon: Option<i32>,
+    },
+    /// "Bring N of an existing item X." No monster, no token; completion checks
+    /// the player's inventory and (optionally) consumes the items on turn-in.
+    Fetch {
+        /// SN (`type*1000+id`) of the item the player must bring.
+        item_sn: i32,
+        /// Display name of that item (preview/log only).
+        item_name: String,
+        /// Remove the N items from the player on turn-in.
+        consume: bool,
+    },
+}
+
+/// Inputs for generating a quest (Hunt or Fetch).
+#[derive(Debug, Clone)]
+pub struct QuestSpec {
     /// Quest SN (== the new LIST_QUEST.STB row index).
     pub quest_sn: i32,
-    /// Target monster's NPC id (where the kill trigger is wired in col 41).
-    pub monster_id: i32,
-    /// Dedicated token quest-item SN (`type*1000+id`, type 13). One per quest.
-    pub token_item_sn: i32,
-    /// How many to kill / tokens to collect.
-    pub kill_count: i32,
+    pub kind: QuestKind,
+    /// How many to kill / collect.
+    pub count: i32,
 
     pub reward_exp: i32,
     pub reward_zuly: i32,
@@ -224,18 +248,11 @@ pub struct HuntQuestSpec {
     pub start_text: String,
     pub progress_text: String,
     pub complete_text: String,
-
-    /// In-game name of the token quest-item (shown in the quest-item inventory).
-    pub token_name: String,
-    /// In-game description of the token quest-item.
-    pub token_desc: String,
-    /// Optional icon-number override for the token; `None` keeps the cloned
-    /// template's icon.
-    pub token_icon: Option<i32>,
 }
 
-/// The full output of generating a quest: the QSD plus everything the Phase-4
-/// writer must apply to the other game-data files.
+/// The full output of generating a quest: the QSD plus the trigger names the
+/// Phase-4 writer needs. Kind-specific data (monster/token) lives in
+/// [`QuestSpec::kind`].
 #[derive(Debug, Clone)]
 pub struct GeneratedQuest {
     pub qsd: QsdFile,
@@ -243,13 +260,9 @@ pub struct GeneratedQuest {
     pub qsd_filename: String,
 
     pub register_trigger: String,
-    pub kill_trigger: String,
     pub complete_trigger: String,
-
-    /// (monster NPC id, trigger name) to write into LIST_NPC col 41.
-    pub npc_col41_assignment: (i32, String),
-    /// Token quest-item SN that must exist (created in LIST_QUESTITEM if new).
-    pub token_item_sn: i32,
+    /// Hunt only: the trigger wired into the monster's col 41.
+    pub kill_trigger: Option<String>,
     /// Quest SN / row to append in LIST_Quest.STB.
     pub quest_sn: i32,
 }
@@ -268,79 +281,139 @@ fn name_bytes(s: &str) -> Vec<u8> {
     b
 }
 
-/// Generate a complete Hunt quest (register / kill / complete triggers).
-pub fn generate_hunt(spec: &HuntQuestSpec) -> GeneratedQuest {
+/// The register trigger (no conditions): just add the quest.
+fn register_trigger_entity(spec: &QuestSpec, name: &str) -> Trigger {
+    Trigger {
+        check_next: 0,
+        name: name_bytes(name),
+        conditions: vec![],
+        rewards: vec![rewd_quest_op(spec.quest_sn, QuestOp::Register)],
+    }
+}
+
+/// Shared completion-reward sequence: select → exp/zuly/item → `extra` → finish.
+/// `extra` lets Fetch insert a "remove the brought items" reward before finish.
+fn complete_reward_list(spec: &QuestSpec, extra: Vec<Entity>) -> Vec<Entity> {
+    let mut r = vec![rewd_quest_op(spec.quest_sn, QuestOp::Select)];
+    if spec.reward_exp > 0 {
+        r.push(rewd_exp(spec.reward_exp));
+    }
+    if spec.reward_zuly > 0 {
+        r.push(rewd_zuly(spec.reward_zuly));
+    }
+    if let Some((item_sn, qty)) = spec.reward_item {
+        if qty > 0 {
+            r.push(rewd_give_item(item_sn, qty));
+        }
+    }
+    r.extend(extra);
+    // Finish LAST: Init() clears the quest slot (and its quest-inventory tokens).
+    r.push(rewd_quest_op(spec.quest_sn, QuestOp::Finish));
+    r
+}
+
+fn qsd_for(spec: &QuestSpec, triggers: Vec<Trigger>) -> QsdFile {
+    QsdFile {
+        size_field: 12, // constant across all retail QSDs
+        description: spec.title.as_bytes().to_vec(),
+        patterns: vec![Pattern {
+            name: format!("quest {}", spec.quest_sn).into_bytes(),
+            triggers,
+        }],
+        trailing: vec![],
+    }
+}
+
+/// Generate a quest (Hunt or Fetch) from its spec.
+pub fn generate(spec: &QuestSpec) -> GeneratedQuest {
+    match &spec.kind {
+        QuestKind::Hunt {
+            token_item_sn, ..
+        } => generate_hunt(spec, *token_item_sn),
+        QuestKind::Fetch {
+            item_sn, consume, ..
+        } => generate_fetch(spec, *item_sn, *consume),
+    }
+}
+
+/// Hunt: register / kill (col-41) / complete. Each kill grants a token while the
+/// player holds `< N`; completion checks `>= N`. The token is a quest-type item,
+/// so Finish/Init clears it — no explicit removal needed.
+fn generate_hunt(spec: &QuestSpec, token_item_sn: i32) -> GeneratedQuest {
     let register_trigger = trigger_name(spec.quest_sn, 1);
     let kill_trigger = trigger_name(spec.quest_sn, 2);
     let complete_trigger = trigger_name(spec.quest_sn, 3);
 
-    // 1) Register: add the quest.
-    let t_register = Trigger {
-        check_next: 0,
-        name: name_bytes(&register_trigger),
-        conditions: vec![],
-        rewards: vec![rewd_quest_op(spec.quest_sn, QuestOp::Register)],
-    };
-
-    // 2) Kill (wired into the monster's col 41): while holding < N tokens, grant
-    //    one more.
     let t_kill = Trigger {
         check_next: 0,
         name: name_bytes(&kill_trigger),
         conditions: vec![
             cond_quest_registered(spec.quest_sn),
-            cond_item_count(spec.token_item_sn, spec.kill_count, CmpOp::Lt),
+            cond_item_count(token_item_sn, spec.count, CmpOp::Lt),
         ],
         rewards: vec![
             rewd_quest_op(spec.quest_sn, QuestOp::Select),
-            rewd_give_item(spec.token_item_sn, 1),
+            rewd_give_item(token_item_sn, 1),
         ],
     };
-
-    // 3) Complete: once holding >= N tokens, grant rewards then finish.
-    let mut complete_rewards = vec![rewd_quest_op(spec.quest_sn, QuestOp::Select)];
-    if spec.reward_exp > 0 {
-        complete_rewards.push(rewd_exp(spec.reward_exp));
-    }
-    if spec.reward_zuly > 0 {
-        complete_rewards.push(rewd_zuly(spec.reward_zuly));
-    }
-    if let Some((item_sn, qty)) = spec.reward_item {
-        if qty > 0 {
-            complete_rewards.push(rewd_give_item(item_sn, qty));
-        }
-    }
-    // Finish LAST: Init() clears the quest slot and its token items.
-    complete_rewards.push(rewd_quest_op(spec.quest_sn, QuestOp::Finish));
-
     let t_complete = Trigger {
         check_next: 0,
         name: name_bytes(&complete_trigger),
         conditions: vec![
             cond_quest_registered(spec.quest_sn),
-            cond_item_count(spec.token_item_sn, spec.kill_count, CmpOp::Ge),
+            cond_item_count(token_item_sn, spec.count, CmpOp::Ge),
         ],
-        rewards: complete_rewards,
-    };
-
-    let qsd = QsdFile {
-        size_field: 12, // constant across all retail QSDs
-        description: spec.title.as_bytes().to_vec(),
-        patterns: vec![Pattern {
-            name: format!("quest {}", spec.quest_sn).into_bytes(),
-            triggers: vec![t_register, t_kill, t_complete],
-        }],
-        trailing: vec![],
+        rewards: complete_reward_list(spec, vec![]),
     };
 
     GeneratedQuest {
-        qsd,
+        qsd: qsd_for(
+            spec,
+            vec![
+                register_trigger_entity(spec, &register_trigger),
+                t_kill,
+                t_complete,
+            ],
+        ),
         qsd_filename: format!("QX-{}.QSD", spec.quest_sn),
-        npc_col41_assignment: (spec.monster_id, kill_trigger.clone()),
-        token_item_sn: spec.token_item_sn,
+        kill_trigger: Some(kill_trigger),
         quest_sn: spec.quest_sn,
         register_trigger,
-        kill_trigger,
+        complete_trigger,
+    }
+}
+
+/// Fetch: register / complete. No monster, no token. Completion checks the
+/// player holds `>= N` of an existing item and (optionally) removes them — the
+/// item is normal-inventory, so Finish/Init does NOT clear it.
+fn generate_fetch(spec: &QuestSpec, item_sn: i32, consume: bool) -> GeneratedQuest {
+    let register_trigger = trigger_name(spec.quest_sn, 1);
+    let complete_trigger = trigger_name(spec.quest_sn, 2);
+
+    let extra = if consume {
+        vec![rewd_remove_item(item_sn, spec.count as i16)]
+    } else {
+        vec![]
+    };
+    let t_complete = Trigger {
+        check_next: 0,
+        name: name_bytes(&complete_trigger),
+        conditions: vec![
+            cond_quest_registered(spec.quest_sn),
+            cond_item_count(item_sn, spec.count, CmpOp::Ge),
+        ],
+        rewards: complete_reward_list(spec, extra),
+    };
+
+    GeneratedQuest {
+        qsd: qsd_for(
+            spec,
+            vec![register_trigger_entity(spec, &register_trigger), t_complete],
+        ),
+        qsd_filename: format!("QX-{}.QSD", spec.quest_sn),
+        kill_trigger: None,
+        quest_sn: spec.quest_sn,
+        register_trigger,
         complete_trigger,
     }
 }
@@ -390,25 +463,30 @@ mod tests {
         );
     }
 
-    #[test]
-    fn generated_hunt_round_trips_through_codec() {
-        let spec = HuntQuestSpec {
-            quest_sn: 5501,
-            monster_id: 4, // Royal Jelly Bean (col-41 free in our data)
-            token_item_sn: 13_500,
-            kill_count: 10,
+    fn hunt_spec(quest_sn: i32, monster_id: i32, token_sn: i32, count: i32) -> QuestSpec {
+        QuestSpec {
+            quest_sn,
+            kind: QuestKind::Hunt {
+                monster_id,
+                token_item_sn: token_sn,
+                token_name: "Mark".into(),
+                token_desc: String::new(),
+                token_icon: None,
+            },
+            count,
             reward_exp: 500,
             reward_zuly: 1000,
             reward_item: Some((10_001, 1)),
             title: "Jelly Hunt".into(),
-            start_text: "Kill 10 Royal Jelly Beans.".into(),
+            start_text: "Kill some jellies.".into(),
             progress_text: "Keep hunting!".into(),
             complete_text: "Well done.".into(),
-            token_name: "Jelly Mark".into(),
-            token_desc: "Proof of a slain jelly.".into(),
-            token_icon: None,
-        };
-        let gen = generate_hunt(&spec);
+        }
+    }
+
+    #[test]
+    fn generated_hunt_round_trips_through_codec() {
+        let gen = generate(&hunt_spec(5501, 4, 13_500, 10));
 
         // The QSD must survive a codec round-trip byte-exact.
         let bytes = gen.qsd.to_bytes();
@@ -419,41 +497,60 @@ mod tests {
         // Structure sanity.
         let triggers = &gen.qsd.patterns[0].triggers;
         assert_eq!(triggers.len(), 3);
-        // register: 0 conds, 1 rewd
-        assert_eq!(triggers[0].conditions.len(), 0);
+        assert_eq!(triggers[0].conditions.len(), 0); // register
         assert_eq!(triggers[0].rewards.len(), 1);
-        // kill: 2 conds, 2 rewds
-        assert_eq!(triggers[1].conditions.len(), 2);
+        assert_eq!(triggers[1].conditions.len(), 2); // kill
         assert_eq!(triggers[1].rewards.len(), 2);
-        // complete: 2 conds, select + exp + zuly + item + finish = 5 rewds
+        // complete: select + exp + zuly + item + finish = 5 rewds
         assert_eq!(triggers[2].conditions.len(), 2);
         assert_eq!(triggers[2].rewards.len(), 5);
 
-        // The kill trigger is what gets wired into the monster's col 41.
-        assert_eq!(gen.npc_col41_assignment, (4, "5501-2".to_string()));
-        assert_eq!(gen.kill_trigger, "5501-2");
+        assert_eq!(gen.kill_trigger.as_deref(), Some("5501-2"));
     }
 
     #[test]
-    fn rewards_are_omitted_when_zero() {
-        let spec = HuntQuestSpec {
-            quest_sn: 6000,
-            monster_id: 8,
-            token_item_sn: 13_501,
-            kill_count: 5,
-            reward_exp: 0,
+    fn hunt_rewards_are_omitted_when_zero() {
+        let mut spec = hunt_spec(6000, 8, 13_501, 5);
+        spec.reward_exp = 0;
+        spec.reward_zuly = 0;
+        spec.reward_item = None;
+        let gen = generate(&spec);
+        // complete: just select + finish = 2 rewds
+        assert_eq!(gen.qsd.patterns[0].triggers[2].rewards.len(), 2);
+    }
+
+    #[test]
+    fn fetch_quest_round_trips_and_consumes() {
+        let spec = QuestSpec {
+            quest_sn: 7000,
+            kind: QuestKind::Fetch {
+                item_sn: 10_060, // a use-item
+                item_name: "Box".into(),
+                consume: true,
+            },
+            count: 3,
+            reward_exp: 200,
             reward_zuly: 0,
             reward_item: None,
-            title: "T".into(),
+            title: "Bring boxes".into(),
             start_text: String::new(),
             progress_text: String::new(),
             complete_text: String::new(),
-            token_name: "Token".into(),
-            token_desc: String::new(),
-            token_icon: None,
         };
-        let gen = generate_hunt(&spec);
-        // complete: just select + finish = 2 rewds
-        assert_eq!(gen.qsd.patterns[0].triggers[2].rewards.len(), 2);
+        let gen = generate(&spec);
+        assert!(gen.kill_trigger.is_none());
+
+        let bytes = gen.qsd.to_bytes();
+        assert_eq!(QsdFile::parse(&bytes).unwrap().to_bytes(), bytes);
+
+        let triggers = &gen.qsd.patterns[0].triggers;
+        assert_eq!(triggers.len(), 2); // register + complete (no kill)
+        // complete: COND_000 + COND_004; rewards = select + exp + remove + finish
+        assert_eq!(triggers[1].conditions.len(), 2);
+        assert_eq!(triggers[1].rewards.len(), 4);
+        // the remove reward (REWD_001 op 0) consumes the fetched item
+        let remove = &triggers[1].rewards[2];
+        assert_eq!(remove.etype, 1);
+        assert_eq!(remove.payload[4], 0); // btOp = 0 (remove)
     }
 }

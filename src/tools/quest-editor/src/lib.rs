@@ -8,4 +8,5 @@ pub mod data;
 pub mod gen;
 pub mod qsd;
 pub mod ui;
+pub mod verify;
 pub mod write;

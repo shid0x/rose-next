@@ -10,8 +10,14 @@ use std::path::{Path, PathBuf};
 use eframe::egui;
 
 use crate::data::{DataSet, Item, ItemCategory, Monster};
-use crate::gen::{generate_hunt, GeneratedQuest, HuntQuestSpec};
-use crate::write::apply_hunt_quest;
+use crate::gen::{generate, QuestKind, QuestSpec};
+use crate::write::apply_quest;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QuestType {
+    Hunt,
+    Fetch,
+}
 
 const MAX_TOKEN_ITEM_ID: i32 = 999; // type*1000+id encoding limit (reward items)
 
@@ -39,8 +45,9 @@ enum Screen {
 #[derive(Clone)]
 struct CreatedSummary {
     quest_sn: i32,
-    monster_name: String,
-    kill_count: i32,
+    quest_type: QuestType,
+    objective_name: String,
+    count: i32,
     complete_trigger: String,
     register_trigger: String,
     changes: Vec<String>,
@@ -53,8 +60,14 @@ struct QuestCreator {
     load_error: Option<String>,
 
     // form state
+    quest_type: QuestType,
     monster_search: String,
     selected_monster: Option<i32>,
+    // Fetch: which existing item the player must bring
+    fetch_item_category: ItemCategory,
+    fetch_item_search: String,
+    fetch_item_id: Option<i32>,
+    fetch_consume: bool,
     kill_count: i32,
     reward_exp: i32,
     reward_zuly: i32,
@@ -74,7 +87,7 @@ struct QuestCreator {
     // when true, the text fields are auto-derived and regenerate as the monster
     // / count change; set false the moment the user edits any text field.
     auto_text: bool,
-    text_basis: Option<(i32, i32)>,
+    text_basis: Option<(QuestType, i32, i32)>,
 
     // dev knobs
     hide_in_use: bool,
@@ -91,8 +104,13 @@ impl Default for QuestCreator {
             root: None,
             data: None,
             load_error: None,
+            quest_type: QuestType::Hunt,
             monster_search: String::new(),
             selected_monster: None,
+            fetch_item_category: ItemCategory::UseItem,
+            fetch_item_search: String::new(),
+            fetch_item_id: None,
+            fetch_consume: true,
             kill_count: 10,
             reward_exp: 1000,
             reward_zuly: 500,
@@ -211,78 +229,23 @@ impl QuestCreator {
 
         ui.add_space(6.0);
 
-        // --- 1 (monster) and 2 (objective) side by side ---
+        // Quest type chooser.
+        ui.horizontal(|ui| {
+            ui.label("Quest type:");
+            ui.selectable_value(&mut self.quest_type, QuestType::Hunt, "🗡 Hunt — kill monsters");
+            ui.selectable_value(&mut self.quest_type, QuestType::Fetch, "📦 Fetch — bring items");
+        });
+        ui.add_space(4.0);
+
+        // --- 1 (objective) and 2 (rewards) side by side ---
+        let sec1_title = match self.quest_type {
+            QuestType::Hunt => "Which monster do you hunt?",
+            QuestType::Fetch => "Which item to bring?",
+        };
         ui.columns(2, |cols| {
-        self.section(&mut cols[0], "1", "Which monster do you hunt?", |app, ui| {
-            ui.label("Search by name or id:");
-            ui.text_edit_singleline(&mut app.monster_search);
-
-            // Collect matching rows first so the `self.data` borrow is dropped
-            // before we mutate selection inside the list closure.
-            let search = app.monster_search.trim().to_lowercase();
-            let hide_in_use = app.hide_in_use;
-            let rows: Vec<(i32, String, bool)> = {
-                let data = app.data.as_ref().unwrap();
-                data.monsters
-                    .iter()
-                    .filter(|m| !hide_in_use || m.dead_event_is_free())
-                    .filter(|m| {
-                        search.is_empty()
-                            || m.name.to_lowercase().contains(&search)
-                            || m.id.to_string().contains(&search)
-                    })
-                    .map(|m| (m.id, monster_label(m), m.dead_event_is_free()))
-                    .collect()
-            };
-            let total = rows.len();
-            let cap = 300usize;
-
-            egui::ScrollArea::vertical()
-                .id_source("monster_list")
-                .max_height(220.0)
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    for (id, label, free) in rows.iter().take(cap) {
-                        let selected = app.selected_monster == Some(*id);
-                        let mut text = egui::RichText::new(label);
-                        if !free {
-                            text = text.color(egui::Color32::from_rgb(200, 140, 60));
-                        }
-                        if ui.selectable_label(selected, text).clicked() {
-                            app.selected_monster = Some(*id);
-                            app.auto_text = true; // re-derive text for the new monster
-                        }
-                    }
-                });
-
-            if total > cap {
-                ui.label(
-                    egui::RichText::new(format!(
-                        "…and {} more — narrow your search.",
-                        total - cap
-                    ))
-                    .weak()
-                    .small(),
-                );
-            }
-
-            // Selected monster summary + eligibility.
-            if let Some(id) = app.selected_monster {
-                if let Some(m) = app.data.as_ref().and_then(|d| d.find_monster(id)) {
-                    ui.add_space(4.0);
-                    ui.label(egui::RichText::new(format!("Selected: {}", m.name)).strong());
-                    if !m.dead_event_is_free() {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(220, 120, 60),
-                            format!(
-                                "⚠ This monster already has a quest hook (\"{}\"). \
-                                 Pick another — the editor won't overwrite it.",
-                                m.dead_event
-                            ),
-                        );
-                    }
-                }
-            }
+        self.section(&mut cols[0], "1", sec1_title, |app, ui| match app.quest_type {
+            QuestType::Hunt => app.ui_monster_list(ui),
+            QuestType::Fetch => app.ui_fetch_item(ui),
         });
 
         // --- 2. Objective + rewards (numbers laid out two-per-row) ---
@@ -291,7 +254,10 @@ impl QuestCreator {
                 .num_columns(4)
                 .spacing([16.0, 8.0])
                 .show(ui, |ui| {
-                    ui.label("Kill count:");
+                    ui.label(match app.quest_type {
+                        QuestType::Hunt => "Kill count:",
+                        QuestType::Fetch => "Bring count:",
+                    });
                     ui.add(egui::DragValue::new(&mut app.kill_count).clamp_range(1..=999));
                     ui.label("Experience:");
                     ui.add(egui::DragValue::new(&mut app.reward_exp).clamp_range(0..=100_000_000));
@@ -348,25 +314,30 @@ impl QuestCreator {
                     }
                     ui.end_row();
 
-                    ui.label("Token item name:");
-                    if ui.text_edit_singleline(&mut app.token_name).changed() {
-                        edited(app);
+                    // The token item only exists for Hunt quests.
+                    if app.quest_type == QuestType::Hunt {
+                        ui.label("Token item name:");
+                        if ui.text_edit_singleline(&mut app.token_name).changed() {
+                            edited(app);
+                        }
+                        ui.end_row();
+                        ui.label("Token item info:");
+                        if ui.text_edit_multiline(&mut app.token_desc).changed() {
+                            edited(app);
+                        }
+                        ui.end_row();
                     }
-                    ui.end_row();
-                    ui.label("Token item info:");
-                    if ui.text_edit_multiline(&mut app.token_desc).changed() {
-                        edited(app);
-                    }
-                    ui.end_row();
                 });
-            ui.label(
-                egui::RichText::new(
-                    "The token is the item the player collects on each kill — it shows in the \
-                     quest-item inventory with this name.",
-                )
-                .weak()
-                .small(),
-            );
+            if app.quest_type == QuestType::Hunt {
+                ui.label(
+                    egui::RichText::new(
+                        "The token is the item the player collects on each kill — it shows in \
+                         the quest-item inventory with this name.",
+                    )
+                    .weak()
+                    .small(),
+                );
+            }
             ui.horizontal(|ui| {
                 if ui.button("↺ Reset text to auto").clicked() {
                     app.auto_text = true;
@@ -419,6 +390,129 @@ impl QuestCreator {
                     );
                 }
             });
+    }
+
+    /// Hunt objective: searchable monster list (in-use ones flagged).
+    fn ui_monster_list(&mut self, ui: &mut egui::Ui) {
+        ui.label("Search by name or id:");
+        ui.text_edit_singleline(&mut self.monster_search);
+
+        // Collect matching rows first so the data borrow drops before we mutate.
+        let search = self.monster_search.trim().to_lowercase();
+        let hide_in_use = self.hide_in_use;
+        let rows: Vec<(i32, String, bool)> = {
+            let data = self.data.as_ref().unwrap();
+            data.monsters
+                .iter()
+                .filter(|m| !hide_in_use || m.dead_event_is_free())
+                .filter(|m| {
+                    search.is_empty()
+                        || m.name.to_lowercase().contains(&search)
+                        || m.id.to_string().contains(&search)
+                })
+                .map(|m| (m.id, monster_label(m), m.dead_event_is_free()))
+                .collect()
+        };
+        let total = rows.len();
+        let cap = 300usize;
+
+        egui::ScrollArea::vertical()
+            .id_source("monster_list")
+            .max_height(220.0)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for (id, label, free) in rows.iter().take(cap) {
+                    let selected = self.selected_monster == Some(*id);
+                    let mut text = egui::RichText::new(label);
+                    if !free {
+                        text = text.color(egui::Color32::from_rgb(200, 140, 60));
+                    }
+                    if ui.selectable_label(selected, text).clicked() {
+                        self.selected_monster = Some(*id);
+                        self.auto_text = true;
+                    }
+                }
+            });
+
+        if total > cap {
+            ui.label(
+                egui::RichText::new(format!("…and {} more — narrow your search.", total - cap))
+                    .weak()
+                    .small(),
+            );
+        }
+
+        if let Some(id) = self.selected_monster {
+            if let Some(m) = self.data.as_ref().and_then(|d| d.find_monster(id)) {
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new(format!("Selected: {}", m.name)).strong());
+                if !m.dead_event_is_free() {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(220, 120, 60),
+                        format!(
+                            "⚠ This monster already has a quest hook (\"{}\"). Pick another.",
+                            m.dead_event
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    /// Fetch objective: pick the existing item the player must bring.
+    fn ui_fetch_item(&mut self, ui: &mut egui::Ui) {
+        egui::ComboBox::from_label("Item type")
+            .selected_text(self.fetch_item_category.display())
+            .show_ui(ui, |ui| {
+                for &cat in ItemCategory::ALL {
+                    if ui
+                        .selectable_label(self.fetch_item_category == cat, cat.display())
+                        .clicked()
+                    {
+                        self.fetch_item_category = cat;
+                        self.fetch_item_id = None;
+                        self.auto_text = true;
+                    }
+                }
+            });
+        ui.text_edit_singleline(&mut self.fetch_item_search);
+        let search = self.fetch_item_search.trim().to_lowercase();
+
+        let items: Vec<(i32, String)> = self
+            .data
+            .as_ref()
+            .unwrap()
+            .item_db
+            .by_category
+            .get(&self.fetch_item_category)
+            .map(|v| {
+                v.iter()
+                    .filter(|it| it.id <= MAX_TOKEN_ITEM_ID) // type*1000+id limit
+                    .filter(|it| {
+                        search.is_empty()
+                            || it.name.to_lowercase().contains(&search)
+                            || it.id.to_string().contains(&search)
+                    })
+                    .map(|it| (it.id, item_label(it)))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        egui::ScrollArea::vertical()
+            .id_source("fetch_item_list")
+            .max_height(200.0)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for (id, label) in &items {
+                    let selected = self.fetch_item_id == Some(*id);
+                    if ui.selectable_label(selected, label).clicked() {
+                        self.fetch_item_id = Some(*id);
+                        self.auto_text = true;
+                    }
+                }
+            });
+
+        ui.checkbox(&mut self.fetch_consume, "Take the items when the quest is turned in");
     }
 
     fn ui_reward_item(&mut self, ui: &mut egui::Ui) {
@@ -480,14 +574,26 @@ impl QuestCreator {
     }
 
     fn ui_preview_and_create(&mut self, ui: &mut egui::Ui) {
-        let Some(gen) = self.build_generated() else {
+        let Some(spec) = self.build_spec() else {
             ui.colored_label(
                 egui::Color32::GRAY,
-                "Pick a monster above to see the preview.",
+                "Pick a monster / item above to see the preview.",
             );
             return;
         };
+        let gen = crate::gen::generate(&spec);
+        // Compute issues in a scope that drops the `self.data` borrow before the
+        // Create button needs `&mut self`.
+        let issues = self
+            .data
+            .as_ref()
+            .map(|ds| crate::verify::verify(ds, &spec, &gen))
+            .unwrap_or_default();
 
+        let verb = match self.quest_type {
+            QuestType::Hunt => "Kill",
+            QuestType::Fetch => "Bring",
+        };
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.label(egui::RichText::new("Preview").strong());
             ui.label(format!(
@@ -496,15 +602,18 @@ impl QuestCreator {
                 String::from_utf8_lossy(&gen.qsd.description)
             ));
             ui.label(format!(
-                "Kill {}× {} → rewards{}.",
+                "{verb} {}× {} → rewards{}.",
                 self.kill_count,
-                self.selected_monster_name().unwrap_or_default(),
+                self.objective_name().unwrap_or_default(),
                 self.reward_summary()
             ));
+            let files = match self.quest_type {
+                QuestType::Hunt => "LIST_Quest / LIST_NPC / LIST_QUESTITEM / STL",
+                QuestType::Fetch => "LIST_Quest / LIST_QuestDATA / STL",
+            };
             ui.label(
                 egui::RichText::new(format!(
-                    "Writes a new {} and updates LIST_Quest / LIST_NPC / LIST_QUESTITEM / STL \
-                     (each backed up to .bak).",
+                    "Writes a new {} and updates {files} (each backed up to .bak).",
                     gen.qsd_filename
                 ))
                 .weak()
@@ -512,9 +621,18 @@ impl QuestCreator {
             );
         });
 
+        // Validation issues (errors block creation; warnings are advisory).
+        for issue in &issues {
+            let (color, icon) = match issue.level {
+                crate::verify::Level::Error => (egui::Color32::from_rgb(235, 105, 105), "✖"),
+                crate::verify::Level::Warning => (egui::Color32::from_rgb(220, 170, 60), "⚠"),
+            };
+            ui.colored_label(color, format!("{icon}  {}", issue.message));
+        }
+
         ui.add_space(6.0);
 
-        let eligible = self.selected_monster_is_eligible();
+        let can_create = !crate::verify::has_errors(&issues);
         ui.horizontal(|ui| {
             let label = if self.dry_run {
                 "🔍  Preview changes (no write)"
@@ -523,14 +641,8 @@ impl QuestCreator {
             };
             let btn = egui::Button::new(egui::RichText::new(label).size(16.0))
                 .min_size(egui::vec2(200.0, 38.0));
-            if ui.add_enabled(eligible, btn).clicked() {
+            if ui.add_enabled(can_create, btn).clicked() {
                 self.do_create();
-            }
-            if !eligible {
-                ui.colored_label(
-                    egui::Color32::from_rgb(220, 120, 60),
-                    "Pick an eligible monster first.",
-                );
             }
         });
 
@@ -556,9 +668,13 @@ impl QuestCreator {
                 "✅ Quest created!"
             });
             ui.add_space(6.0);
+            let verb = match summary.quest_type {
+                QuestType::Hunt => "kill",
+                QuestType::Fetch => "bring",
+            };
             ui.label(format!(
-                "Quest #{} — kill {}× {}.",
-                summary.quest_sn, summary.kill_count, summary.monster_name
+                "Quest #{} — {verb} {}× {}.",
+                summary.quest_sn, summary.count, summary.objective_name
             ));
 
             ui.add_space(10.0);
@@ -582,11 +698,12 @@ impl QuestCreator {
                 ui.label("2. In-game (with a GM account), test with these chat commands:");
                 let cmds = format!(
                     "    /quest {reg}        (accept the quest)\n    \
-                     kill {n}× {mon}\n    \
+                     {verb} {n}× {obj}\n    \
                      /quest {comp}        (turn it in)",
                     reg = summary.register_trigger,
-                    n = summary.kill_count,
-                    mon = summary.monster_name,
+                    verb = verb,
+                    n = summary.count,
+                    obj = summary.objective_name,
                     comp = summary.complete_trigger,
                 );
                 ui.add(
@@ -637,20 +754,15 @@ impl QuestCreator {
         ui.add_space(6.0);
     }
 
-    fn selected_monster_name(&self) -> Option<String> {
-        let id = self.selected_monster?;
-        self.data.as_ref()?.find_monster(id).map(|m| m.name.clone())
-    }
-
-    fn selected_monster_is_eligible(&self) -> bool {
-        match self.selected_monster {
-            Some(id) => self
-                .data
-                .as_ref()
-                .and_then(|d| d.find_monster(id))
-                .map(|m| m.dead_event_is_free())
-                .unwrap_or(false),
-            None => false,
+    /// Name of the objective (monster for Hunt, item for Fetch).
+    fn objective_name(&self) -> Option<String> {
+        let ds = self.data.as_ref()?;
+        match self.quest_type {
+            QuestType::Hunt => ds.find_monster(self.selected_monster?).map(|m| m.name.clone()),
+            QuestType::Fetch => ds
+                .item_db
+                .lookup(self.fetch_item_category, self.fetch_item_id?)
+                .map(|it| it.name.clone()),
         }
     }
 
@@ -683,14 +795,37 @@ impl QuestCreator {
         }
     }
 
-    fn build_spec(&self) -> Option<HuntQuestSpec> {
+    fn build_spec(&self) -> Option<QuestSpec> {
         let ds = self.data.as_ref()?;
-        let id = self.selected_monster?;
-        Some(HuntQuestSpec {
+        let kind = match self.quest_type {
+            QuestType::Hunt => QuestKind::Hunt {
+                monster_id: self.selected_monster?,
+                token_item_sn: ds.next_free_token_item_sn(),
+                token_name: if self.token_name.trim().is_empty() {
+                    "Quest Token".to_string()
+                } else {
+                    self.token_name.clone()
+                },
+                token_desc: self.token_desc.clone(),
+                token_icon: self.token_icon.trim().parse::<i32>().ok(),
+            },
+            QuestType::Fetch => {
+                let id = self.fetch_item_id?;
+                QuestKind::Fetch {
+                    item_sn: crate::data::encode_item_no(self.fetch_item_category, id),
+                    item_name: ds
+                        .item_db
+                        .lookup(self.fetch_item_category, id)
+                        .map(|it| it.name.clone())
+                        .unwrap_or_default(),
+                    consume: self.fetch_consume,
+                }
+            }
+        };
+        Some(QuestSpec {
             quest_sn: ds.next_free_quest_sn(),
-            monster_id: id,
-            token_item_sn: ds.next_free_token_item_sn(),
-            kill_count: self.kill_count,
+            kind,
+            count: self.kill_count,
             reward_exp: self.reward_exp,
             reward_zuly: self.reward_zuly,
             reward_item: self.reward_item_sn(),
@@ -698,33 +833,23 @@ impl QuestCreator {
             start_text: self.start_text.clone(),
             progress_text: self.progress_text.clone(),
             complete_text: self.complete_text.clone(),
-            token_name: if self.token_name.trim().is_empty() {
-                "Quest Token".to_string()
-            } else {
-                self.token_name.clone()
-            },
-            token_desc: self.token_desc.clone(),
-            token_icon: self.token_icon.trim().parse::<i32>().ok(),
         })
-    }
-
-    fn build_generated(&self) -> Option<GeneratedQuest> {
-        Some(generate_hunt(&self.build_spec()?))
     }
 
     fn do_create(&mut self) {
         let (Some(root), Some(spec)) = (self.root.clone(), self.build_spec()) else {
             return;
         };
-        let gen = generate_hunt(&spec);
-        match apply_hunt_quest(&root, &spec, &gen, self.dry_run) {
+        let gen = generate(&spec);
+        match apply_quest(&root, &spec, &gen, self.dry_run) {
             Ok(report) => {
                 self.error = None;
                 self.screen = Screen::Created {
                     summary: CreatedSummary {
                         quest_sn: spec.quest_sn,
-                        monster_name: self.selected_monster_name().unwrap_or_default(),
-                        kill_count: spec.kill_count,
+                        quest_type: self.quest_type,
+                        objective_name: self.objective_name().unwrap_or_default(),
+                        count: spec.count,
                         complete_trigger: gen.complete_trigger.clone(),
                         register_trigger: gen.register_trigger.clone(),
                         changes: report.changes,
@@ -740,20 +865,34 @@ impl QuestCreator {
         if !self.auto_text {
             return;
         }
-        let Some(id) = self.selected_monster else {
+        let obj_id = match self.quest_type {
+            QuestType::Hunt => self.selected_monster,
+            QuestType::Fetch => self.fetch_item_id,
+        };
+        let Some(obj_id) = obj_id else {
             return;
         };
-        let basis = (id, self.kill_count);
+        let basis = (self.quest_type, obj_id, self.kill_count);
         if self.text_basis == Some(basis) {
             return;
         }
-        let name = self.selected_monster_name().unwrap_or_else(|| "the monster".into());
-        self.title = format!("Hunt: {name}");
-        self.start_text = format!("Defeat {} {name} threatening the area.", self.kill_count);
-        self.progress_text = format!("Keep hunting {name}.");
-        self.complete_text = "Well done, adventurer!".to_string();
-        self.token_name = format!("{name} Mark");
-        self.token_desc = format!("Proof of a defeated {name}.");
+        let name = self.objective_name().unwrap_or_else(|| "it".into());
+        match self.quest_type {
+            QuestType::Hunt => {
+                self.title = format!("Hunt: {name}");
+                self.start_text = format!("Defeat {} {name} threatening the area.", self.kill_count);
+                self.progress_text = format!("Keep hunting {name}.");
+                self.complete_text = "Well done, adventurer!".to_string();
+                self.token_name = format!("{name} Mark");
+                self.token_desc = format!("Proof of a defeated {name}.");
+            }
+            QuestType::Fetch => {
+                self.title = format!("Gather: {name}");
+                self.start_text = format!("Bring {} {name}.", self.kill_count);
+                self.progress_text = format!("Collect {} {name}.", self.kill_count);
+                self.complete_text = "Thank you, adventurer!".to_string();
+            }
+        }
         self.text_basis = Some(basis);
     }
 }

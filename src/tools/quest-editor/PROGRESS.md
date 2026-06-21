@@ -260,6 +260,55 @@ item `13:129`. (Validate the id exists in the item DB when generating.)
 
 ## Status log
 
+### 2026-06-21 — Tier 1 #3: verify/lint step (Tier 1 complete)
+
+Added `src/verify.rs`: `verify(&DataSet, &QuestSpec, &GeneratedQuest) ->
+Vec<Issue>` (Error|Warning). Checks: count ≥ 1; quest SN == next append slot
+(data not stale); QSD round-trips; the new QSD file doesn't already exist; Hunt —
+token id ≤ 999 / type 13 / matches next free token, monster exists + col-41 free;
+Fetch — item decodes + exists + id ≤ 999; reward item exists + id ≤ 999. The
+wizard runs it live in the preview, lists issues (red ✖ errors / amber ⚠
+warnings), and disables Create on any error (replacing the old eligibility
+check). The CLI (`create`/`create-fetch`) prints issues and bails on errors.
+Verified: free monster passes clean; nonexistent fetch item → warning. The writer
+keeps its own guards as the final authority. **Tier 1 done.**
+
+### 2026-06-21 — Tier 1 #2: `Init` overload audit
+
+Swept every 2-arg `.Init(` call in the tree for the overload trap (unsigned first
+arg → binds to `Init(type,no,qty)` instead of `Init(int packedSN,qty)`). Found
+**one** more instance besides the already-fixed `REWD_001`: `F_QSTREWD032`
+(acquire-quest-item reward) in `io_quest.cpp:2469` — fixed with
+`static_cast<int>(uiItemSN)`. Everything else is safe: `int`/`short` first args
+promote/bind to overload 1, and reward/cheat give-item paths that pass explicit
+type/no use the 3-arg `Init(type,no,qty)`. Engine rebuilt clean. Memory
+`reference_item_init_overload_trap` updated.
+
+### 2026-06-21 — Tier 1 #1: Fetch quests ("bring N of item X")
+
+Added a second quest type. Refactored the spec into a unified
+`QuestSpec { quest_sn, kind: QuestKind, count, rewards, text }` where
+`QuestKind` is `Hunt { monster_id, token_* }` or `Fetch { item_sn, item_name,
+consume }`. `gen::generate(spec)` dispatches; `generate_fetch` emits 2 triggers
+(register + complete) — no kill, no token. The complete trigger checks
+`COND_004(item >= N)` and, when `consume`, removes them with `REWD_001` op 0
+(normal-inventory items aren't cleared by Finish/Init, unlike Hunt tokens).
+
+`write::apply_quest` (renamed from `apply_hunt_quest`) does the common writes
+(QSD, LIST_QuestDATA, LIST_Quest, LIST_QUEST_S.STL) for both kinds, and only the
+Hunt-specific writes (token row, col-41 merge, token STL) for Hunt — backing
+up/writing just the files that change. Quest STL key is now generic `QE_<SN>`.
+
+Wizard: a Hunt/Fetch toggle at the top; section 1 shows a monster picker (Hunt)
+or item picker + "consume on turn-in" (Fetch); labels/preview/auto-text adapt.
+Token-name fields show only for Hunt. CLI: `create-fetch <root> <item_sn>
+<count> [exp] [zuly] [--write]`.
+
+Verified on a temp copy: `create-fetch … 10060 5 300` → QSD with
+register + complete(COND_004 item 10060 >=5 → exp 300, remove 5, finish); only
+LIST_Quest/LIST_QuestDATA/STL touched. 6 unit tests (incl. fetch) + round-trip
+green. ROADMAP.md documents all tiers.
+
 ### 2026-06-21 — Token item now has a real name (+ icon override)
 
 The collected token quest-item showed **blank** in-game: the client resolves item
