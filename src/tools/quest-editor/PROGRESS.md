@@ -260,6 +260,175 @@ item `13:129`. (Validate the id exists in the item DB when generating.)
 
 ## Status log
 
+### 2026-06-21 — Tier 2 #4 (NPC dialogs) Phase 0: `.CON` codec + feasibility
+
+Strategy chosen: **template-clone** (reuse a proven quest-giver `.CON`, patch the
+quest SN + text + NPC wiring) over a from-scratch Lua generator.
+
+New `convo.rs` — a `.CON` parser. Format (from `client/event/cevent.cpp`):
+`SSC_FILE_HEADER` (524 B: u16 event_mask, char func[16][32], 2 pad, u32 conv_off,
+u32 script_off) → `SSC_CONV_HEADER` (msg/menu counts + conv_off-relative offsets)
+→ message table (80-B `SSC_msg`) → menu collections (each body XOR-obfuscated;
+holds a sub-MMT + 80-B menu items) → `[script_off]` i32 len + XOR'd Lua blob. The
+XOR is a single repeating byte (`v1` if odd else `v2`; encode==decode).
+
+CLI: `con-verify <dir>` (parse-all + Lua-kind histogram) and `con-dump <file>`.
+
+**Findings (feasibility de-risked):**
+- Parser handles **all 125** `data/3DDATA/EVENT/*.CON` — 0 failures (125 msgs,
+  5207 menus).
+- The embedded Lua is stored as **bytecode** in retail files (125/125), **but**
+  the loader is `lua_dobuffer` (`classlua.h`), which compiles **source** too — so
+  we can ship Lua *source* and skip any bytecode compiler/patcher. ✅ key unblock.
+- A quest branch lives in **two** places: a menu item whose `check_func` string is
+  e.g. `TA_2002_completion` (the quest SN baked into the function name — and it's
+  in the **patchable node tree**), and the matching `TA_*` Lua function in the
+  script blob (which wraps the engine's `QF_*` quest calls). So a generated
+  quest-giver = node-tree entries + authored Lua-source `TA_*` functions.
+
+Phase 0 **done**: `to_bytes()` rebuilds the Lua tail (re-XOR) and preserves the
+header/message/menu sections verbatim; round-trips all 125 `.CON` **byte-exact, 0
+drift**. `set_lua_source()` ready (client compiles source via `lua_dobuffer`).
+
+**Phase 1 wiring (traced):**
+- `EVENT_FILENAME(i) = LIST_EVENT.STB.get_cstr(i, 3)` — col 3 is the `.CON`
+  filename. Appendable like LIST_QuestDATA.
+- NPC→conversation is by **filename in the zone `.IFO`**: `zonefile.cpp`
+  `LUMP_TERRAIN_MOB` reads a name string per NPC placement, then matches it (case-
+  insensitive, by basename) against every LIST_EVENT row's col-3 filename to set
+  `m_nQuestIDX`. So an NPC is wired to a conversation by writing its `.CON`
+  filename into the NPC's zone-placement record (**not** an index, and **not** a
+  LIST_NPC column).
+- Dialog text: node `str_id` → `g_LngTBL.GetEventString(id)` →
+  `m_pEvent->GetMbcsString(lng+1, id)` — an STL-like **event string table** (find
+  the exact file in Phase 2); we append rows for our offer/accept/progress text.
+- Accept/complete API: the conversation's Lua `TA_*` functions call engine
+  `QF_appendQuest` / `QF_doQuestTrigger` / `QF_deleteQuest` etc. (registered by
+  `QF_Init`); enumerate the exact `QF_*` quest API in Phase 2.
+
+**Phase 2 chosen: approach B** (assign a fresh `.CON` via the zone IFO).
+
+Implementation map (all pieces now identified):
+1. **Quest-giver `.CON`** — clone a template, `set_lua_source` with authored Lua
+   *source*, patch node-tree func names + `str` ids. The conversation Lua wraps the
+   small `QF_*` quest API (`client/event/quest_func.h`):
+   - accept: `QF_appendQuest(<qid>)` (registers the quest, like the GM MAKE QUEST);
+   - gate turn-in: `QF_findQuest(<qid>) >= 0` and `QF_checkQuestCondition("<qid>-3")`;
+   - turn-in: `QF_doQuestTrigger("<qid>-3")` (Hunt complete) / `"<qid>-2"` (Fetch).
+   So the dialog drives our existing QSD quests directly — no new QSD needed.
+2. **`LIST_EVENT.STB`** — append a row; col 3 = our `.CON` filename.
+3. **Zone IFO wiring** — the conversation filename is the MOB record's pascal
+   string **after `iAI`** (the field `npc-shop-editor/zones.rs` reads as the last
+   `skip_pascal_string`; it's the event name the server matches to LIST_EVENT, not
+   really an AI name). `ReadObjINFO` (`zonefile.cpp:111`) order: name, i16 warp,
+   i16 event, i32 type, i32 objId, i32 mapX, i32 mapY, 40 B (quat+pos+scale), then
+   MOB-specific `i32 iAI` + that pascal. Editing it changes the record size →
+   re-serialize the IFO, shifting every lump-directory offset after the edit by
+   `delta = new_name_len - old_name_len`.
+4. **Event string table** — node `str` ids index it; append our offer/progress
+   text rows (find the exact file: `m_pEvent` in `lngtbl.cpp`).
+
+Phase 2 build order: author + validate the `.CON` template (round-trips, loads
+in-client) → IFO read/edit/write (reuse zones.rs) → LIST_EVENT append → event
+strings → wizard "this NPC gives the quest" → in-game accept/complete test.
+
+**Phase 2a done (build):** `convo::build_con(event_funcs, messages, menus, lua)`
+serializes a full `.CON` from a node model + Lua *source* with canonical offsets
+(`conv_off=524`, msg section, menu section with per-collection XOR, Lua tail).
+`convo::build_quest_giver(qid, complete_trig, GiverStrings)` emits a quest-giver:
+greeting → a menu offering **Accept** (`CHK_accept`/`ACT_accept`→`QF_appendQuest`),
+**Turn in** (`CHK_complete`/`ACT_complete`→`QF_doQuestTrigger(trig)`, gated by
+`QF_checkQuestCondition`), **In progress**, **Bye** → response menus. CLI
+`con-build <out> <qid> <trigger>` writes it and self-verifies. Unit test +
+re-parse confirm the generated file round-trips through the same parser that reads
+all 125 retail files (byte-exact); retail round-trip still 125/125, 0 drift.
+**Still TODO for 2a:** in-game load test — easiest path is to overwrite an
+existing NPC's `.CON` (the NPC already points at it) since proper wiring is 2b.
+Note: `GiverStrings` reuses existing global event-string ids for now, so dialog
+*text* is placeholder until 2b authors custom event strings.
+
+**Phase 2b — IFO reader/editor done + validated (`ifo.rs`).** Confirmed (via
+`zonefile.cpp` MOB case ending right after the post-`iAI` pascal) that the
+conversation filename is that last pascal. `ifo::find_npc` / `placements_with_
+conversation` parse all 1190 `data/**/*.IFO`; the NPC↔.CON map is clean (npc
+1001→EM01-001.con, 1002→EM01-002.con, …). `ifo::set_conversation` rewrites a
+record's conversation pascal and **fixes every lump-directory offset past the edit
+by the size delta** (variable-length splice). `ifo::wire_npc_in_ifo` re-parses the
+result and asserts only the target changed before writing (`.bak`). Validated on a
+real town IFO (JUNON/JDT01/32_33.IFO): set npc 1001 to a *longer* name → file grew
+by exactly the delta, 1001 changed, **1002 intact**, still parses. CLI: `ifo-scan`,
+`ifo-find`, `ifo-set`.
+
+**2b glue done:** `LIST_EVENT.STB` col 3 (roselib col 4) holds the `.CON`
+**basename** ("EM01-001.con"). `write::wire_quest_giver(root, npc, qid, trig)`
+ties it together: builds the quest-giver `.CON` (self-parses) → writes it to
+`3DDATA/EVENT/QG<qid>.con` → appends a LIST_EVENT row (clone template, set col 4)
+→ wires every IFO placement of the NPC via `ifo::wire_npc_in_ifo`. Warns it
+replaces the NPC's existing conversation; dry-run + `.bak` throughout. CLI
+`con-wire <root> <npc_id> <qid> <trigger> [--write]`. Verified end-to-end on a
+data copy: dry-run preview, then write produced a parseable QG5503.con + the
+LIST_EVENT row + the IFO rewired (`npc 1001 -> QG5503.con`). 8 tests pass.
+
+Added `npc-find <root> <substr>` (search NPCs by name + show placed/not-placed).
+
+**Applied to real data (awaiting in-game test):** wired **Pony** (npc 1035,
+"[Little Street Vendor]", placed in JUNON/JG01/35_32.IFO) → quest **5503** (Choropog
+Hunt, turn-in `5503-3`). `con-wire ../data 1035 5503 5503-3 --write` created
+`QG5503.con` (con-verify now 126/126, 0 drift), appended LIST_EVENT, rewired the
+IFO (Pony's old `EM22-005.con` saved in `35_32.IFO.bak`). User bakes the VFS +
+restarts. Expected: click Pony → greeting → Accept (QF_appendQuest 5503) → kill 10
+Choropy (mob 12) → return → Turn in (QF_doQuestTrigger "5503-3"). Restore Pony from
+`35_32.IFO.bak` + `LIST_EVENT.STB.bak` after, and delete `QG5503.con`, to revert.
+Runtime unknown to confirm: VFS resolving `QG5503.con` by basename like retail.
+Dialog *text* is placeholder (reused event-string ids) until Phase 3.
+
+**BUG FOUND + FIXED (first in-game test: "no dialog opens").** Click path uses
+`nEventIDX=-1` (`cobjai.cpp:1414`) → conversation path, so `event_mask=0` is fine.
+Real cause: **`LIST_EVENT` col 3 is a full VFS path** (`3Ddata\Event\EM99-001.con`),
+not a basename — `wire_quest_giver` wrote the bare `QG5503.con`. The server still
+matched (it compares by `path.filename()`), so m_nQuestIDX was set, but the client
+`Load("QG5503.con")` couldn't resolve a bare name → nothing opened. Fix:
+`con_cell = "3Ddata\\Event\\QG<qid>.con"` for the LIST_EVENT cell (IFO keeps the
+basename); LIST_EVENT logic now matches an existing row **by basename** and fixes
+it (idempotent), and `wire_npc_in_ifo` tolerates an already-set value. Re-applied:
+row 1101 now `3Ddata\Event\QG5503.con`.
+
+**2nd in-game test: dialog OPENS** (pipeline fully validated end-to-end!). Two
+follow-up bugs:
+1. **Accept disconnected the server.** Root cause: `QF_appendQuest` sends
+   `TYPE_QUEST_REQ_ADD`, which `gs_user.cpp Recv_cli_QUEST_REQ` doesn't handle →
+   `IS_HACKING` → kick. **Fixed**: accept now `QF_doQuestTrigger("<qid>-1")` (fires
+   the register trigger via the supported DO_TRIGGER path). Regenerated QG5503.con.
+2. **Text is placeholder + gating unverified** — reused event-string ids 1-8 (only
+   some resolve). Phase 3: author custom event strings (`m_pEvent` table) so options
+   read "Accept"/"Turn in", and re-verify CHK_* gating once accept works.
+
+**3rd in-game test — FULL QUEST LOOP WORKS (2026-06-22).** Clicked Pony → accepted
+quest 5503 (no disconnect), killed 10 Choropy, returned → turned in → received exp
++ item + zuly. The complete NPC-dialog quest-giver pipeline is validated end-to-end:
+generated `.CON` (Lua source) → IFO/LIST_EVENT wiring → in-game accept (register
+trigger) → kill tracking → turn-in (complete trigger) → rewards. The `CHK_*` gating
+works (the menu offers accept before, turn-in after). **Tier 2 #4 functionally
+done.** Remaining = polish only:
+- **Custom dialog text** — options/greeting still show reused event-string ids
+  (random strings). Author entries in the event-string table (`m_pEvent` / the STL
+  `GetEventString` reads) and point the nodes at them.
+- **Wizard integration** — a "this NPC gives the quest" step that calls
+  `wire_quest_giver`, with an NPC picker (reuse `npc-find` / `ifo` placement data)
+  and an "already has dialog" warning.
+
+(superseded fork, kept for context:)
+- **(A) edit the NPC's existing `.CON`** — add an offer/complete branch to the
+  conversation it already uses. No zone `.IFO` edit, but requires inserting nodes
+  (reflow) + merging Lua into an existing **bytecode** blob we'd rather not parse.
+- **(B) assign a fresh `.CON` via the zone `.IFO`** — clone a whole quest-giver
+  template (Lua source), append a LIST_EVENT row, write our filename into the
+  NPC's placement. Clean `.CON` generation, but needs the `.IFO` format (the
+  npc-shop-editor tool's `zones.rs` already touches zones — check for reuse) and
+  it **replaces** that NPC's existing dialog (fine for a dedicated quest-giver,
+  clobbers a shopkeeper's menu). Recommended for the MVP with a dedicated giver +
+  a "this NPC already has dialog" warning.
+
 ### 2026-06-21 — Tier 3: edit / delete (+ sidecar manifests)
 
 Created quests now drop a sidecar manifest `QUESTDATA/_quest-editor/QX-<sn>.qe.json`

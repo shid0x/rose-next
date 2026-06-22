@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
+use quest_editor::convo::{ConFile, LuaKind};
 use quest_editor::data::DataSet;
 use quest_editor::gen::{generate, GeneratedQuest, QuestKind, QuestSpec};
 use quest_editor::qsd::QsdFile;
@@ -33,6 +34,14 @@ fn main() -> ExitCode {
         Some("create-fetch") => cmd_create_fetch(&args[1..]),
         Some("list") => cmd_list(args.get(1)),
         Some("delete") => cmd_delete(&args[1..]),
+        Some("con-verify") => cmd_con_verify(args.get(1)),
+        Some("con-dump") => cmd_con_dump(args.get(1)),
+        Some("con-build") => cmd_con_build(&args[1..]),
+        Some("ifo-find") => cmd_ifo_find(&args[1..]),
+        Some("ifo-set") => cmd_ifo_set(&args[1..]),
+        Some("ifo-scan") => cmd_ifo_scan(args.get(1)),
+        Some("con-wire") => cmd_con_wire(&args[1..]),
+        Some("npc-find") => cmd_npc_find(&args[1..]),
         _ => {
             eprintln!("usage:");
             eprintln!("  quest-editor verify <dir>   round-trip every .QSD, report drift");
@@ -439,6 +448,262 @@ fn cmd_delete(args: &[String]) -> Result<bool> {
     report.print();
     if report.dry_run {
         println!("\n(re-run with --write to apply)");
+    }
+    Ok(true)
+}
+
+fn collect_con(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for entry in std::fs::read_dir(&d).with_context(|| format!("reading {}", d.display()))? {
+            let p = entry?.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("con"))
+            {
+                out.push(p);
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+fn cmd_con_verify(root: Option<&String>) -> Result<bool> {
+    let root = PathBuf::from(root.context("usage: con-verify <dir>")?);
+    let files = collect_con(&root)?;
+    if files.is_empty() {
+        bail!("no .CON files under {}", root.display());
+    }
+    let (mut ok, mut fail, mut drift) = (0u32, 0u32, 0u32);
+    let (mut src, mut byte, mut empty) = (0u32, 0u32, 0u32);
+    let (mut msgs, mut menus) = (0usize, 0usize);
+    let mut failures = Vec::new();
+    for f in &files {
+        let bytes = match std::fs::read(f) {
+            Ok(b) => b,
+            Err(e) => {
+                fail += 1;
+                failures.push(format!("{}: {e}", f.display()));
+                continue;
+            }
+        };
+        match ConFile::parse(&bytes) {
+            Ok(c) => {
+                ok += 1;
+                match c.lua_kind() {
+                    LuaKind::Source => src += 1,
+                    LuaKind::Bytecode => byte += 1,
+                    LuaKind::Empty => empty += 1,
+                }
+                msgs += c.messages.len();
+                menus += c.menus.len();
+                if c.to_bytes() != bytes {
+                    drift += 1;
+                    if failures.len() < 15 {
+                        let name = f.file_name().and_then(|s| s.to_str()).unwrap_or("?");
+                        failures.push(format!("{name}: byte drift on round-trip"));
+                    }
+                }
+            }
+            Err(e) => {
+                fail += 1;
+                if failures.len() < 15 {
+                    let name = f.file_name().and_then(|s| s.to_str()).unwrap_or("?");
+                    failures.push(format!("{name}: {e:#}"));
+                }
+            }
+        }
+    }
+    println!(
+        "{} .CON files: {ok} parsed, {fail} failed, {drift} byte-drift on round-trip",
+        files.len()
+    );
+    println!("  lua: {src} source, {byte} bytecode, {empty} empty");
+    println!("  totals: {msgs} messages, {menus} menus");
+    for fl in &failures {
+        println!("  FAIL {fl}");
+    }
+    Ok(fail == 0 && drift == 0)
+}
+
+fn cmd_npc_find(args: &[String]) -> Result<bool> {
+    if args.len() < 2 {
+        bail!("usage: npc-find <root> <name-substring>");
+    }
+    let root = PathBuf::from(&args[0]);
+    let needle = args[1].to_lowercase();
+    let ds = DataSet::load(&root)?;
+    let placed = quest_editor::ifo::all_placed_npc_ids(&root).unwrap_or_default();
+    let mut hits = 0;
+    for g in &ds.givers {
+        if g.name.to_lowercase().contains(&needle) {
+            let p = if placed.contains(&g.id) { "placed" } else { "NOT placed" };
+            println!("  npc {:<6} [town] {:<32} ({p})", g.id, g.name);
+            hits += 1;
+        }
+    }
+    for m in &ds.monsters {
+        if m.name.to_lowercase().contains(&needle) {
+            let p = if placed.contains(&m.id) { "placed" } else { "NOT placed" };
+            println!("  npc {:<6} [mob]  {:<32} ({p})", m.id, m.name);
+            hits += 1;
+        }
+    }
+    if hits == 0 {
+        println!("(no NPC name contains \"{needle}\")");
+    }
+    Ok(true)
+}
+
+fn cmd_con_wire(args: &[String]) -> Result<bool> {
+    let write = args.iter().any(|a| a == "--write");
+    let pos: Vec<String> = args.iter().filter(|a| !a.starts_with("--")).cloned().collect();
+    if pos.len() < 4 {
+        bail!("usage: con-wire <root> <npc_id> <quest_sn> <complete_trigger> [--write]\n\
+               \x20  e.g. con-wire ../data 1001 5503 5503-3 --write");
+    }
+    let root = PathBuf::from(&pos[0]);
+    let npc_id: i32 = pos[1].parse().context("npc_id")?;
+    let qid: i32 = pos[2].parse().context("quest_sn")?;
+    let trigger = &pos[3];
+
+    let report = quest_editor::write::wire_quest_giver(&root, npc_id, qid, trigger, !write)?;
+    report.print();
+    if report.dry_run {
+        println!("\n(re-run with --write to apply, then bake the VFS + restart)");
+    } else {
+        println!("\nnext: bake the VFS, restart servers + client, click npc {npc_id}.");
+    }
+    Ok(true)
+}
+
+fn cmd_ifo_scan(root: Option<&String>) -> Result<bool> {
+    let root = PathBuf::from(root.context("usage: ifo-scan <root>")?);
+    let list = quest_editor::ifo::placements_with_conversation(&root)?;
+    println!("{} NPC placement(s) with a conversation:", list.len());
+    for (npc_id, conv) in list.iter().take(60) {
+        println!("  npc {npc_id:<5} -> {conv}");
+    }
+    if list.len() > 60 {
+        println!("  ... and {} more", list.len() - 60);
+    }
+    Ok(true)
+}
+
+fn cmd_ifo_find(args: &[String]) -> Result<bool> {
+    if args.len() < 2 {
+        bail!("usage: ifo-find <root> <npc_id>");
+    }
+    let root = PathBuf::from(&args[0]);
+    let npc_id: i32 = args[1].parse().context("npc_id")?;
+    let found = quest_editor::ifo::find_npc(&root, npc_id)?;
+    if found.is_empty() {
+        println!("npc {npc_id}: no placements found under {}", root.display());
+        return Ok(true);
+    }
+    println!("npc {npc_id}: {} placement(s):", found.len());
+    for f in &found {
+        let conv = if f.conversation.is_empty() {
+            "<none>".to_string()
+        } else {
+            f.conversation.clone()
+        };
+        println!("  conversation = {conv:<16}  {}", f.ifo_path.display());
+    }
+    Ok(true)
+}
+
+fn cmd_ifo_set(args: &[String]) -> Result<bool> {
+    let write = args.iter().any(|a| a == "--write");
+    let pos: Vec<String> = args.iter().filter(|a| !a.starts_with("--")).cloned().collect();
+    if pos.len() < 3 {
+        bail!("usage: ifo-set <ifo_file> <npc_id> <conversation_name> [--write]");
+    }
+    let ifo = PathBuf::from(&pos[0]);
+    let npc_id: i32 = pos[1].parse().context("npc_id")?;
+    let name = &pos[2];
+    let applied = quest_editor::ifo::wire_npc_in_ifo(&ifo, npc_id, name, !write)?;
+    if !applied {
+        bail!("npc {npc_id} not found in {}", ifo.display());
+    }
+    if write {
+        println!("set npc {npc_id} conversation = {name} in {} (.bak made)", ifo.display());
+    } else {
+        println!("DRY RUN: npc {npc_id} -> {name} in {} (re-run with --write)", ifo.display());
+    }
+    Ok(true)
+}
+
+fn cmd_con_build(args: &[String]) -> Result<bool> {
+    if args.len() < 3 {
+        bail!("usage: con-build <out.CON> <quest_sn> <complete_trigger>  (e.g. con-build QG.CON 5503 5503-3)");
+    }
+    let out = PathBuf::from(&args[0]);
+    let qid: i32 = args[1].parse().context("quest_sn")?;
+    let trigger = &args[2];
+
+    let bytes = quest_editor::convo::build_quest_giver(qid, trigger, Default::default());
+    // Self-verify: re-parse with the same parser that reads all 125 retail files.
+    let p = ConFile::parse(&bytes).context("generated .CON failed to re-parse")?;
+    if p.to_bytes() != bytes {
+        bail!("generated .CON did not round-trip");
+    }
+    std::fs::write(&out, &bytes).with_context(|| format!("writing {}", out.display()))?;
+    println!(
+        "wrote {} ({} bytes): {} message(s), {} menu(s), lua {} bytes ({:?})",
+        out.display(),
+        bytes.len(),
+        p.messages.len(),
+        p.menus.len(),
+        p.lua.len(),
+        p.lua_kind()
+    );
+    println!("accept -> QF_appendQuest({qid});  turn-in -> QF_doQuestTrigger(\"{trigger}\")");
+    Ok(true)
+}
+
+fn cmd_con_dump(file: Option<&String>) -> Result<bool> {
+    let path = PathBuf::from(file.context("usage: con-dump <file>")?);
+    let c = ConFile::read_file(&path)?;
+    println!("=== {} ===", path.display());
+    println!(
+        "event_mask=0x{:04x}  conv_off={}  script_off={}  size={}",
+        c.event_mask, c.conv_off, c.script_off, c.file_size
+    );
+    for (slot, name) in &c.event_funcs {
+        println!("  event[{slot}] -> {name}");
+    }
+    println!("messages ({}):", c.messages.len());
+    for (i, m) in c.messages.iter().enumerate() {
+        println!(
+            "  msg[{i}] type={} value={} check='{}' click='{}' str={}",
+            m.mtype, m.value, m.check_func, m.click_func, m.str_id
+        );
+    }
+    println!("menus ({}):", c.menus.len());
+    for (i, menu) in c.menus.iter().enumerate() {
+        println!("  menu[{i}] ({} items)", menu.items.len());
+        for (j, it) in menu.items.iter().enumerate() {
+            println!(
+                "    [{j}] type={} child={} check='{}' click='{}' str={}",
+                it.mtype, it.child_menu, it.check_func, it.click_func, it.str_id
+            );
+        }
+    }
+    let kind = c.lua_kind();
+    println!("lua: {:?}, {} bytes", kind, c.lua.len());
+    if kind == LuaKind::Source {
+        let n = c.lua.len().min(700);
+        println!("--- lua preview ---\n{}", String::from_utf8_lossy(&c.lua[..n]));
+    } else if kind == LuaKind::Bytecode {
+        let n = c.lua.len().min(48);
+        let hex: String = c.lua[..n].iter().map(|b| format!("{b:02x} ")).collect();
+        println!("--- lua hex (first {n}) ---\n{hex}");
     }
     Ok(true)
 }

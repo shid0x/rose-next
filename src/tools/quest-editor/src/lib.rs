@@ -4,8 +4,10 @@
 //! condition/reward views, the template generator, STB/STL writers, and the
 //! egui UI) are added in later phases — see `PROGRESS.md`.
 
+pub mod convo;
 pub mod data;
 pub mod gen;
+pub mod ifo;
 pub mod manifest;
 pub mod qsd;
 pub mod ui;

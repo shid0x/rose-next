@@ -44,6 +44,8 @@ const NPC_COL_DEAD_EVENT: usize = 42; // game col 41
 
 const QUEST_ITEM_TYPE: i32 = 13;
 
+const EVENT_COL_FILE: usize = 4; // game col 3 = the .CON filename (EVENT_FILENAME)
+
 /// Result of an apply (or dry-run): a human-readable change list and the files
 /// that were (or would be) backed up.
 pub struct WriteReport {
@@ -743,6 +745,116 @@ fn stl_item_desc(stb_dir: &Path, stl_name: &str, key: &str) -> Option<String> {
         Some(StringTableRow::ItemRow(it)) => Some(it.description.clone()),
         _ => None,
     }
+}
+
+/// Make `npc_id` give quest `qid` from dialog: generate a quest-giver `.CON`,
+/// register it in `LIST_EVENT.STB`, and wire the NPC's zone-IFO placement(s) to
+/// it. `complete_trig` is the QSD turn-in trigger (`<qid>-3` Hunt / `<qid>-2`
+/// Fetch). Replaces the NPC's existing conversation (warns). All `.bak`.
+pub fn wire_quest_giver(
+    root: &Path,
+    npc_id: i32,
+    qid: i32,
+    complete_trig: &str,
+    dry_run: bool,
+) -> Result<WriteReport> {
+    let stb_dir = resolve_stb_dir(root)?;
+    let event_dir = stb_dir
+        .parent()
+        .ok_or_else(|| anyhow!("STB dir has no parent"))?
+        .join("EVENT");
+    let con_name = format!("QG{qid}.con"); // basename — the disk file + IFO use this
+    // LIST_EVENT col 3 is a full VFS path (retail: "3Ddata\Event\EM99-001.con"),
+    // and the client loads exactly that string — a bare basename won't resolve.
+    let con_cell = format!("3Ddata\\Event\\{con_name}");
+    let con_path = event_dir.join(&con_name);
+
+    let mut changes = Vec::new();
+
+    // 1) Where is this NPC placed?
+    let placements = crate::ifo::find_npc(root, npc_id)?;
+    if placements.is_empty() {
+        bail!("npc {npc_id} isn't placed in any zone .IFO (can't make it a quest-giver)");
+    }
+
+    // 2) Generate the conversation (self-verify it parses).
+    let con_bytes = crate::convo::build_quest_giver(qid, complete_trig, Default::default());
+    crate::convo::ConFile::parse(&con_bytes).context("generated .CON failed to self-parse")?;
+    changes.push(format!(
+        "CREATE {} ({} bytes) — accept→QF_doQuestTrigger(\"{qid}-1\"), turn-in→QF_doQuestTrigger(\"{complete_trig}\")",
+        con_path.display(),
+        con_bytes.len()
+    ));
+
+    // 3) LIST_EVENT row (so the filename resolves to a conversation index).
+    //    Match an existing row by *basename* (idempotent / fixes an earlier row),
+    //    else append. The cell holds the full VFS path.
+    let event_path = file_ci(&stb_dir, "LIST_EVENT.STB")?;
+    let mut event_stb = load_stb(&event_path)?;
+    let basename_of =
+        |c: &str| c.rsplit(['\\', '/']).next().unwrap_or(c).trim().to_string();
+    let existing = event_stb
+        .data
+        .iter()
+        .position(|r| basename_of(cell(r, EVENT_COL_FILE)).eq_ignore_ascii_case(&con_name));
+    match existing {
+        Some(idx) if cell(&event_stb.data[idx], EVENT_COL_FILE) == con_cell => {
+            changes.push(format!("LIST_EVENT already lists \"{con_cell}\" (row {idx})"));
+        }
+        Some(idx) => {
+            set_cell(&mut event_stb.data[idx], EVENT_COL_FILE, &con_cell);
+            changes.push(format!("FIX LIST_EVENT row {idx} -> \"{con_cell}\""));
+        }
+        None => {
+            let mut row = template_row(&event_stb, |r| !cell(r, EVENT_COL_FILE).trim().is_empty())
+                .context("no LIST_EVENT template row to clone")?;
+            set_cell(&mut row, 0, &event_stb.data.len().to_string());
+            set_cell(&mut row, EVENT_COL_FILE, &con_cell);
+            event_stb.data.push(row);
+            changes.push(format!("APPEND LIST_EVENT row -> \"{con_cell}\""));
+        }
+    }
+
+    // 4) Wire every placement of this NPC.
+    for p in &placements {
+        let ifo_name = p.ifo_path.file_name().and_then(|s| s.to_str()).unwrap_or("?");
+        if !p.conversation.trim().is_empty() && !p.conversation.eq_ignore_ascii_case(&con_name) {
+            changes.push(format!(
+                "WARN npc {npc_id} in {ifo_name} already had conversation \"{}\" — replacing",
+                p.conversation
+            ));
+        }
+        crate::ifo::wire_npc_in_ifo(&p.ifo_path, npc_id, &con_name, dry_run)?;
+        changes.push(format!("WIRE {} (npc {npc_id}) -> {con_name}", p.ifo_path.display()));
+    }
+
+    if dry_run {
+        return Ok(WriteReport {
+            dry_run: true,
+            changes,
+            backups: Vec::new(),
+        });
+    }
+
+    // Commit the .CON + LIST_EVENT (the IFOs were written + backed up above).
+    let mut backups = Vec::new();
+    fs::create_dir_all(&event_dir).ok();
+    if con_path.exists() {
+        if let Some(b) = backup_once(&con_path)? {
+            backups.push(b);
+        }
+    }
+    fs::write(&con_path, &con_bytes).with_context(|| format!("writing {}", con_path.display()))?;
+    if let Some(b) = backup_once(&event_path)? {
+        backups.push(b);
+    }
+    write_stb(&mut event_stb, &event_path)?;
+
+    Ok(WriteReport {
+        dry_run: false,
+        changes,
+        backups,
+    })
 }
 
 // --- helpers ---------------------------------------------------------------
