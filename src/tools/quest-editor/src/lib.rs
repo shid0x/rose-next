@@ -8,6 +8,7 @@ pub mod convo;
 pub mod data;
 pub mod gen;
 pub mod ifo;
+pub mod ltb;
 pub mod manifest;
 pub mod qsd;
 pub mod ui;

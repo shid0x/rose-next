@@ -421,6 +421,8 @@ pub struct GiverStrings {
     pub after_accept: i32,
     pub after_complete: i32,
     pub in_progress: i32,
+    /// The "[Close]" button shown under each NPC response message.
+    pub response_close: i32,
 }
 
 impl Default for GiverStrings {
@@ -435,6 +437,7 @@ impl Default for GiverStrings {
             after_accept: 6,
             after_complete: 7,
             in_progress: 8,
+            response_close: 5,
         }
     }
 }
@@ -496,17 +499,21 @@ pub fn build_quest_giver(qid: i32, complete_trig: &str, s: GiverStrings) -> Vec<
                 menu_item(SC_MSG_CLOSE, -1, "", "", s.bye_option),
             ],
         },
-        // [2] after accept
+        // [2] after accept -> close
         ConMenu {
-            items: vec![menu_item(SC_MSG_NPCSAY, -1, "", "", s.after_accept)],
+            items: vec![menu_item(SC_MSG_NPCSAY, 5, "", "", s.after_accept)],
         },
-        // [3] after complete
+        // [3] after complete -> close
         ConMenu {
-            items: vec![menu_item(SC_MSG_NPCSAY, -1, "", "", s.after_complete)],
+            items: vec![menu_item(SC_MSG_NPCSAY, 5, "", "", s.after_complete)],
         },
-        // [4] in progress
+        // [4] in progress -> close
         ConMenu {
-            items: vec![menu_item(SC_MSG_NPCSAY, -1, "", "", s.in_progress)],
+            items: vec![menu_item(SC_MSG_NPCSAY, 5, "", "", s.in_progress)],
+        },
+        // [5] a "[Close]" button shown under each response message
+        ConMenu {
+            items: vec![menu_item(SC_MSG_CLOSE, -1, "", "", s.response_close)],
         },
     ];
 

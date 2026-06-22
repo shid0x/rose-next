@@ -458,6 +458,46 @@ pub fn delete_quest(root: &Path, quest_sn: i32, dry_run: bool) -> Result<WriteRe
         .ok()
         .filter(|p| p.exists());
 
+    // --- dialog cleanup: undo any quest-giver wiring for QG<sn>.con ---
+    let event_dir = stb_dir
+        .parent()
+        .ok_or_else(|| anyhow!("STB dir has no parent"))?
+        .join("EVENT");
+    let con_name = format!("QG{quest_sn}.con");
+    let con_path = event_dir.join(&con_name);
+    let con_exists = con_path.exists();
+    let givers = crate::manifest::read_manifest(root, quest_sn)
+        .map(|m| m.givers)
+        .unwrap_or_default();
+    // LIST_EVENT row that points at our .CON (blank its filename so it matches no NPC).
+    let mut event_cleanup: Option<(PathBuf, STB)> = None;
+    if let Ok(ep) = file_ci(&stb_dir, "LIST_EVENT.STB") {
+        if let Ok(mut ev) = load_stb(&ep) {
+            if let Some(idx) = ev.data.iter().position(|r| {
+                cell(r, EVENT_COL_FILE)
+                    .rsplit(['\\', '/'])
+                    .next()
+                    .is_some_and(|f| f.eq_ignore_ascii_case(&con_name))
+            }) {
+                set_cell(&mut ev.data[idx], EVENT_COL_FILE, "");
+                changes.push(format!("CLEAR LIST_EVENT row {idx} (was {con_name})"));
+                event_cleanup = Some((ep, ev));
+            }
+        }
+    }
+    for g in &givers {
+        let to = if g.original_conversation.trim().is_empty() {
+            "(none)".to_string()
+        } else {
+            g.original_conversation.clone()
+        };
+        let name = Path::new(&g.ifo_path).file_name().and_then(|s| s.to_str()).unwrap_or("?");
+        changes.push(format!("RESTORE npc {} in {name} -> {to}", g.npc_id));
+    }
+    if con_exists {
+        changes.push(format!("DELETE {}", con_path.display()));
+    }
+
     if dry_run {
         if qsd_file.exists() {
             changes.push(format!("DELETE {}", qsd_file.display()));
@@ -508,6 +548,26 @@ pub fn delete_quest(root: &Path, quest_sn: i32, dry_run: bool) -> Result<WriteRe
     if qsd_file.exists() {
         fs::remove_file(&qsd_file).with_context(|| format!("removing {}", qsd_file.display()))?;
         changes.push(format!("DELETE {}", qsd_file.display()));
+    }
+    // Dialog cleanup: restore each NPC's original conversation, clear the
+    // LIST_EVENT row, and remove the generated .CON.
+    for g in &givers {
+        let ifo = PathBuf::from(&g.ifo_path);
+        if ifo.exists() {
+            crate::ifo::wire_npc_in_ifo(&ifo, g.npc_id, &g.original_conversation, false).ok();
+        }
+    }
+    if let Some((p, mut ev)) = event_cleanup {
+        if let Some(b) = backup_once(&p)? {
+            backups.push(b);
+        }
+        write_stb(&mut ev, &p)?;
+    }
+    if con_exists {
+        if let Some(b) = backup_once(&con_path)? {
+            backups.push(b);
+        }
+        fs::remove_file(&con_path).ok();
     }
     if let Some(m) = manifest {
         fs::remove_file(&m).ok();
@@ -747,6 +807,56 @@ fn stl_item_desc(stb_dir: &Path, stl_name: &str, key: &str) -> Option<String> {
     }
 }
 
+/// The quest's own narrative lines for the dialog (so the NPC's words match the
+/// quest). The option-button labels stay generic. `None` fields fall back to a
+/// generic line.
+#[derive(Debug, Default, Clone)]
+pub struct GiverText {
+    pub greeting: String,
+    pub in_progress: String,
+    pub after_complete: String,
+}
+
+/// Upsert the quest-giver's dialog strings into the event-string table (keyed by
+/// `QG<qid>_*` so re-wiring is idempotent) and return their ids.
+fn giver_strings(
+    ltb: &mut crate::ltb::LtbTable,
+    qid: i32,
+    text: Option<&GiverText>,
+) -> crate::convo::GiverStrings {
+    let k = |s: &str| format!("QG{qid}_{s}");
+    let or = |s: &str, fallback: &str| {
+        if s.trim().is_empty() {
+            fallback.to_string()
+        } else {
+            s.to_string()
+        }
+    };
+    let greeting = text.map_or_else(
+        || "Greetings, traveler! I have a task that needs doing.".to_string(),
+        |t| or(&t.greeting, "Greetings, traveler! I have a task that needs doing."),
+    );
+    let in_progress = text.map_or_else(
+        || "You haven't finished yet. Keep at it!".to_string(),
+        |t| or(&t.in_progress, "You haven't finished yet. Keep at it!"),
+    );
+    let after_complete = text.map_or_else(
+        || "Well done! Here is your reward.".to_string(),
+        |t| or(&t.after_complete, "Well done! Here is your reward."),
+    );
+    crate::convo::GiverStrings {
+        greeting: ltb.set_or_append(&k("greet"), &greeting) as i32,
+        accept_option: ltb.set_or_append(&k("accept"), "I'll help you. (Accept quest)") as i32,
+        complete_option: ltb.set_or_append(&k("turnin"), "I've completed the task. (Turn in)") as i32,
+        progress_option: ltb.set_or_append(&k("progopt"), "I'm still working on it.") as i32,
+        bye_option: ltb.set_or_append(&k("bye"), "Maybe another time. (Close)") as i32,
+        after_accept: ltb.set_or_append(&k("afteracc"), "Thank you! Return to me when it is done.") as i32,
+        after_complete: ltb.set_or_append(&k("afterdone"), &after_complete) as i32,
+        in_progress: ltb.set_or_append(&k("inprog"), &in_progress) as i32,
+        response_close: ltb.set_or_append(&k("close"), "(Close)") as i32,
+    }
+}
+
 /// Make `npc_id` give quest `qid` from dialog: generate a quest-giver `.CON`,
 /// register it in `LIST_EVENT.STB`, and wire the NPC's zone-IFO placement(s) to
 /// it. `complete_trig` is the QSD turn-in trigger (`<qid>-3` Hunt / `<qid>-2`
@@ -756,6 +866,7 @@ pub fn wire_quest_giver(
     npc_id: i32,
     qid: i32,
     complete_trig: &str,
+    text: Option<&GiverText>,
     dry_run: bool,
 ) -> Result<WriteReport> {
     let stb_dir = resolve_stb_dir(root)?;
@@ -777,14 +888,19 @@ pub fn wire_quest_giver(
         bail!("npc {npc_id} isn't placed in any zone .IFO (can't make it a quest-giver)");
     }
 
-    // 2) Generate the conversation (self-verify it parses).
-    let con_bytes = crate::convo::build_quest_giver(qid, complete_trig, Default::default());
+    // 2) Dialog text: upsert our strings into the event-string table, then build
+    //    the conversation pointing at the new ids.
+    let ltb_path = file_ci(&event_dir, "ulngtb_con.ltb")?;
+    let mut ltb = crate::ltb::LtbTable::read_file(&ltb_path)?;
+    let giver = giver_strings(&mut ltb, qid, text);
+    let con_bytes = crate::convo::build_quest_giver(qid, complete_trig, giver);
     crate::convo::ConFile::parse(&con_bytes).context("generated .CON failed to self-parse")?;
     changes.push(format!(
         "CREATE {} ({} bytes) — accept→QF_doQuestTrigger(\"{qid}-1\"), turn-in→QF_doQuestTrigger(\"{complete_trig}\")",
         con_path.display(),
         con_bytes.len()
     ));
+    changes.push(format!("UPSERT 8 dialog strings into {}", ltb_path.display()));
 
     // 3) LIST_EVENT row (so the filename resolves to a conversation index).
     //    Match an existing row by *basename* (idempotent / fixes an earlier row),
@@ -815,7 +931,9 @@ pub fn wire_quest_giver(
         }
     }
 
-    // 4) Wire every placement of this NPC.
+    // 4) Wire every placement of this NPC. Record what it had before (so delete
+    //    can restore it) — but only when it isn't already our own conversation.
+    let mut wirings = Vec::new();
     for p in &placements {
         let ifo_name = p.ifo_path.file_name().and_then(|s| s.to_str()).unwrap_or("?");
         if !p.conversation.trim().is_empty() && !p.conversation.eq_ignore_ascii_case(&con_name) {
@@ -824,6 +942,16 @@ pub fn wire_quest_giver(
                 p.conversation
             ));
         }
+        let original = if p.conversation.eq_ignore_ascii_case(&con_name) {
+            String::new() // re-wire: don't clobber the true original in the manifest
+        } else {
+            p.conversation.clone()
+        };
+        wirings.push(crate::manifest::GiverWiring {
+            npc_id,
+            ifo_path: p.ifo_path.to_string_lossy().into_owned(),
+            original_conversation: original,
+        });
         crate::ifo::wire_npc_in_ifo(&p.ifo_path, npc_id, &con_name, dry_run)?;
         changes.push(format!("WIRE {} (npc {npc_id}) -> {con_name}", p.ifo_path.display()));
     }
@@ -849,6 +977,15 @@ pub fn wire_quest_giver(
         backups.push(b);
     }
     write_stb(&mut event_stb, &event_path)?;
+    if let Some(b) = backup_once(&ltb_path)? {
+        backups.push(b);
+    }
+    fs::write(&ltb_path, ltb.to_bytes())
+        .with_context(|| format!("writing {}", ltb_path.display()))?;
+
+    // Record the wiring in the quest's manifest (if it has one) so delete can
+    // restore the NPC and edit can re-offer it.
+    crate::manifest::add_givers(root, qid, &wirings).ok();
 
     Ok(WriteReport {
         dry_run: false,

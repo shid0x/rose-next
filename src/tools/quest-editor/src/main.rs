@@ -42,6 +42,7 @@ fn main() -> ExitCode {
         Some("ifo-scan") => cmd_ifo_scan(args.get(1)),
         Some("con-wire") => cmd_con_wire(&args[1..]),
         Some("npc-find") => cmd_npc_find(&args[1..]),
+        Some("ltb-check") => cmd_ltb_check(&args[1..]),
         _ => {
             eprintln!("usage:");
             eprintln!("  quest-editor verify <dir>   round-trip every .QSD, report drift");
@@ -531,6 +532,30 @@ fn cmd_con_verify(root: Option<&String>) -> Result<bool> {
     Ok(fail == 0 && drift == 0)
 }
 
+fn cmd_ltb_check(args: &[String]) -> Result<bool> {
+    use quest_editor::ltb::LtbTable;
+    if args.is_empty() {
+        bail!("usage: ltb-check <file.ltb> [row]");
+    }
+    let bytes = std::fs::read(&args[0]).with_context(|| format!("reading {}", args[0]))?;
+    let t = LtbTable::parse(&bytes)?;
+    println!("rows={} cols={} ({} bytes)", t.rows.len(), t.col_cnt, bytes.len());
+    // Semantic round-trip.
+    let rt = LtbTable::parse(&t.to_bytes())?;
+    let ok = rt.rows == t.rows && rt.col_cnt == t.col_cnt;
+    println!("semantic round-trip: {}", if ok { "OK" } else { "DRIFT" });
+    if let Some(r) = args.get(1).and_then(|s| s.parse::<usize>().ok()) {
+        if let Some(row) = t.rows.get(r) {
+            for (c, s) in row.iter().enumerate() {
+                println!("  row {r} col {c}: {:?}", quest_editor::ltb::decode_utf16le(s));
+            }
+        } else {
+            println!("  row {r} out of range");
+        }
+    }
+    Ok(!ok as i32 == 0)
+}
+
 fn cmd_npc_find(args: &[String]) -> Result<bool> {
     if args.len() < 2 {
         bail!("usage: npc-find <root> <name-substring>");
@@ -572,7 +597,7 @@ fn cmd_con_wire(args: &[String]) -> Result<bool> {
     let qid: i32 = pos[2].parse().context("quest_sn")?;
     let trigger = &pos[3];
 
-    let report = quest_editor::write::wire_quest_giver(&root, npc_id, qid, trigger, !write)?;
+    let report = quest_editor::write::wire_quest_giver(&root, npc_id, qid, trigger, None, !write)?;
     report.print();
     if report.dry_run {
         println!("\n(re-run with --write to apply, then bake the VFS + restart)");

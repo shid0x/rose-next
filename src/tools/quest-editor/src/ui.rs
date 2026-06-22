@@ -101,6 +101,13 @@ struct QuestCreator {
     auto_text: bool,
     text_basis: Option<(QuestType, i32, i32)>,
 
+    // quest-giver NPC (optional): assign an NPC to give the quest from dialog
+    assign_giver: bool,
+    giver_search: String,
+    giver_npc: Option<i32>,
+    /// Lazily-scanned placement info: (placed npc ids, npc id -> existing .CON).
+    placements: Option<(std::collections::HashSet<i32>, std::collections::HashMap<i32, String>)>,
+
     // dev knobs
     hide_in_use: bool,
     token_icon: String, // optional icon-number override (blank = template's icon)
@@ -146,6 +153,10 @@ impl Default for QuestCreator {
             token_desc: String::new(),
             auto_text: true,
             text_basis: None,
+            assign_giver: false,
+            giver_search: String::new(),
+            giver_npc: None,
+            placements: None,
             hide_in_use: false,
             token_icon: String::new(),
             dry_run: false,
@@ -237,12 +248,33 @@ impl QuestCreator {
                 self.load_error = None;
                 self.screen = Screen::Form;
                 self.error = None;
+                self.placements = None; // re-scan IFOs lazily for the new folder
             }
             Err(e) => {
                 self.load_error = Some(format!("{e:#}"));
                 self.data = None;
             }
         }
+    }
+
+    /// Scan all zone IFOs once (slow) to learn which NPCs are placed and which
+    /// already have a conversation. Cached until the folder changes.
+    fn ensure_placements(&mut self) {
+        if self.placements.is_some() {
+            return;
+        }
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let placed = crate::ifo::all_placed_npc_ids(&root)
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        let with_dialog = crate::ifo::placements_with_conversation(&root)
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        self.placements = Some((placed, with_dialog));
     }
 
     fn ui_pick_folder(&mut self, ui: &mut egui::Ui) {
@@ -420,6 +452,11 @@ impl QuestCreator {
                     .small(),
                 );
             });
+        });
+
+        // --- 4. Quest-giver NPC (optional) ---
+        self.section(ui, "4", "Quest-giver NPC (optional)", |app, ui| {
+            app.ui_giver(ui);
         });
 
         // --- preview + create ---
@@ -914,6 +951,79 @@ impl QuestCreator {
         }
     }
 
+    fn ui_giver(&mut self, ui: &mut egui::Ui) {
+        ui.checkbox(
+            &mut self.assign_giver,
+            "Make an NPC give this quest from a dialog (accept / turn-in at the NPC)",
+        );
+        if !self.assign_giver {
+            ui.label(
+                egui::RichText::new(
+                    "Off: the quest is accepted/turned in via GM commands only.",
+                )
+                .weak()
+                .small(),
+            );
+            return;
+        }
+
+        self.ensure_placements();
+        ui.horizontal(|ui| {
+            ui.label("Search NPC:");
+            ui.text_edit_singleline(&mut self.giver_search);
+        });
+
+        // Collect matching placed giver NPCs into an owned list (drops borrows
+        // before the selectable list mutates `giver_npc`).
+        let needle = self.giver_search.to_lowercase();
+        let candidates: Vec<(i32, String, Option<String>)> = match (&self.placements, &self.data) {
+            (Some((placed, with_dialog)), Some(ds)) => ds
+                .givers
+                .iter()
+                .filter(|g| placed.contains(&g.id))
+                .filter(|g| needle.is_empty() || g.name.to_lowercase().contains(&needle))
+                .map(|g| (g.id, g.name.clone(), with_dialog.get(&g.id).cloned()))
+                .take(300)
+                .collect(),
+            _ => Vec::new(),
+        };
+
+        if candidates.is_empty() {
+            ui.weak("No placed town NPC matches (only NPCs spawned in a zone can give quests).");
+        }
+        egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| {
+            for (id, name, conv) in &candidates {
+                let label = if conv.is_some() {
+                    format!("{:>5}  {}   [has dialog]", id, name)
+                } else {
+                    format!("{:>5}  {}", id, name)
+                };
+                ui.selectable_value(&mut self.giver_npc, Some(*id), label);
+            }
+        });
+
+        match self.giver_npc.and_then(|id| candidates.iter().find(|(c, ..)| *c == id)) {
+            Some((id, name, conv)) => {
+                ui.label(egui::RichText::new(format!("Giver: {name} (npc {id})")).strong());
+                if let Some(conv) = conv {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(220, 150, 60),
+                        format!(
+                            "⚠ This NPC already has a conversation (\"{conv}\") — it will be \
+                             REPLACED. Pick an NPC without [has dialog] unless you don't mind losing it.",
+                        ),
+                    );
+                }
+            }
+            None => {
+                ui.colored_label(
+                    egui::Color32::from_rgb(120, 170, 255),
+                    "Pick a placed NPC above to give the quest.",
+                );
+            }
+        }
+    }
+
     fn monster_name(&self, id: i32) -> String {
         self.data
             .as_ref()
@@ -971,6 +1081,18 @@ impl QuestCreator {
                     self.fetch_item_id = Some(id);
                 }
                 self.fetch_consume = *consume;
+            }
+        }
+
+        // Restore the quest-giver NPC from the manifest (so editing re-offers it).
+        self.assign_giver = false;
+        self.giver_npc = None;
+        if let Some(root) = &self.root {
+            if let Ok(m) = crate::manifest::read_manifest(root, spec.quest_sn) {
+                if let Some(g) = m.givers.first() {
+                    self.giver_npc = Some(g.npc_id);
+                    self.assign_giver = true;
+                }
             }
         }
     }
@@ -1122,6 +1244,29 @@ impl QuestCreator {
                 self.error = None;
                 let mut changes = pre_changes;
                 changes.append(&mut report.changes);
+
+                // Optionally make an NPC give the quest (real write only).
+                if !dry {
+                    if let Some(npc_id) = self.giver_npc.filter(|_| self.assign_giver) {
+                        let text = crate::write::GiverText {
+                            greeting: spec.start_text.clone(),
+                            in_progress: spec.progress_text.clone(),
+                            after_complete: spec.complete_text.clone(),
+                        };
+                        match crate::write::wire_quest_giver(
+                            &root,
+                            npc_id,
+                            spec.quest_sn,
+                            &gen.complete_trigger,
+                            Some(&text),
+                            false,
+                        ) {
+                            Ok(rep) => changes.extend(rep.changes),
+                            Err(e) => changes.push(format!("(quest-giver wiring FAILED: {e:#})")),
+                        }
+                    }
+                }
+
                 self.screen = Screen::Created {
                     summary: CreatedSummary {
                         quest_sn: spec.quest_sn,

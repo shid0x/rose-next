@@ -410,12 +410,44 @@ generated `.CON` (Lua source) → IFO/LIST_EVENT wiring → in-game accept (regi
 trigger) → kill tracking → turn-in (complete trigger) → rewards. The `CHK_*` gating
 works (the menu offers accept before, turn-in after). **Tier 2 #4 functionally
 done.** Remaining = polish only:
-- **Custom dialog text** — options/greeting still show reused event-string ids
-  (random strings). Author entries in the event-string table (`m_pEvent` / the STL
-  `GetEventString` reads) and point the nodes at them.
-- **Wizard integration** — a "this NPC gives the quest" step that calls
-  `wire_quest_giver`, with an NPC picker (reuse `npc-find` / `ifo` placement data)
-  and an "already has dialog" warning.
+- **Custom dialog text — done.** `ltb.rs` codec for `3Ddata\Event\ulngtb_con.ltb`
+  (`.LTB`: `i32 col,row`, 6-B index `[i32 filePos][i16 strLen]`, UTF-16LE null-term
+  strings, `strLen`=wide-char count, col 0=key / cols 1..N=languages). Keeps cells
+  raw (existing strings byte-safe), `set_or_append` upserts by col-0 key. `con-wire`
+  now upserts 8 `QG<qid>_*` strings (greeting + accept/turn-in/progress/bye options
+  + responses) and points the nodes at the new row ids; `.bak`; idempotent
+  (re-wire reuses rows, no growth). CLI `ltb-check`. Pony re-wired with real text;
+  **awaiting re-pack + visual confirm**.
+- **Close-button fix** — response NPCSAY menus (after accept/turn-in/progress) now
+  lead to a `[Close]` menu (`menu[5]`, a 9th string `QG<qid>_close`) so the message
+  box isn't a dead end.
+- **Preserving original NPC behavior (open design issue).** con-wire *replaces* the
+  NPC's conversation. The original (e.g. Pony's EM22-005.con) is **compiled Lua
+  bytecode** with custom fns (`AT_store` shop, `TA_hideMenu`, quest-specific `TA_*`).
+  A `.CON` has ONE Lua blob → we **cannot** add our source fns to a bytecode blob,
+  and can't decompile it. So general preservation isn't feasible. The shop *can* be
+  reconstructed: `GF_openStore(npcNo, tab)` is a **C++** fn callable from any
+  conversation Lua — so a "shop-preserving" mode could regen the conversation with a
+  Shop option + the quest (loses other custom branches). Pending user decision.
+- **Wizard integration — done.** A "Quest-giver NPC (optional)" section (#4) in the
+  Create form: a checkbox, NPC search, and a list of *placed* town NPCs (lazy IFO
+  scan cached in `placements`, reset on folder change) with a `[has dialog]` tag +
+  an "it will be REPLACED" warning. On create (real write only), `do_create` calls
+  `wire_quest_giver(npc, sn, complete_trigger, Some(GiverText))` with the quest's
+  own start/progress/complete text → the NPC's lines match the quest. `GiverText`
+  fields fall back to generic lines if blank; `giver_strings` takes `Option<&GiverText>`
+  (CLI con-wire passes `None`). **The NPC-dialog quest-giver feature is complete and
+  usable from the GUI end-to-end.**
+
+  **Follow-ups done (2026-06-22):** the manifest now records `givers: Vec<GiverWiring
+  { npc_id, ifo_path, original_conversation }>`; `wire_quest_giver` merges them in
+  (keeps the true original on re-wire). (1) **delete unwires** — `delete_quest`
+  restores each NPC's original conversation in its IFO, blanks the LIST_EVENT row,
+  and removes `QG<sn>.con` (validated on a temp copy: npc 1001 went QG5505.con →
+  back to EM01-001.con, .CON removed). (2) **edit migrates** — `load_spec_into_form`
+  restores the giver selection from the manifest, so on save the old wiring is
+  unwired (by the delete-old step) and the new SN re-wires the same NPC; since the
+  delete restored the original first, the new manifest records the true original.
 
 (superseded fork, kept for context:)
 - **(A) edit the NPC's existing `.CON`** — add an offer/complete branch to the
