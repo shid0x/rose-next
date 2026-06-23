@@ -455,6 +455,7 @@ pub fn build_quest_giver(qid: i32, complete_trig: &str, s: GiverStrings) -> Vec<
          TRG = \"{complete_trig}\"\n\
          function CHK_accept(E)\n\
          \tif QF_findQuest(QID) >= 0 then return 0 end\n\
+         \tif QF_checkQuestCondition(REG) < 1 then return 0 end\n\
          \treturn 1\n\
          end\n\
          function ACT_accept(E)\n\

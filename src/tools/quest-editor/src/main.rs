@@ -43,6 +43,8 @@ fn main() -> ExitCode {
         Some("con-wire") => cmd_con_wire(&args[1..]),
         Some("npc-find") => cmd_npc_find(&args[1..]),
         Some("ltb-check") => cmd_ltb_check(&args[1..]),
+        Some("icons-check") => cmd_icons_check(args.get(1)),
+        Some("switch-check") => cmd_switch_check(args.get(1)),
         _ => {
             eprintln!("usage:");
             eprintln!("  quest-editor verify <dir>   round-trip every .QSD, report drift");
@@ -371,6 +373,8 @@ fn build_hunt(ha: &HuntArgs) -> Result<(DataSet, QuestSpec, GeneratedQuest, Stri
         reward_exp: ha.exp,
         reward_zuly: ha.zuly,
         reward_item: None,
+        one_time_switch: None,
+        extra_objectives: vec![],
         title: format!("Hunt: {name}"),
         start_text: format!("Defeat {} {name}.", ha.count),
         progress_text: format!("Keep hunting {name}."),
@@ -395,9 +399,15 @@ fn report_issues(ds: &DataSet, spec: &QuestSpec, gen: &GeneratedQuest) -> bool {
 
 fn cmd_create(args: &[String]) -> Result<bool> {
     let write = args.iter().any(|a| a == "--write");
+    let once = args.iter().any(|a| a == "--once");
     let positional: Vec<String> = args.iter().filter(|a| !a.starts_with("--")).cloned().collect();
     let ha = parse_hunt_args(&positional)?;
-    let (ds, spec, gen, name) = build_hunt(&ha)?;
+    let (ds, mut spec, mut gen, name) = build_hunt(&ha)?;
+    if once {
+        spec.one_time_switch = Some(quest_editor::write::next_free_switch(&ha.root)?);
+        gen = generate(&spec);
+        println!("(one-time: character switch {})", spec.one_time_switch.unwrap());
+    }
 
     println!("quest {} \"Hunt: {name}\" -> monster {}", spec.quest_sn, ha.monster_id);
     if !report_issues(&ds, &spec, &gen) {
@@ -530,6 +540,27 @@ fn cmd_con_verify(root: Option<&String>) -> Result<bool> {
         println!("  FAIL {fl}");
     }
     Ok(fail == 0 && drift == 0)
+}
+
+fn cmd_switch_check(root: Option<&String>) -> Result<bool> {
+    let root = PathBuf::from(root.context("usage: switch-check <root>")?);
+    let used = quest_editor::write::used_switches(&root)?;
+    let in_cap = used.iter().filter(|&&s| s < 512).count();
+    let next = quest_editor::write::next_free_switch(&root).ok();
+    println!(
+        "character quest-switches: {} used (0..511), {} free; next free = {}",
+        in_cap,
+        512 - in_cap,
+        next.map_or("NONE".into(), |n| n.to_string())
+    );
+    Ok(true)
+}
+
+fn cmd_icons_check(root: Option<&String>) -> Result<bool> {
+    let root = PathBuf::from(root.context("usage: icons-check <root>")?);
+    let store = quest_editor::icons::IconStore::load(&root)?;
+    println!("loaded ITEM1.TSI: {} icons", store.icon_count());
+    Ok(store.icon_count() > 0)
 }
 
 fn cmd_ltb_check(args: &[String]) -> Result<bool> {
@@ -766,6 +797,8 @@ fn cmd_create_fetch(args: &[String]) -> Result<bool> {
         reward_exp: exp,
         reward_zuly: zuly,
         reward_item: None,
+        one_time_switch: None,
+        extra_objectives: vec![],
         title: format!("Gather: {item_name}"),
         start_text: format!("Bring {count} {item_name}."),
         progress_text: format!("Collect {count} {item_name}."),

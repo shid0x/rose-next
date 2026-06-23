@@ -62,15 +62,28 @@ Tier 3 edit/delete done. Next decision: Tier 2 #4 (NPC dialogs).**
   `check_next` back to the predecessor (chained). Verified: deleting a chained
   quest restores the host QSD **byte-exact**. **Edit** = prefill the form from the
   manifest, then delete-old + create-new (so the quest gets a fresh SN). All `.bak`.
-- **Repeatable / one-time flag** — *deferred to the NPC-dialog work.* All generated
-  quests are already repeatable (complete `Finish`es the slot; register has no
-  guard). True one-time needs a persistent character quest-switch (`COND_014` /
-  `REWD_015`) from the global 512-switch pool with collision-free allocation, and
-  it has no enforcement point until an NPC gates the offer — so it lands with #4.
-- **Icon picker** for the token (visual grid; reuse the shop editor's icon code).
+- **Repeatable / one-time flag** — ✅ done (2026-06-22). A "Repeatable" checkbox
+  (default on). One-time quests get a persistent character quest-switch
+  (`COND_014` guard on register + `REWD_015` setter on complete);
+  `write::next_free_switch` gap-fills a free number (retail uses only 73 of 512 →
+  439 free). The dialog's `CHK_accept` checks the register condition so the accept
+  option hides once done. `reconstruct_spec` detects it; edit restores the checkbox.
+  CLI `--once` + `switch-check`.
+- **Icon picker** for the token — ✅ done (2026-06-22). Ported `dds.rs` + `icons.rs`
+  (`IconStore`) from the shop editor; the wizard's token-icon control shows a live
+  preview + a browsable virtualized grid over all 8451 ITEM1.TSI icons.
 - **Live "0/N" counter in the journal** — switch to / add the counter-var model
   (`REWD_002`) instead of pure item-collection. Cosmetic.
-- **Multiple objectives** (kill A and B; fetch X and Y).
+- **Multiple objectives** — ✅ done (2026-06-23). A quest can require any mix of
+  hunt + fetch objectives (kill A and B and bring X). Additive model:
+  `QuestSpec.extra_objectives: Vec<Objective>` (serde-default, so single-objective
+  quests stay byte-identical and old manifests load unchanged). Each objective
+  adds one completion `COND_004` (all ANDed); each hunt adds its own token + kill
+  trigger (`<sn>-1x`, wired/chained like the primary). The writer loops over
+  `gen.hunts` (multi-token, multi-monster, multi-host); delete un-wires by the
+  `<sn>-` name prefix (scan-based, byte-exact host restore even when several
+  objectives chain into one host); reconstruct/verify/edit handle the list. Wizard
+  has an add/remove objective editor; CLI stays single-objective.
 
 ## Recommended order
 

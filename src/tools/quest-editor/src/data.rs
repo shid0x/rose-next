@@ -254,6 +254,13 @@ impl DataSet {
     pub fn next_free_token_item_sn(&self) -> i32 {
         encode_item_no(ItemCategory::QuestItem, self.next_free_quest_item_id())
     }
+
+    /// Token SN for the `offset`-th newly allocated token of a single quest
+    /// (offset 0 == `next_free_token_item_sn`). Ids beyond the current max are all
+    /// free, so a multi-hunt quest gets distinct tokens by bumping the offset.
+    pub fn token_item_sn_at(&self, offset: i32) -> i32 {
+        encode_item_no(ItemCategory::QuestItem, self.next_free_quest_item_id() + offset)
+    }
 }
 
 fn collect_npcs(npc_stb: &STB) -> (Vec<Monster>, Vec<GiverNpc>) {
@@ -374,6 +381,22 @@ pub fn resolve_stb_dir(root: &Path) -> Result<PathBuf> {
     }
     Err(anyhow!(
         "could not find 3DDATA/STB/LIST_NPC.STB under '{}'",
+        root.display()
+    ))
+}
+
+/// Locate `3DDATA/CONTROL/RES` (holds ITEM1.TSI + the icon DDS sheets).
+pub fn resolve_icon_dir(root: &Path) -> Result<PathBuf> {
+    for c in [
+        root.join("3DDATA").join("CONTROL").join("RES"),
+        root.join("3ddata").join("control").join("res"),
+    ] {
+        if c.exists() {
+            return Ok(c);
+        }
+    }
+    Err(anyhow!(
+        "could not find 3DDATA/CONTROL/RES under '{}'",
         root.display()
     ))
 }

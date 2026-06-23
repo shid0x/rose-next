@@ -260,6 +260,76 @@ item `13:129`. (Validate the id exists in the item DB when generating.)
 
 ## Status log
 
+### 2026-06-23 — Tier 3: multiple objectives (mixed hunt + fetch)
+
+A quest can now require several things at once — any mix of kill/bring (e.g. "kill
+10 A AND kill 5 B AND bring 3 C"). **Additive model** so the validated
+single-objective path stays byte-identical: `QuestSpec.extra_objectives:
+Vec<Objective>` (`#[serde(default)]` → old manifests load with an empty list; the
+primary `kind`+`count` are unchanged).
+
+- **gen.rs**: unified `generate()` — primary + each extra objective contribute one
+  completion `COND_004` (all ANDed in the complete trigger), each hunt objective a
+  kill trigger + token. Suffixes: register `-1`, primary kill `-2`, complete
+  `-3`/`-2`, **extra kill triggers `-10, -11, …`** (keyed off the objective index,
+  so unique). `build_hunt()` helper returns (`HuntWiring`, completion cond, qsd
+  kill-trigger). `GeneratedQuest.hunts: Vec<HuntWiring>` drives the writer (replaced
+  the single `kill_trigger`/`host_kill_trigger`).
+- **write.rs apply**: loops `gen.hunts`, loading LIST_QUESTITEM / LIST_NPC /
+  LIST_QUESTITEM_S.STL once and mutating across objectives; token STL key is now
+  `QITEM_<sn>_<idx>`; chained kill triggers accumulate in a per-path `host_qsds`
+  vec (two objectives can chain into one host safely).
+- **write.rs delete**: rewritten to scan-based un-wiring — blanks *every* token row
+  belonging to the quest, clears *every* LIST_NPC col-41 named `<sn>-<n>`, and
+  removes *every* chained `<sn>-<n>` trigger from host QSDs (skipping the quest's
+  own QX file, which is deleted wholesale). Each unsplice hands `check_next` left,
+  so hosts restore byte-exact even with several chains in one file. New helpers:
+  `trigger_belongs_to_quest`, `unchain_quest_kill_triggers`, `find_trigger_in`.
+- **write.rs reconstruct**: parses all complete-trigger `COND_004`s → primary +
+  extras (Hunt if the checked item is one of the quest's tokens, else Fetch);
+  per-token monster via `monster_for_token` / `kill_trigger_name_for_token`; reads
+  each token's STL key from its row (col 33) instead of recomputing it. (New multi
+  quests always have a manifest; this is the manifest-less fallback.)
+- **verify.rs**: validates each extra objective + cross-objective collisions (same
+  monster or token id twice).
+- **ui.rs**: an "Additional objectives" section with add kill / add fetch, compact
+  per-objective pickers + count, remove, and a block-on-unfinished guard. Manage
+  list shows "Multi (+N more)"; edit rebuilds the drafts. `data.rs token_item_sn_at`
+  allocates distinct token SNs.
+- **Tests**: gen `multi_objective_ands_all_checks_and_wires_each_hunt` (11 unit
+  total) + integration `tests/multi_objective.rs` — applies a chained-primary +
+  claimed-extra + consumed-fetch quest on a temp copy of real data, then deletes
+  and asserts **every pre-existing QSD is byte-exact** again and reconstruct sees
+  both extras. CLI stays single-objective (per decision).
+
+### 2026-06-22 — Tier 3: repeatable / one-time flag
+
+A "Repeatable" checkbox (default on). One-time quests gate re-taking via a
+persistent **character** quest-switch: `gen::cond_switch` (COND_014, "switch S ==
+0") prepended to the register trigger + `gen::rewd_set_switch` (REWD_015, "S = 1")
+appended to the complete trigger (both 4-byte `short nSN + BYTE btOp`).
+`QuestSpec.one_time_switch: Option<i32>` (serde default None). `write::next_free_
+switch` gap-fills the first unused switch by scanning all QSDs' COND_014/REWD_015
+(retail uses only **73** of the 512 → 439 free; `__APPLY_EXTAND_QUEST_VAR` is never
+defined so the cap is 512). The dialog `CHK_accept` now also checks
+`QF_checkQuestCondition(REG)`, so a one-time quest's accept option disappears once
+completed (works via dialog AND GM `/QUEST <sn>-1`). `reconstruct_spec` detects the
+COND_014; `load_spec_into_form` restores the checkbox on edit. CLI: `--once` flag on
+`create`, `switch-check <root>`. Verified: 1st one-time → switch 0, 2nd → switch 4
+(skips retail's 1-3); 10 unit tests pass (incl. `one_time_adds_switch_guard_and_
+setter`).
+
+### 2026-06-22 — Tier 3: icon picker
+
+Ported the shop editor's `dds.rs` (DXT1/3/5 + raw DDS decoder) and `icons.rs`
+(`IconStore`: ITEM1.TSI → per-sheet DDS decode → cached egui textures by icon_no)
+into the quest-editor; added `data::resolve_icon_dir` (3DDATA/CONTROL/RES) +
+`IconStore::icon_count`. The wizard's token-icon control (Advanced) now shows a live
+preview of the current icon, a number field, and a **🖼 Browse…** grid — a
+virtualized `ScrollArea::show_rows` over all 8451 icons; clicking a cell sets the
+number. Lazy-loaded + cached, reset on folder change. CLI `icons-check <root>`
+validates the atlas. 9 tests pass.
+
 ### 2026-06-21 — Tier 2 #4 (NPC dialogs) Phase 0: `.CON` codec + feasibility
 
 Strategy chosen: **template-clone** (reuse a proven quest-giver `.CON`, patch the

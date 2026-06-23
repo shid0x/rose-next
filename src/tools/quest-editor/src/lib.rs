@@ -6,7 +6,9 @@
 
 pub mod convo;
 pub mod data;
+pub mod dds;
 pub mod gen;
+pub mod icons;
 pub mod ifo;
 pub mod ltb;
 pub mod manifest;

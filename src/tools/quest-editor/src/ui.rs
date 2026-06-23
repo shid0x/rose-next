@@ -10,13 +10,53 @@ use std::path::{Path, PathBuf};
 use eframe::egui;
 
 use crate::data::{DataSet, Item, ItemCategory, Monster};
-use crate::gen::{generate, QuestKind, QuestSpec};
+use crate::gen::{generate, Objective, QuestKind, QuestSpec};
 use crate::write::{apply_quest, delete_quest, list_editor_quests};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum QuestType {
     Hunt,
     Fetch,
+}
+
+/// One editable *extra* objective in the wizard (on top of the primary one). The
+/// fields mirror both objective types; only the ones for `kind` are read.
+struct ObjectiveDraft {
+    kind: QuestType,
+    count: i32,
+    // Hunt
+    monster_search: String,
+    monster_id: Option<i32>,
+    token_name: String,
+    // Fetch
+    item_category: ItemCategory,
+    item_search: String,
+    item_id: Option<i32>,
+    consume: bool,
+}
+
+impl ObjectiveDraft {
+    fn new(kind: QuestType) -> Self {
+        Self {
+            kind,
+            count: if kind == QuestType::Hunt { 10 } else { 3 },
+            monster_search: String::new(),
+            monster_id: None,
+            token_name: String::new(),
+            item_category: ItemCategory::UseItem,
+            item_search: String::new(),
+            item_id: None,
+            consume: true,
+        }
+    }
+    /// A draft is "ready" once its target is picked; otherwise it's skipped when
+    /// building the spec and the wizard blocks creation.
+    fn is_ready(&self) -> bool {
+        match self.kind {
+            QuestType::Hunt => self.monster_id.is_some(),
+            QuestType::Fetch => self.item_id.is_some(),
+        }
+    }
 }
 
 /// Top-level view: make a new quest, or manage the ones the editor made.
@@ -81,6 +121,9 @@ struct QuestCreator {
     fetch_item_id: Option<i32>,
     fetch_consume: bool,
     kill_count: i32,
+    // extra objectives layered on top of the primary one (kill A and B, …)
+    extra_objectives: Vec<ObjectiveDraft>,
+    repeatable: bool,
     reward_exp: i32,
     reward_zuly: i32,
 
@@ -113,6 +156,10 @@ struct QuestCreator {
     token_icon: String, // optional icon-number override (blank = template's icon)
     dry_run: bool,
 
+    // icon picker (lazy): the item-icon atlas + whether the browse grid is open
+    icons: Option<crate::icons::IconStore>,
+    show_icon_grid: bool,
+
     // create vs manage; when `editing` is set the form is editing that quest SN
     // (saving deletes the old one and creates a fresh one).
     view: View,
@@ -138,6 +185,8 @@ impl Default for QuestCreator {
             fetch_item_id: None,
             fetch_consume: true,
             kill_count: 10,
+            extra_objectives: Vec::new(),
+            repeatable: true,
             reward_exp: 1000,
             reward_zuly: 500,
             reward_item_enabled: false,
@@ -160,6 +209,8 @@ impl Default for QuestCreator {
             hide_in_use: false,
             token_icon: String::new(),
             dry_run: false,
+            icons: None,
+            show_icon_grid: false,
             view: View::Create,
             editing: None,
             manage_status: None,
@@ -249,6 +300,7 @@ impl QuestCreator {
                 self.screen = Screen::Form;
                 self.error = None;
                 self.placements = None; // re-scan IFOs lazily for the new folder
+                self.icons = None; // reload the icon atlas for the new folder
             }
             Err(e) => {
                 self.load_error = Some(format!("{e:#}"));
@@ -334,6 +386,18 @@ impl QuestCreator {
             ui.selectable_value(&mut self.quest_type, QuestType::Hunt, "🗡 Hunt — kill monsters");
             ui.selectable_value(&mut self.quest_type, QuestType::Fetch, "📦 Fetch — bring items");
         });
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.repeatable, "Repeatable");
+            ui.label(
+                egui::RichText::new(if self.repeatable {
+                    "(can be taken again after completing)"
+                } else {
+                    "one-time — can only be completed once per character"
+                })
+                .weak()
+                .small(),
+            );
+        });
         ui.add_space(4.0);
 
         // --- 1 (objective) and 2 (rewards) side by side ---
@@ -384,6 +448,11 @@ impl QuestCreator {
             }
         });
         }); // end columns(1 + 2)
+
+        // --- 2b. Additional objectives (optional) ---
+        self.section(ui, "+", "Additional objectives (optional)", |app, ui| {
+            app.ui_objectives(ui);
+        });
 
         // --- 3. Text ---
         self.section(ui, "3", "Quest text", |app, ui| {
@@ -476,10 +545,7 @@ impl QuestCreator {
                     &mut self.dry_run,
                     "Dry run — preview the file changes but write nothing",
                 );
-                ui.horizontal(|ui| {
-                    ui.label("Token icon # (blank = default):");
-                    ui.add(egui::TextEdit::singleline(&mut self.token_icon).desired_width(80.0));
-                });
+                self.ui_icon_picker(ui);
                 if let Some(ds) = &self.data {
                     ui.add_space(4.0);
                     ui.label(
@@ -616,6 +682,149 @@ impl QuestCreator {
         ui.checkbox(&mut self.fetch_consume, "Take the items when the quest is turned in");
     }
 
+    /// The list of extra objectives: each is a compact target picker + count. The
+    /// quest completes only when the primary AND every extra objective is done.
+    fn ui_objectives(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new(
+                "Require more than one thing. Each objective is checked together; the quest \
+                 finishes only when all of them are met.",
+            )
+            .weak()
+            .small(),
+        );
+        ui.horizontal(|ui| {
+            if ui.button("➕ Add kill objective").clicked() {
+                self.extra_objectives.push(ObjectiveDraft::new(QuestType::Hunt));
+            }
+            if ui.button("➕ Add fetch objective").clicked() {
+                self.extra_objectives.push(ObjectiveDraft::new(QuestType::Fetch));
+            }
+        });
+
+        // Take the drafts out so we can borrow `self.data` while editing them.
+        let mut drafts = std::mem::take(&mut self.extra_objectives);
+        let mut remove: Option<usize> = None;
+        for (i, d) in drafts.iter_mut().enumerate() {
+            ui.add_space(4.0);
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(format!("Objective {}", i + 2)).strong());
+                    ui.selectable_value(&mut d.kind, QuestType::Hunt, "🗡 Kill");
+                    ui.selectable_value(&mut d.kind, QuestType::Fetch, "📦 Bring");
+                    ui.add(egui::DragValue::new(&mut d.count).clamp_range(1..=999));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("🗑 Remove").clicked() {
+                            remove = Some(i);
+                        }
+                    });
+                });
+                match d.kind {
+                    QuestType::Hunt => Self::ui_obj_monster(self.data.as_ref(), d, ui, i),
+                    QuestType::Fetch => Self::ui_obj_item(self.data.as_ref(), d, ui, i),
+                }
+                if !d.is_ready() {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(220, 170, 60),
+                        "⚠ Pick a target — this objective is ignored until you do.",
+                    );
+                }
+            });
+        }
+        if let Some(i) = remove {
+            drafts.remove(i);
+        }
+        self.extra_objectives = drafts;
+    }
+
+    /// Compact monster picker for one extra objective.
+    fn ui_obj_monster(data: Option<&DataSet>, d: &mut ObjectiveDraft, ui: &mut egui::Ui, idx: usize) {
+        ui.horizontal(|ui| {
+            ui.label("Monster:");
+            ui.text_edit_singleline(&mut d.monster_search);
+        });
+        let search = d.monster_search.trim().to_lowercase();
+        let rows: Vec<(i32, String, bool)> = data
+            .map(|ds| {
+                ds.monsters
+                    .iter()
+                    .filter(|m| {
+                        search.is_empty()
+                            || m.name.to_lowercase().contains(&search)
+                            || m.id.to_string().contains(&search)
+                    })
+                    .take(60)
+                    .map(|m| (m.id, monster_label(m), m.dead_event_is_free()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        egui::ScrollArea::vertical()
+            .id_source(("obj_monster", idx))
+            .max_height(120.0)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for (id, label, free) in &rows {
+                    let mut text = egui::RichText::new(label);
+                    if !*free {
+                        text = text.color(egui::Color32::from_rgb(200, 140, 60));
+                    }
+                    if ui.selectable_label(d.monster_id == Some(*id), text).clicked() {
+                        d.monster_id = Some(*id);
+                        if d.token_name.trim().is_empty() {
+                            if let Some(m) = data.and_then(|ds| ds.find_monster(*id)) {
+                                d.token_name = format!("{} Mark", m.name);
+                            }
+                        }
+                    }
+                }
+            });
+    }
+
+    /// Compact item picker for one extra objective.
+    fn ui_obj_item(data: Option<&DataSet>, d: &mut ObjectiveDraft, ui: &mut egui::Ui, idx: usize) {
+        ui.horizontal(|ui| {
+            egui::ComboBox::from_id_source(("obj_item_cat", idx))
+                .selected_text(d.item_category.display())
+                .show_ui(ui, |ui| {
+                    for &cat in ItemCategory::ALL {
+                        if ui.selectable_label(d.item_category == cat, cat.display()).clicked() {
+                            d.item_category = cat;
+                            d.item_id = None;
+                        }
+                    }
+                });
+            ui.text_edit_singleline(&mut d.item_search);
+        });
+        let search = d.item_search.trim().to_lowercase();
+        let items: Vec<(i32, String)> = data
+            .and_then(|ds| ds.item_db.by_category.get(&d.item_category))
+            .map(|v| {
+                v.iter()
+                    .filter(|it| it.id <= MAX_TOKEN_ITEM_ID)
+                    .filter(|it| {
+                        search.is_empty()
+                            || it.name.to_lowercase().contains(&search)
+                            || it.id.to_string().contains(&search)
+                    })
+                    .take(60)
+                    .map(|it| (it.id, item_label(it)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        egui::ScrollArea::vertical()
+            .id_source(("obj_item", idx))
+            .max_height(120.0)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for (id, label) in &items {
+                    if ui.selectable_label(d.item_id == Some(*id), label).clicked() {
+                        d.item_id = Some(*id);
+                    }
+                }
+            });
+        ui.checkbox(&mut d.consume, "Take these items on turn-in");
+    }
+
     fn ui_reward_item(&mut self, ui: &mut egui::Ui) {
         egui::ComboBox::from_label("Category")
             .selected_text(self.reward_item_category.display())
@@ -708,6 +917,27 @@ impl QuestCreator {
                 self.objective_name().unwrap_or_default(),
                 self.reward_summary()
             ));
+            for d in self.extra_objectives.iter().filter(|d| d.is_ready()) {
+                let (v, name) = match d.kind {
+                    QuestType::Hunt => (
+                        "and kill",
+                        d.monster_id
+                            .and_then(|id| self.data.as_ref().and_then(|ds| ds.find_monster(id)))
+                            .map(|m| m.name.clone())
+                            .unwrap_or_default(),
+                    ),
+                    QuestType::Fetch => (
+                        "and bring",
+                        d.item_id
+                            .and_then(|id| {
+                                self.data.as_ref().and_then(|ds| ds.item_db.lookup(d.item_category, id))
+                            })
+                            .map(|it| it.name.clone())
+                            .unwrap_or_default(),
+                    ),
+                };
+                ui.label(egui::RichText::new(format!("{v} {}× {name}", d.count)).weak());
+            }
             let files = match &spec.kind {
                 QuestKind::Hunt { chain_into_existing: true, .. } => {
                     "LIST_Quest / LIST_QUESTITEM / STL + the monster's existing quest file"
@@ -736,7 +966,14 @@ impl QuestCreator {
 
         ui.add_space(6.0);
 
-        let can_create = !crate::verify::has_errors(&issues);
+        let unfinished = self.extra_objectives.iter().any(|d| !d.is_ready());
+        if unfinished {
+            ui.colored_label(
+                egui::Color32::from_rgb(220, 170, 60),
+                "⚠  Finish or remove the additional objective(s) above before creating.",
+            );
+        }
+        let can_create = !crate::verify::has_errors(&issues) && !unfinished;
         ui.horizontal(|ui| {
             let label = if self.editing.is_some() {
                 "💾  Save changes"
@@ -886,15 +1123,22 @@ impl QuestCreator {
                     let sn = q.quest_sn;
                     ui.label(format!("#{}  {}", sn, q.title));
                     let (ty, goal) = match &q.spec {
-                        Some(spec) => match &spec.kind {
-                            QuestKind::Hunt { monster_id, .. } => (
-                                "Hunt".to_string(),
-                                format!("kill {}× {}", spec.count, self.monster_name(*monster_id)),
-                            ),
-                            QuestKind::Fetch { item_name, .. } => {
-                                ("Fetch".to_string(), format!("bring {}× {}", spec.count, item_name))
+                        Some(spec) => {
+                            let (mut ty, mut goal) = match &spec.kind {
+                                QuestKind::Hunt { monster_id, .. } => (
+                                    "Hunt".to_string(),
+                                    format!("kill {}× {}", spec.count, self.monster_name(*monster_id)),
+                                ),
+                                QuestKind::Fetch { item_name, .. } => {
+                                    ("Fetch".to_string(), format!("bring {}× {}", spec.count, item_name))
+                                }
+                            };
+                            if !spec.extra_objectives.is_empty() {
+                                ty = "Multi".to_string();
+                                goal = format!("{goal}  (+{} more)", spec.extra_objectives.len());
                             }
-                        },
+                            (ty, goal)
+                        }
                         None => ("—".to_string(), "(older quest — delete only)".to_string()),
                     };
                     ui.label(ty);
@@ -1024,6 +1268,92 @@ impl QuestCreator {
         }
     }
 
+    fn ensure_icons(&mut self) {
+        if self.icons.is_none() {
+            if let Some(root) = self.root.clone() {
+                let store = crate::icons::IconStore::load(&root)
+                    .unwrap_or_else(|_| crate::icons::IconStore::empty(&root));
+                self.icons = Some(store);
+            }
+        }
+    }
+
+    /// Token-icon control: a preview of the current icon, a number field, and a
+    /// browsable grid of the item-icon atlas. Picking a cell sets the number.
+    fn ui_icon_picker(&mut self, ui: &mut egui::Ui) {
+        let current: Option<i32> = self.token_icon.trim().parse().ok();
+        ui.horizontal(|ui| {
+            ui.label("Token icon:");
+            if let Some(n) = current {
+                if let Some(tex) = self.icons.as_mut().and_then(|s| s.icon_texture(ui.ctx(), n)) {
+                    ui.add(egui::Image::new(&tex).fit_to_exact_size(egui::vec2(36.0, 36.0)));
+                }
+            }
+            ui.add(
+                egui::TextEdit::singleline(&mut self.token_icon)
+                    .desired_width(60.0)
+                    .hint_text("default"),
+            );
+            let label = if self.show_icon_grid {
+                "Close"
+            } else {
+                "🖼 Browse…"
+            };
+            if ui.button(label).clicked() {
+                self.show_icon_grid = !self.show_icon_grid;
+                if self.show_icon_grid {
+                    self.ensure_icons();
+                }
+            }
+        });
+
+        if !self.show_icon_grid {
+            return;
+        }
+        let count = self.icons.as_ref().map_or(0, |s| s.icon_count());
+        if count == 0 {
+            ui.weak("(no icons — couldn't load 3DDATA/CONTROL/RES/ITEM1.TSI)");
+            return;
+        }
+
+        let cols = 14usize;
+        let cell = 34.0_f32;
+        let rows = count.div_ceil(cols);
+        let mut clicked: Option<i32> = None;
+        egui::ScrollArea::vertical()
+            .max_height(280.0)
+            .auto_shrink([false, false])
+            .show_rows(ui, cell, rows, |ui, row_range| {
+                for row in row_range {
+                    ui.horizontal(|ui| {
+                        for c in 0..cols {
+                            let idx = row * cols + c;
+                            if idx >= count {
+                                break;
+                            }
+                            let size = egui::vec2(cell - 4.0, cell - 4.0);
+                            let tex =
+                                self.icons.as_mut().and_then(|s| s.icon_texture(ui.ctx(), idx as i32));
+                            let resp = match tex {
+                                Some(t) => ui.add(egui::ImageButton::new(
+                                    egui::Image::new(&t).fit_to_exact_size(size),
+                                )),
+                                None => ui.add_sized(size, egui::Button::new("")),
+                            };
+                            if resp.on_hover_text(format!("icon {idx}")).clicked() {
+                                clicked = Some(idx as i32);
+                            }
+                        }
+                    });
+                }
+            });
+
+        if let Some(n) = clicked {
+            self.token_icon = n.to_string();
+            self.show_icon_grid = false;
+        }
+    }
+
     fn monster_name(&self, id: i32) -> String {
         self.data
             .as_ref()
@@ -1035,6 +1365,7 @@ impl QuestCreator {
     /// Pre-fill the form from a saved spec (for editing).
     fn load_spec_into_form(&mut self, spec: &QuestSpec) {
         self.kill_count = spec.count;
+        self.repeatable = spec.one_time_switch.is_none();
         self.reward_exp = spec.reward_exp;
         self.reward_zuly = spec.reward_zuly;
         match spec.reward_item {
@@ -1057,6 +1388,41 @@ impl QuestCreator {
         self.complete_text = spec.complete_text.clone();
         self.auto_text = false; // keep the loaded text as-is
         self.text_basis = None;
+
+        // Rebuild the extra-objective drafts from the saved spec.
+        self.extra_objectives = spec
+            .extra_objectives
+            .iter()
+            .map(|o| match o {
+                Objective::Hunt {
+                    monster_id,
+                    count,
+                    token_name,
+                    ..
+                } => {
+                    let mut d = ObjectiveDraft::new(QuestType::Hunt);
+                    d.count = *count;
+                    d.monster_id = (*monster_id > 0).then_some(*monster_id);
+                    d.token_name = token_name.clone();
+                    d
+                }
+                Objective::Fetch {
+                    item_sn,
+                    count,
+                    consume,
+                    ..
+                } => {
+                    let mut d = ObjectiveDraft::new(QuestType::Fetch);
+                    d.count = *count;
+                    if let Some((cat, id)) = decode_item_sn(*item_sn) {
+                        d.item_category = cat;
+                        d.item_id = Some(id);
+                    }
+                    d.consume = *consume;
+                    d
+                }
+            })
+            .collect();
         match &spec.kind {
             QuestKind::Hunt {
                 monster_id,
@@ -1198,6 +1564,56 @@ impl QuestCreator {
                 }
             }
         };
+        // Extra objectives. Each ready Hunt draft gets the next free token SN
+        // (offset 1+ when the primary is also a hunt, since it took offset 0).
+        let mut hunt_offset = if self.quest_type == QuestType::Hunt { 1 } else { 0 };
+        let extra_objectives: Vec<Objective> = self
+            .extra_objectives
+            .iter()
+            .filter(|d| d.is_ready())
+            .filter_map(|d| match d.kind {
+                QuestType::Hunt => {
+                    let monster_id = d.monster_id?;
+                    let free = ds
+                        .find_monster(monster_id)
+                        .map(|m| m.dead_event_is_free())
+                        .unwrap_or(true);
+                    let token_item_sn = ds.token_item_sn_at(hunt_offset);
+                    hunt_offset += 1;
+                    let name = ds
+                        .find_monster(monster_id)
+                        .map(|m| m.name.clone())
+                        .unwrap_or_default();
+                    Some(Objective::Hunt {
+                        monster_id,
+                        count: d.count,
+                        token_item_sn,
+                        token_name: if d.token_name.trim().is_empty() {
+                            format!("{name} Mark")
+                        } else {
+                            d.token_name.clone()
+                        },
+                        token_desc: format!("Proof of a defeated {name}."),
+                        token_icon: None,
+                        chain_into_existing: !free,
+                    })
+                }
+                QuestType::Fetch => {
+                    let id = d.item_id?;
+                    Some(Objective::Fetch {
+                        item_sn: crate::data::encode_item_no(d.item_category, id),
+                        item_name: ds
+                            .item_db
+                            .lookup(d.item_category, id)
+                            .map(|it| it.name.clone())
+                            .unwrap_or_default(),
+                        count: d.count,
+                        consume: d.consume,
+                    })
+                }
+            })
+            .collect();
+
         Some(QuestSpec {
             quest_sn: ds.next_free_quest_sn(),
             kind,
@@ -1205,6 +1621,10 @@ impl QuestCreator {
             reward_exp: self.reward_exp,
             reward_zuly: self.reward_zuly,
             reward_item: self.reward_item_sn(),
+            // Allocated at create time (scan) when `repeatable` is off; the preview
+            // just needs to know it's one-time, which `!repeatable` conveys.
+            one_time_switch: if self.repeatable { None } else { Some(-1) },
+            extra_objectives,
             title: self.title.clone(),
             start_text: self.start_text.clone(),
             progress_text: self.progress_text.clone(),
@@ -1233,10 +1653,22 @@ impl QuestCreator {
             self.view = View::Create;
         }
 
-        let Some(spec) = self.build_spec() else {
+        let Some(mut spec) = self.build_spec() else {
             self.error = Some("pick a monster / item first".into());
             return;
         };
+        // One-time: allocate a real free character switch (build_spec only marks it).
+        if self.repeatable {
+            spec.one_time_switch = None;
+        } else {
+            match crate::write::next_free_switch(&root) {
+                Ok(s) => spec.one_time_switch = Some(s),
+                Err(e) => {
+                    self.error = Some(format!("one-time switch allocation failed: {e:#}"));
+                    return;
+                }
+            }
+        }
         let gen = generate(&spec);
         let dry = self.dry_run && editing.is_none();
         match apply_quest(&root, &spec, &gen, dry) {

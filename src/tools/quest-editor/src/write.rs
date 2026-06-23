@@ -22,7 +22,7 @@ use roselib::files::{STB, STL};
 use roselib::io::RoseFile;
 
 use crate::data::resolve_stb_dir;
-use crate::gen::{GeneratedQuest, QuestKind, QuestSpec};
+use crate::gen::{GeneratedQuest, QuestSpec};
 
 // roselib column indices (game col + 1; root column is index 0).
 const QUEST_COL_NAME: usize = 1;
@@ -169,139 +169,149 @@ pub fn apply_quest(
         stl.language_tables.len()
     ));
 
-    // --- Hunt-specific: token quest-item + (col-41 merge OR host-QSD chain) +
-    //     token STL. Held as Options so the commit only writes what changed. ---
+    // --- Hunt-specific: a token quest-item + (col-41 merge OR host-QSD chain) +
+    //     token STL **per hunt objective** (primary + extras). The shared tables
+    //     (LIST_QUESTITEM / LIST_NPC / LIST_QUESTITEM_S.STL) are loaded once and
+    //     mutated across every objective; chained kill triggers accumulate in
+    //     `host_qsds` (keyed by path, so two objectives can share a host). Held as
+    //     Options so the commit only writes what actually changed. ---
     let mut hunt_qitem: Option<(PathBuf, STB)> = None;
     let mut hunt_npc: Option<(PathBuf, STB)> = None;
     let mut hunt_qitem_stl: Option<(PathBuf, STL)> = None;
-    let mut hunt_host_qsd: Option<(PathBuf, crate::qsd::QsdFile)> = None;
+    let mut host_qsds: Vec<(PathBuf, crate::qsd::QsdFile)> = Vec::new();
 
-    if let QuestKind::Hunt {
-        monster_id,
-        token_item_sn,
-        token_name,
-        token_desc,
-        token_icon,
-        chain_into_existing,
-    } = &spec.kind
-    {
-        let token_type = token_item_sn / 1000;
-        let token_id = (token_item_sn % 1000) as usize;
-        if token_type != QUEST_ITEM_TYPE {
-            bail!(
-                "token item SN {token_item_sn} is not a quest item (type {token_type} != {QUEST_ITEM_TYPE})"
-            );
-        }
-        if token_id > 999 {
-            bail!("token item id {token_id} exceeds 999 (type*1000+id encoding limit)");
-        }
-
+    if !gen.hunts.is_empty() {
         let qitem_path = file_ci(&stb_dir, "LIST_QUESTITEM.STB")?;
         let npc_path = file_ci(&stb_dir, "LIST_NPC.STB")?;
         let qitem_stl_path = file_ci(&stb_dir, "LIST_QUESTITEM_S.STL")?;
         let mut qitem = load_stb(&qitem_path)?;
         let mut npc = load_stb(&npc_path)?;
         let mut qitem_stl = load_stl(&qitem_stl_path)?;
-        let token_stl_key = format!("QITEM_{}", spec.quest_sn);
+        let mut npc_changed = false;
 
-        // Hunt validation.
-        if token_id >= qitem.data.len() {
-            bail!(
-                "token item id {token_id} is beyond LIST_QUESTITEM ({} rows); no free placeholder",
-                qitem.data.len()
-            );
-        }
-        if !cell(&qitem.data[token_id], QITEM_COL_NAME).is_empty() {
-            bail!(
-                "token item row {token_id} is already in use (\"{}\")",
-                cell(&qitem.data[token_id], QITEM_COL_NAME)
-            );
-        }
-        let kill_trigger = gen
-            .kill_trigger
-            .as_ref()
-            .ok_or_else(|| anyhow!("hunt quest has no kill trigger"))?;
-        let monster_row = npc
-            .data
-            .iter()
-            .position(|r| r.first().and_then(|s| s.trim().parse::<i32>().ok()) == Some(*monster_id))
-            .ok_or_else(|| anyhow!("monster {monster_id} not found in LIST_NPC"))?;
-        let existing_de = cell(&npc.data[monster_row], NPC_COL_DEAD_EVENT)
-            .trim()
-            .to_string();
-        if !chain_into_existing && !existing_de.is_empty() {
-            bail!(
-                "monster {monster_id} already has a dead-event trigger (\"{existing_de}\"); \
-                 enable chaining to add to it (ownership rule)"
-            );
-        }
-        if *chain_into_existing && existing_de.is_empty() {
-            bail!("monster {monster_id} has no existing trigger to chain onto");
-        }
-        if qitem_stl.keys.iter().any(|k| k.name == token_stl_key) {
-            bail!("quest-item STL key already exists: {token_stl_key}");
-        }
+        for (idx, h) in gen.hunts.iter().enumerate() {
+            let token_type = h.token_item_sn / 1000;
+            let token_id = (h.token_item_sn % 1000) as usize;
+            if token_type != QUEST_ITEM_TYPE {
+                bail!(
+                    "token item SN {} is not a quest item (type {token_type} != {QUEST_ITEM_TYPE})",
+                    h.token_item_sn
+                );
+            }
+            if token_id > 999 {
+                bail!("token item id {token_id} exceeds 999 (type*1000+id encoding limit)");
+            }
+            if token_id >= qitem.data.len() {
+                bail!(
+                    "token item id {token_id} is beyond LIST_QUESTITEM ({} rows); no free placeholder",
+                    qitem.data.len()
+                );
+            }
+            // Checks the *working* table, so a duplicate token id across this
+            // quest's objectives is caught here too.
+            if !cell(&qitem.data[token_id], QITEM_COL_NAME).is_empty() {
+                bail!(
+                    "token item row {token_id} is already in use (\"{}\")",
+                    cell(&qitem.data[token_id], QITEM_COL_NAME)
+                );
+            }
+            let token_stl_key = format!("QITEM_{}_{idx}", spec.quest_sn);
+            if qitem_stl.keys.iter().any(|k| k.name == token_stl_key) {
+                bail!("quest-item STL key already exists: {token_stl_key}");
+            }
 
-        // 5) token row.
-        let mut token_row = template_row(&qitem, |r| {
-            !cell(r, QITEM_COL_NAME).trim().is_empty() && cell_is_int(r, QITEM_COL_TYPE)
-        })
-        .context("no quest-item template row to clone")?;
-        set_cell(&mut token_row, 0, "");
-        set_cell(&mut token_row, QITEM_COL_NAME, token_name);
-        set_cell(&mut token_row, QITEM_COL_BELONGING_QUEST, &spec.quest_sn.to_string());
-        set_cell(&mut token_row, QITEM_COL_STL_LINK, &token_stl_key);
-        if let Some(icon) = token_icon {
-            set_cell(&mut token_row, QITEM_COL_ICON, &icon.to_string());
-        }
-        qitem.data[token_id] = token_row;
-        changes.push(format!(
-            "SET LIST_QUESTITEM row {token_id} = token \"{token_name}\" (SN {token_item_sn})"
-        ));
+            let monster_row = npc
+                .data
+                .iter()
+                .position(|r| r.first().and_then(|s| s.trim().parse::<i32>().ok()) == Some(h.monster_id))
+                .ok_or_else(|| anyhow!("monster {} not found in LIST_NPC", h.monster_id))?;
+            let existing_de = cell(&npc.data[monster_row], NPC_COL_DEAD_EVENT).trim().to_string();
+            if !h.chain_into_existing && !existing_de.is_empty() {
+                bail!(
+                    "monster {} already has a dead-event trigger (\"{existing_de}\"); \
+                     enable chaining to add to it (ownership rule)",
+                    h.monster_id
+                );
+            }
+            if h.chain_into_existing && existing_de.is_empty() {
+                bail!("monster {} has no existing trigger to chain onto", h.monster_id);
+            }
 
-        // 6) Wire the kill trigger: claim col-41 (free monster) or splice into
-        //    the monster's existing dead-event chain (chaining).
-        if *chain_into_existing {
-            let mut our_kill = gen
-                .host_kill_trigger
-                .clone()
-                .ok_or_else(|| anyhow!("chaining requested but no kill trigger was generated"))?;
-            let (host_path, mut host_qsd, pi, ti) = find_host_qsd(&questdata_dir, &existing_de)?;
-            // Our trigger inherits the entry's original `check_next` (so the rest
-            // of the chain is preserved), and the entry now chains to ours.
-            our_kill.check_next = host_qsd.patterns[pi].triggers[ti].check_next;
-            host_qsd.patterns[pi].triggers[ti].check_next = 1;
-            host_qsd.patterns[pi].triggers.insert(ti + 1, our_kill);
+            // token row.
+            let mut token_row = template_row(&qitem, |r| {
+                !cell(r, QITEM_COL_NAME).trim().is_empty() && cell_is_int(r, QITEM_COL_TYPE)
+            })
+            .context("no quest-item template row to clone")?;
+            set_cell(&mut token_row, 0, "");
+            set_cell(&mut token_row, QITEM_COL_NAME, &h.token_name);
+            set_cell(&mut token_row, QITEM_COL_BELONGING_QUEST, &spec.quest_sn.to_string());
+            set_cell(&mut token_row, QITEM_COL_STL_LINK, &token_stl_key);
+            if let Some(icon) = h.token_icon {
+                set_cell(&mut token_row, QITEM_COL_ICON, &icon.to_string());
+            }
+            qitem.data[token_id] = token_row;
             changes.push(format!(
-                "CHAIN kill trigger \"{kill_trigger}\" into {} after \"{existing_de}\"",
-                host_path.file_name().and_then(|s| s.to_str()).unwrap_or("?")
+                "SET LIST_QUESTITEM row {token_id} = token \"{}\" (SN {})",
+                h.token_name, h.token_item_sn
             ));
-            hunt_host_qsd = Some((host_path, host_qsd));
-        } else {
-            set_cell(&mut npc.data[monster_row], NPC_COL_DEAD_EVENT, kill_trigger);
-            changes.push(format!(
-                "MERGE LIST_NPC row {monster_row} (npc {monster_id}) col-41 = \"{kill_trigger}\""
-            ));
-            hunt_npc = Some((npc_path, npc));
-        }
 
-        // 7) token STL.
-        qitem_stl.keys.push(StringTableKey {
-            id: *token_item_sn as u32,
-            name: token_stl_key.clone(),
-        });
-        for lt in &mut qitem_stl.language_tables {
-            lt.rows.push(StringTableRow::ItemRow(ItemRowData {
-                text: token_name.clone(),
-                description: token_desc.clone(),
-            }));
+            // Wire the kill trigger: claim col-41 (free monster) or splice into
+            // the monster's existing dead-event chain (chaining).
+            if h.chain_into_existing {
+                let mut our_kill = h
+                    .host_kill_trigger
+                    .clone()
+                    .ok_or_else(|| anyhow!("chaining requested but no kill trigger was generated"))?;
+                // Resolve the host file (path) once, then operate on a single
+                // working copy per path so multiple objectives can chain into it.
+                let (host_path, _, _, _) = find_host_qsd(&questdata_dir, &existing_de)?;
+                if !host_qsds.iter().any(|(p, _)| p == &host_path) {
+                    let q = crate::qsd::QsdFile::read_file(&host_path)
+                        .map_err(|e| anyhow!("reading host QSD {}: {e}", host_path.display()))?;
+                    host_qsds.push((host_path.clone(), q));
+                }
+                let host = &mut host_qsds.iter_mut().find(|(p, _)| p == &host_path).unwrap().1;
+                let (pi, ti) = find_trigger_in(host, existing_de.as_bytes())
+                    .ok_or_else(|| anyhow!("host trigger \"{existing_de}\" vanished"))?;
+                our_kill.check_next = host.patterns[pi].triggers[ti].check_next;
+                host.patterns[pi].triggers[ti].check_next = 1;
+                host.patterns[pi].triggers.insert(ti + 1, our_kill);
+                changes.push(format!(
+                    "CHAIN kill trigger \"{}\" into {} after \"{existing_de}\"",
+                    h.kill_trigger,
+                    host_path.file_name().and_then(|s| s.to_str()).unwrap_or("?")
+                ));
+            } else {
+                set_cell(&mut npc.data[monster_row], NPC_COL_DEAD_EVENT, &h.kill_trigger);
+                npc_changed = true;
+                changes.push(format!(
+                    "MERGE LIST_NPC row {monster_row} (npc {}) col-41 = \"{}\"",
+                    h.monster_id, h.kill_trigger
+                ));
+            }
+
+            // token STL.
+            qitem_stl.keys.push(StringTableKey {
+                id: h.token_item_sn as u32,
+                name: token_stl_key.clone(),
+            });
+            for lt in &mut qitem_stl.language_tables {
+                lt.rows.push(StringTableRow::ItemRow(ItemRowData {
+                    text: h.token_name.clone(),
+                    description: h.token_desc.clone(),
+                }));
+            }
+            changes.push(format!(
+                "APPEND LIST_QUESTITEM_S.STL key \"{token_stl_key}\" -> \"{}\"",
+                h.token_name
+            ));
         }
-        changes.push(format!(
-            "APPEND LIST_QUESTITEM_S.STL key \"{token_stl_key}\" -> \"{token_name}\""
-        ));
 
         hunt_qitem = Some((qitem_path, qitem));
         hunt_qitem_stl = Some((qitem_stl_path, qitem_stl));
+        if npc_changed {
+            hunt_npc = Some((npc_path, npc));
+        }
     }
 
     if dry_run {
@@ -325,7 +335,7 @@ pub fn apply_quest(
     if let Some((p, _)) = &hunt_qitem_stl {
         to_backup.push(p);
     }
-    if let Some((p, _)) = &hunt_host_qsd {
+    for (p, _) in &host_qsds {
         to_backup.push(p);
     }
     for p in to_backup {
@@ -349,7 +359,7 @@ pub fn apply_quest(
     if let Some((p, mut s)) = hunt_qitem_stl {
         write_stl(&mut s, &p)?;
     }
-    if let Some((p, host)) = hunt_host_qsd {
+    for (p, host) in host_qsds {
         host.write_file(&p)
             .with_context(|| format!("writing host QSD {}", p.display()))?;
     }
@@ -385,7 +395,6 @@ pub fn delete_quest(root: &Path, quest_sn: i32, dry_run: bool) -> Result<WriteRe
 
     let qsd_name = format!("QX-{quest_sn}.QSD");
     let qsd_file = questdata_dir.join(&qsd_name);
-    let kill_trigger = format!("{quest_sn}-2");
 
     // Guard: only editor-created quests (a LIST_QUESTDATA row points at our QSD,
     // or the file exists).
@@ -413,46 +422,42 @@ pub fn delete_quest(root: &Path, quest_sn: i32, dry_run: bool) -> Result<WriteRe
         changes.push(format!("REMOVE LIST_QUESTDATA row -> {qsd_name}"));
     }
 
-    // 3) Hunt cleanup: token row (reclaims the id) + monster un-wiring.
+    // 3) Hunt cleanup: blank EVERY token row this quest owns (a quest can have
+    //    several, one per hunt objective), then un-wire every kill trigger.
     let qitem_path = file_ci(&stb_dir, "LIST_QUESTITEM.STB")?;
     let mut qitem = load_stb(&qitem_path)?;
     let mut qitem_changed = false;
-    if let Some(t) = qitem.data.iter().position(|r| {
-        cell(r, QITEM_COL_BELONGING_QUEST).trim().parse::<i32>().ok() == Some(quest_sn)
-    }) {
+    let token_rows: Vec<usize> = qitem
+        .data
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| {
+            cell(r, QITEM_COL_BELONGING_QUEST).trim().parse::<i32>().ok() == Some(quest_sn)
+        })
+        .map(|(i, _)| i)
+        .collect();
+    for t in token_rows {
         qitem.data[t] = empty_row(qitem.cols());
         qitem_changed = true;
         changes.push(format!("BLANK LIST_QUESTITEM row {t} (token)"));
     }
 
-    // Un-wire the monster: either we claimed its col-41, or we chained into a host.
+    // Un-wire every kill trigger named `<sn>-<n>` — both the ones we claimed on a
+    // monster's col-41 and the ones we chained into another quest's host QSD. The
+    // quest's own QX-<sn>.QSD is removed wholesale, so its triggers need no
+    // explicit un-splicing (skip it in the host scan).
     let npc_path = file_ci(&stb_dir, "LIST_NPC.STB")?;
     let mut npc = load_stb(&npc_path)?;
     let mut npc_changed = false;
-    let mut host_qsd_edit: Option<(PathBuf, crate::qsd::QsdFile)> = None;
-    if let Some(mrow) = npc
-        .data
-        .iter()
-        .position(|r| cell(r, NPC_COL_DEAD_EVENT).trim() == kill_trigger.as_str())
-    {
-        // Claimed: the kill trigger lived in our own (about-to-be-removed) QSD.
-        set_cell(&mut npc.data[mrow], NPC_COL_DEAD_EVENT, "");
-        npc_changed = true;
-        changes.push(format!("CLEAR LIST_NPC row {mrow} col-41 (was \"{kill_trigger}\")"));
-    } else if let Ok((host_path, mut host, pi, ti)) = find_host_qsd(&questdata_dir, &kill_trigger) {
-        // Chained: remove our trigger and hand its `check_next` back to the
-        // predecessor (the exact inverse of the insertion in apply_quest).
-        if ti > 0 {
-            let cn = host.patterns[pi].triggers[ti].check_next;
-            host.patterns[pi].triggers[ti - 1].check_next = cn;
+    for i in 0..npc.data.len() {
+        let de = cell(&npc.data[i], NPC_COL_DEAD_EVENT).trim().to_string();
+        if trigger_belongs_to_quest(quest_sn, &de) {
+            set_cell(&mut npc.data[i], NPC_COL_DEAD_EVENT, "");
+            npc_changed = true;
+            changes.push(format!("CLEAR LIST_NPC row {i} col-41 (was \"{de}\")"));
         }
-        host.patterns[pi].triggers.remove(ti);
-        changes.push(format!(
-            "UNCHAIN \"{kill_trigger}\" from {}",
-            host_path.file_name().and_then(|s| s.to_str()).unwrap_or("?")
-        ));
-        host_qsd_edit = Some((host_path, host));
     }
+    let host_qsd_edits = unchain_quest_kill_triggers(&questdata_dir, &qsd_name, quest_sn, &mut changes)?;
 
     let manifest = crate::manifest::manifest_path(root, quest_sn)
         .ok()
@@ -521,7 +526,7 @@ pub fn delete_quest(root: &Path, quest_sn: i32, dry_run: bool) -> Result<WriteRe
     if npc_changed {
         to_backup.push(npc_path.clone());
     }
-    if let Some((p, _)) = &host_qsd_edit {
+    for (p, _) in &host_qsd_edits {
         to_backup.push(p.clone());
     }
     if qsd_file.exists() {
@@ -541,7 +546,7 @@ pub fn delete_quest(root: &Path, quest_sn: i32, dry_run: bool) -> Result<WriteRe
     if npc_changed {
         write_stb(&mut npc, &npc_path)?;
     }
-    if let Some((p, host)) = host_qsd_edit {
+    for (p, host) in host_qsd_edits {
         host.write_file(&p)
             .with_context(|| format!("writing host QSD {}", p.display()))?;
     }
@@ -678,20 +683,32 @@ pub fn reconstruct_spec(root: &Path, quest_sn: i32) -> Result<crate::gen::QuestS
         .find(|t| t.rewards.iter().any(|e| e.etype == 0 && rd_u8(&e.payload, 4) == 0))
         .ok_or_else(|| anyhow!("no complete trigger in {}", qsd_file.display()))?;
 
-    // Count + the checked item (token for Hunt, the item for Fetch) from COND_004.
-    let cond4 = complete
+    // One-time iff a COND_014 switch guard is present (on the register trigger).
+    let one_time_switch = qsd
+        .patterns
+        .iter()
+        .flat_map(|p| p.triggers.iter())
+        .flat_map(|t| t.conditions.iter())
+        .find(|e| e.etype == 14 && e.payload.len() >= 2)
+        .map(|e| i16::from_le_bytes([e.payload[0], e.payload[1]]) as i32);
+
+    // One COND_004 per objective, in trigger order: [primary, extra, extra, …].
+    let cond4s: Vec<(i32, i32)> = complete
         .conditions
         .iter()
-        .find(|e| e.etype == 4)
+        .filter(|e| e.etype == 4)
+        .map(|e| (rd_i32(&e.payload, 4), rd_i32(&e.payload, 12)))
+        .collect();
+    let (primary_item_sn, count) = *cond4s
+        .first()
         .ok_or_else(|| anyhow!("no item-count condition in complete trigger"))?;
-    let checked_item_sn = rd_i32(&cond4.payload, 4);
-    let count = rd_i32(&cond4.payload, 12);
 
-    // Rewards (REWD_005 exp/zuly, REWD_001 give = reward item / op-0 = consume).
+    // Rewards: REWD_005 exp/zuly; REWD_001 op-1 = bonus reward item, op-0 = a
+    // consumed fetch item (there can be several — collect every consumed SN).
     let mut reward_exp = 0;
     let mut reward_zuly = 0;
     let mut reward_item = None;
-    let mut consume = false;
+    let mut consumed: BTreeSet<i32> = BTreeSet::new();
     for e in &complete.rewards {
         match e.etype {
             5 => match rd_u8(&e.payload, 0) {
@@ -701,36 +718,88 @@ pub fn reconstruct_spec(root: &Path, quest_sn: i32) -> Result<crate::gen::QuestS
             },
             1 => match rd_u8(&e.payload, 4) {
                 1 => reward_item = Some((rd_i32(&e.payload, 0), rd_i16(&e.payload, 6))),
-                0 => consume = true,
+                0 => {
+                    consumed.insert(rd_i32(&e.payload, 0));
+                }
                 _ => {}
             },
             _ => {}
         }
     }
 
-    // Hunt iff a token quest-item belongs to this quest.
+    // This quest's token items (one per hunt objective); a checked item that's a
+    // token => Hunt, otherwise => Fetch.
     let qitem = load_stb(&file_ci(&stb_dir, "LIST_QUESTITEM.STB")?)?;
-    let token_row = qitem.data.iter().find(|r| {
-        cell(r, QITEM_COL_BELONGING_QUEST).trim().parse::<i32>().ok() == Some(quest_sn)
-    });
+    let token_sns: BTreeSet<i32> = qitem
+        .data
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| {
+            cell(r, QITEM_COL_BELONGING_QUEST).trim().parse::<i32>().ok() == Some(quest_sn)
+        })
+        .map(|(i, _)| QUEST_ITEM_TYPE * 1000 + i as i32)
+        .collect();
 
-    let kind = if let Some(trow) = token_row {
+    // Resolve a hunt token's (monster, name, desc, icon) from its row (the token
+    // id is the row index) + its kill-trigger's monster.
+    let make_hunt = |token_sn: i32| -> (i32, String, String, Option<i32>) {
+        match qitem.data.get((token_sn % 1000) as usize) {
+            Some(row) => (
+                monster_for_token(&stb_dir, &questdata_dir, quest_sn, token_sn).unwrap_or(0),
+                cell(row, QITEM_COL_NAME).to_string(),
+                stl_item_desc(&stb_dir, "LIST_QUESTITEM_S.STL", cell(row, QITEM_COL_STL_LINK))
+                    .unwrap_or_default(),
+                cell(row, QITEM_COL_ICON).trim().parse::<i32>().ok(),
+            ),
+            None => (0, String::new(), String::new(), None),
+        }
+    };
+
+    let kind = if token_sns.contains(&primary_item_sn) {
+        let (monster_id, token_name, token_desc, token_icon) = make_hunt(primary_item_sn);
         QuestKind::Hunt {
-            monster_id: monster_for_kill_trigger(&stb_dir, &questdata_dir, quest_sn).unwrap_or(0),
-            token_item_sn: checked_item_sn,
-            token_name: cell(trow, QITEM_COL_NAME).to_string(),
-            token_desc: stl_item_desc(&stb_dir, "LIST_QUESTITEM_S.STL", &format!("QITEM_{quest_sn}"))
-                .unwrap_or_default(),
-            token_icon: cell(trow, QITEM_COL_ICON).trim().parse::<i32>().ok(),
+            monster_id,
+            token_item_sn: primary_item_sn,
+            token_name,
+            token_desc,
+            token_icon,
             chain_into_existing: false, // recomputed from the monster on save
         }
     } else {
         QuestKind::Fetch {
-            item_sn: checked_item_sn,
+            item_sn: primary_item_sn,
             item_name: String::new(), // the UI re-derives this from the item id
-            consume,
+            consume: consumed.contains(&primary_item_sn),
         }
     };
+
+    // Extra objectives = the remaining COND_004s (best-effort; manifest-backed
+    // quests reconstruct perfectly, this only runs for manifest-less ones).
+    let extra_objectives: Vec<crate::gen::Objective> = cond4s
+        .iter()
+        .skip(1)
+        .map(|&(item_sn, cnt)| {
+            if token_sns.contains(&item_sn) {
+                let (monster_id, token_name, token_desc, token_icon) = make_hunt(item_sn);
+                crate::gen::Objective::Hunt {
+                    monster_id,
+                    count: cnt,
+                    token_item_sn: item_sn,
+                    token_name,
+                    token_desc,
+                    token_icon,
+                    chain_into_existing: false,
+                }
+            } else {
+                crate::gen::Objective::Fetch {
+                    item_sn,
+                    item_name: String::new(),
+                    count: cnt,
+                    consume: consumed.contains(&item_sn),
+                }
+            }
+        })
+        .collect();
 
     let (title, start_text, progress_text, complete_text) =
         stl_quest_texts(&stb_dir, quest_sn).unwrap_or_else(|_| {
@@ -744,6 +813,8 @@ pub fn reconstruct_spec(root: &Path, quest_sn: i32) -> Result<crate::gen::QuestS
         reward_exp,
         reward_zuly,
         reward_item,
+        one_time_switch,
+        extra_objectives,
         title,
         start_text,
         progress_text,
@@ -751,10 +822,61 @@ pub fn reconstruct_spec(root: &Path, quest_sn: i32) -> Result<crate::gen::QuestS
     })
 }
 
-/// The monster whose dead event fires `<sn>-2`: either it claims col-41 directly,
-/// or our trigger was spliced into its chain (walk back to the chain head).
-fn monster_for_kill_trigger(stb_dir: &Path, questdata_dir: &Path, quest_sn: i32) -> Option<i32> {
-    let kill = format!("{quest_sn}-2");
+/// The monster that drives a hunt token: find the kill trigger that grants the
+/// token, then the NPC whose dead event fires it.
+fn monster_for_token(
+    stb_dir: &Path,
+    questdata_dir: &Path,
+    quest_sn: i32,
+    token_sn: i32,
+) -> Option<i32> {
+    let kill = kill_trigger_name_for_token(questdata_dir, quest_sn, token_sn)?;
+    monster_for_trigger_name(stb_dir, questdata_dir, &kill)
+}
+
+/// Scan every `.QSD` for the kill trigger of quest `quest_sn` that grants
+/// `token_sn` (a `REWD_001` op-1 give of that item), returning its name.
+fn kill_trigger_name_for_token(
+    questdata_dir: &Path,
+    quest_sn: i32,
+    token_sn: i32,
+) -> Option<String> {
+    for entry in fs::read_dir(questdata_dir).ok()?.flatten() {
+        let path = entry.path();
+        if !path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("qsd"))
+        {
+            continue;
+        }
+        let Ok(qsd) = crate::qsd::QsdFile::read_file(&path) else {
+            continue;
+        };
+        for pat in &qsd.patterns {
+            for t in &pat.triggers {
+                let name = t.name.strip_suffix(b"\0").unwrap_or(&t.name);
+                let Ok(name_str) = std::str::from_utf8(name) else {
+                    continue;
+                };
+                if !trigger_belongs_to_quest(quest_sn, name_str) {
+                    continue;
+                }
+                let gives = t.rewards.iter().any(|e| {
+                    e.etype == 1 && rd_u8(&e.payload, 4) == 1 && rd_i32(&e.payload, 0) == token_sn
+                });
+                if gives {
+                    return Some(name_str.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// The NPC whose dead event fires trigger `kill`: either it claims col-41
+/// directly, or the trigger was spliced into its chain (walk back to the head).
+fn monster_for_trigger_name(stb_dir: &Path, questdata_dir: &Path, kill: &str) -> Option<i32> {
     let npc = load_stb(&file_ci(stb_dir, "LIST_NPC.STB").ok()?).ok()?;
     let id_of = |r: &Vec<String>| r.first().and_then(|s| s.trim().parse::<i32>().ok());
 
@@ -762,7 +884,7 @@ fn monster_for_kill_trigger(stb_dir: &Path, questdata_dir: &Path, quest_sn: i32)
         return id_of(r);
     }
     // Chained: find our trigger, walk back over the check_next run to the head.
-    let (_, host, pi, ti) = find_host_qsd(questdata_dir, &kill).ok()?;
+    let (_, host, pi, ti) = find_host_qsd(questdata_dir, kill).ok()?;
     let triggers = &host.patterns[pi].triggers;
     let mut j = ti;
     while j > 0 && triggers[j - 1].check_next != 0 {
@@ -994,6 +1116,52 @@ pub fn wire_quest_giver(
     })
 }
 
+/// The set of persistent character quest-switch numbers already referenced by any
+/// `COND_014` / `REWD_015` across every `.QSD` (retail + ours).
+pub fn used_switches(root: &Path) -> Result<BTreeSet<i32>> {
+    let stb_dir = resolve_stb_dir(root)?;
+    let questdata_dir = stb_dir
+        .parent()
+        .ok_or_else(|| anyhow!("STB dir has no parent"))?
+        .join("QUESTDATA");
+    let mut used = BTreeSet::new();
+    for entry in fs::read_dir(&questdata_dir)
+        .with_context(|| format!("reading {}", questdata_dir.display()))?
+    {
+        let path = entry?.path();
+        let is_qsd = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("qsd"));
+        if !is_qsd {
+            continue;
+        }
+        let Ok(qsd) = crate::qsd::QsdFile::read_file(&path) else {
+            continue;
+        };
+        for pat in &qsd.patterns {
+            for t in &pat.triggers {
+                for e in t.conditions.iter().chain(t.rewards.iter()) {
+                    if (e.etype == 14 || e.etype == 15) && e.payload.len() >= 2 {
+                        used.insert(i16::from_le_bytes([e.payload[0], e.payload[1]]) as i32);
+                    }
+                }
+            }
+        }
+    }
+    Ok(used)
+}
+
+/// The first free character quest-switch (gap-fill within the 512 cap). Switches
+/// are only ever read/written via `COND_014` / `REWD_015`, so any number not
+/// referenced by a `.QSD` is genuinely free.
+pub fn next_free_switch(root: &Path) -> Result<i32> {
+    let used = used_switches(root)?;
+    (0..512)
+        .find(|s| !used.contains(s))
+        .ok_or_else(|| anyhow!("no free character quest-switch (all 512 in use)"))
+}
+
 // --- helpers ---------------------------------------------------------------
 
 fn cell(row: &[String], i: usize) -> &str {
@@ -1059,6 +1227,107 @@ fn find_host_qsd(
         "could not find the host trigger \"{entry_name}\" in any .QSD under {}",
         questdata_dir.display()
     )
+}
+
+/// Does `name` name a trigger of quest `sn` — i.e. `<sn>-<digits>`? Trigger names
+/// are globally `<questSN>-<n>`, so this uniquely identifies the owning quest.
+fn trigger_belongs_to_quest(sn: i32, name: &str) -> bool {
+    match name.trim().split_once('-') {
+        Some((head, tail)) => {
+            head.trim().parse::<i32>().ok() == Some(sn)
+                && !tail.is_empty()
+                && tail.bytes().all(|b| b.is_ascii_digit())
+        }
+        None => false,
+    }
+}
+
+/// Remove every chained kill trigger of quest `sn` from the host QSDs it was
+/// spliced into (all `.QSD` under `questdata_dir` except the quest's own
+/// `own_qsd_name`, which is deleted wholesale). Each removal hands the trigger's
+/// `check_next` back to its predecessor — the exact inverse of the splice in
+/// `apply_quest` — so the host chain is restored byte-for-byte, even when several
+/// objectives chained into the same host. Returns the edited (path, QSD) pairs.
+fn unchain_quest_kill_triggers(
+    questdata_dir: &Path,
+    own_qsd_name: &str,
+    sn: i32,
+    changes: &mut Vec<String>,
+) -> Result<Vec<(PathBuf, crate::qsd::QsdFile)>> {
+    let mut edits = Vec::new();
+    let rd = match fs::read_dir(questdata_dir) {
+        Ok(rd) => rd,
+        Err(_) => return Ok(edits),
+    };
+    for entry in rd {
+        let path = entry?.path();
+        let is_qsd = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("qsd"));
+        let is_own = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .is_some_and(|f| f.eq_ignore_ascii_case(own_qsd_name));
+        if !is_qsd || is_own {
+            continue;
+        }
+        let Ok(mut qsd) = crate::qsd::QsdFile::read_file(&path) else {
+            continue;
+        };
+        let mut changed = false;
+        // Re-scan after each removal (indices shift); each pass removes one of
+        // our triggers until none remain.
+        loop {
+            let mut found = None;
+            'scan: for (pi, pat) in qsd.patterns.iter().enumerate() {
+                for (ti, t) in pat.triggers.iter().enumerate() {
+                    let tn = t.name.strip_suffix(b"\0").unwrap_or(&t.name);
+                    if std::str::from_utf8(tn)
+                        .map(|n| trigger_belongs_to_quest(sn, n))
+                        .unwrap_or(false)
+                    {
+                        found = Some((pi, ti));
+                        break 'scan;
+                    }
+                }
+            }
+            let Some((pi, ti)) = found else { break };
+            if ti > 0 {
+                let cn = qsd.patterns[pi].triggers[ti].check_next;
+                qsd.patterns[pi].triggers[ti - 1].check_next = cn;
+            }
+            let removed = qsd.patterns[pi].triggers.remove(ti);
+            let nm = String::from_utf8_lossy(
+                removed.name.strip_suffix(b"\0").unwrap_or(&removed.name),
+            )
+            .into_owned();
+            changes.push(format!(
+                "UNCHAIN \"{nm}\" from {}",
+                path.file_name().and_then(|s| s.to_str()).unwrap_or("?")
+            ));
+            changed = true;
+        }
+        if changed {
+            edits.push((path, qsd));
+        }
+    }
+    Ok(edits)
+}
+
+/// Locate a trigger by name within an already-loaded QSD, returning
+/// (pattern index, trigger index). Names are stored NUL-terminated; the col-41 /
+/// chain form is not — compare against the stripped form.
+fn find_trigger_in(qsd: &crate::qsd::QsdFile, name: &[u8]) -> Option<(usize, usize)> {
+    for (pi, pat) in qsd.patterns.iter().enumerate() {
+        for (ti, t) in pat.triggers.iter().enumerate() {
+            let tn = t.name.strip_suffix(b"\0").unwrap_or(&t.name);
+            if tn == name {
+                return Some((pi, ti));
+            }
+        }
+    }
+    None
 }
 
 fn file_ci(dir: &Path, name: &str) -> Result<PathBuf> {
