@@ -28,6 +28,8 @@ struct ObjectiveDraft {
     monster_search: String,
     monster_id: Option<i32>,
     token_name: String,
+    token_icon: String,
+    open_icon_grid: bool,
     // Fetch
     item_category: ItemCategory,
     item_search: String,
@@ -43,6 +45,8 @@ impl ObjectiveDraft {
             monster_search: String::new(),
             monster_id: None,
             token_name: String::new(),
+            token_icon: String::new(),
+            open_icon_grid: false,
             item_category: ItemCategory::UseItem,
             item_search: String::new(),
             item_id: None,
@@ -702,8 +706,12 @@ impl QuestCreator {
             }
         });
 
-        // Take the drafts out so we can borrow `self.data` while editing them.
+        // Take the drafts out so we can borrow `self.data` / `self.icons` while
+        // editing them (disjoint field borrows bound to locals before the loop).
         let mut drafts = std::mem::take(&mut self.extra_objectives);
+        let data = self.data.as_ref();
+        let icons = &mut self.icons;
+        let root = self.root.as_deref();
         let mut remove: Option<usize> = None;
         for (i, d) in drafts.iter_mut().enumerate() {
             ui.add_space(4.0);
@@ -720,8 +728,8 @@ impl QuestCreator {
                     });
                 });
                 match d.kind {
-                    QuestType::Hunt => Self::ui_obj_monster(self.data.as_ref(), d, ui, i),
-                    QuestType::Fetch => Self::ui_obj_item(self.data.as_ref(), d, ui, i),
+                    QuestType::Hunt => Self::ui_obj_monster(data, d, ui, i, icons, root),
+                    QuestType::Fetch => Self::ui_obj_item(data, d, ui, i),
                 }
                 if !d.is_ready() {
                     ui.colored_label(
@@ -737,8 +745,15 @@ impl QuestCreator {
         self.extra_objectives = drafts;
     }
 
-    /// Compact monster picker for one extra objective.
-    fn ui_obj_monster(data: Option<&DataSet>, d: &mut ObjectiveDraft, ui: &mut egui::Ui, idx: usize) {
+    /// Compact monster picker + token-icon control for one extra objective.
+    fn ui_obj_monster(
+        data: Option<&DataSet>,
+        d: &mut ObjectiveDraft,
+        ui: &mut egui::Ui,
+        idx: usize,
+        icons: &mut Option<crate::icons::IconStore>,
+        root: Option<&Path>,
+    ) {
         ui.horizontal(|ui| {
             ui.label("Monster:");
             ui.text_edit_singleline(&mut d.monster_search);
@@ -778,6 +793,16 @@ impl QuestCreator {
                     }
                 }
             });
+        // Per-objective token icon (default = the cloned template's icon).
+        icon_picker_control(
+            icons,
+            root,
+            ui,
+            "Token icon:",
+            &mut d.token_icon,
+            &mut d.open_icon_grid,
+            ("obj_icon", idx),
+        );
     }
 
     /// Compact item picker for one extra objective.
@@ -1268,90 +1293,17 @@ impl QuestCreator {
         }
     }
 
-    fn ensure_icons(&mut self) {
-        if self.icons.is_none() {
-            if let Some(root) = self.root.clone() {
-                let store = crate::icons::IconStore::load(&root)
-                    .unwrap_or_else(|_| crate::icons::IconStore::empty(&root));
-                self.icons = Some(store);
-            }
-        }
-    }
-
-    /// Token-icon control: a preview of the current icon, a number field, and a
-    /// browsable grid of the item-icon atlas. Picking a cell sets the number.
+    /// Primary token-icon control (Advanced section).
     fn ui_icon_picker(&mut self, ui: &mut egui::Ui) {
-        let current: Option<i32> = self.token_icon.trim().parse().ok();
-        ui.horizontal(|ui| {
-            ui.label("Token icon:");
-            if let Some(n) = current {
-                if let Some(tex) = self.icons.as_mut().and_then(|s| s.icon_texture(ui.ctx(), n)) {
-                    ui.add(egui::Image::new(&tex).fit_to_exact_size(egui::vec2(36.0, 36.0)));
-                }
-            }
-            ui.add(
-                egui::TextEdit::singleline(&mut self.token_icon)
-                    .desired_width(60.0)
-                    .hint_text("default"),
-            );
-            let label = if self.show_icon_grid {
-                "Close"
-            } else {
-                "🖼 Browse…"
-            };
-            if ui.button(label).clicked() {
-                self.show_icon_grid = !self.show_icon_grid;
-                if self.show_icon_grid {
-                    self.ensure_icons();
-                }
-            }
-        });
-
-        if !self.show_icon_grid {
-            return;
-        }
-        let count = self.icons.as_ref().map_or(0, |s| s.icon_count());
-        if count == 0 {
-            ui.weak("(no icons — couldn't load 3DDATA/CONTROL/RES/ITEM1.TSI)");
-            return;
-        }
-
-        let cols = 14usize;
-        let cell = 34.0_f32;
-        let rows = count.div_ceil(cols);
-        let mut clicked: Option<i32> = None;
-        egui::ScrollArea::vertical()
-            .max_height(280.0)
-            .auto_shrink([false, false])
-            .show_rows(ui, cell, rows, |ui, row_range| {
-                for row in row_range {
-                    ui.horizontal(|ui| {
-                        for c in 0..cols {
-                            let idx = row * cols + c;
-                            if idx >= count {
-                                break;
-                            }
-                            let size = egui::vec2(cell - 4.0, cell - 4.0);
-                            let tex =
-                                self.icons.as_mut().and_then(|s| s.icon_texture(ui.ctx(), idx as i32));
-                            let resp = match tex {
-                                Some(t) => ui.add(egui::ImageButton::new(
-                                    egui::Image::new(&t).fit_to_exact_size(size),
-                                )),
-                                None => ui.add_sized(size, egui::Button::new("")),
-                            };
-                            if resp.on_hover_text(format!("icon {idx}")).clicked() {
-                                clicked = Some(idx as i32);
-                            }
-                        }
-                    });
-                }
-            });
-
-        if let Some(n) = clicked {
-            self.token_icon = n.to_string();
-            self.show_icon_grid = false;
-        }
+        icon_picker_control(
+            &mut self.icons,
+            self.root.as_deref(),
+            ui,
+            "Token icon:",
+            &mut self.token_icon,
+            &mut self.show_icon_grid,
+            "primary_icon",
+        );
     }
 
     fn monster_name(&self, id: i32) -> String {
@@ -1398,12 +1350,14 @@ impl QuestCreator {
                     monster_id,
                     count,
                     token_name,
+                    token_icon,
                     ..
                 } => {
                     let mut d = ObjectiveDraft::new(QuestType::Hunt);
                     d.count = *count;
                     d.monster_id = (*monster_id > 0).then_some(*monster_id);
                     d.token_name = token_name.clone();
+                    d.token_icon = token_icon.map(|i| i.to_string()).unwrap_or_default();
                     d
                 }
                 Objective::Fetch {
@@ -1594,7 +1548,7 @@ impl QuestCreator {
                             d.token_name.clone()
                         },
                         token_desc: format!("Proof of a defeated {name}."),
-                        token_icon: None,
+                        token_icon: d.token_icon.trim().parse::<i32>().ok(),
                         chain_into_existing: !free,
                     })
                 }
@@ -1751,6 +1705,93 @@ impl QuestCreator {
             }
         }
         self.text_basis = Some(basis);
+    }
+}
+
+/// A reusable token-icon control: a live preview of the current icon, a number
+/// field, and a togglable browsable grid over the item-icon atlas. Writes the
+/// chosen icon number into `value`. Shared by the primary picker and every extra
+/// hunt objective (so each token can have its own icon). `grid_id` must be unique
+/// per control so the open grids don't share scroll/egui state.
+fn icon_picker_control(
+    icons: &mut Option<crate::icons::IconStore>,
+    root: Option<&Path>,
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut String,
+    open: &mut bool,
+    grid_id: impl std::hash::Hash,
+) {
+    let current: Option<i32> = value.trim().parse().ok();
+    ui.horizontal(|ui| {
+        ui.label(label);
+        if let Some(n) = current {
+            if let Some(tex) = icons.as_mut().and_then(|s| s.icon_texture(ui.ctx(), n)) {
+                ui.add(egui::Image::new(&tex).fit_to_exact_size(egui::vec2(32.0, 32.0)));
+            }
+        }
+        ui.add(
+            egui::TextEdit::singleline(value)
+                .desired_width(56.0)
+                .hint_text("default"),
+        );
+        if ui.button(if *open { "Close" } else { "🖼 Browse…" }).clicked() {
+            *open = !*open;
+            if *open && icons.is_none() {
+                if let Some(r) = root {
+                    *icons = Some(
+                        crate::icons::IconStore::load(r)
+                            .unwrap_or_else(|_| crate::icons::IconStore::empty(r)),
+                    );
+                }
+            }
+        }
+    });
+
+    if !*open {
+        return;
+    }
+    let count = icons.as_ref().map_or(0, |s| s.icon_count());
+    if count == 0 {
+        ui.weak("(no icons — couldn't load 3DDATA/CONTROL/RES/ITEM1.TSI)");
+        return;
+    }
+
+    let cols = 14usize;
+    let cell = 34.0_f32;
+    let rows = count.div_ceil(cols);
+    let mut clicked: Option<i32> = None;
+    egui::ScrollArea::vertical()
+        .id_source(("icon_grid", grid_id))
+        .max_height(280.0)
+        .auto_shrink([false, false])
+        .show_rows(ui, cell, rows, |ui, row_range| {
+            for row in row_range {
+                ui.horizontal(|ui| {
+                    for c in 0..cols {
+                        let idx = row * cols + c;
+                        if idx >= count {
+                            break;
+                        }
+                        let size = egui::vec2(cell - 4.0, cell - 4.0);
+                        let tex = icons.as_mut().and_then(|s| s.icon_texture(ui.ctx(), idx as i32));
+                        let resp = match tex {
+                            Some(t) => ui.add(egui::ImageButton::new(
+                                egui::Image::new(&t).fit_to_exact_size(size),
+                            )),
+                            None => ui.add_sized(size, egui::Button::new("")),
+                        };
+                        if resp.on_hover_text(format!("icon {idx}")).clicked() {
+                            clicked = Some(idx as i32);
+                        }
+                    }
+                });
+            }
+        });
+
+    if let Some(n) = clicked {
+        *value = n.to_string();
+        *open = false;
     }
 }
 
