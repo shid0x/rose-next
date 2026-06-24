@@ -49,7 +49,10 @@ fn draw_button_bar(f: &mut Frame, area: Rect, app: &mut App) {
         (Action::Quit, "Quit", 9),
     ];
 
-    let mut constraints: Vec<Constraint> = buttons.iter().map(|(_, _, w)| Constraint::Length(*w)).collect();
+    let mut constraints: Vec<Constraint> = buttons
+        .iter()
+        .map(|(_, _, w)| Constraint::Length(*w))
+        .collect();
     constraints.push(Constraint::Min(0));
 
     let cols = Layout::default()
@@ -64,7 +67,9 @@ fn draw_button_bar(f: &mut Frame, area: Rect, app: &mut App) {
             .style(Style::default().fg(Color::White).bg(Color::DarkGray));
         let p = Paragraph::new(Line::from(vec![Span::styled(
             format!(" {} ", label),
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         )]))
         .alignment(ratatui::layout::Alignment::Center)
         .block(block);
@@ -79,7 +84,8 @@ fn draw_button_bar(f: &mut Frame, area: Rect, app: &mut App) {
 fn draw_title(f: &mut Frame, area: Rect, app: &App) {
     let total = app.entries.iter().filter(|e| !e.is_deleted).count();
     let title = format!(
-        " Rose VFS Browser — {} — {} files ",
+        " Rose VFS Browser — {} — {} — {} files ",
+        app.vfs.format_name(),
         app.vfs.idx_path.display(),
         total
     );
@@ -183,14 +189,8 @@ fn draw_info(f: &mut Frame, area: Rect, app: &App) {
 
     let lines: Vec<Line> = if let Some(row) = app.selected_row() {
         if let Some(entry) = app.selected_entry() {
-            let vfs_name = app
-                .vfs
-                .index
-                .file_systems
-                .get(entry.vfs_index)
-                .map(|v| v.filename.to_string_lossy().to_string())
-                .unwrap_or_default();
-            vec![
+            let vfs_name = app.vfs.vfs_file_name(entry.vfs_index);
+            let mut lines = vec![
                 info_line("Name", &row.name),
                 info_line("Path", &entry.path),
                 info_line("Size", &format!("{} bytes", entry.size)),
@@ -201,7 +201,11 @@ fn draw_info(f: &mut Frame, area: Rect, app: &App) {
                 info_line("Compressed", &yes_no(entry.is_compressed)),
                 info_line("Encrypted", &yes_no(entry.is_encrypted)),
                 info_line("Deleted", &yes_no(entry.is_deleted)),
-            ]
+            ];
+            if let Some(hash) = entry.file_hash {
+                lines.push(info_line("Hash", &format!("0x{:08X}", hash)));
+            }
+            lines
         } else if row.is_dir {
             let total = count_files_under(&app.entries, &row.full_path);
             let size_sum = sum_size_under(&app.entries, &row.full_path);
@@ -222,7 +226,9 @@ fn draw_info(f: &mut Frame, area: Rect, app: &App) {
         vec![Line::from("Empty")]
     };
 
-    let p = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+    let p = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
     f.render_widget(p, area);
 }
 
@@ -271,7 +277,9 @@ fn sum_size_under(entries: &[crate::vfs::VfsEntry], prefix: &str) -> i64 {
 
 fn draw_status(f: &mut Frame, area: Rect, app: &App) {
     let help = match app.mode {
-        Mode::Browse => " ↑↓ nav  Enter/→ expand  E file  D folder  X all  A add  U update  / filter  Q quit ",
+        Mode::Browse => {
+            " ↑↓ nav  Enter/→ expand  E file  D folder  X all  A add  U update  / filter  Q quit "
+        }
         Mode::Filter => " Type filter  Enter apply  Esc cancel ",
         Mode::Message => " Any key to dismiss ",
     };
@@ -308,8 +316,9 @@ fn draw_input_popup(f: &mut Frame, area: Rect, title: &str, input: &str, prompt:
         ])
         .split(inner);
 
-    let prompt_p =
-        Paragraph::new(prompt).wrap(Wrap { trim: true }).style(Style::default().fg(Color::Gray));
+    let prompt_p = Paragraph::new(prompt)
+        .wrap(Wrap { trim: true })
+        .style(Style::default().fg(Color::Gray));
     f.render_widget(prompt_p, rows[0]);
 
     let input_block = Block::default().borders(Borders::ALL);

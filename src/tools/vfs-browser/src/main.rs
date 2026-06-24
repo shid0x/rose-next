@@ -2,12 +2,12 @@ mod app;
 mod ui;
 mod vfs;
 
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
     MouseButton, MouseEvent, MouseEventKind,
@@ -20,7 +20,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use crate::app::{Action, App, Mode, ZoneKind};
-use crate::vfs::Vfs;
+use crate::vfs::{Vfs, VfsFormat, VfsOpenOptions};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -28,12 +28,41 @@ use crate::vfs::Vfs;
     about = "Browse and extract ROSE Online VFS (.idx / .vfs) archives"
 )]
 struct Cli {
+    /// Archive format to read. Auto uses TitanVFS when a sibling data.trf exists.
+    #[arg(long, value_enum, default_value_t = CliVfsFormat::Auto, global = true)]
+    format: CliVfsFormat,
+
+    /// Optional newline-separated VFS path list for resolving Titan hash entries.
+    #[arg(long, global = true)]
+    path_list: Option<PathBuf>,
+
+    /// Show unresolved Titan hash entries as @HASH/XXXXXXXX.bin.
+    #[arg(long, global = true)]
+    show_hashes: bool,
+
     /// Path to data.idx (defaults to ./data.idx)
     #[arg(default_value = "data.idx")]
     idx: PathBuf,
 
     #[command(subcommand)]
     command: Option<Command>,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum CliVfsFormat {
+    Auto,
+    Rose,
+    Titan,
+}
+
+impl From<CliVfsFormat> for VfsFormat {
+    fn from(value: CliVfsFormat) -> Self {
+        match value {
+            CliVfsFormat::Auto => VfsFormat::Auto,
+            CliVfsFormat::Rose => VfsFormat::Rose,
+            CliVfsFormat::Titan => VfsFormat::Titan,
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -86,25 +115,37 @@ fn main() -> Result<()> {
         return Err(anyhow!("idx file not found: {}", cli.idx.display()));
     }
 
+    let options = VfsOpenOptions {
+        format: cli.format.into(),
+        path_list: cli.path_list,
+        show_hashes: cli.show_hashes,
+    };
+
     match cli.command {
-        None => run_tui(&cli.idx),
-        Some(Command::List { filter }) => cmd_list(&cli.idx, filter.as_deref()),
-        Some(Command::Extract { vfs_path, output }) => cmd_extract(&cli.idx, &vfs_path, &output),
-        Some(Command::ExtractDir { prefix, output }) => {
-            cmd_extract_dir(&cli.idx, &prefix, &output)
+        None => run_tui(&cli.idx, options),
+        Some(Command::List { filter }) => cmd_list(&cli.idx, options, filter.as_deref()),
+        Some(Command::Extract { vfs_path, output }) => {
+            cmd_extract(&cli.idx, options, &vfs_path, &output)
         }
-        Some(Command::ExtractAll { output }) => cmd_extract_dir(&cli.idx, "", &output),
-        Some(Command::Add { source, vfs_path }) => cmd_add(&cli.idx, &source, &vfs_path),
-        Some(Command::Update { vfs_path, source }) => cmd_update(&cli.idx, &vfs_path, &source),
+        Some(Command::ExtractDir { prefix, output }) => {
+            cmd_extract_dir(&cli.idx, options, &prefix, &output)
+        }
+        Some(Command::ExtractAll { output }) => cmd_extract_dir(&cli.idx, options, "", &output),
+        Some(Command::Add { source, vfs_path }) => cmd_add(&cli.idx, options, &source, &vfs_path),
+        Some(Command::Update { vfs_path, source }) => {
+            cmd_update(&cli.idx, options, &vfs_path, &source)
+        }
     }
 }
 
 // ---------- CLI subcommands ----------
 
-fn cmd_list(idx: &Path, filter: Option<&str>) -> Result<()> {
-    let vfs = Vfs::open(idx)?;
+fn cmd_list(idx: &Path, options: VfsOpenOptions, filter: Option<&str>) -> Result<()> {
+    let vfs = Vfs::open_with_options(idx, options)?;
     let needle = filter.map(|s| s.to_ascii_uppercase());
     let mut count = 0usize;
+    let stdout = io::stdout();
+    let mut stdout = stdout.lock();
     for entry in vfs.entries() {
         if entry.is_deleted {
             continue;
@@ -114,25 +155,35 @@ fn cmd_list(idx: &Path, filter: Option<&str>) -> Result<()> {
                 continue;
             }
         }
-        println!("{:>10}  {}", entry.size, entry.path);
+        if let Err(e) = writeln!(stdout, "{:>10}  {}", entry.size, entry.path) {
+            if e.kind() == io::ErrorKind::BrokenPipe {
+                return Ok(());
+            }
+            return Err(e.into());
+        }
         count += 1;
     }
     eprintln!("{} file(s)", count);
     Ok(())
 }
 
-fn cmd_extract(idx: &Path, vfs_path: &str, output: &Path) -> Result<()> {
-    let vfs = Vfs::open(idx)?;
+fn cmd_extract(idx: &Path, options: VfsOpenOptions, vfs_path: &str, output: &Path) -> Result<()> {
+    let vfs = Vfs::open_with_options(idx, options)?;
     let entry = vfs
         .find(vfs_path)
         .ok_or_else(|| anyhow!("file not found in vfs: {}", vfs_path))?;
     vfs.extract_entry(&entry, output)?;
-    println!("Extracted {} ({} bytes) -> {}", entry.path, entry.size, output.display());
+    println!(
+        "Extracted {} ({} bytes) -> {}",
+        entry.path,
+        entry.size,
+        output.display()
+    );
     Ok(())
 }
 
-fn cmd_extract_dir(idx: &Path, prefix: &str, output: &Path) -> Result<()> {
-    let vfs = Vfs::open(idx)?;
+fn cmd_extract_dir(idx: &Path, options: VfsOpenOptions, prefix: &str, output: &Path) -> Result<()> {
+    let vfs = Vfs::open_with_options(idx, options)?;
     let count = vfs.extract_tree(prefix, output, |path, i, total| {
         if i % 50 == 0 || i == total {
             eprintln!("[{}/{}] {}", i, total, path);
@@ -142,21 +193,21 @@ fn cmd_extract_dir(idx: &Path, prefix: &str, output: &Path) -> Result<()> {
     Ok(())
 }
 
-fn cmd_add(idx: &Path, source: &Path, vfs_path: &str) -> Result<()> {
+fn cmd_add(idx: &Path, options: VfsOpenOptions, source: &Path, vfs_path: &str) -> Result<()> {
     if !source.exists() {
         return Err(anyhow!("source not found: {}", source.display()));
     }
-    let mut vfs = Vfs::open(idx)?;
+    let mut vfs = Vfs::open_with_options(idx, options)?;
     vfs.add_file(source, vfs_path)?;
     println!("Added '{}' -> '{}'", source.display(), vfs_path);
     Ok(())
 }
 
-fn cmd_update(idx: &Path, vfs_path: &str, source: &Path) -> Result<()> {
+fn cmd_update(idx: &Path, options: VfsOpenOptions, vfs_path: &str, source: &Path) -> Result<()> {
     if !source.exists() {
         return Err(anyhow!("source not found: {}", source.display()));
     }
-    let mut vfs = Vfs::open(idx)?;
+    let mut vfs = Vfs::open_with_options(idx, options)?;
     if vfs.find(vfs_path).is_none() {
         return Err(anyhow!("'{}' not found in vfs", vfs_path));
     }
@@ -167,8 +218,8 @@ fn cmd_update(idx: &Path, vfs_path: &str, source: &Path) -> Result<()> {
 
 // ---------- TUI ----------
 
-fn run_tui(idx: &Path) -> Result<()> {
-    let vfs = Vfs::open(idx)?;
+fn run_tui(idx: &Path, options: VfsOpenOptions) -> Result<()> {
+    let vfs = Vfs::open_with_options(idx, options)?;
     let mut app = App::new(vfs);
 
     enable_raw_mode().context("enable raw mode")?;
@@ -439,6 +490,12 @@ fn begin_extract_all(app: &mut App) {
 }
 
 fn begin_add(app: &mut App) {
+    if !app.vfs.is_writable() {
+        app.set_status("TitanVFS support is read-only");
+        app.mode = Mode::Message;
+        return;
+    }
+
     let row = match app.selected_row().cloned() {
         Some(r) => r,
         None => {
@@ -478,6 +535,12 @@ fn begin_add(app: &mut App) {
 }
 
 fn begin_update(app: &mut App) {
+    if !app.vfs.is_writable() {
+        app.set_status("TitanVFS support is read-only");
+        app.mode = Mode::Message;
+        return;
+    }
+
     let entry = match app.selected_entry().cloned() {
         Some(e) => e,
         None => {
