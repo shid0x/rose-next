@@ -260,6 +260,40 @@ item `13:129`. (Validate the id exists in the item DB when generating.)
 
 ## Status log
 
+### 2026-07-03 — "Two token icons" crash: root cause was a stale DELETED quest in the character's quest log
+
+Quest #5507 (two hunt objectives, each with a custom token icon) "crashed the
+client on accept and on opening the quest window". **The icons and the quest
+data were innocent** — every generated file (STB rows, STL keys, QSD triggers,
+.CON) checked out byte-perfect against the retail formats, and the deployed VFS
+matched `data/` exactly.
+
+**Real root cause:** the test character still had **quest 5503 in its saved
+quest log** (DB) — a quest deleted earlier with the tool. `delete_quest` blanks
+the `LIST_QUEST` row, so the client's
+`CStringManager::GetQuestStringData(5503)` did
+`std::string strKey = m_STB.get_cstr(5503, 4)` — `get_cstr` returns **nullptr**
+for a blank/out-of-range cell, and constructing a `std::string` from nullptr is
+an access violation (0xc0000005, reproduced + confirmed via Windows Event Log).
+Every UI path that enumerates the quest log hits it: `CQuestDlg::Show →
+UpdateQuestList → CQuestListItem → QUEST_NAME(5503)` (quest window open), and
+the same refresh on `Recv_gsv_QUEST_REPLY` (quest accept with the window open).
+It looked correlated with #5507 only because that was the first accept/window
+refresh after 5503's deletion.
+
+**Fixes:**
+- Client (`stringmanager.cpp` `GetQuestStringData`): read the STL key with the
+  null-safe `m_STB.value(iQuestNo, 4)` instead of `get_cstr` (also stops a
+  per-call leak). A stale quest now renders as a blank list entry the player
+  can select and **Give up** to clean their own log. Verified in-game: old exe
+  crashes on quest-window open with a stale quest, fixed exe shows the blank
+  row + quest 5507 fully intact (name, desc, both token icons).
+- `delete_quest` now appends a NOTE to the change report: characters that
+  already accepted the quest keep it in their log until they abandon it
+  in-game (or it's cleared in the DB).
+- UI: the primary token-icon picker moved from "Advanced (developer)" into
+  section 1 under the monster picker (same layout as extra-objective rows).
+
 ### 2026-06-23 — Tier 3: multiple objectives (mixed hunt + fetch)
 
 A quest can now require several things at once — any mix of kill/bring (e.g. "kill

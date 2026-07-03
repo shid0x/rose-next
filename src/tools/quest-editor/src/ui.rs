@@ -411,7 +411,13 @@ impl QuestCreator {
         };
         ui.columns(2, |cols| {
         self.section(&mut cols[0], "1", sec1_title, |app, ui| match app.quest_type {
-            QuestType::Hunt => app.ui_monster_list(ui),
+            QuestType::Hunt => {
+                app.ui_monster_list(ui);
+                // The token icon belongs next to the monster it drops from —
+                // same layout as the extra-objective rows.
+                ui.add_space(4.0);
+                app.ui_icon_picker(ui);
+            }
             QuestType::Fetch => app.ui_fetch_item(ui),
         });
 
@@ -549,7 +555,6 @@ impl QuestCreator {
                     &mut self.dry_run,
                     "Dry run — preview the file changes but write nothing",
                 );
-                self.ui_icon_picker(ui);
                 if let Some(ds) = &self.data {
                     ui.add_space(4.0);
                     ui.label(
@@ -1293,7 +1298,7 @@ impl QuestCreator {
         }
     }
 
-    /// Primary token-icon control (Advanced section).
+    /// Primary token-icon control (section 1, under the monster picker).
     fn ui_icon_picker(&mut self, ui: &mut egui::Ui) {
         icon_picker_control(
             &mut self.icons,

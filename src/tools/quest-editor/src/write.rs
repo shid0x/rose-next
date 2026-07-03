@@ -503,6 +503,14 @@ pub fn delete_quest(root: &Path, quest_sn: i32, dry_run: bool) -> Result<WriteRe
         changes.push(format!("DELETE {}", con_path.display()));
     }
 
+    // Deleting the quest blanks its LIST_QUEST row, but characters that already
+    // accepted it keep quest {sn} in their saved quest log (DB) — it will show
+    // as a blank entry in their quest window until they abandon it in-game.
+    changes.push(format!(
+        "NOTE: characters that already accepted quest {quest_sn} still have it in their \
+         quest log; they should abandon the blank entry in-game (or clear it in the DB)"
+    ));
+
     if dry_run {
         if qsd_file.exists() {
             changes.push(format!("DELETE {}", qsd_file.display()));

@@ -636,7 +636,10 @@ CStringManager::GetStatusEndMsg(int iStatusNo) {
 
 stQuestTypeTable*
 CStringManager::GetQuestStringData(int iQuestNo) {
-    const std::string& strKey = g_QuestList.m_STB.get_cstr(iQuestNo, 4);
+    // value() is null-safe for blank/out-of-range rows (a deleted quest can
+    // still sit in a character's quest log); get_cstr() returns nullptr there
+    // and constructing the std::string from it crashes.
+    const std::string& strKey = g_QuestList.m_STB.value(iQuestNo, 4);
     if (strKey.empty()) {
         return nullptr;
     }
