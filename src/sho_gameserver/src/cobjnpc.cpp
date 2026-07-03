@@ -683,10 +683,12 @@ CObjSUMMON::Proc() {
         }
 
         if (bDespawn && this->Get_HP() > 0) {
-            // Send the legacy gsv_DAMAGE death packet directly — the new
-            // FlatBuffer combat path neither decrements the client's
-            // m_SummonedMobList nor reaches the owner if they have already
-            // walked out of the broadcast neighborhood. attacker=0 is
+            // Send the legacy gsv_DAMAGE death packet directly — a despawn is
+            // not a combat kill, so no Give_DAMAGE runs and no FlatBuffer
+            // CombatSwing/DamageEvent is emitted (combat kills decrement the
+            // client's m_SummonedMobList via their lethal flag and are
+            // mirrored to out-of-range owners; despawns get neither without
+            // this synthetic packet). attacker=0 is
             // load-bearing: it routes the client through Recv_gsv_DAMAGE's
             // missing-attacker branch which calls PresentImmediateCombatDamage
             // right away. A real attacker (e.g. self) would queue the death

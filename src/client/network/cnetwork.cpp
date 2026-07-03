@@ -837,6 +837,15 @@ CNetwork::recv_combat_swing(Packet& p) {
         return;
     }
 
+    // Summon-gauge bookkeeping runs at packet receive, before any defender
+    // early-outs, mirroring legacy Recv_gsv_DAMAGE's DMG_BIT_DEAD handling:
+    // m_SummonedMobList is keyed by *server* object index and must shrink even
+    // when the dying summon has no client object. Non-summon defenders are a
+    // list-miss no-op, so no ownership check is needed here.
+    if (g_pAVATAR && req->damage()->lethal()) {
+        g_pAVATAR->SubSummonedMob(req->damage()->defender_id());
+    }
+
     CObjCHAR* attacker = g_pObjMGR->Get_ClientCharOBJ(req->attacker_id(), true);
     CObjCHAR* defender = g_pObjMGR->Get_ClientCharOBJ(req->defender_id(), true);
     if (!defender) {
@@ -879,6 +888,12 @@ CNetwork::recv_damage_event(Packet& p) {
     const Packets::DamageEvent* req = p.packet_data()->data_as_DamageEvent();
     if (!req) {
         return;
+    }
+
+    // Same summon-gauge bookkeeping as recv_combat_swing: decrement on lethal
+    // at receive time, keyed by the raw server object index.
+    if (g_pAVATAR && req->lethal()) {
+        g_pAVATAR->SubSummonedMob(req->defender_id());
     }
 
     CObjCHAR* defender = g_pObjMGR->Get_ClientCharOBJ(req->defender_id(), true);

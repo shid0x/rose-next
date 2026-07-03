@@ -66,6 +66,36 @@ sync_visible_skill_stats_after_effect(CObjCHAR* character, short nSkillIDX, BYTE
         user->Send_gsv_SPEED_CHANGED(false);
     }
 }
+
+// Legacy Send_gsv_DAMAGE2Sector forwarded a summon's death packet directly to
+// its owner when the owner was outside the sector broadcast neighborhood, so
+// the owner's summon gauge always updated. The FlatBuffer combat sends only
+// reach send_packet_nearby's 9 sectors around the broadcast center; a summon
+// ordered far away (CTRL+click) that dies off-screen would otherwise leak a
+// gauge entry on the owner's client forever.
+void
+mirror_lethal_packet_to_summon_owner(CObjCHAR& defender,
+    CGameOBJ& broadcastCenter,
+    uniDAMAGE sDamage,
+    Packet& packet) {
+    if (!(sDamage.m_wACTION & DMG_ACT_DEAD) || !defender.GetCallerUsrIDX()) {
+        return;
+    }
+
+    CObjCHAR* pOwner = g_pObjMGR->Get_CharOBJ(defender.GetCallerUsrIDX(), true);
+    if (!pOwner || pOwner->Get_CharHASH() != defender.GetCallerHASH()) {
+        return;
+    }
+
+    if (broadcastCenter.IsNEIGHBOR(pOwner)) {
+        return; // already covered by send_packet_nearby
+    }
+
+    classUSER* pOwnerUSER = dynamic_cast<classUSER*>(pOwner);
+    if (pOwnerUSER) {
+        send_packet(*pOwnerUSER, packet);
+    }
+}
 } // namespace
 
 CAI_OBJ*
@@ -574,7 +604,9 @@ CObjCHAR::Send_combat_damage_event(CObjCHAR* pAtkOBJ,
         eventId,
         defenderSeq,
         presentationKind);
-    return send_packet_nearby(*this, packet);
+    const bool bSent = send_packet_nearby(*this, packet);
+    mirror_lethal_packet_to_summon_owner(*this, *this, sDamage, packet);
+    return bSent;
 }
 
 bool
@@ -602,7 +634,11 @@ CObjCHAR::Send_combat_swing(CObjCHAR* pTarget, uniDAMAGE sDamage) {
         pTarget->Get_DEF(),
         pTarget->m_IngSTATUS.IsSET(FLAG_ING_DEC_DPOWER) ? 1 : 0);
     Packet packet = build_combat_swing_packet(*this, *pTarget, sDamage, eventId, defenderSeq);
-    return send_packet_nearby(*this, packet);
+    const bool bSent = send_packet_nearby(*this, packet);
+    // Broadcast is centered on the attacker; the summon defender's owner may be
+    // outside that neighborhood.
+    mirror_lethal_packet_to_summon_owner(*pTarget, *this, sDamage, packet);
+    return bSent;
 }
 
 //-------------------------------------------------------------------------------------------------
