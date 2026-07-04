@@ -70,6 +70,12 @@ enum View {
     Manage,
 }
 
+/// Zone-IFO scan result: (placed npc ids, npc id -> existing .CON name).
+type PlacementInfo = (
+    std::collections::HashSet<i32>,
+    std::collections::HashMap<i32, String>,
+);
+
 const MAX_TOKEN_ITEM_ID: i32 = 999; // type*1000+id encoding limit (reward items)
 
 /// Visual theme: one dark, rose-accented palette shared by every screen so the
@@ -261,11 +267,12 @@ struct QuestCreator {
     assign_giver: bool,
     giver_search: String,
     giver_npc: Option<i32>,
-    /// Lazily-scanned placement info: (placed npc ids, npc id -> existing .CON).
-    placements: Option<(
-        std::collections::HashSet<i32>,
-        std::collections::HashMap<i32, String>,
-    )>,
+    /// Zone-IFO placement info: (placed npc ids, npc id -> existing .CON).
+    /// Scanned once per data folder on a background thread (the scan reads
+    /// every zone IFO and would freeze the UI if done inline).
+    placements: Option<PlacementInfo>,
+    /// Receiver for an in-flight background placement scan.
+    placements_rx: Option<std::sync::mpsc::Receiver<PlacementInfo>>,
 
     // dev knobs
     hide_in_use: bool,
@@ -327,6 +334,7 @@ impl Default for QuestCreator {
             giver_search: String::new(),
             giver_npc: None,
             placements: None,
+            placements_rx: None,
             hide_in_use: false,
             token_icon: String::new(),
             dry_run: false,
@@ -458,8 +466,12 @@ impl QuestCreator {
                 self.load_error = None;
                 self.screen = Screen::Form;
                 self.error = None;
-                self.placements = None; // re-scan IFOs lazily for the new folder
+                self.placements = None; // stale for the new folder
+                self.placements_rx = None; // orphan any in-flight scan (its send just fails)
                 self.icons = None; // reload the icon atlas for the new folder
+                                   // Kick the IFO scan off right away so the results are usually
+                                   // ready long before the quest-giver checkbox is ticked.
+                self.start_placement_scan();
             }
             Err(e) => {
                 self.load_error = Some(format!("{e:#}"));
@@ -468,24 +480,49 @@ impl QuestCreator {
         }
     }
 
-    /// Scan all zone IFOs once (slow) to learn which NPCs are placed and which
-    /// already have a conversation. Cached until the folder changes.
-    fn ensure_placements(&mut self) {
-        if self.placements.is_some() {
+    /// Start the zone-IFO scan on a background thread (one pass over every IFO,
+    /// so the UI never freezes). Results are cached until the folder changes.
+    fn start_placement_scan(&mut self) {
+        if self.placements.is_some() || self.placements_rx.is_some() {
             return;
         }
         let Some(root) = self.root.clone() else {
             return;
         };
-        let placed = crate::ifo::all_placed_npc_ids(&root)
-            .unwrap_or_default()
-            .into_iter()
-            .collect();
-        let with_dialog = crate::ifo::placements_with_conversation(&root)
-            .unwrap_or_default()
-            .into_iter()
-            .collect();
-        self.placements = Some((placed, with_dialog));
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.placements_rx = Some(rx);
+        std::thread::spawn(move || {
+            let (placed, with_dialog) = crate::ifo::scan_npc_placements(&root).unwrap_or_default();
+            // The receiver may be gone if the user switched folders — ignore.
+            let _ = tx.send((
+                placed.into_iter().collect(),
+                with_dialog.into_iter().collect(),
+            ));
+        });
+    }
+
+    /// Poll a running placement scan; returns true once results are available.
+    fn poll_placements(&mut self) -> bool {
+        if self.placements.is_some() {
+            return true;
+        }
+        self.start_placement_scan();
+        if let Some(rx) = &self.placements_rx {
+            match rx.try_recv() {
+                Ok(info) => {
+                    self.placements = Some(info);
+                    self.placements_rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    // Scan thread died — treat as "nothing placed" instead of
+                    // spinning forever.
+                    self.placements = Some(Default::default());
+                    self.placements_rx = None;
+                }
+            }
+        }
+        self.placements.is_some()
     }
 
     fn ui_pick_folder(&mut self, ui: &mut egui::Ui) {
@@ -1581,7 +1618,19 @@ impl QuestCreator {
             return;
         }
 
-        self.ensure_placements();
+        if !self.poll_placements() {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(
+                    egui::RichText::new("Scanning zone files for placed NPCs… (first time only)")
+                        .weak(),
+                );
+            });
+            // Keep frames coming while we wait; egui only repaints on input.
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(100));
+            return;
+        }
         ui.add(
             egui::TextEdit::singleline(&mut self.giver_search)
                 .hint_text("🔍  Search placed NPCs…")

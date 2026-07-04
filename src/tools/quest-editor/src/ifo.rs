@@ -64,7 +64,7 @@ fn parse_record(b: &[u8], pos: usize) -> Result<(Placement, usize)> {
     p += 8; // map_x + map_y
     p += 40; // quat + pos + scale
     p += 4; // iAI
-    // conversation-name pascal
+            // conversation-name pascal
     let conv_start = p;
     let conv_len = *b.get(p).context("conversation len past EOF")? as usize;
     p += 1;
@@ -220,6 +220,29 @@ pub fn placements_with_conversation(root: &Path) -> Result<Vec<(i32, String)>> {
     Ok(set.into_iter().collect())
 }
 
+/// One-pass scan for the wizard's giver picker: every placed NPC id, plus
+/// (npc_id, conversation) for placements that already have a dialog. Walks the
+/// tree and reads/parses each `.IFO` exactly once (the separate
+/// `all_placed_npc_ids` + `placements_with_conversation` calls each did the
+/// full walk on their own, doubling the cost).
+pub fn scan_npc_placements(root: &Path) -> Result<(BTreeSet<i32>, Vec<(i32, String)>)> {
+    let mut ids = BTreeSet::new();
+    let mut convs: BTreeSet<(i32, String)> = BTreeSet::new();
+    for path in collect_ifo_files(root)? {
+        if let Ok(bytes) = std::fs::read(&path) {
+            if let Ok(placements) = parse_placements(&bytes) {
+                for p in placements {
+                    ids.insert(p.npc_id);
+                    if !p.conversation.trim().is_empty() {
+                        convs.insert((p.npc_id, p.conversation));
+                    }
+                }
+            }
+        }
+    }
+    Ok((ids, convs.into_iter().collect()))
+}
+
 /// NPC ids that have at least one placement, across all `.IFO`s under `root`.
 pub fn all_placed_npc_ids(root: &Path) -> Result<BTreeSet<i32>> {
     let mut out = BTreeSet::new();
@@ -246,8 +269,8 @@ pub fn wire_npc_in_ifo(ifo: &Path, npc_id: i32, new_name: &str, dry_run: bool) -
     };
 
     // Self-check: re-parse and confirm only the target changed.
-    let after = parse_placements(&new_bytes)
-        .context("rewritten IFO failed to re-parse (edit aborted)")?;
+    let after =
+        parse_placements(&new_bytes).context("rewritten IFO failed to re-parse (edit aborted)")?;
     if before.len() != after.len() {
         bail!("rewritten IFO has a different placement count (edit aborted)");
     }
