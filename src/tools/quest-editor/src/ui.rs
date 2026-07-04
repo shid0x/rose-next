@@ -72,18 +72,127 @@ enum View {
 
 const MAX_TOKEN_ITEM_ID: i32 = 999; // type*1000+id encoding limit (reward items)
 
+/// Visual theme: one dark, rose-accented palette shared by every screen so the
+/// wizard looks intentional instead of default-egui gray.
+mod theme {
+    use eframe::egui::Color32;
+
+    pub const ACCENT: Color32 = Color32::from_rgb(236, 130, 152); // rose highlight
+    pub const ACCENT_STRONG: Color32 = Color32::from_rgb(178, 62, 88); // filled buttons / badges
+    pub const ACCENT_DIM: Color32 = Color32::from_rgb(96, 46, 60); // selection background
+
+    pub const BG_APP: Color32 = Color32::from_rgb(26, 28, 35); // central panel
+    pub const BG_BAR: Color32 = Color32::from_rgb(20, 22, 28); // header + action bar
+    pub const BG_CARD: Color32 = Color32::from_rgb(33, 36, 45); // section cards
+    pub const BG_NESTED: Color32 = Color32::from_rgb(28, 30, 38); // frames inside cards
+    pub const BG_INPUT: Color32 = Color32::from_rgb(17, 19, 25); // text edits / list boxes
+    pub const OUTLINE: Color32 = Color32::from_rgb(56, 61, 75);
+
+    pub const TEXT: Color32 = Color32::from_rgb(216, 220, 230);
+    pub const GOOD: Color32 = Color32::from_rgb(125, 200, 140);
+    pub const WARN: Color32 = Color32::from_rgb(232, 181, 86);
+    pub const ERR: Color32 = Color32::from_rgb(240, 115, 115);
+    pub const INFO: Color32 = Color32::from_rgb(125, 175, 255);
+    pub const IN_USE: Color32 = Color32::from_rgb(205, 145, 75); // monsters that already have a quest
+}
+
+/// One-time egui style setup: fonts a touch larger, consistent rounding, and
+/// the theme palette wired into every widget state.
+fn apply_style(ctx: &egui::Context) {
+    use egui::{FontFamily, FontId, Rounding, Stroke, TextStyle};
+    let mut style = (*ctx.style()).clone();
+    // Always start from dark visuals — the palette below assumes them, and the
+    // system theme may be light (which made titles render near-black).
+    style.visuals = egui::Visuals::dark();
+
+    style.text_styles.insert(
+        TextStyle::Heading,
+        FontId::new(19.0, FontFamily::Proportional),
+    );
+    style
+        .text_styles
+        .insert(TextStyle::Body, FontId::new(13.5, FontFamily::Proportional));
+    style.text_styles.insert(
+        TextStyle::Button,
+        FontId::new(13.5, FontFamily::Proportional),
+    );
+    style.text_styles.insert(
+        TextStyle::Small,
+        FontId::new(11.0, FontFamily::Proportional),
+    );
+    style.text_styles.insert(
+        TextStyle::Monospace,
+        FontId::new(12.5, FontFamily::Monospace),
+    );
+
+    style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+    style.spacing.button_padding = egui::vec2(10.0, 5.0);
+    style.spacing.interact_size.y = 24.0;
+
+    let v = &mut style.visuals;
+    v.panel_fill = theme::BG_APP;
+    v.window_fill = theme::BG_CARD;
+    v.extreme_bg_color = theme::BG_INPUT;
+    v.faint_bg_color = egui::Color32::from_rgb(40, 44, 55);
+    v.selection.bg_fill = theme::ACCENT_DIM;
+    v.selection.stroke = Stroke::new(1.0, theme::ACCENT);
+    v.hyperlink_color = theme::ACCENT;
+    v.slider_trailing_fill = true;
+
+    let rounding = Rounding::same(5.0);
+    for w in [
+        &mut v.widgets.noninteractive,
+        &mut v.widgets.inactive,
+        &mut v.widgets.hovered,
+        &mut v.widgets.active,
+        &mut v.widgets.open,
+    ] {
+        w.rounding = rounding;
+    }
+    v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, theme::OUTLINE);
+    v.widgets.noninteractive.fg_stroke.color = theme::TEXT;
+    v.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(45, 50, 62);
+    v.widgets.inactive.fg_stroke.color = egui::Color32::from_rgb(200, 205, 216);
+    v.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(58, 64, 80);
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0, theme::ACCENT_DIM);
+    v.widgets.active.weak_bg_fill = theme::ACCENT_DIM;
+
+    ctx.set_style(style);
+}
+
+/// A recessed "list box" wrapper so searchable result lists read as one input
+/// control instead of naked rows floating in the card.
+fn list_frame(ui: &mut egui::Ui, body: impl FnOnce(&mut egui::Ui)) {
+    egui::Frame::none()
+        .fill(theme::BG_INPUT)
+        .stroke(egui::Stroke::new(1.0, theme::OUTLINE))
+        .rounding(egui::Rounding::same(5.0))
+        .inner_margin(egui::Margin::same(4.0))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            body(ui);
+        });
+}
+
 pub fn run() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([900.0, 760.0])
-            .with_min_inner_size([720.0, 560.0])
+            .with_inner_size([960.0, 800.0])
+            .with_min_inner_size([760.0, 600.0])
             .with_title("ROSE Quest Creator"),
+        // The custom palette is dark; never follow a light system theme (it
+        // re-applies light visuals over ours and text goes black-on-dark).
+        follow_system_theme: false,
+        default_theme: eframe::Theme::Dark,
         ..Default::default()
     };
     eframe::run_native(
         "ROSE Quest Creator",
         options,
-        Box::new(|_cc| Box::new(QuestCreator::default())),
+        Box::new(|cc| {
+            apply_style(&cc.egui_ctx);
+            Box::new(QuestCreator::default())
+        }),
     )
 }
 
@@ -153,7 +262,10 @@ struct QuestCreator {
     giver_search: String,
     giver_npc: Option<i32>,
     /// Lazily-scanned placement info: (placed npc ids, npc id -> existing .CON).
-    placements: Option<(std::collections::HashSet<i32>, std::collections::HashMap<i32, String>)>,
+    placements: Option<(
+        std::collections::HashSet<i32>,
+        std::collections::HashMap<i32, String>,
+    )>,
 
     // dev knobs
     hide_in_use: bool,
@@ -173,6 +285,11 @@ struct QuestCreator {
 
     screen: Screen,
     error: Option<String>,
+
+    // cached by `ui_preview` each frame for the sticky bottom action bar (the
+    // bar renders before the form, so it reads last frame's values)
+    bar_can_create: bool,
+    bar_summary: String,
 }
 
 impl Default for QuestCreator {
@@ -221,67 +338,105 @@ impl Default for QuestCreator {
             confirm_delete: None,
             screen: Screen::Form,
             error: None,
+            bar_can_create: false,
+            bar_summary: String::new(),
         }
     }
 }
 
 impl eframe::App for QuestCreator {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("top").show(ctx, |ui| {
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.heading("⚔  ROSE Quest Creator");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if self.data.is_some() && ui.button("Change data folder…").clicked() {
-                        self.pick_folder();
-                    }
+        egui::TopBottomPanel::top("top")
+            .frame(
+                egui::Frame::none()
+                    .fill(theme::BG_BAR)
+                    .inner_margin(egui::Margin::symmetric(12.0, 8.0)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("⚔").size(20.0).color(theme::ACCENT));
+                    ui.label(
+                        egui::RichText::new("ROSE Quest Creator")
+                            .size(17.0)
+                            .strong(),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if self.data.is_some() {
+                            if ui.button("📁 Change folder…").clicked() {
+                                self.pick_folder();
+                            }
+                            if let Some(root) = &self.root {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(root.display().to_string())
+                                            .weak()
+                                            .small(),
+                                    )
+                                    .truncate(true),
+                                );
+                            }
+                        }
+                    });
                 });
             });
-            if let Some(root) = &self.root {
-                ui.label(
-                    egui::RichText::new(format!("data: {}", root.display()))
-                        .small()
-                        .weak(),
-                );
-            }
-            ui.add_space(2.0);
-        });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            if self.data.is_none() {
-                self.ui_pick_folder(ui);
-                return;
-            }
-            if let Screen::Created { .. } = self.screen {
-                self.ui_created(ui);
-                return;
-            }
-            // Create / Manage tabs (only on the form screen).
-            ui.horizontal(|ui| {
-                if ui
-                    .selectable_label(self.view == View::Create, "➕  Create")
-                    .clicked()
-                {
-                    self.view = View::Create;
+        // Sticky action bar (summary + create button) — only on the create form,
+        // so the main action never scrolls out of reach.
+        if self.data.is_some() && matches!(self.screen, Screen::Form) && self.view == View::Create {
+            egui::TopBottomPanel::bottom("action_bar")
+                .frame(
+                    egui::Frame::none()
+                        .fill(theme::BG_BAR)
+                        .inner_margin(egui::Margin::symmetric(12.0, 9.0)),
+                )
+                .show(ctx, |ui| self.ui_action_bar(ui));
+        }
+
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::none()
+                    .fill(theme::BG_APP)
+                    .inner_margin(egui::Margin::symmetric(14.0, 10.0)),
+            )
+            .show(ctx, |ui| {
+                if self.data.is_none() {
+                    self.ui_pick_folder(ui);
+                    return;
                 }
-                if ui
-                    .selectable_label(self.view == View::Manage, "🗂  Manage")
-                    .clicked()
-                {
-                    self.view = View::Manage;
-                    self.manage_status = None;
+                if let Screen::Created { .. } = self.screen {
+                    self.ui_created(ui);
+                    return;
+                }
+                // Create / Manage tabs (only on the form screen).
+                ui.horizontal(|ui| {
+                    for (v, label) in [(View::Create, "➕  Create"), (View::Manage, "🗂  Manage")]
+                    {
+                        let active = self.view == v;
+                        let text = if active {
+                            egui::RichText::new(label).strong().color(theme::ACCENT)
+                        } else {
+                            egui::RichText::new(label)
+                        };
+                        if ui.selectable_label(active, text).clicked() {
+                            self.view = v;
+                            if v == View::Manage {
+                                self.manage_status = None;
+                            }
+                        }
+                    }
+                });
+                ui.add_space(2.0);
+                ui.separator();
+                ui.add_space(6.0);
+                match self.view {
+                    View::Create => {
+                        egui::ScrollArea::vertical().show(ui, |ui| self.ui_form(ui));
+                    }
+                    View::Manage => {
+                        egui::ScrollArea::vertical().show(ui, |ui| self.ui_manage(ui));
+                    }
                 }
             });
-            ui.separator();
-            match self.view {
-                View::Create => {
-                    egui::ScrollArea::vertical().show(ui, |ui| self.ui_form(ui));
-                }
-                View::Manage => {
-                    egui::ScrollArea::vertical().show(ui, |ui| self.ui_manage(ui));
-                }
-            }
-        });
     }
 }
 
@@ -334,26 +489,46 @@ impl QuestCreator {
     }
 
     fn ui_pick_folder(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(60.0);
+        ui.add_space(90.0);
         ui.vertical_centered(|ui| {
-            ui.heading("Welcome!");
-            ui.add_space(8.0);
-            ui.label("To start, pick your game data folder.");
-            ui.label(
-                egui::RichText::new("(the folder that contains 3DDATA — e.g. your repo's data\\)")
-                    .weak(),
-            );
-            ui.add_space(16.0);
-            if ui
-                .add(egui::Button::new("📁  Select data folder…").min_size(egui::vec2(220.0, 36.0)))
-                .clicked()
-            {
-                self.pick_folder();
-            }
-            if let Some(err) = &self.load_error {
-                ui.add_space(16.0);
-                ui.colored_label(egui::Color32::LIGHT_RED, err);
-            }
+            egui::Frame::none()
+                .fill(theme::BG_CARD)
+                .stroke(egui::Stroke::new(1.0, theme::OUTLINE))
+                .rounding(egui::Rounding::same(10.0))
+                .inner_margin(egui::Margin::symmetric(30.0, 24.0))
+                .show(ui, |ui| {
+                    ui.set_max_width(430.0);
+                    ui.vertical_centered(|ui| {
+                        ui.label(egui::RichText::new("⚔").size(36.0).color(theme::ACCENT));
+                        ui.add_space(4.0);
+                        ui.heading("Welcome!");
+                        ui.add_space(8.0);
+                        ui.label("To start, pick your game data folder.");
+                        ui.label(
+                            egui::RichText::new(
+                                "(the folder that contains 3DDATA — e.g. your repo's data\\)",
+                            )
+                            .weak(),
+                        );
+                        ui.add_space(18.0);
+                        let btn = egui::Button::new(
+                            egui::RichText::new("📁  Select data folder…")
+                                .size(15.0)
+                                .strong()
+                                .color(egui::Color32::WHITE),
+                        )
+                        .fill(theme::ACCENT_STRONG)
+                        .rounding(egui::Rounding::same(6.0))
+                        .min_size(egui::vec2(230.0, 38.0));
+                        if ui.add(btn).clicked() {
+                            self.pick_folder();
+                        }
+                        if let Some(err) = &self.load_error {
+                            ui.add_space(14.0);
+                            ui.colored_label(theme::ERR, err);
+                        }
+                    });
+                });
         });
     }
 
@@ -361,111 +536,127 @@ impl QuestCreator {
         // Refresh auto-text if the monster / count changed.
         self.maybe_refresh_text();
 
-        ui.add_space(6.0);
+        ui.add_space(2.0);
 
         // Editing banner.
         if let Some(sn) = self.editing {
-            egui::Frame::group(ui.style())
-                .fill(egui::Color32::from_rgb(40, 44, 60))
+            egui::Frame::none()
+                .fill(theme::BG_NESTED)
+                .stroke(egui::Stroke::new(1.0, theme::INFO.gamma_multiply(0.4)))
+                .rounding(egui::Rounding::same(6.0))
+                .inner_margin(egui::Margin::symmetric(10.0, 8.0))
                 .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new(format!(
                                 "✏ Editing quest #{sn} — saving deletes it and creates an updated copy."
                             ))
-                            .color(egui::Color32::from_rgb(150, 190, 255)),
+                            .color(theme::INFO),
                         );
-                        if ui.button("Cancel edit").clicked() {
-                            self.editing = None;
-                            self.view = View::Manage;
-                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.button("Cancel edit").clicked() {
+                                self.editing = None;
+                                self.view = View::Manage;
+                            }
+                        });
                     });
                 });
-            ui.add_space(4.0);
+            ui.add_space(8.0);
         }
 
-        // Quest type chooser.
-        ui.horizontal(|ui| {
-            ui.label("Quest type:");
-            ui.selectable_value(&mut self.quest_type, QuestType::Hunt, "🗡 Hunt — kill monsters");
-            ui.selectable_value(&mut self.quest_type, QuestType::Fetch, "📦 Fetch — bring items");
-        });
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut self.repeatable, "Repeatable");
-            ui.label(
-                egui::RichText::new(if self.repeatable {
-                    "(can be taken again after completing)"
-                } else {
-                    "one-time — can only be completed once per character"
-                })
-                .weak()
-                .small(),
-            );
-        });
-        ui.add_space(4.0);
-
-        // --- 1 (objective) and 2 (rewards) side by side ---
+        // --- 1 (target) and 2 (rewards) side by side ---
         let sec1_title = match self.quest_type {
-            QuestType::Hunt => "Which monster do you hunt?",
-            QuestType::Fetch => "Which item to bring?",
+            QuestType::Hunt => "Target — which monster?",
+            QuestType::Fetch => "Target — which item?",
         };
         ui.columns(2, |cols| {
-        self.section(&mut cols[0], "1", sec1_title, |app, ui| match app.quest_type {
-            QuestType::Hunt => {
-                app.ui_monster_list(ui);
-                // The token icon belongs next to the monster it drops from —
-                // same layout as the extra-objective rows.
-                ui.add_space(4.0);
-                app.ui_icon_picker(ui);
-            }
-            QuestType::Fetch => app.ui_fetch_item(ui),
-        });
-
-        // --- 2. Objective + rewards (numbers laid out two-per-row) ---
-        self.section(&mut cols[1], "2", "Objective & rewards", |app, ui| {
-            egui::Grid::new("nums_grid")
-                .num_columns(4)
-                .spacing([16.0, 8.0])
-                .show(ui, |ui| {
-                    ui.label(match app.quest_type {
-                        QuestType::Hunt => "Kill count:",
-                        QuestType::Fetch => "Bring count:",
-                    });
-                    ui.add(egui::DragValue::new(&mut app.kill_count).clamp_range(1..=999));
-                    ui.label("Experience:");
-                    ui.add(egui::DragValue::new(&mut app.reward_exp).clamp_range(0..=100_000_000));
-                    ui.end_row();
-
-                    ui.label("Zuly (money):");
-                    ui.add(egui::DragValue::new(&mut app.reward_zuly).clamp_range(0..=2_000_000_000));
-                    ui.label("");
-                    ui.label("");
-                    ui.end_row();
+            self.section(&mut cols[0], "1", sec1_title, |app, ui| {
+                ui.horizontal(|ui| {
+                    ui.selectable_value(
+                        &mut app.quest_type,
+                        QuestType::Hunt,
+                        "🗡  Hunt — kill monsters",
+                    );
+                    ui.selectable_value(
+                        &mut app.quest_type,
+                        QuestType::Fetch,
+                        "📦  Fetch — bring items",
+                    );
                 });
-            ui.label(
-                egui::RichText::new(
-                    "One hidden quest-token drops per kill. EXP/zuly scale a little with the \
-                     player (normal ROSE quest behavior).",
-                )
-                .weak()
-                .small(),
-            );
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut app.repeatable, "Repeatable");
+                    ui.label(
+                        egui::RichText::new(if app.repeatable {
+                            "(can be taken again after completing)"
+                        } else {
+                            "(one-time — once per character)"
+                        })
+                        .weak()
+                        .small(),
+                    );
+                });
+                ui.add_space(4.0);
+                match app.quest_type {
+                    QuestType::Hunt => {
+                        app.ui_monster_list(ui);
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            ui.label("Kill count:");
+                            ui.add(egui::DragValue::new(&mut app.kill_count).clamp_range(1..=999));
+                        });
+                        // The token icon belongs next to the monster it drops from —
+                        // same layout as the extra-objective rows.
+                        ui.add_space(4.0);
+                        app.ui_icon_picker(ui);
+                    }
+                    QuestType::Fetch => app.ui_fetch_item(ui),
+                }
+            });
 
-            ui.add_space(6.0);
-            ui.checkbox(&mut app.reward_item_enabled, "Also give an item reward");
-            if app.reward_item_enabled {
-                app.ui_reward_item(ui);
-            }
-        });
+            // --- 2. Rewards ---
+            self.section(&mut cols[1], "2", "Rewards", |app, ui| {
+                egui::Grid::new("nums_grid")
+                    .num_columns(2)
+                    .spacing([16.0, 8.0])
+                    .show(ui, |ui| {
+                        ui.label("Experience:");
+                        ui.add(
+                            egui::DragValue::new(&mut app.reward_exp).clamp_range(0..=100_000_000),
+                        );
+                        ui.end_row();
+
+                        ui.label("Zuly (money):");
+                        ui.add(
+                            egui::DragValue::new(&mut app.reward_zuly)
+                                .clamp_range(0..=2_000_000_000),
+                        );
+                        ui.end_row();
+                    });
+                ui.label(
+                    egui::RichText::new(
+                        "One hidden quest-token drops per kill. EXP/zuly scale a little with the \
+                     player (normal ROSE quest behavior).",
+                    )
+                    .weak()
+                    .small(),
+                );
+
+                ui.add_space(6.0);
+                ui.checkbox(&mut app.reward_item_enabled, "Also give an item reward");
+                if app.reward_item_enabled {
+                    app.ui_reward_item(ui);
+                }
+            });
         }); // end columns(1 + 2)
 
-        // --- 2b. Additional objectives (optional) ---
-        self.section(ui, "+", "Additional objectives (optional)", |app, ui| {
+        // --- 3. Additional objectives (optional) ---
+        self.section(ui, "3", "Additional objectives (optional)", |app, ui| {
             app.ui_objectives(ui);
         });
 
-        // --- 3. Text ---
-        self.section(ui, "3", "Quest text", |app, ui| {
+        // --- 4. Text ---
+        self.section(ui, "4", "Quest text", |app, ui| {
             let edited = |app: &mut QuestCreator| app.auto_text = false;
             egui::Grid::new("text_grid")
                 .num_columns(2)
@@ -533,14 +724,13 @@ impl QuestCreator {
             });
         });
 
-        // --- 4. Quest-giver NPC (optional) ---
-        self.section(ui, "4", "Quest-giver NPC (optional)", |app, ui| {
+        // --- 5. Quest-giver NPC (optional) ---
+        self.section(ui, "5", "Quest-giver NPC (optional)", |app, ui| {
             app.ui_giver(ui);
         });
 
-        // --- preview + create ---
-        ui.add_space(8.0);
-        self.ui_preview_and_create(ui);
+        // --- summary & checks (the create button lives in the bottom action bar) ---
+        self.ui_preview(ui);
 
         // --- advanced ---
         ui.add_space(8.0);
@@ -573,8 +763,11 @@ impl QuestCreator {
 
     /// Hunt objective: searchable monster list (in-use ones flagged).
     fn ui_monster_list(&mut self, ui: &mut egui::Ui) {
-        ui.label("Search by name or id:");
-        ui.text_edit_singleline(&mut self.monster_search);
+        ui.add(
+            egui::TextEdit::singleline(&mut self.monster_search)
+                .hint_text("🔍  Search monsters by name or id…")
+                .desired_width(f32::INFINITY),
+        );
 
         // Collect matching rows first so the data borrow drops before we mutate.
         let search = self.monster_search.trim().to_lowercase();
@@ -595,23 +788,25 @@ impl QuestCreator {
         let total = rows.len();
         let cap = 300usize;
 
-        egui::ScrollArea::vertical()
-            .id_source("monster_list")
-            .max_height(220.0)
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                for (id, label, free) in rows.iter().take(cap) {
-                    let selected = self.selected_monster == Some(*id);
-                    let mut text = egui::RichText::new(label);
-                    if !free {
-                        text = text.color(egui::Color32::from_rgb(200, 140, 60));
+        list_frame(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_source("monster_list")
+                .max_height(220.0)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for (id, label, free) in rows.iter().take(cap) {
+                        let selected = self.selected_monster == Some(*id);
+                        let mut text = egui::RichText::new(label);
+                        if !free {
+                            text = text.color(theme::IN_USE);
+                        }
+                        if ui.selectable_label(selected, text).clicked() {
+                            self.selected_monster = Some(*id);
+                            self.auto_text = true;
+                        }
                     }
-                    if ui.selectable_label(selected, text).clicked() {
-                        self.selected_monster = Some(*id);
-                        self.auto_text = true;
-                    }
-                }
-            });
+                });
+        });
 
         if total > cap {
             ui.label(
@@ -627,7 +822,7 @@ impl QuestCreator {
                 ui.label(egui::RichText::new(format!("Selected: {}", m.name)).strong());
                 if !m.dead_event_is_free() {
                     ui.colored_label(
-                        egui::Color32::from_rgb(120, 170, 255),
+                        theme::INFO,
                         "ℹ This monster already has a quest — yours will be chained onto it.",
                     );
                 }
@@ -651,7 +846,11 @@ impl QuestCreator {
                     }
                 }
             });
-        ui.text_edit_singleline(&mut self.fetch_item_search);
+        ui.add(
+            egui::TextEdit::singleline(&mut self.fetch_item_search)
+                .hint_text("🔍  Search items by name or id…")
+                .desired_width(f32::INFINITY),
+        );
         let search = self.fetch_item_search.trim().to_lowercase();
 
         let items: Vec<(i32, String)> = self
@@ -674,21 +873,31 @@ impl QuestCreator {
             })
             .unwrap_or_default();
 
-        egui::ScrollArea::vertical()
-            .id_source("fetch_item_list")
-            .max_height(200.0)
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                for (id, label) in &items {
-                    let selected = self.fetch_item_id == Some(*id);
-                    if ui.selectable_label(selected, label).clicked() {
-                        self.fetch_item_id = Some(*id);
-                        self.auto_text = true;
+        list_frame(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_source("fetch_item_list")
+                .max_height(200.0)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for (id, label) in &items {
+                        let selected = self.fetch_item_id == Some(*id);
+                        if ui.selectable_label(selected, label).clicked() {
+                            self.fetch_item_id = Some(*id);
+                            self.auto_text = true;
+                        }
                     }
-                }
-            });
+                });
+        });
 
-        ui.checkbox(&mut self.fetch_consume, "Take the items when the quest is turned in");
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.label("Bring count:");
+            ui.add(egui::DragValue::new(&mut self.kill_count).clamp_range(1..=999));
+        });
+        ui.checkbox(
+            &mut self.fetch_consume,
+            "Take the items when the quest is turned in",
+        );
     }
 
     /// The list of extra objectives: each is a compact target picker + count. The
@@ -704,10 +913,12 @@ impl QuestCreator {
         );
         ui.horizontal(|ui| {
             if ui.button("➕ Add kill objective").clicked() {
-                self.extra_objectives.push(ObjectiveDraft::new(QuestType::Hunt));
+                self.extra_objectives
+                    .push(ObjectiveDraft::new(QuestType::Hunt));
             }
             if ui.button("➕ Add fetch objective").clicked() {
-                self.extra_objectives.push(ObjectiveDraft::new(QuestType::Fetch));
+                self.extra_objectives
+                    .push(ObjectiveDraft::new(QuestType::Fetch));
             }
         });
 
@@ -720,29 +931,35 @@ impl QuestCreator {
         let mut remove: Option<usize> = None;
         for (i, d) in drafts.iter_mut().enumerate() {
             ui.add_space(4.0);
-            egui::Frame::group(ui.style()).show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(format!("Objective {}", i + 2)).strong());
-                    ui.selectable_value(&mut d.kind, QuestType::Hunt, "🗡 Kill");
-                    ui.selectable_value(&mut d.kind, QuestType::Fetch, "📦 Bring");
-                    ui.add(egui::DragValue::new(&mut d.count).clamp_range(1..=999));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("🗑 Remove").clicked() {
-                            remove = Some(i);
-                        }
+            egui::Frame::none()
+                .fill(theme::BG_NESTED)
+                .stroke(egui::Stroke::new(1.0, theme::OUTLINE))
+                .rounding(egui::Rounding::same(6.0))
+                .inner_margin(egui::Margin::symmetric(10.0, 8.0))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(format!("Objective {}", i + 2)).strong());
+                        ui.selectable_value(&mut d.kind, QuestType::Hunt, "🗡 Kill");
+                        ui.selectable_value(&mut d.kind, QuestType::Fetch, "📦 Bring");
+                        ui.add(egui::DragValue::new(&mut d.count).clamp_range(1..=999));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.button("🗑 Remove").clicked() {
+                                remove = Some(i);
+                            }
+                        });
                     });
+                    match d.kind {
+                        QuestType::Hunt => Self::ui_obj_monster(data, d, ui, i, icons, root),
+                        QuestType::Fetch => Self::ui_obj_item(data, d, ui, i),
+                    }
+                    if !d.is_ready() {
+                        ui.colored_label(
+                            theme::WARN,
+                            "⚠ Pick a target — this objective is ignored until you do.",
+                        );
+                    }
                 });
-                match d.kind {
-                    QuestType::Hunt => Self::ui_obj_monster(data, d, ui, i, icons, root),
-                    QuestType::Fetch => Self::ui_obj_item(data, d, ui, i),
-                }
-                if !d.is_ready() {
-                    ui.colored_label(
-                        egui::Color32::from_rgb(220, 170, 60),
-                        "⚠ Pick a target — this objective is ignored until you do.",
-                    );
-                }
-            });
         }
         if let Some(i) = remove {
             drafts.remove(i);
@@ -759,10 +976,11 @@ impl QuestCreator {
         icons: &mut Option<crate::icons::IconStore>,
         root: Option<&Path>,
     ) {
-        ui.horizontal(|ui| {
-            ui.label("Monster:");
-            ui.text_edit_singleline(&mut d.monster_search);
-        });
+        ui.add(
+            egui::TextEdit::singleline(&mut d.monster_search)
+                .hint_text("🔍  Search monsters…")
+                .desired_width(f32::INFINITY),
+        );
         let search = d.monster_search.trim().to_lowercase();
         let rows: Vec<(i32, String, bool)> = data
             .map(|ds| {
@@ -778,26 +996,31 @@ impl QuestCreator {
                     .collect()
             })
             .unwrap_or_default();
-        egui::ScrollArea::vertical()
-            .id_source(("obj_monster", idx))
-            .max_height(120.0)
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                for (id, label, free) in &rows {
-                    let mut text = egui::RichText::new(label);
-                    if !*free {
-                        text = text.color(egui::Color32::from_rgb(200, 140, 60));
-                    }
-                    if ui.selectable_label(d.monster_id == Some(*id), text).clicked() {
-                        d.monster_id = Some(*id);
-                        if d.token_name.trim().is_empty() {
-                            if let Some(m) = data.and_then(|ds| ds.find_monster(*id)) {
-                                d.token_name = format!("{} Mark", m.name);
+        list_frame(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_source(("obj_monster", idx))
+                .max_height(120.0)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for (id, label, free) in &rows {
+                        let mut text = egui::RichText::new(label);
+                        if !*free {
+                            text = text.color(theme::IN_USE);
+                        }
+                        if ui
+                            .selectable_label(d.monster_id == Some(*id), text)
+                            .clicked()
+                        {
+                            d.monster_id = Some(*id);
+                            if d.token_name.trim().is_empty() {
+                                if let Some(m) = data.and_then(|ds| ds.find_monster(*id)) {
+                                    d.token_name = format!("{} Mark", m.name);
+                                }
                             }
                         }
                     }
-                }
-            });
+                });
+        });
         // Per-objective token icon (default = the cloned template's icon).
         icon_picker_control(
             icons,
@@ -817,13 +1040,20 @@ impl QuestCreator {
                 .selected_text(d.item_category.display())
                 .show_ui(ui, |ui| {
                     for &cat in ItemCategory::ALL {
-                        if ui.selectable_label(d.item_category == cat, cat.display()).clicked() {
+                        if ui
+                            .selectable_label(d.item_category == cat, cat.display())
+                            .clicked()
+                        {
                             d.item_category = cat;
                             d.item_id = None;
                         }
                     }
                 });
-            ui.text_edit_singleline(&mut d.item_search);
+            ui.add(
+                egui::TextEdit::singleline(&mut d.item_search)
+                    .hint_text("🔍  Search items…")
+                    .desired_width(f32::INFINITY),
+            );
         });
         let search = d.item_search.trim().to_lowercase();
         let items: Vec<(i32, String)> = data
@@ -841,17 +1071,19 @@ impl QuestCreator {
                     .collect()
             })
             .unwrap_or_default();
-        egui::ScrollArea::vertical()
-            .id_source(("obj_item", idx))
-            .max_height(120.0)
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                for (id, label) in &items {
-                    if ui.selectable_label(d.item_id == Some(*id), label).clicked() {
-                        d.item_id = Some(*id);
+        list_frame(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_source(("obj_item", idx))
+                .max_height(120.0)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for (id, label) in &items {
+                        if ui.selectable_label(d.item_id == Some(*id), label).clicked() {
+                            d.item_id = Some(*id);
+                        }
                     }
-                }
-            });
+                });
+        });
         ui.checkbox(&mut d.consume, "Take these items on turn-in");
     }
 
@@ -870,7 +1102,11 @@ impl QuestCreator {
                 }
             });
 
-        ui.text_edit_singleline(&mut self.reward_item_search);
+        ui.add(
+            egui::TextEdit::singleline(&mut self.reward_item_search)
+                .hint_text("🔍  Search items by name or id…")
+                .desired_width(f32::INFINITY),
+        );
         let search = self.reward_item_search.trim().to_lowercase();
 
         // Collect matching items first (drops the `self.data` borrow).
@@ -894,18 +1130,20 @@ impl QuestCreator {
             })
             .unwrap_or_default();
 
-        egui::ScrollArea::vertical()
-            .id_source("reward_item_list")
-            .max_height(140.0)
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                for (id, label) in &items {
-                    let selected = self.reward_item_id == Some(*id);
-                    if ui.selectable_label(selected, label).clicked() {
-                        self.reward_item_id = Some(*id);
+        list_frame(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_source("reward_item_list")
+                .max_height(140.0)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for (id, label) in &items {
+                        let selected = self.reward_item_id == Some(*id);
+                        if ui.selectable_label(selected, label).clicked() {
+                            self.reward_item_id = Some(*id);
+                        }
                     }
-                }
-            });
+                });
+        });
 
         ui.horizontal(|ui| {
             ui.label("Quantity:");
@@ -913,17 +1151,20 @@ impl QuestCreator {
         });
     }
 
-    fn ui_preview_and_create(&mut self, ui: &mut egui::Ui) {
+    /// Live summary of what will be created plus validation results. The create
+    /// button itself lives in the sticky bottom action bar (`ui_action_bar`);
+    /// this caches `bar_can_create` / `bar_summary` for it.
+    fn ui_preview(&mut self, ui: &mut egui::Ui) {
         let Some(spec) = self.build_spec() else {
+            self.bar_can_create = false;
+            self.bar_summary = "Pick a monster / item above to enable creation.".into();
             ui.colored_label(
                 egui::Color32::GRAY,
-                "Pick a monster / item above to see the preview.",
+                "Pick a monster / item above to see the summary.",
             );
             return;
         };
         let gen = crate::gen::generate(&spec);
-        // Compute issues in a scope that drops the `self.data` borrow before the
-        // Create button needs `&mut self`.
         let issues = self
             .data
             .as_ref()
@@ -934,95 +1175,163 @@ impl QuestCreator {
             QuestType::Hunt => "Kill",
             QuestType::Fetch => "Bring",
         };
-        egui::Frame::group(ui.style()).show(ui, |ui| {
-            ui.label(egui::RichText::new("Preview").strong());
-            ui.label(format!(
-                "Quest #{} — “{}”",
-                gen.quest_sn,
-                String::from_utf8_lossy(&gen.qsd.description)
-            ));
-            ui.label(format!(
-                "{verb} {}× {} → rewards{}.",
-                self.kill_count,
-                self.objective_name().unwrap_or_default(),
-                self.reward_summary()
-            ));
-            for d in self.extra_objectives.iter().filter(|d| d.is_ready()) {
-                let (v, name) = match d.kind {
-                    QuestType::Hunt => (
-                        "and kill",
-                        d.monster_id
-                            .and_then(|id| self.data.as_ref().and_then(|ds| ds.find_monster(id)))
-                            .map(|m| m.name.clone())
-                            .unwrap_or_default(),
-                    ),
-                    QuestType::Fetch => (
-                        "and bring",
-                        d.item_id
-                            .and_then(|id| {
-                                self.data.as_ref().and_then(|ds| ds.item_db.lookup(d.item_category, id))
-                            })
-                            .map(|it| it.name.clone())
-                            .unwrap_or_default(),
-                    ),
-                };
-                ui.label(egui::RichText::new(format!("{v} {}× {name}", d.count)).weak());
-            }
-            let files = match &spec.kind {
-                QuestKind::Hunt { chain_into_existing: true, .. } => {
-                    "LIST_Quest / LIST_QUESTITEM / STL + the monster's existing quest file"
+        egui::Frame::none()
+            .fill(theme::BG_CARD)
+            .stroke(egui::Stroke::new(1.0, theme::ACCENT_DIM))
+            .rounding(egui::Rounding::same(8.0))
+            .inner_margin(egui::Margin::symmetric(12.0, 10.0))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    egui::RichText::new("Summary")
+                        .strong()
+                        .size(15.0)
+                        .color(theme::ACCENT),
+                );
+                ui.add_space(2.0);
+                ui.separator();
+                ui.add_space(4.0);
+                ui.label(format!(
+                    "Quest #{} — “{}”",
+                    gen.quest_sn,
+                    String::from_utf8_lossy(&gen.qsd.description)
+                ));
+                ui.label(format!(
+                    "{verb} {}× {} → rewards{}.",
+                    self.kill_count,
+                    self.objective_name().unwrap_or_default(),
+                    self.reward_summary()
+                ));
+                for d in self.extra_objectives.iter().filter(|d| d.is_ready()) {
+                    let (v, name) = match d.kind {
+                        QuestType::Hunt => (
+                            "and kill",
+                            d.monster_id
+                                .and_then(|id| {
+                                    self.data.as_ref().and_then(|ds| ds.find_monster(id))
+                                })
+                                .map(|m| m.name.clone())
+                                .unwrap_or_default(),
+                        ),
+                        QuestType::Fetch => (
+                            "and bring",
+                            d.item_id
+                                .and_then(|id| {
+                                    self.data
+                                        .as_ref()
+                                        .and_then(|ds| ds.item_db.lookup(d.item_category, id))
+                                })
+                                .map(|it| it.name.clone())
+                                .unwrap_or_default(),
+                        ),
+                    };
+                    ui.label(egui::RichText::new(format!("{v} {}× {name}", d.count)).weak());
                 }
-                QuestKind::Hunt { .. } => "LIST_Quest / LIST_NPC / LIST_QUESTITEM / STL",
-                QuestKind::Fetch { .. } => "LIST_Quest / LIST_QuestDATA / STL",
-            };
-            ui.label(
-                egui::RichText::new(format!(
-                    "Writes a new {} and updates {files} (each backed up to .bak).",
-                    gen.qsd_filename
-                ))
-                .weak()
-                .small(),
-            );
-        });
+                let files = match &spec.kind {
+                    QuestKind::Hunt {
+                        chain_into_existing: true,
+                        ..
+                    } => "LIST_Quest / LIST_QUESTITEM / STL + the monster's existing quest file",
+                    QuestKind::Hunt { .. } => "LIST_Quest / LIST_NPC / LIST_QUESTITEM / STL",
+                    QuestKind::Fetch { .. } => "LIST_Quest / LIST_QuestDATA / STL",
+                };
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Writes a new {} and updates {files} (each backed up to .bak).",
+                        gen.qsd_filename
+                    ))
+                    .weak()
+                    .small(),
+                );
 
-        // Validation issues (errors block creation; warnings are advisory).
-        for issue in &issues {
-            let (color, icon) = match issue.level {
-                crate::verify::Level::Error => (egui::Color32::from_rgb(235, 105, 105), "✖"),
-                crate::verify::Level::Warning => (egui::Color32::from_rgb(220, 170, 60), "⚠"),
-            };
-            ui.colored_label(color, format!("{icon}  {}", issue.message));
-        }
-
-        ui.add_space(6.0);
+                // Validation issues (errors block creation; warnings are advisory).
+                if !issues.is_empty() {
+                    ui.add_space(4.0);
+                }
+                for issue in &issues {
+                    let (color, icon) = match issue.level {
+                        crate::verify::Level::Error => (theme::ERR, "✖"),
+                        crate::verify::Level::Warning => (theme::WARN, "⚠"),
+                    };
+                    ui.colored_label(color, format!("{icon}  {}", issue.message));
+                }
+            });
 
         let unfinished = self.extra_objectives.iter().any(|d| !d.is_ready());
         if unfinished {
             ui.colored_label(
-                egui::Color32::from_rgb(220, 170, 60),
+                theme::WARN,
                 "⚠  Finish or remove the additional objective(s) above before creating.",
             );
         }
-        let can_create = !crate::verify::has_errors(&issues) && !unfinished;
-        ui.horizontal(|ui| {
-            let label = if self.editing.is_some() {
-                "💾  Save changes"
-            } else if self.dry_run {
-                "🔍  Preview changes (no write)"
-            } else {
-                "✅  Create Quest"
-            };
-            let btn = egui::Button::new(egui::RichText::new(label).size(16.0))
-                .min_size(egui::vec2(200.0, 38.0));
-            if ui.add_enabled(can_create, btn).clicked() {
-                self.do_create();
-            }
-        });
 
-        if let Some(err) = &self.error {
-            ui.add_space(6.0);
-            ui.colored_label(egui::Color32::LIGHT_RED, err);
+        self.bar_can_create = !crate::verify::has_errors(&issues) && !unfinished;
+        let mut summary = format!(
+            "Quest #{} · {verb} {}× {}{}",
+            gen.quest_sn,
+            self.kill_count,
+            self.objective_name().unwrap_or_default(),
+            self.reward_summary()
+        );
+        let extra = self
+            .extra_objectives
+            .iter()
+            .filter(|d| d.is_ready())
+            .count();
+        if extra > 0 {
+            summary.push_str(&format!(" · +{extra} extra objective(s)"));
         }
+        self.bar_summary = summary;
+    }
+
+    /// Sticky bottom bar: compact status on the left, the create/save button on
+    /// the right — always visible, no scrolling to reach the main action.
+    fn ui_action_bar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let label = if self.editing.is_some() {
+                    "💾  Save changes"
+                } else if self.dry_run {
+                    "🔍  Preview changes (no write)"
+                } else {
+                    "✅  Create Quest"
+                };
+                let btn = egui::Button::new(
+                    egui::RichText::new(label)
+                        .size(15.0)
+                        .strong()
+                        .color(egui::Color32::WHITE),
+                )
+                .fill(theme::ACCENT_STRONG)
+                .rounding(egui::Rounding::same(6.0))
+                .min_size(egui::vec2(200.0, 34.0));
+                if ui.add_enabled(self.bar_can_create, btn).clicked() {
+                    self.do_create();
+                }
+                ui.with_layout(
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| match self.error.clone() {
+                        Some(err) => {
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(format!("✖ {err}")).color(theme::ERR),
+                                )
+                                .truncate(true),
+                            )
+                            .on_hover_text(err);
+                        }
+                        None => {
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(self.bar_summary.as_str()).weak(),
+                                )
+                                .truncate(true),
+                            );
+                        }
+                    },
+                );
+            });
+        });
     }
 
     fn ui_created(&mut self, ui: &mut egui::Ui) {
@@ -1035,13 +1344,14 @@ impl QuestCreator {
         let summary = &summary;
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.add_space(8.0);
-            ui.heading(if summary.effective_dry {
-                "🔍 Dry run — nothing was written"
+            let (title, color) = if summary.effective_dry {
+                ("🔍 Dry run — nothing was written", theme::INFO)
             } else if summary.was_edit {
-                "✅ Quest updated!"
+                ("✅ Quest updated!", theme::GOOD)
             } else {
-                "✅ Quest created!"
-            });
+                ("✅ Quest created!", theme::GOOD)
+            };
+            ui.heading(egui::RichText::new(title).color(color));
             ui.add_space(6.0);
             let verb = match summary.quest_type {
                 QuestType::Hunt => "kill",
@@ -1060,9 +1370,12 @@ impl QuestCreator {
             if !summary.backups.is_empty() {
                 ui.add_space(4.0);
                 ui.label(
-                    egui::RichText::new(format!("Backed up {} file(s) to .bak", summary.backups.len()))
-                        .weak()
-                        .small(),
+                    egui::RichText::new(format!(
+                        "Backed up {} file(s) to .bak",
+                        summary.backups.len()
+                    ))
+                    .weak()
+                    .small(),
                 );
             }
 
@@ -1090,10 +1403,16 @@ impl QuestCreator {
             }
 
             ui.add_space(14.0);
-            if ui
-                .add(egui::Button::new("➕  Create another quest").min_size(egui::vec2(200.0, 36.0)))
-                .clicked()
-            {
+            let another = egui::Button::new(
+                egui::RichText::new("➕  Create another quest")
+                    .size(15.0)
+                    .strong()
+                    .color(egui::Color32::WHITE),
+            )
+            .fill(theme::ACCENT_STRONG)
+            .rounding(egui::Rounding::same(6.0))
+            .min_size(egui::vec2(210.0, 36.0));
+            if ui.add(another).clicked() {
                 // Reload data so the next quest gets fresh SN / token ids.
                 if let Some(root) = self.root.clone() {
                     self.load_root(&root);
@@ -1120,14 +1439,14 @@ impl QuestCreator {
         ui.add_space(6.0);
 
         if let Some(status) = self.manage_status.clone() {
-            ui.colored_label(egui::Color32::from_rgb(120, 190, 120), status);
+            ui.colored_label(theme::GOOD, status);
             ui.add_space(4.0);
         }
 
         let quests = match list_editor_quests(&root) {
             Ok(q) => q,
             Err(e) => {
-                ui.colored_label(egui::Color32::LIGHT_RED, format!("{e:#}"));
+                ui.colored_label(theme::ERR, format!("{e:#}"));
                 return;
             }
         };
@@ -1139,70 +1458,91 @@ impl QuestCreator {
 
         let mut do_edit: Option<QuestSpec> = None;
         let mut do_delete: Option<i32> = None;
-        egui::Grid::new("manage_grid")
-            .num_columns(4)
-            .spacing([14.0, 6.0])
-            .striped(true)
+        egui::Frame::none()
+            .fill(theme::BG_CARD)
+            .stroke(egui::Stroke::new(1.0, theme::OUTLINE))
+            .rounding(egui::Rounding::same(8.0))
+            .inner_margin(egui::Margin::symmetric(12.0, 10.0))
             .show(ui, |ui| {
-                ui.label(egui::RichText::new("Quest").strong());
-                ui.label(egui::RichText::new("Type").strong());
-                ui.label(egui::RichText::new("Goal").strong());
-                ui.label("");
-                ui.end_row();
-                for q in &quests {
-                    let sn = q.quest_sn;
-                    ui.label(format!("#{}  {}", sn, q.title));
-                    let (ty, goal) = match &q.spec {
-                        Some(spec) => {
-                            let (mut ty, mut goal) = match &spec.kind {
-                                QuestKind::Hunt { monster_id, .. } => (
-                                    "Hunt".to_string(),
-                                    format!("kill {}× {}", spec.count, self.monster_name(*monster_id)),
-                                ),
-                                QuestKind::Fetch { item_name, .. } => {
-                                    ("Fetch".to_string(), format!("bring {}× {}", spec.count, item_name))
+                ui.set_width(ui.available_width());
+                egui::Grid::new("manage_grid")
+                    .num_columns(4)
+                    .spacing([14.0, 6.0])
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.label(egui::RichText::new("Quest").strong());
+                        ui.label(egui::RichText::new("Type").strong());
+                        ui.label(egui::RichText::new("Goal").strong());
+                        ui.label("");
+                        ui.end_row();
+                        for q in &quests {
+                            let sn = q.quest_sn;
+                            ui.label(format!("#{}  {}", sn, q.title));
+                            let (ty, goal) = match &q.spec {
+                                Some(spec) => {
+                                    let (mut ty, mut goal) = match &spec.kind {
+                                        QuestKind::Hunt { monster_id, .. } => (
+                                            "Hunt".to_string(),
+                                            format!(
+                                                "kill {}× {}",
+                                                spec.count,
+                                                self.monster_name(*monster_id)
+                                            ),
+                                        ),
+                                        QuestKind::Fetch { item_name, .. } => (
+                                            "Fetch".to_string(),
+                                            format!("bring {}× {}", spec.count, item_name),
+                                        ),
+                                    };
+                                    if !spec.extra_objectives.is_empty() {
+                                        ty = "Multi".to_string();
+                                        goal = format!(
+                                            "{goal}  (+{} more)",
+                                            spec.extra_objectives.len()
+                                        );
+                                    }
+                                    (ty, goal)
+                                }
+                                None => {
+                                    ("—".to_string(), "(older quest — delete only)".to_string())
                                 }
                             };
-                            if !spec.extra_objectives.is_empty() {
-                                ty = "Multi".to_string();
-                                goal = format!("{goal}  (+{} more)", spec.extra_objectives.len());
-                            }
-                            (ty, goal)
-                        }
-                        None => ("—".to_string(), "(older quest — delete only)".to_string()),
-                    };
-                    ui.label(ty);
-                    ui.label(egui::RichText::new(goal).weak());
-                    ui.horizontal(|ui| {
-                        match &q.spec {
-                            Some(spec) => {
-                                if ui.button("✏ Edit").clicked() {
-                                    do_edit = Some(spec.clone());
-                                }
-                            }
-                            None => {
-                                ui.add_enabled(false, egui::Button::new("✏ Edit"))
+                            ui.label(ty);
+                            ui.label(egui::RichText::new(goal).weak());
+                            ui.horizontal(|ui| {
+                                match &q.spec {
+                                    Some(spec) => {
+                                        if ui.button("✏ Edit").clicked() {
+                                            do_edit = Some(spec.clone());
+                                        }
+                                    }
+                                    None => {
+                                        ui.add_enabled(false, egui::Button::new("✏ Edit"))
                                     .on_disabled_hover_text(
                                         "Made before manifests — delete and recreate to change it.",
                                     );
-                            }
-                        }
-                        if self.confirm_delete == Some(sn) {
-                            if ui
-                                .button(egui::RichText::new("Confirm").color(egui::Color32::WHITE))
-                                .clicked()
-                            {
-                                do_delete = Some(sn);
-                            }
-                            if ui.button("Cancel").clicked() {
-                                self.confirm_delete = None;
-                            }
-                        } else if ui.button("🗑 Delete").clicked() {
-                            self.confirm_delete = Some(sn);
+                                    }
+                                }
+                                if self.confirm_delete == Some(sn) {
+                                    if ui
+                                        .button(
+                                            egui::RichText::new("Confirm")
+                                                .color(egui::Color32::WHITE),
+                                        )
+                                        .clicked()
+                                    {
+                                        do_delete = Some(sn);
+                                    }
+                                    if ui.button("Cancel").clicked() {
+                                        self.confirm_delete = None;
+                                    }
+                                } else if ui.button("🗑 Delete").clicked() {
+                                    self.confirm_delete = Some(sn);
+                                }
+                            });
+                            ui.end_row();
                         }
                     });
-                    ui.end_row();
-                }
             });
 
         if let Some(spec) = do_edit {
@@ -1216,8 +1556,10 @@ impl QuestCreator {
             self.confirm_delete = None;
             match delete_quest(&root, sn, false) {
                 Ok(rep) => {
-                    self.manage_status =
-                        Some(format!("Deleted quest #{sn} ({} change(s)).", rep.changes.len()));
+                    self.manage_status = Some(format!(
+                        "Deleted quest #{sn} ({} change(s)).",
+                        rep.changes.len()
+                    ));
                     self.load_root(&root); // refresh data + manifest list
                 }
                 Err(e) => self.manage_status = Some(format!("Delete failed: {e:#}")),
@@ -1232,20 +1574,19 @@ impl QuestCreator {
         );
         if !self.assign_giver {
             ui.label(
-                egui::RichText::new(
-                    "Off: the quest is accepted/turned in via GM commands only.",
-                )
-                .weak()
-                .small(),
+                egui::RichText::new("Off: the quest is accepted/turned in via GM commands only.")
+                    .weak()
+                    .small(),
             );
             return;
         }
 
         self.ensure_placements();
-        ui.horizontal(|ui| {
-            ui.label("Search NPC:");
-            ui.text_edit_singleline(&mut self.giver_search);
-        });
+        ui.add(
+            egui::TextEdit::singleline(&mut self.giver_search)
+                .hint_text("🔍  Search placed NPCs…")
+                .desired_width(f32::INFINITY),
+        );
 
         // Collect matching placed giver NPCs into an owned list (drops borrows
         // before the selectable list mutates `giver_npc`).
@@ -1265,23 +1606,31 @@ impl QuestCreator {
         if candidates.is_empty() {
             ui.weak("No placed town NPC matches (only NPCs spawned in a zone can give quests).");
         }
-        egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| {
-            for (id, name, conv) in &candidates {
-                let label = if conv.is_some() {
-                    format!("{:>5}  {}   [has dialog]", id, name)
-                } else {
-                    format!("{:>5}  {}", id, name)
-                };
-                ui.selectable_value(&mut self.giver_npc, Some(*id), label);
-            }
+        list_frame(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .max_height(150.0)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    for (id, name, conv) in &candidates {
+                        let label = if conv.is_some() {
+                            format!("{:>5}  {}   [has dialog]", id, name)
+                        } else {
+                            format!("{:>5}  {}", id, name)
+                        };
+                        ui.selectable_value(&mut self.giver_npc, Some(*id), label);
+                    }
+                });
         });
 
-        match self.giver_npc.and_then(|id| candidates.iter().find(|(c, ..)| *c == id)) {
+        match self
+            .giver_npc
+            .and_then(|id| candidates.iter().find(|(c, ..)| *c == id))
+        {
             Some((id, name, conv)) => {
                 ui.label(egui::RichText::new(format!("Giver: {name} (npc {id})")).strong());
                 if let Some(conv) = conv {
                     ui.colored_label(
-                        egui::Color32::from_rgb(220, 150, 60),
+                        theme::WARN,
                         format!(
                             "⚠ This NPC already has a conversation (\"{conv}\") — it will be \
                              REPLACED. Pick an NPC without [has dialog] unless you don't mind losing it.",
@@ -1290,10 +1639,7 @@ impl QuestCreator {
                 }
             }
             None => {
-                ui.colored_label(
-                    egui::Color32::from_rgb(120, 170, 255),
-                    "Pick a placed NPC above to give the quest.",
-                );
+                ui.colored_label(theme::INFO, "Pick a placed NPC above to give the quest.");
             }
         }
     }
@@ -1424,7 +1770,8 @@ impl QuestCreator {
 
     // --- helpers ---
 
-    /// A small numbered section wrapper for a consistent look.
+    /// A numbered "card" section: rose badge + title header, a divider, then
+    /// the body — the main visual building block of the form.
     fn section(
         &mut self,
         ui: &mut egui::Ui,
@@ -1432,26 +1779,42 @@ impl QuestCreator {
         title: &str,
         body: impl FnOnce(&mut Self, &mut egui::Ui),
     ) {
-        egui::Frame::group(ui.style()).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(num)
-                        .strong()
-                        .color(egui::Color32::from_rgb(120, 170, 255)),
-                );
-                ui.label(egui::RichText::new(title).strong());
+        egui::Frame::none()
+            .fill(theme::BG_CARD)
+            .stroke(egui::Stroke::new(1.0, theme::OUTLINE))
+            .rounding(egui::Rounding::same(8.0))
+            .inner_margin(egui::Margin::symmetric(12.0, 10.0))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    egui::Frame::none()
+                        .fill(theme::ACCENT_STRONG)
+                        .rounding(egui::Rounding::same(10.0))
+                        .inner_margin(egui::Margin::symmetric(8.0, 1.0))
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new(num)
+                                    .strong()
+                                    .color(egui::Color32::WHITE),
+                            );
+                        });
+                    ui.label(egui::RichText::new(title).strong().size(15.0));
+                });
+                ui.add_space(2.0);
+                ui.separator();
+                ui.add_space(4.0);
+                body(self, ui);
             });
-            ui.add_space(4.0);
-            body(self, ui);
-        });
-        ui.add_space(6.0);
+        ui.add_space(10.0);
     }
 
     /// Name of the objective (monster for Hunt, item for Fetch).
     fn objective_name(&self) -> Option<String> {
         let ds = self.data.as_ref()?;
         match self.quest_type {
-            QuestType::Hunt => ds.find_monster(self.selected_monster?).map(|m| m.name.clone()),
+            QuestType::Hunt => ds
+                .find_monster(self.selected_monster?)
+                .map(|m| m.name.clone()),
             QuestType::Fetch => ds
                 .item_db
                 .lookup(self.fetch_item_category, self.fetch_item_id?)
@@ -1525,7 +1888,11 @@ impl QuestCreator {
         };
         // Extra objectives. Each ready Hunt draft gets the next free token SN
         // (offset 1+ when the primary is also a hunt, since it took offset 0).
-        let mut hunt_offset = if self.quest_type == QuestType::Hunt { 1 } else { 0 };
+        let mut hunt_offset = if self.quest_type == QuestType::Hunt {
+            1
+        } else {
+            0
+        };
         let extra_objectives: Vec<Objective> = self
             .extra_objectives
             .iter()
@@ -1696,7 +2063,8 @@ impl QuestCreator {
         match self.quest_type {
             QuestType::Hunt => {
                 self.title = format!("Hunt: {name}");
-                self.start_text = format!("Defeat {} {name} threatening the area.", self.kill_count);
+                self.start_text =
+                    format!("Defeat {} {name} threatening the area.", self.kill_count);
                 self.progress_text = format!("Keep hunting {name}.");
                 self.complete_text = "Well done, adventurer!".to_string();
                 self.token_name = format!("{name} Mark");
@@ -1740,7 +2108,10 @@ fn icon_picker_control(
                 .desired_width(56.0)
                 .hint_text("default"),
         );
-        if ui.button(if *open { "Close" } else { "🖼 Browse…" }).clicked() {
+        if ui
+            .button(if *open { "Close" } else { "🖼 Browse…" })
+            .clicked()
+        {
             *open = !*open;
             if *open && icons.is_none() {
                 if let Some(r) = root {
@@ -1779,7 +2150,9 @@ fn icon_picker_control(
                             break;
                         }
                         let size = egui::vec2(cell - 4.0, cell - 4.0);
-                        let tex = icons.as_mut().and_then(|s| s.icon_texture(ui.ctx(), idx as i32));
+                        let tex = icons
+                            .as_mut()
+                            .and_then(|s| s.icon_texture(ui.ctx(), idx as i32));
                         let resp = match tex {
                             Some(t) => ui.add(egui::ImageButton::new(
                                 egui::Image::new(&t).fit_to_exact_size(size),
@@ -1801,7 +2174,11 @@ fn icon_picker_control(
 }
 
 fn monster_label(m: &Monster) -> String {
-    let tag = if m.dead_event_is_free() { "" } else { "  [+chain]" };
+    let tag = if m.dead_event_is_free() {
+        ""
+    } else {
+        "  [+chain]"
+    };
     format!("{:>5}  {}  (Lv {}){}", m.id, m.name, m.level, tag)
 }
 
