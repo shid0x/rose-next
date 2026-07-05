@@ -41,6 +41,7 @@ fn main() -> ExitCode {
         Some("ifo-set") => cmd_ifo_set(&args[1..]),
         Some("ifo-scan") => cmd_ifo_scan(args.get(1)),
         Some("con-wire") => cmd_con_wire(&args[1..]),
+        Some("con-append") => cmd_con_append(&args[1..]),
         Some("npc-find") => cmd_npc_find(&args[1..]),
         Some("ltb-check") => cmd_ltb_check(&args[1..]),
         Some("icons-check") => cmd_icons_check(args.get(1)),
@@ -638,6 +639,30 @@ fn cmd_con_wire(args: &[String]) -> Result<bool> {
     Ok(true)
 }
 
+fn cmd_con_append(args: &[String]) -> Result<bool> {
+    let write = args.iter().any(|a| a == "--write");
+    let pos: Vec<String> = args.iter().filter(|a| !a.starts_with("--")).cloned().collect();
+    if pos.len() < 4 {
+        bail!("usage: con-append <root> <npc_id> <quest_sn> <complete_trigger> [--write]\n\
+               \x20  adds the quest as a new option at the end of the NPC's existing dialog\n\
+               \x20  (needs the QEX1 appendix-aware client). e.g. con-append ../data 1035 5503 5503-3 --write");
+    }
+    let root = PathBuf::from(&pos[0]);
+    let npc_id: i32 = pos[1].parse().context("npc_id")?;
+    let qid: i32 = pos[2].parse().context("quest_sn")?;
+    let trigger = &pos[3];
+
+    let report =
+        quest_editor::write::append_quest_to_npc_dialog(&root, npc_id, qid, trigger, None, !write)?;
+    report.print();
+    if report.dry_run {
+        println!("\n(re-run with --write to apply, then bake the VFS + restart)");
+    } else {
+        println!("\nnext: bake the VFS, restart servers + client, click npc {npc_id}.");
+    }
+    Ok(true)
+}
+
 fn cmd_ifo_scan(root: Option<&String>) -> Result<bool> {
     let root = PathBuf::from(root.context("usage: ifo-scan <root>")?);
     let list = quest_editor::ifo::placements_with_conversation(&root)?;
@@ -760,6 +785,12 @@ fn cmd_con_dump(file: Option<&String>) -> Result<bool> {
         let n = c.lua.len().min(48);
         let hex: String = c.lua[..n].iter().map(|b| format!("{b:02x} ")).collect();
         println!("--- lua hex (first {n}) ---\n{hex}");
+    }
+    if !c.appendix.is_empty() {
+        let qids = quest_editor::convo::quest_option_qids(&c);
+        println!("appendix (QEX1): {} bytes, quest option(s) {:?}", c.appendix.len(), qids);
+        let n = c.appendix.len().min(700);
+        println!("--- appendix preview ---\n{}", String::from_utf8_lossy(&c.appendix[..n]));
     }
     Ok(true)
 }

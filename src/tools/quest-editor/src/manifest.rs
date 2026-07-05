@@ -23,6 +23,11 @@ pub struct GiverWiring {
     pub ifo_path: String,
     /// The NPC's conversation before we replaced it (empty = had none).
     pub original_conversation: String,
+    /// True when the quest option was *appended* to the NPC's existing
+    /// conversation (QEX1 appendix) — the IFO was never touched, so delete must
+    /// not "restore" it; the .CON cleanup is scan-based instead.
+    #[serde(default)]
+    pub append: bool,
 }
 
 /// On-disk manifest. Versioned so we can evolve the schema later.

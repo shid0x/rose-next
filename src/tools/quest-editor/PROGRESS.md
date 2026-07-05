@@ -260,6 +260,69 @@ item `13:129`. (Validate the id exists in the item DB when generating.)
 
 ## Status log
 
+### 2026-07-04 — Append mode: add a quest option to an NPC's EXISTING dialog (QEX1 appendix)
+
+Until now wiring a quest-giver **replaced** the NPC's whole conversation
+(dedicated `QG<sn>.con`), because retail `.CON` Lua is **bytecode** and Lua
+4.0.1's `luaU_undump` hard-rejects >1 chunk per buffer — new source can't be
+merged into the blob. Solved with a small **client extension** instead of a
+bytecode patcher:
+
+- **`.CON` appendix chunk (`QEX1`)** — optional block after the Lua tail:
+  `b"QEX1"; i32 len; XOR'd Lua *source*` (usual `xor_key(len, file_size)`).
+  `CEvent::Load` reads it, `CEvent::Start` runs it with a **second
+  `Do_Buffer` into the same `lua_State`** after the retail blob, so appended
+  menu nodes can call functions the retail bytecode doesn't have.
+  Gotcha handled: the *main* blob's XOR key uses the file size when `lua_len`
+  is even, so appending re-encodes it (`wr_lua_tail` computes the final total).
+- **Codec** (`convo.rs`): `ConFile.appendix` (parse + serialize),
+  `ConFile::rebuild()` (canonical re-serialize from the parsed model — needed
+  for structural node edits; the client reads everything by explicit offsets so
+  layout is free), `append_quest_option` / `remove_quest_option` /
+  `quest_option_qids`, `appendix_upsert`/`appendix_remove` (per-quest
+  `-- QE:BEGIN <sn>` sections; several quests coexist in one file).
+- **Placement**: the 3 option items (accept / turn-in / in-progress, each gated
+  by `QE<sn>_CHK_*`) are appended to **menu 0** — `Conversation(0)` recurses
+  into NPCSAY children *before* later siblings, so they render after all the
+  NPC's own options in the same dialog. All function names + values are
+  namespaced/inlined (`QE<sn>_*`, no shared globals).
+- **Wiring** (`write.rs` `append_quest_to_npc_dialog`): edits the NPC's existing
+  `.CON` in place (`.bak`) — **no IFO edit, no LIST_EVENT row** (already wired).
+  LTB strings reuse the `QG<sn>_*` keys. `delete_quest` strips appended options
+  **scan-based** (any `.CON` whose items reference `QE<sn>_`), so it works
+  without a manifest; `GiverWiring.append` flag makes delete skip the IFO
+  "restore". UI: radio append (default) / replace when the picked NPC has a
+  dialog. CLI: `con-append <root> <npc> <sn> <trigger> [--write]`.
+- **Tests** (`tests/convo_append.rs`): every retail `.CON` must survive
+  parse→rebuild→parse with an identical model AND append→remove back to the
+  identical model; a `client_view` helper replicates `CEvent::Load`'s reads
+  byte-for-byte (offsets + both XOR keys) to prove the client decodes what we
+  wrote. All 125 retail files pass; `con-verify` stays 0-drift.
+- **Deploy note:** appended `.CON`s need the QEX1-aware client (an old client
+  pops "function not found" boxes on the new options) — ship client + data
+  together. Retail files without an appendix are byte-identical in behavior.
+- Validated on real data: `con-append data 1001 5503 5503-3 --write` put the
+  options at the end of EM01-001.con's menu 0 (children 98–100 → close 101),
+  retail bytecode untouched. Append itself **validated in-game 2026-07-04**
+  (quest 5509 on Ronk/npc 1034 — extra option at the end of his dialog).
+- **Bugfix (2026-07-04): EDIT of an appended quest replaced the NPC's dialog.**
+  The append-vs-replace decision read `self.placements` (the *cached async*
+  zone scan) — but the edit flow calls `load_root()` right before wiring, which
+  nulls that cache and restarts the scan on a background thread, so
+  `npc_has_dialog` was always false during an edit → silent replace branch →
+  retail dialog clobbered (the rest behaved: delete-old stripped the appended
+  option cleanly and the manifest recorded `original_conversation`). Fix: the
+  decision now does a **live `ifo::find_npc`** at apply time (the write fns do
+  that walk anyway) + a change-log note when append falls back to replace for
+  a dialog-less NPC. Recovery for a clobbered NPC: just re-edit the quest with
+  the append radio selected — delete-old restores the IFO from the manifest,
+  then the re-create appends properly. Fix validated in-game (Ronk re-edited,
+  dialog kept, quest option re-appended).
+- UI wording: the "Quest text" fields now say what they actually control
+  in-game — "Start message" → **"NPC conversation"** (`start_text`, the NPC's
+  dialog greeting) and "In-progress hint" → **"Quest description"**
+  (`progress_text`, the quest-journal description / in-progress line).
+
 ### 2026-07-03 — "Two token icons" crash: root cause was a stale DELETED quest in the character's quest log
 
 Quest #5507 (two hunt objectives, each with a custom token icon) "crashed the

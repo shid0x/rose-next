@@ -71,6 +71,13 @@ private:
     int m_iLuaDataLEN;
     char* m_pLuaDATA;
 
+    // Optional quest-editor appendix chunk: extra Lua *source* appended after the
+    // retail Lua blob ([u32 'QEX1'][i32 len][XOR'd source]). Executed into the same
+    // lua_State after the main blob so generated quest options can coexist with
+    // retail bytecode. Absent in retail files.
+    int m_iLuaAppendixLEN;
+    char* m_pLuaAppendixDATA;
+
     t_HASHKEY m_HashKEY;
     classLUA* m_pLUA;
     classDLLIST<tagEventITEM> m_EventITEM;

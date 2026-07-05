@@ -38,6 +38,10 @@
 
 #define NUM_EVENT 16
 
+// Quest-editor appendix chunk magic: the bytes "QEX1" read as a little-endian DWORD.
+// See src/tools/quest-editor/src/convo.rs (appendix format) — keep in sync.
+#define QEX_APPENDIX_MAGIC 0x31584551
+
 // Script File Header
 typedef struct tag_SSC_FILE_HEADER {
     __int16 EventMask;
@@ -113,6 +117,9 @@ CEvent::CEvent(int iEventDlgType) {
     m_iLuaDataLEN = 0;
     m_pLuaDATA = NULL;
 
+    m_iLuaAppendixLEN = 0;
+    m_pLuaAppendixDATA = NULL;
+
     m_pLUA = NULL;
 
     m_iEventDlgType = iEventDlgType;
@@ -127,6 +134,7 @@ CEvent::~CEvent() {
     // 메모리는 ~xxx에서 풀림..
     SAFE_DELETE_ARRAY(m_pScrDATA);
     SAFE_DELETE_ARRAY(m_pLuaDATA);
+    SAFE_DELETE_ARRAY(m_pLuaAppendixDATA);
     SAFE_DELETE_ARRAY(m_pScrMSG);
 
     LogString(LOG_DEBUG_, "<<<< Event DELETED ...\n");
@@ -287,6 +295,28 @@ CEvent::Load(char* szFileName) {
 
     pFileSystem->Read(m_pLuaDATA, m_iLuaDataLEN);
     Decode(m_pLuaDATA, m_iLuaDataLEN, m_iLuaDataLEN, lFileSize); //_tell(hf) + 1 + m_iLuaDataLEN) ;
+
+    ////////////////////////////////////////////////////////////////////////
+    // Optional quest-editor appendix: [u32 'QEX1'][i32 len][XOR'd Lua source].
+    // Sits after the retail Lua blob; retail files simply end here.
+    long lAppendixOff = (long)FileHeader.ScriptOff + (long)sizeof(int) + m_iLuaDataLEN;
+    if (lAppendixOff + (long)(sizeof(DWORD) + sizeof(int)) <= lFileSize) {
+        DWORD dwMagic = 0;
+        pFileSystem->Seek(lAppendixOff, FILE_POS_SET);
+        pFileSystem->Read(&dwMagic, sizeof(DWORD));
+        if (dwMagic == QEX_APPENDIX_MAGIC) {
+            pFileSystem->Read(&m_iLuaAppendixLEN, sizeof(int));
+            if (m_iLuaAppendixLEN > 0
+                && lAppendixOff + (long)(sizeof(DWORD) + sizeof(int)) + m_iLuaAppendixLEN
+                    <= lFileSize) {
+                m_pLuaAppendixDATA = new char[m_iLuaAppendixLEN];
+                pFileSystem->Read(m_pLuaAppendixDATA, m_iLuaAppendixLEN);
+                Decode(m_pLuaAppendixDATA, m_iLuaAppendixLEN, m_iLuaAppendixLEN, lFileSize);
+            } else {
+                m_iLuaAppendixLEN = 0;
+            }
+        }
+    }
 
     pFileSystem->CloseFile();
     (CVFSManager::GetSingleton()).ReturnToManager(pFileSystem);
@@ -706,6 +736,25 @@ CEvent::Start(short nEventIDX) {
             LogString(LOG_DEBUG_, "Script File ERROR[ %d ] %s \n", iResult, m_pLuaDATA);
             SAFE_DELETE(m_pLUA);
             return false;
+    }
+
+    // Quest-editor appendix chunk: extra Lua source executed into the same state so
+    // its globals coexist with the retail blob's (which may be bytecode).
+    if (m_pLuaAppendixDATA && m_iLuaAppendixLEN > 0) {
+        iResult = m_pLUA->Do_Buffer(m_pLuaAppendixDATA, m_iLuaAppendixLEN);
+        switch (iResult) {
+            case LUA_ERRRUN:
+            case LUA_ERRFILE:
+            case LUA_ERRSYNTAX:
+            case LUA_ERRMEM:
+            case LUA_ERRERR:
+                LogString(LOG_DEBUG_,
+                    "Appendix Script ERROR[ %d ] %s \n",
+                    iResult,
+                    m_pLuaAppendixDATA);
+                SAFE_DELETE(m_pLUA);
+                return false;
+        }
     }
 
     QF_Init(m_pLUA->m_pState);

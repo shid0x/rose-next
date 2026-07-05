@@ -490,7 +490,7 @@ pub fn delete_quest(root: &Path, quest_sn: i32, dry_run: bool) -> Result<WriteRe
             }
         }
     }
-    for g in &givers {
+    for g in givers.iter().filter(|g| !g.append) {
         let to = if g.original_conversation.trim().is_empty() {
             "(none)".to_string()
         } else {
@@ -501,6 +501,39 @@ pub fn delete_quest(root: &Path, quest_sn: i32, dry_run: bool) -> Result<WriteRe
     }
     if con_exists {
         changes.push(format!("DELETE {}", con_path.display()));
+    }
+
+    // Appended dialog options (QEX1): strip our QE<sn>_ items from any .CON that
+    // has them. Scan-based (like the kill-trigger un-wiring) so it works without
+    // a manifest.
+    let mut con_strips: Vec<(PathBuf, Vec<u8>)> = Vec::new();
+    if let Ok(rd) = fs::read_dir(&event_dir) {
+        for entry in rd.flatten() {
+            let path = entry.path();
+            let is_con = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("con"));
+            let is_own_giver = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.eq_ignore_ascii_case(&con_name));
+            if !is_con || is_own_giver {
+                continue; // QG<sn>.con (dedicated giver) is deleted wholesale above
+            }
+            let Ok(mut con) = crate::convo::ConFile::read_file(&path) else {
+                continue;
+            };
+            if !crate::convo::quest_option_qids(&con).contains(&quest_sn) {
+                continue;
+            }
+            crate::convo::remove_quest_option(&mut con, quest_sn);
+            changes.push(format!(
+                "STRIP quest {quest_sn} dialog option from {}",
+                path.display()
+            ));
+            con_strips.push((path, con.rebuild()));
+        }
     }
 
     // Deleting the quest blanks its LIST_QUEST row, but characters that already
@@ -563,12 +596,19 @@ pub fn delete_quest(root: &Path, quest_sn: i32, dry_run: bool) -> Result<WriteRe
         changes.push(format!("DELETE {}", qsd_file.display()));
     }
     // Dialog cleanup: restore each NPC's original conversation, clear the
-    // LIST_EVENT row, and remove the generated .CON.
-    for g in &givers {
+    // LIST_EVENT row, and remove the generated .CON. Append-mode wirings never
+    // touched the IFO — their cleanup is the .CON strip below.
+    for g in givers.iter().filter(|g| !g.append) {
         let ifo = PathBuf::from(&g.ifo_path);
         if ifo.exists() {
             crate::ifo::wire_npc_in_ifo(&ifo, g.npc_id, &g.original_conversation, false).ok();
         }
+    }
+    for (path, bytes) in &con_strips {
+        if let Some(b) = backup_once(path)? {
+            backups.push(b);
+        }
+        fs::write(path, bytes).with_context(|| format!("writing {}", path.display()))?;
     }
     if let Some((p, mut ev)) = event_cleanup {
         if let Some(b) = backup_once(&p)? {
@@ -1081,6 +1121,7 @@ pub fn wire_quest_giver(
             npc_id,
             ifo_path: p.ifo_path.to_string_lossy().into_owned(),
             original_conversation: original,
+            append: false,
         });
         crate::ifo::wire_npc_in_ifo(&p.ifo_path, npc_id, &con_name, dry_run)?;
         changes.push(format!("WIRE {} (npc {npc_id}) -> {con_name}", p.ifo_path.display()));
@@ -1115,6 +1156,114 @@ pub fn wire_quest_giver(
 
     // Record the wiring in the quest's manifest (if it has one) so delete can
     // restore the NPC and edit can re-offer it.
+    crate::manifest::add_givers(root, qid, &wirings).ok();
+
+    Ok(WriteReport {
+        dry_run: false,
+        changes,
+        backups,
+    })
+}
+
+/// Make `npc_id` give quest `qid` by **appending** a dialog option to its
+/// *existing* conversation(s) instead of replacing them: namespaced `QE<qid>_*`
+/// menu items at the end of the root menu + the matching Lua in a `QEX1`
+/// appendix chunk (requires the appendix-aware client). No IFO or LIST_EVENT
+/// change — the NPC keeps its own dialog wiring. Idempotent; `.bak` per file.
+pub fn append_quest_to_npc_dialog(
+    root: &Path,
+    npc_id: i32,
+    qid: i32,
+    complete_trig: &str,
+    text: Option<&GiverText>,
+    dry_run: bool,
+) -> Result<WriteReport> {
+    let stb_dir = resolve_stb_dir(root)?;
+    let event_dir = stb_dir
+        .parent()
+        .ok_or_else(|| anyhow!("STB dir has no parent"))?
+        .join("EVENT");
+
+    let placements = crate::ifo::find_npc(root, npc_id)?;
+    if placements.is_empty() {
+        bail!("npc {npc_id} isn't placed in any zone .IFO (can't make it a quest-giver)");
+    }
+    // Every distinct conversation this NPC's placements use (usually one).
+    let mut con_names: Vec<String> = placements
+        .iter()
+        .map(|p| p.conversation.trim().to_string())
+        .filter(|c| !c.is_empty())
+        .collect();
+    con_names.sort_by_key(|c| c.to_ascii_lowercase());
+    con_names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    if con_names.is_empty() {
+        bail!(
+            "npc {npc_id} has no existing conversation — use the dedicated quest-giver \
+             (replace) mode instead"
+        );
+    }
+
+    // Dialog text: same string set as the dedicated giver (greeting/bye unused).
+    let ltb_path = file_ci(&event_dir, "ulngtb_con.ltb")?;
+    let mut ltb = crate::ltb::LtbTable::read_file(&ltb_path)?;
+    let strings = giver_strings(&mut ltb, qid, text);
+
+    let mut changes = Vec::new();
+    let mut outputs: Vec<(PathBuf, Vec<u8>)> = Vec::new();
+    for name in &con_names {
+        let path = file_ci(&event_dir, name)
+            .with_context(|| format!("npc {npc_id}'s conversation \"{name}\" not found in EVENT dir"))?;
+        let mut con = crate::convo::ConFile::read_file(&path)?;
+        let re_append = crate::convo::quest_option_qids(&con).contains(&qid);
+        crate::convo::append_quest_option(&mut con, qid, complete_trig, &strings)?;
+        let bytes = con.rebuild();
+        crate::convo::ConFile::parse(&bytes).context("rebuilt .CON failed to self-parse")?;
+        changes.push(format!(
+            "{} quest {qid} option in {} (accept→QF_doQuestTrigger(\"{qid}-1\"), \
+             turn-in→QF_doQuestTrigger(\"{complete_trig}\"))",
+            if re_append { "REFRESH" } else { "APPEND" },
+            path.display()
+        ));
+        outputs.push((path, bytes));
+    }
+    changes.push(format!("UPSERT dialog strings into {}", ltb_path.display()));
+    changes.push(
+        "NOTE: appended options need the appendix-aware client (QEX1) — deploy client + data together"
+            .to_string(),
+    );
+
+    if dry_run {
+        return Ok(WriteReport {
+            dry_run: true,
+            changes,
+            backups: Vec::new(),
+        });
+    }
+
+    let mut backups = Vec::new();
+    for (path, bytes) in &outputs {
+        if let Some(b) = backup_once(path)? {
+            backups.push(b);
+        }
+        fs::write(path, bytes).with_context(|| format!("writing {}", path.display()))?;
+    }
+    if let Some(b) = backup_once(&ltb_path)? {
+        backups.push(b);
+    }
+    fs::write(&ltb_path, ltb.to_bytes())
+        .with_context(|| format!("writing {}", ltb_path.display()))?;
+
+    // Manifest: record the giver so edit re-offers it; `append: true` tells
+    // delete to skip IFO restore (the .CON cleanup is scan-based).
+    let wirings: Vec<crate::manifest::GiverWiring> = placements
+        .iter()
+        .map(|p| crate::manifest::GiverWiring {
+            npc_id,
+            ifo_path: p.ifo_path.to_string_lossy().into_owned(),
+            original_conversation: p.conversation.clone(),
+            append: true,
+        })
+        .collect();
     crate::manifest::add_givers(root, qid, &wirings).ok();
 
     Ok(WriteReport {

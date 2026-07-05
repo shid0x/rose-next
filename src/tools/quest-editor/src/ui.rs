@@ -267,6 +267,10 @@ struct QuestCreator {
     assign_giver: bool,
     giver_search: String,
     giver_npc: Option<i32>,
+    /// When the picked NPC already has a conversation: true = append our quest
+    /// option to it (QEX1 appendix), false = replace it with a dedicated
+    /// quest-giver .CON. Ignored for NPCs without a dialog.
+    giver_append: bool,
     /// Zone-IFO placement info: (placed npc ids, npc id -> existing .CON).
     /// Scanned once per data folder on a background thread (the scan reads
     /// every zone IFO and would freeze the UI if done inline).
@@ -333,6 +337,7 @@ impl Default for QuestCreator {
             assign_giver: false,
             giver_search: String::new(),
             giver_npc: None,
+            giver_append: true,
             placements: None,
             placements_rx: None,
             hide_in_use: false,
@@ -704,12 +709,12 @@ impl QuestCreator {
                         edited(app);
                     }
                     ui.end_row();
-                    ui.label("Start message:");
+                    ui.label("NPC conversation:");
                     if ui.text_edit_multiline(&mut app.start_text).changed() {
                         edited(app);
                     }
                     ui.end_row();
-                    ui.label("In-progress hint:");
+                    ui.label("Quest description:");
                     if ui.text_edit_multiline(&mut app.progress_text).changed() {
                         edited(app);
                     }
@@ -1678,13 +1683,35 @@ impl QuestCreator {
             Some((id, name, conv)) => {
                 ui.label(egui::RichText::new(format!("Giver: {name} (npc {id})")).strong());
                 if let Some(conv) = conv {
-                    ui.colored_label(
-                        theme::WARN,
-                        format!(
-                            "⚠ This NPC already has a conversation (\"{conv}\") — it will be \
-                             REPLACED. Pick an NPC without [has dialog] unless you don't mind losing it.",
-                        ),
+                    ui.label(format!("This NPC already has a conversation (\"{conv}\"):"));
+                    ui.radio_value(
+                        &mut self.giver_append,
+                        true,
+                        "Add the quest as a new option at the end of its dialog (recommended)",
                     );
+                    ui.radio_value(
+                        &mut self.giver_append,
+                        false,
+                        "Replace its whole dialog with a dedicated quest-giver one",
+                    );
+                    if self.giver_append {
+                        ui.label(
+                            egui::RichText::new(
+                                "The NPC keeps all its options; needs a client built with QEX1 \
+                                 appendix support (deploy client + data together).",
+                            )
+                            .weak()
+                            .small(),
+                        );
+                    } else {
+                        ui.colored_label(
+                            theme::WARN,
+                            format!(
+                                "⚠ \"{conv}\" will be REPLACED — every existing dialog option of \
+                                 this NPC is lost until the quest is deleted.",
+                            ),
+                        );
+                    }
                 }
             }
             None => {
@@ -1807,11 +1834,13 @@ impl QuestCreator {
         // Restore the quest-giver NPC from the manifest (so editing re-offers it).
         self.assign_giver = false;
         self.giver_npc = None;
+        self.giver_append = true;
         if let Some(root) = &self.root {
             if let Ok(m) = crate::manifest::read_manifest(root, spec.quest_sn) {
                 if let Some(g) = m.givers.first() {
                     self.giver_npc = Some(g.npc_id);
                     self.assign_giver = true;
+                    self.giver_append = g.append;
                 }
             }
         }
@@ -2060,14 +2089,45 @@ impl QuestCreator {
                             in_progress: spec.progress_text.clone(),
                             after_complete: spec.complete_text.clone(),
                         };
-                        match crate::write::wire_quest_giver(
-                            &root,
-                            npc_id,
-                            spec.quest_sn,
-                            &gen.complete_trigger,
-                            Some(&text),
-                            false,
-                        ) {
+                        // Append to the NPC's existing dialog when it has one and
+                        // the user chose append; otherwise create/replace with a
+                        // dedicated quest-giver conversation.
+                        //
+                        // The "has a dialog" check MUST be live (ifo::find_npc), not
+                        // the cached background zone scan: the edit flow calls
+                        // load_root() right before this point, which nulls the cache
+                        // and restarts the scan async — deciding off the cache made
+                        // every EDIT of an appended quest silently take the replace
+                        // branch and clobber the NPC's retail dialog.
+                        let npc_has_dialog = crate::ifo::find_npc(&root, npc_id)
+                            .map(|ps| ps.iter().any(|p| !p.conversation.trim().is_empty()))
+                            .unwrap_or(false);
+                        if self.giver_append && !npc_has_dialog {
+                            changes.push(format!(
+                                "(npc {npc_id} has no existing dialog — creating a dedicated \
+                                 quest-giver conversation instead of appending)"
+                            ));
+                        }
+                        let wired = if self.giver_append && npc_has_dialog {
+                            crate::write::append_quest_to_npc_dialog(
+                                &root,
+                                npc_id,
+                                spec.quest_sn,
+                                &gen.complete_trigger,
+                                Some(&text),
+                                false,
+                            )
+                        } else {
+                            crate::write::wire_quest_giver(
+                                &root,
+                                npc_id,
+                                spec.quest_sn,
+                                &gen.complete_trigger,
+                                Some(&text),
+                                false,
+                            )
+                        };
+                        match wired {
                             Ok(rep) => changes.extend(rep.changes),
                             Err(e) => changes.push(format!("(quest-giver wiring FAILED: {e:#})")),
                         }

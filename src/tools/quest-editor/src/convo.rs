@@ -22,16 +22,32 @@
 //! (everything after its first 8 bytes) and the Lua blob. The XOR is a single
 //! repeating byte; encode == decode.
 //!
-//! This module only *parses* for now (dump + parse-all). The byte-exact
-//! round-trip serializer is the next step.
+//! ## Appendix chunk (our extension)
+//!
+//! Retail conversation Lua is *bytecode*, so extra quest options can't be merged
+//! into the blob. Instead an optional appendix sits after the Lua tail:
+//!
+//! ```text
+//! [script_off + 4 + lua_len]   b"QEX1"; i32 appendix_len; XOR'd Lua *source*
+//! ```
+//!
+//! The appendix-aware client (`cevent.cpp`, `QEX_APPENDIX_MAGIC`) executes it into
+//! the same `lua_State` after the main blob, so appended menu nodes can name
+//! `QE<qid>_*` functions defined here. The XOR key is the usual
+//! `xor_key(len, file_size)` — note the *main* blob's key also involves the file
+//! size, so appending re-encodes it (handled by the serializers below).
 
 use anyhow::{bail, Context, Result};
+use std::collections::BTreeSet;
 use std::path::Path;
 
 const FILE_HEADER_LEN: usize = 524;
 const CONV_HEADER_OFF: usize = FILE_HEADER_LEN;
 const NUM_EVENT: usize = 16;
 const FUNC_NAME_LEN: usize = 32;
+
+/// Appendix magic — keep in sync with `QEX_APPENDIX_MAGIC` in `cevent.cpp`.
+pub const APPENDIX_MAGIC: &[u8; 4] = b"QEX1";
 
 /// One conversation message (the `m_pScrMSG` table; slot 0 is the entry check).
 #[derive(Debug, Clone)]
@@ -81,6 +97,8 @@ pub struct ConFile {
     pub menus: Vec<ConMenu>,
     /// XOR-decoded script blob (Lua source or bytecode).
     pub lua: Vec<u8>,
+    /// XOR-decoded appendix Lua source (our `QEX1` extension; empty = none).
+    pub appendix: Vec<u8>,
     pub file_size: usize,
     /// The original file bytes. Everything up to `script_off` (header + message +
     /// menu sections) is preserved verbatim on write; only the trailing Lua
@@ -218,6 +236,19 @@ impl ConFile {
             .to_vec();
         decode(&mut lua, xor_key(lua_len as i32, b.len() as i32));
 
+        // --- optional appendix chunk (our extension) ---
+        let lua_end = lua_start + lua_len;
+        let mut appendix = Vec::new();
+        if b.len() >= lua_end + 8 && &b[lua_end..lua_end + 4] == APPENDIX_MAGIC {
+            let alen = rd_i32(b, lua_end + 4)?.max(0) as usize;
+            let mut a = b
+                .get(lua_end + 8..lua_end + 8 + alen)
+                .with_context(|| format!("appendix past EOF (off {}, len {alen})", lua_end + 8))?
+                .to_vec();
+            decode(&mut a, xor_key(alen as i32, b.len() as i32));
+            appendix = a;
+        }
+
         Ok(ConFile {
             event_mask,
             event_funcs,
@@ -226,6 +257,7 @@ impl ConFile {
             messages,
             menus,
             lua,
+            appendix,
             file_size: b.len(),
             raw: b.to_vec(),
         })
@@ -238,19 +270,23 @@ impl ConFile {
 
     /// Serialize back to `.CON` bytes: the header / message / menu sections are
     /// taken verbatim from `raw` (so node-tree edits, which patch `raw` in place,
-    /// are preserved), and the trailing Lua section is rebuilt from `lua` with the
-    /// XOR re-applied. For an unmodified file this reproduces the original bytes
-    /// exactly — the round-trip check that proves the Lua codec + offsets.
+    /// are preserved), and the trailing Lua section (+ appendix, if any) is
+    /// rebuilt from `lua`/`appendix` with the XOR re-applied. For an unmodified
+    /// file this reproduces the original bytes exactly — the round-trip check
+    /// that proves the Lua codec + offsets.
     pub fn to_bytes(&self) -> Vec<u8> {
         let so = self.script_off as usize;
         let mut out = self.raw[..so].to_vec();
-        let lua_len = self.lua.len();
-        out.extend_from_slice(&(lua_len as i32).to_le_bytes());
-        let total = so + 4 + lua_len;
-        let mut enc = self.lua.clone();
-        decode(&mut enc, xor_key(lua_len as i32, total as i32)); // encode == decode
-        out.extend_from_slice(&enc);
+        wr_lua_tail(&mut out, so, &self.lua, &self.appendix);
         out
+    }
+
+    /// Serialize from the parsed *model* (canonical layout), instead of `raw`.
+    /// Use after structural node-tree edits (inserting/removing menu items);
+    /// semantically identical to the source file — the client reads everything by
+    /// explicit offsets, so the incidental retail layout doesn't matter.
+    pub fn rebuild(&self) -> Vec<u8> {
+        build_con_full(&self.event_funcs, &self.messages, &self.menus, &self.lua, &self.appendix)
     }
 
     /// Replace the embedded script with Lua **source** (the client's `lua_dobuffer`
@@ -294,6 +330,26 @@ fn wr_node(buf: &mut Vec<u8>, sn: i32, mtype: i32, value: i32, f1: &str, f2: &st
     buf.extend_from_slice(&str_id.to_le_bytes());
 }
 
+/// Write the Lua tail (+ optional appendix block). The main blob's XOR key uses
+/// the **final** file size, which includes the appendix block — the client
+/// decodes with the actual file size, so both must be encoded against the same
+/// total.
+fn wr_lua_tail(out: &mut Vec<u8>, script_off: usize, lua: &[u8], appendix: &[u8]) {
+    let appendix_block = if appendix.is_empty() { 0 } else { 8 + appendix.len() };
+    let total = script_off + 4 + lua.len() + appendix_block;
+    out.extend_from_slice(&(lua.len() as i32).to_le_bytes());
+    let mut enc = lua.to_vec();
+    decode(&mut enc, xor_key(lua.len() as i32, total as i32)); // encode == decode
+    out.extend_from_slice(&enc);
+    if !appendix.is_empty() {
+        out.extend_from_slice(APPENDIX_MAGIC);
+        out.extend_from_slice(&(appendix.len() as i32).to_le_bytes());
+        let mut enc = appendix.to_vec();
+        decode(&mut enc, xor_key(appendix.len() as i32, total as i32));
+        out.extend_from_slice(&enc);
+    }
+}
+
 /// Build a complete `.CON` from a node model + Lua **source**. Offsets are laid
 /// out canonically (`conv_off = 524`, message section then menu section then the
 /// Lua tail); the parser reads everything by explicit offset, so no incidental
@@ -303,6 +359,17 @@ pub fn build_con(
     messages: &[ConMsg],
     menus: &[ConMenu],
     lua: &[u8],
+) -> Vec<u8> {
+    build_con_full(event_funcs, messages, menus, lua, &[])
+}
+
+/// [`build_con`] plus an optional appendix chunk (see module docs).
+pub fn build_con_full(
+    event_funcs: &[(usize, String)],
+    messages: &[ConMsg],
+    menus: &[ConMenu],
+    lua: &[u8],
+    appendix: &[u8],
 ) -> Vec<u8> {
     const CONV_OFF: u32 = 524;
     let m = messages.len();
@@ -387,12 +454,8 @@ pub fn build_con(
     }
     debug_assert_eq!(out.len(), script_off);
 
-    // Lua tail.
-    out.extend_from_slice(&(lua.len() as i32).to_le_bytes());
-    let total = script_off + 4 + lua.len();
-    let mut enc = lua.to_vec();
-    decode(&mut enc, xor_key(lua.len() as i32, total as i32));
-    out.extend_from_slice(&enc);
+    // Lua tail (+ optional appendix).
+    wr_lua_tail(&mut out, script_off, lua, appendix);
 
     out
 }
@@ -519,6 +582,246 @@ pub fn build_quest_giver(qid: i32, complete_trig: &str, s: GiverStrings) -> Vec<
     ];
 
     build_con(&[], &messages, &menus, lua.as_bytes())
+}
+
+// --------------------------------------------------------------------------
+// Append mode: add a quest option to an *existing* (retail) conversation.
+//
+// The retail node tree is kept; we append namespaced `QE<qid>_*` menu items to
+// the root menu (menu 0). `Conversation(0)` walks menu 0 in order and NPCSAY
+// items recurse into their child menus *before* later siblings, so items
+// appended at the end of menu 0 show up after all the NPC's original options in
+// the same dialog. The functions live in the appendix chunk (see module docs),
+// which the appendix-aware client executes into the same lua_State as the
+// retail bytecode.
+// --------------------------------------------------------------------------
+
+fn appendix_begin_marker(qid: i32) -> String {
+    format!("-- QE:BEGIN {qid}\n")
+}
+fn appendix_end_marker(qid: i32) -> String {
+    format!("-- QE:END {qid}\n")
+}
+
+/// Insert (or replace) quest `qid`'s section in the appendix source.
+pub fn appendix_upsert(appendix: &mut Vec<u8>, qid: i32, body: &str) {
+    appendix_remove(appendix, qid);
+    let mut s = String::from_utf8_lossy(appendix).into_owned();
+    if !s.is_empty() && !s.ends_with('\n') {
+        s.push('\n');
+    }
+    s.push_str(&appendix_begin_marker(qid));
+    s.push_str(body);
+    if !body.ends_with('\n') {
+        s.push('\n');
+    }
+    s.push_str(&appendix_end_marker(qid));
+    *appendix = s.into_bytes();
+}
+
+/// Remove quest `qid`'s section from the appendix source. Returns whether a
+/// section was found. An appendix left empty serializes to no appendix block.
+pub fn appendix_remove(appendix: &mut Vec<u8>, qid: i32) -> bool {
+    let s = String::from_utf8_lossy(appendix).into_owned();
+    let begin = appendix_begin_marker(qid);
+    let end = appendix_end_marker(qid);
+    let Some(start) = s.find(&begin) else {
+        return false;
+    };
+    let Some(end_rel) = s[start..].find(&end) else {
+        return false;
+    };
+    let mut out = String::with_capacity(s.len());
+    out.push_str(&s[..start]);
+    out.push_str(&s[start + end_rel + end.len()..]);
+    *appendix = if out.trim().is_empty() {
+        Vec::new()
+    } else {
+        out.into_bytes()
+    };
+    true
+}
+
+/// The Lua source for one appended quest option. Everything is namespaced by
+/// `QE<qid>_` and values are inlined as literals — no shared globals, so several
+/// quests can coexist in one appendix (and with the retail blob's globals).
+fn quest_option_lua(qid: i32, complete_trig: &str) -> String {
+    let p = format!("QE{qid}_");
+    format!(
+        "function {p}CHK_accept(E)\n\
+         \tif QF_findQuest({qid}) >= 0 then return 0 end\n\
+         \tif QF_checkQuestCondition(\"{qid}-1\") < 1 then return 0 end\n\
+         \treturn 1\n\
+         end\n\
+         function {p}ACT_accept(E)\n\
+         \tQF_doQuestTrigger(\"{qid}-1\")\n\
+         \treturn 1\n\
+         end\n\
+         function {p}CHK_complete(E)\n\
+         \tif QF_findQuest({qid}) < 0 then return 0 end\n\
+         \tif QF_checkQuestCondition(\"{complete_trig}\") < 1 then return 0 end\n\
+         \treturn 1\n\
+         end\n\
+         function {p}ACT_complete(E)\n\
+         \tQF_doQuestTrigger(\"{complete_trig}\")\n\
+         \treturn 1\n\
+         end\n\
+         function {p}CHK_progress(E)\n\
+         \tif QF_findQuest({qid}) < 0 then return 0 end\n\
+         \tif QF_checkQuestCondition(\"{complete_trig}\") >= 1 then return 0 end\n\
+         \treturn 1\n\
+         end\n"
+    )
+}
+
+/// Quest SNs that have an appended option in this conversation (from the
+/// `QE<qid>_*` function names on menu items).
+pub fn quest_option_qids(con: &ConFile) -> Vec<i32> {
+    let mut out = BTreeSet::new();
+    for menu in &con.menus {
+        for it in &menu.items {
+            for f in [&it.check_func, &it.click_func] {
+                if let Some(rest) = f.strip_prefix("QE") {
+                    if let Some(us) = rest.find('_') {
+                        if let Ok(q) = rest[..us].parse::<i32>() {
+                            out.insert(q);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out.into_iter().collect()
+}
+
+/// Append quest `qid`'s dialog option to an existing conversation: three gated
+/// `QE<qid>_*` option lines at the end of the root menu (accept / turn-in /
+/// in-progress — at most one passes its check at a time) plus their response
+/// menus, and the matching Lua in the appendix. Idempotent (re-appending
+/// replaces the previous wiring). Serialize with [`ConFile::rebuild`].
+pub fn append_quest_option(
+    con: &mut ConFile,
+    qid: i32,
+    complete_trig: &str,
+    s: &GiverStrings,
+) -> Result<()> {
+    if con.menus.is_empty() {
+        bail!(".CON has no menus — not an NPC conversation?");
+    }
+    remove_quest_option(con, qid);
+
+    let p = format!("QE{qid}_");
+    let base = con.menus.len() as i32;
+    let close = base + 3;
+    // [base] after-accept, [base+1] after-complete, [base+2] in-progress — each
+    // an NPC response whose child is [base+3], the "[Close]" button menu.
+    con.menus.push(ConMenu {
+        items: vec![menu_item(SC_MSG_NPCSAY, close, "", "", s.after_accept)],
+    });
+    con.menus.push(ConMenu {
+        items: vec![menu_item(SC_MSG_NPCSAY, close, "", "", s.after_complete)],
+    });
+    con.menus.push(ConMenu {
+        items: vec![menu_item(SC_MSG_NPCSAY, close, "", "", s.in_progress)],
+    });
+    con.menus.push(ConMenu {
+        items: vec![menu_item(SC_MSG_CLOSE, -1, "", "", s.response_close)],
+    });
+
+    let root = &mut con.menus[0].items;
+    root.push(menu_item(
+        SC_MSG_PLAYERSELECT,
+        base,
+        &format!("{p}CHK_accept"),
+        &format!("{p}ACT_accept"),
+        s.accept_option,
+    ));
+    root.push(menu_item(
+        SC_MSG_PLAYERSELECT,
+        base + 1,
+        &format!("{p}CHK_complete"),
+        &format!("{p}ACT_complete"),
+        s.complete_option,
+    ));
+    root.push(menu_item(
+        SC_MSG_PLAYERSELECT,
+        base + 2,
+        &format!("{p}CHK_progress"),
+        "",
+        s.progress_option,
+    ));
+
+    appendix_upsert(&mut con.appendix, qid, &quest_option_lua(qid, complete_trig));
+    Ok(())
+}
+
+/// Remove quest `qid`'s appended option: drop its `QE<qid>_*` menu items, the
+/// menus reachable only from them (our response/close menus), remap the child
+/// indexes of everything that stays, and strip its appendix section. Returns
+/// whether anything was removed. Retail nodes are untouched.
+pub fn remove_quest_option(con: &mut ConFile, qid: i32) -> bool {
+    let p = format!("QE{qid}_");
+    let is_ours =
+        |it: &ConMenuItem| it.check_func.starts_with(&p) || it.click_func.starts_with(&p);
+
+    // Menus reachable from our items' children (our appended subtree).
+    let mut doomed: BTreeSet<usize> = BTreeSet::new();
+    let mut stack: Vec<usize> = Vec::new();
+    let mut found_items = false;
+    for menu in &con.menus {
+        for it in &menu.items {
+            if is_ours(it) {
+                found_items = true;
+                if it.child_menu >= 0 {
+                    stack.push(it.child_menu as usize);
+                }
+            }
+        }
+    }
+    if !found_items {
+        return appendix_remove(&mut con.appendix, qid);
+    }
+    while let Some(mi) = stack.pop() {
+        if mi >= con.menus.len() || !doomed.insert(mi) {
+            continue;
+        }
+        for it in &con.menus[mi].items {
+            if it.child_menu >= 0 {
+                stack.push(it.child_menu as usize);
+            }
+        }
+    }
+
+    // Drop our items, then keep any "doomed" menu that a surviving item still
+    // references (can't happen with our generated layout — pure safety net).
+    for menu in con.menus.iter_mut() {
+        menu.items.retain(|it| !is_ours(it));
+    }
+    let referenced: BTreeSet<usize> = con
+        .menus
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !doomed.contains(i))
+        .flat_map(|(_, m)| m.items.iter())
+        .filter(|it| it.child_menu >= 0)
+        .map(|it| it.child_menu as usize)
+        .collect();
+    doomed.retain(|mi| !referenced.contains(mi));
+
+    // Remove doomed menus back-to-front, remapping surviving child references.
+    for &mi in doomed.iter().rev() {
+        con.menus.remove(mi);
+        for menu in con.menus.iter_mut() {
+            for it in menu.items.iter_mut() {
+                if it.child_menu > mi as i32 {
+                    it.child_menu -= 1;
+                }
+            }
+        }
+    }
+
+    appendix_remove(&mut con.appendix, qid);
+    true
 }
 
 #[cfg(test)]
