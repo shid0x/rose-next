@@ -8460,6 +8460,7 @@ classUSER::ProcLogOUT() {
                     this->m_btWishLogOutMODE = 0;
                     this->m_dwTimeToLogOUT = 0;
 
+                    recv_list.pop();
                     this->Free_RecvIODATA(io_data);
                     m_csRecvQ.Unlock();
                     return 1;
