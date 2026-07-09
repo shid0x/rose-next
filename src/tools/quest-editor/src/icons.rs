@@ -92,10 +92,7 @@ impl IconStore {
 
     fn ensure_sheet(&mut self, sheet_idx: usize) -> Result<&dds::DecodedImage> {
         if !self.sheets.contains_key(&sheet_idx) {
-            let tsi = self
-                .tsi
-                .as_ref()
-                .ok_or_else(|| anyhow!("no TSI loaded"))?;
+            let tsi = self.tsi.as_ref().ok_or_else(|| anyhow!("no TSI loaded"))?;
             let sheet = tsi
                 .sprite_sheets
                 .get(sheet_idx)
@@ -113,11 +110,7 @@ impl IconStore {
     }
 
     /// Get (or create) an egui texture handle for an item's icon.
-    pub fn icon_texture(
-        &mut self,
-        ctx: &egui::Context,
-        icon_no: i32,
-    ) -> Option<TextureHandle> {
+    pub fn icon_texture(&mut self, ctx: &egui::Context, icon_no: i32) -> Option<TextureHandle> {
         if icon_no <= 0 {
             return None;
         }
@@ -130,11 +123,7 @@ impl IconStore {
         handle
     }
 
-    fn try_build_texture(
-        &mut self,
-        ctx: &egui::Context,
-        icon_no: u32,
-    ) -> Option<TextureHandle> {
+    fn try_build_texture(&mut self, ctx: &egui::Context, icon_no: u32) -> Option<TextureHandle> {
         let sprite = self.locate(icon_no)?;
         if sprite.w == 0 || sprite.h == 0 {
             return None;
@@ -149,11 +138,7 @@ impl IconStore {
         let cropped = sheet.crop(sprite.x, sprite.y, sprite.w, sprite.h)?;
         let size = [cropped.width as usize, cropped.height as usize];
         let image = ColorImage::from_rgba_unmultiplied(size, &cropped.rgba);
-        Some(ctx.load_texture(
-            format!("icon_{}", icon_no),
-            image,
-            TextureOptions::LINEAR,
-        ))
+        Some(ctx.load_texture(format!("icon_{}", icon_no), image, TextureOptions::LINEAR))
     }
 }
 
@@ -173,7 +158,11 @@ fn find_file_ci(dir: &Path, name: &str) -> Result<PathBuf> {
     }
     for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
         let entry = entry?;
-        if entry.file_name().to_string_lossy().eq_ignore_ascii_case(&basename) {
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&basename)
+        {
             return Ok(entry.path());
         }
     }

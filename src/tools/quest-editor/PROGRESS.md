@@ -323,6 +323,47 @@ bytecode patcher:
   dialog greeting) and "In-progress hint" → **"Quest description"**
   (`progress_text`, the quest-journal description / in-progress line).
 
+### 2026-07-05 — Append mode: confirm prompt before accepting (+ customizable texts)
+
+- Previously the appended root-menu line **was** the accept action — clicking
+  "I'll help you. (Accept quest)" fired `ACT_accept` immediately, no start
+  message, no way to back out (unlike the dedicated-giver flow).
+- `append_quest_option` now appends a **hook** line instead ("I heard you might
+  need some help.", gated by `CHK_accept`, **no click func**). Clicking it walks
+  hook → NPCSAY **start message** (`GiverStrings.greeting` = the quest's "NPC
+  conversation" text) → a choice menu with **Accept** (`ACT_accept` → after-
+  accept response) and **Decline** (`SC_MSG_CLOSE`). Same shape as the
+  already-validated progress option (PLAYERSELECT with empty click → child
+  NPCSAY), so no new client behavior is needed. Turn-in / in-progress lines
+  unchanged.
+- New `GiverStrings` fields `hook_option` / `decline_option` (LTB keys
+  `QG<sn>_hook` / `QG<sn>_decline`; `decline` is separate from `bye` because the
+  dedicated giver's bye line shows on *every* visit, not just the offer).
+- **Customizable:** `GiverText` gained `hook` / `accept` / `decline`; the wizard
+  shows the three text fields under the append radio. On EDIT they're re-read
+  from the event LTB (`write::saved_giver_option_texts`, new `LtbTable::get`) —
+  they're not in the manifest. CLI `con-append` uses the defaults.
+- Tests updated to the new node shape; the retail-sweep test now appends a
+  sentinel qid (59503) and expects a *superset* of qids, since live `data/`
+  `.CON`s can already carry the user's real appended quests.
+- **Follow-up (same day), after in-game validation:** the option texts now
+  apply to **replace/dedicated mode too** (the wizard shows the Accept /
+  Decline fields for any picked NPC, hook field only in append mode; replace
+  mode's `bye` line reuses the custom decline text with its own "(Close)"
+  fallback since it also shows on turn-in/progress visits), and the NPC's
+  **after-accept reply** ("Thank you! Return to me when it is done.") is
+  customizable (`GiverText.after_accept`, LTB `QG<sn>_afteracc`, wizard field
+  "After accepting, NPC says:"). `saved_giver_option_texts` restores all four
+  on EDIT.
+- **Follow-up 2:** the remaining option lines are customizable — **turn-in**
+  ("I've completed the task. (Turn in)", `GiverText.turnin`, `QG<sn>_turnin`)
+  and **in-progress** ("I'm still working on it.", `GiverText.progress`,
+  `QG<sn>_progopt`). `saved_giver_option_texts` now returns a `GiverText`
+  (blank field = use default) instead of an ever-growing tuple. The NPC's
+  *replies* at those steps were already customizable via section 4 (turn-in
+  reply = "Completion message", in-progress reply = "Quest description") — the
+  giver section now says so in a hint.
+
 ### 2026-07-03 — "Two token icons" crash: root cause was a stale DELETED quest in the character's quest log
 
 Quest #5507 (two hunt objectives, each with a custom token icon) "crashed the

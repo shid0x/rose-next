@@ -286,7 +286,13 @@ impl ConFile {
     /// semantically identical to the source file — the client reads everything by
     /// explicit offsets, so the incidental retail layout doesn't matter.
     pub fn rebuild(&self) -> Vec<u8> {
-        build_con_full(&self.event_funcs, &self.messages, &self.menus, &self.lua, &self.appendix)
+        build_con_full(
+            &self.event_funcs,
+            &self.messages,
+            &self.menus,
+            &self.lua,
+            &self.appendix,
+        )
     }
 
     /// Replace the embedded script with Lua **source** (the client's `lua_dobuffer`
@@ -335,7 +341,11 @@ fn wr_node(buf: &mut Vec<u8>, sn: i32, mtype: i32, value: i32, f1: &str, f2: &st
 /// decodes with the actual file size, so both must be encoded against the same
 /// total.
 fn wr_lua_tail(out: &mut Vec<u8>, script_off: usize, lua: &[u8], appendix: &[u8]) {
-    let appendix_block = if appendix.is_empty() { 0 } else { 8 + appendix.len() };
+    let appendix_block = if appendix.is_empty() {
+        0
+    } else {
+        8 + appendix.len()
+    };
     let total = script_off + 4 + lua.len() + appendix_block;
     out.extend_from_slice(&(lua.len() as i32).to_le_bytes());
     let mut enc = lua.to_vec();
@@ -426,7 +436,15 @@ pub fn build_con_full(
         out.extend_from_slice(&((msg_mmt_size + i * 80) as u32).to_le_bytes());
     }
     for msg in messages {
-        wr_node(&mut out, msg.sn, msg.mtype, msg.value, &msg.check_func, &msg.click_func, msg.str_id);
+        wr_node(
+            &mut out,
+            msg.sn,
+            msg.mtype,
+            msg.value,
+            &msg.check_func,
+            &msg.click_func,
+            msg.str_id,
+        );
     }
 
     // Menu MMT + collections.
@@ -446,7 +464,15 @@ pub fn build_con_full(
             coll.extend_from_slice(&((8 + k * 4 + j * 80) as u32).to_le_bytes());
         }
         for it in &menu.items {
-            wr_node(&mut coll, 0, it.mtype, it.child_menu, &it.check_func, &it.click_func, it.str_id);
+            wr_node(
+                &mut coll,
+                0,
+                it.mtype,
+                it.child_menu,
+                &it.check_func,
+                &it.click_func,
+                it.str_id,
+            );
         }
         debug_assert_eq!(coll.len(), len);
         decode(&mut coll[8..], xor_key(num_sub, len as i32)); // encode == decode
@@ -486,6 +512,12 @@ pub struct GiverStrings {
     pub in_progress: i32,
     /// The "[Close]" button shown under each NPC response message.
     pub response_close: i32,
+    /// Append mode: the option line added to the NPC's existing root menu
+    /// ("I heard you need some help..."). Clicking it opens the start message.
+    pub hook_option: i32,
+    /// Append mode: the decline choice under the start message. Separate from
+    /// `bye_option`, which is the dedicated giver's always-visible close line.
+    pub decline_option: i32,
 }
 
 impl Default for GiverStrings {
@@ -501,6 +533,8 @@ impl Default for GiverStrings {
             after_complete: 7,
             in_progress: 8,
             response_close: 5,
+            hook_option: 2,
+            decline_option: 5,
         }
     }
 }
@@ -557,9 +591,27 @@ pub fn build_quest_giver(qid: i32, complete_trig: &str, s: GiverStrings) -> Vec<
         // [1] the options (gated by the Lua checks)
         ConMenu {
             items: vec![
-                menu_item(SC_MSG_PLAYERSELECT, 2, "CHK_accept", "ACT_accept", s.accept_option),
-                menu_item(SC_MSG_PLAYERSELECT, 3, "CHK_complete", "ACT_complete", s.complete_option),
-                menu_item(SC_MSG_PLAYERSELECT, 4, "CHK_progress", "", s.progress_option),
+                menu_item(
+                    SC_MSG_PLAYERSELECT,
+                    2,
+                    "CHK_accept",
+                    "ACT_accept",
+                    s.accept_option,
+                ),
+                menu_item(
+                    SC_MSG_PLAYERSELECT,
+                    3,
+                    "CHK_complete",
+                    "ACT_complete",
+                    s.complete_option,
+                ),
+                menu_item(
+                    SC_MSG_PLAYERSELECT,
+                    4,
+                    "CHK_progress",
+                    "",
+                    s.progress_option,
+                ),
                 menu_item(SC_MSG_CLOSE, -1, "", "", s.bye_option),
             ],
         },
@@ -695,10 +747,13 @@ pub fn quest_option_qids(con: &ConFile) -> Vec<i32> {
 }
 
 /// Append quest `qid`'s dialog option to an existing conversation: three gated
-/// `QE<qid>_*` option lines at the end of the root menu (accept / turn-in /
-/// in-progress — at most one passes its check at a time) plus their response
-/// menus, and the matching Lua in the appendix. Idempotent (re-appending
-/// replaces the previous wiring). Serialize with [`ConFile::rebuild`].
+/// `QE<qid>_*` option lines at the end of the root menu (offer / turn-in /
+/// in-progress — at most one passes its check at a time). The offer line does
+/// **not** accept by itself: clicking it shows the quest's start message with
+/// explicit Accept / Decline choices, same flow as the dedicated giver. Plus
+/// the response menus and the matching Lua in the appendix. Idempotent
+/// (re-appending replaces the previous wiring). Serialize with
+/// [`ConFile::rebuild`].
 pub fn append_quest_option(
     con: &mut ConFile,
     qid: i32,
@@ -712,9 +767,25 @@ pub fn append_quest_option(
 
     let p = format!("QE{qid}_");
     let base = con.menus.len() as i32;
-    let close = base + 3;
-    // [base] after-accept, [base+1] after-complete, [base+2] in-progress — each
-    // an NPC response whose child is [base+3], the "[Close]" button menu.
+    let close = base + 5;
+    // [base] start message -> accept/decline, [base+1] the Accept / Decline
+    // choices, [base+2] after-accept, [base+3] after-complete, [base+4]
+    // in-progress; NPC responses all lead to [base+5], the "[Close]" menu.
+    con.menus.push(ConMenu {
+        items: vec![menu_item(SC_MSG_NPCSAY, base + 1, "", "", s.greeting)],
+    });
+    con.menus.push(ConMenu {
+        items: vec![
+            menu_item(
+                SC_MSG_PLAYERSELECT,
+                base + 2,
+                &format!("{p}CHK_accept"),
+                &format!("{p}ACT_accept"),
+                s.accept_option,
+            ),
+            menu_item(SC_MSG_CLOSE, -1, "", "", s.decline_option),
+        ],
+    });
     con.menus.push(ConMenu {
         items: vec![menu_item(SC_MSG_NPCSAY, close, "", "", s.after_accept)],
     });
@@ -733,25 +804,29 @@ pub fn append_quest_option(
         SC_MSG_PLAYERSELECT,
         base,
         &format!("{p}CHK_accept"),
-        &format!("{p}ACT_accept"),
-        s.accept_option,
+        "",
+        s.hook_option,
     ));
     root.push(menu_item(
         SC_MSG_PLAYERSELECT,
-        base + 1,
+        base + 3,
         &format!("{p}CHK_complete"),
         &format!("{p}ACT_complete"),
         s.complete_option,
     ));
     root.push(menu_item(
         SC_MSG_PLAYERSELECT,
-        base + 2,
+        base + 4,
         &format!("{p}CHK_progress"),
         "",
         s.progress_option,
     ));
 
-    appendix_upsert(&mut con.appendix, qid, &quest_option_lua(qid, complete_trig));
+    appendix_upsert(
+        &mut con.appendix,
+        qid,
+        &quest_option_lua(qid, complete_trig),
+    );
     Ok(())
 }
 
@@ -761,8 +836,7 @@ pub fn append_quest_option(
 /// whether anything was removed. Retail nodes are untouched.
 pub fn remove_quest_option(con: &mut ConFile, qid: i32) -> bool {
     let p = format!("QE{qid}_");
-    let is_ours =
-        |it: &ConMenuItem| it.check_func.starts_with(&p) || it.click_func.starts_with(&p);
+    let is_ours = |it: &ConMenuItem| it.check_func.starts_with(&p) || it.click_func.starts_with(&p);
 
     // Menus reachable from our items' children (our appended subtree).
     let mut doomed: BTreeSet<usize> = BTreeSet::new();
@@ -874,5 +948,63 @@ mod tests {
         assert_eq!(p.lua, lua);
         // The parsed file (raw == built bytes) re-serializes identically.
         assert_eq!(p.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn appended_option_prompts_before_accepting() {
+        // A minimal "retail" conversation: greeting -> one close option.
+        let messages = vec![ConMsg {
+            sn: 0,
+            mtype: SC_MSG_NPCSAY,
+            value: 0,
+            check_func: String::new(),
+            click_func: String::new(),
+            str_id: 1,
+        }];
+        let menus = vec![
+            ConMenu {
+                items: vec![item(SC_MSG_NPCSAY, 1, "", "", 5)],
+            },
+            ConMenu {
+                items: vec![item(SC_MSG_CLOSE, -1, "", "", 8)],
+            },
+        ];
+        let bytes = build_con(&[], &messages, &menus, b"-- retail\n");
+        let mut con = ConFile::parse(&bytes).unwrap();
+
+        let s = GiverStrings::default();
+        append_quest_option(&mut con, 5503, "5503-3", &s).unwrap();
+
+        // The root menu gained the hook line: gated by CHK_accept but with NO
+        // click action — accepting must go through the start-message prompt.
+        let hook = &con.menus[0].items[1];
+        assert_eq!(hook.mtype, SC_MSG_PLAYERSELECT);
+        assert_eq!(hook.check_func, "QE5503_CHK_accept");
+        assert_eq!(hook.click_func, "");
+        assert_eq!(hook.str_id, s.hook_option);
+
+        // hook -> start message (NPCSAY) -> Accept / Decline choices.
+        let start = &con.menus[hook.child_menu as usize];
+        assert_eq!(start.items.len(), 1);
+        assert_eq!(start.items[0].mtype, SC_MSG_NPCSAY);
+        assert_eq!(start.items[0].str_id, s.greeting);
+        let choices = &con.menus[start.items[0].child_menu as usize];
+        assert_eq!(choices.items.len(), 2);
+        assert_eq!(choices.items[0].click_func, "QE5503_ACT_accept");
+        assert_eq!(choices.items[0].str_id, s.accept_option);
+        assert_eq!(choices.items[1].mtype, SC_MSG_CLOSE);
+        assert_eq!(choices.items[1].str_id, s.decline_option);
+        // Accepting leads to the after-accept response.
+        let after = &con.menus[choices.items[0].child_menu as usize];
+        assert_eq!(after.items[0].str_id, s.after_accept);
+
+        // Round-trips through the serializer, and removal restores the layout.
+        let rebuilt = con.rebuild();
+        let mut re = ConFile::parse(&rebuilt).unwrap();
+        assert_eq!(quest_option_qids(&re), vec![5503]);
+        assert!(remove_quest_option(&mut re, 5503));
+        assert_eq!(re.menus.len(), 2);
+        assert_eq!(re.menus[0].items.len(), 1);
+        assert!(re.appendix.is_empty());
     }
 }

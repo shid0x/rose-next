@@ -271,6 +271,16 @@ struct QuestCreator {
     /// option to it (QEX1 appendix), false = replace it with a dedicated
     /// quest-giver .CON. Ignored for NPCs without a dialog.
     giver_append: bool,
+    /// Append mode: the option line added at the end of the NPC's dialog;
+    /// clicking it shows the start message with the Accept / Decline choices.
+    giver_hook_text: String,
+    giver_accept_text: String,
+    giver_decline_text: String,
+    /// The NPC's reply right after the player accepts.
+    giver_after_accept_text: String,
+    /// The player's turn-in / in-progress lines.
+    giver_turnin_text: String,
+    giver_progress_text: String,
     /// Zone-IFO placement info: (placed npc ids, npc id -> existing .CON).
     /// Scanned once per data folder on a background thread (the scan reads
     /// every zone IFO and would freeze the UI if done inline).
@@ -302,6 +312,15 @@ struct QuestCreator {
     bar_can_create: bool,
     bar_summary: String,
 }
+
+/// Defaults for the appended-option texts (also the fallbacks in `write.rs`
+/// when a field is left blank).
+const DEFAULT_HOOK_TEXT: &str = "I heard you might need some help.";
+const DEFAULT_ACCEPT_TEXT: &str = "I'll help you. (Accept quest)";
+const DEFAULT_DECLINE_TEXT: &str = "Maybe another time. (Decline)";
+const DEFAULT_AFTER_ACCEPT_TEXT: &str = "Thank you! Return to me when it is done.";
+const DEFAULT_TURNIN_TEXT: &str = "I've completed the task. (Turn in)";
+const DEFAULT_PROGRESS_TEXT: &str = "I'm still working on it.";
 
 impl Default for QuestCreator {
     fn default() -> Self {
@@ -338,6 +357,12 @@ impl Default for QuestCreator {
             giver_search: String::new(),
             giver_npc: None,
             giver_append: true,
+            giver_hook_text: DEFAULT_HOOK_TEXT.to_string(),
+            giver_accept_text: DEFAULT_ACCEPT_TEXT.to_string(),
+            giver_decline_text: DEFAULT_DECLINE_TEXT.to_string(),
+            giver_after_accept_text: DEFAULT_AFTER_ACCEPT_TEXT.to_string(),
+            giver_turnin_text: DEFAULT_TURNIN_TEXT.to_string(),
+            giver_progress_text: DEFAULT_PROGRESS_TEXT.to_string(),
             placements: None,
             placements_rx: None,
             hide_in_use: false,
@@ -1713,6 +1738,55 @@ impl QuestCreator {
                         );
                     }
                 }
+                // Dialog texts — apply to both append and replace/dedicated
+                // modes; the hook line only exists in append mode.
+                let appending = self.giver_append && conv.is_some();
+                ui.add_space(4.0);
+                egui::Grid::new("giver_text_grid")
+                    .num_columns(2)
+                    .spacing([12.0, 6.0])
+                    .show(ui, |ui| {
+                        if appending {
+                            ui.label("New dialog option:");
+                            ui.text_edit_singleline(&mut self.giver_hook_text);
+                            ui.end_row();
+                        }
+                        ui.label("Accept choice:");
+                        ui.text_edit_singleline(&mut self.giver_accept_text);
+                        ui.end_row();
+                        ui.label("Decline choice:");
+                        ui.text_edit_singleline(&mut self.giver_decline_text);
+                        ui.end_row();
+                        ui.label("After accepting, NPC says:");
+                        ui.text_edit_singleline(&mut self.giver_after_accept_text);
+                        ui.end_row();
+                        ui.label("Turn-in choice:");
+                        ui.text_edit_singleline(&mut self.giver_turnin_text);
+                        ui.end_row();
+                        ui.label("In-progress choice:");
+                        ui.text_edit_singleline(&mut self.giver_progress_text);
+                        ui.end_row();
+                    });
+                ui.label(
+                    egui::RichText::new(if appending {
+                        "Clicking the new option shows the quest's start message (section 4, \
+                         \"NPC conversation\") with these Accept / Decline choices — nothing \
+                         is accepted until the player confirms."
+                    } else {
+                        "The NPC greets with the quest's start message (section 4, \"NPC \
+                         conversation\") and these Accept / Decline choices."
+                    })
+                    .weak()
+                    .small(),
+                );
+                ui.label(
+                    egui::RichText::new(
+                        "NPC replies come from section 4: after turn-in = \"Completion \
+                         message\", while in progress = \"Quest description\".",
+                    )
+                    .weak()
+                    .small(),
+                );
             }
             None => {
                 ui.colored_label(theme::INFO, "Pick a placed NPC above to give the quest.");
@@ -1835,6 +1909,9 @@ impl QuestCreator {
         self.assign_giver = false;
         self.giver_npc = None;
         self.giver_append = true;
+        // The option texts aren't in the manifest — reset to defaults, then
+        // restore whatever was last written to the event string table.
+        let mut saved = crate::write::GiverText::default();
         if let Some(root) = &self.root {
             if let Ok(m) = crate::manifest::read_manifest(root, spec.quest_sn) {
                 if let Some(g) = m.givers.first() {
@@ -1843,7 +1920,21 @@ impl QuestCreator {
                     self.giver_append = g.append;
                 }
             }
+            saved = crate::write::saved_giver_option_texts(root, spec.quest_sn);
         }
+        let pick = |saved: &str, default: &str| {
+            if saved.trim().is_empty() {
+                default.to_string()
+            } else {
+                saved.to_string()
+            }
+        };
+        self.giver_hook_text = pick(&saved.hook, DEFAULT_HOOK_TEXT);
+        self.giver_accept_text = pick(&saved.accept, DEFAULT_ACCEPT_TEXT);
+        self.giver_decline_text = pick(&saved.decline, DEFAULT_DECLINE_TEXT);
+        self.giver_after_accept_text = pick(&saved.after_accept, DEFAULT_AFTER_ACCEPT_TEXT);
+        self.giver_turnin_text = pick(&saved.turnin, DEFAULT_TURNIN_TEXT);
+        self.giver_progress_text = pick(&saved.progress, DEFAULT_PROGRESS_TEXT);
     }
 
     // --- helpers ---
@@ -2088,6 +2179,12 @@ impl QuestCreator {
                             greeting: spec.start_text.clone(),
                             in_progress: spec.progress_text.clone(),
                             after_complete: spec.complete_text.clone(),
+                            hook: self.giver_hook_text.clone(),
+                            accept: self.giver_accept_text.clone(),
+                            decline: self.giver_decline_text.clone(),
+                            after_accept: self.giver_after_accept_text.clone(),
+                            turnin: self.giver_turnin_text.clone(),
+                            progress: self.giver_progress_text.clone(),
                         };
                         // Append to the NPC's existing dialog when it has one and
                         // the user chose append; otherwise create/replace with a

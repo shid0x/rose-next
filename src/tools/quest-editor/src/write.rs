@@ -124,7 +124,11 @@ pub fn apply_quest(
         "CREATE {} ({} bytes, {} triggers)",
         qsd_file.display(),
         qsd_bytes.len(),
-        gen.qsd.patterns.iter().map(|p| p.triggers.len()).sum::<usize>()
+        gen.qsd
+            .patterns
+            .iter()
+            .map(|p| p.triggers.len())
+            .sum::<usize>()
     ));
 
     // 2) LIST_QUESTDATA: append row registering the QSD.
@@ -223,9 +227,13 @@ pub fn apply_quest(
             let monster_row = npc
                 .data
                 .iter()
-                .position(|r| r.first().and_then(|s| s.trim().parse::<i32>().ok()) == Some(h.monster_id))
+                .position(|r| {
+                    r.first().and_then(|s| s.trim().parse::<i32>().ok()) == Some(h.monster_id)
+                })
                 .ok_or_else(|| anyhow!("monster {} not found in LIST_NPC", h.monster_id))?;
-            let existing_de = cell(&npc.data[monster_row], NPC_COL_DEAD_EVENT).trim().to_string();
+            let existing_de = cell(&npc.data[monster_row], NPC_COL_DEAD_EVENT)
+                .trim()
+                .to_string();
             if !h.chain_into_existing && !existing_de.is_empty() {
                 bail!(
                     "monster {} already has a dead-event trigger (\"{existing_de}\"); \
@@ -234,7 +242,10 @@ pub fn apply_quest(
                 );
             }
             if h.chain_into_existing && existing_de.is_empty() {
-                bail!("monster {} has no existing trigger to chain onto", h.monster_id);
+                bail!(
+                    "monster {} has no existing trigger to chain onto",
+                    h.monster_id
+                );
             }
 
             // token row.
@@ -244,7 +255,11 @@ pub fn apply_quest(
             .context("no quest-item template row to clone")?;
             set_cell(&mut token_row, 0, "");
             set_cell(&mut token_row, QITEM_COL_NAME, &h.token_name);
-            set_cell(&mut token_row, QITEM_COL_BELONGING_QUEST, &spec.quest_sn.to_string());
+            set_cell(
+                &mut token_row,
+                QITEM_COL_BELONGING_QUEST,
+                &spec.quest_sn.to_string(),
+            );
             set_cell(&mut token_row, QITEM_COL_STL_LINK, &token_stl_key);
             if let Some(icon) = h.token_icon {
                 set_cell(&mut token_row, QITEM_COL_ICON, &icon.to_string());
@@ -258,10 +273,9 @@ pub fn apply_quest(
             // Wire the kill trigger: claim col-41 (free monster) or splice into
             // the monster's existing dead-event chain (chaining).
             if h.chain_into_existing {
-                let mut our_kill = h
-                    .host_kill_trigger
-                    .clone()
-                    .ok_or_else(|| anyhow!("chaining requested but no kill trigger was generated"))?;
+                let mut our_kill = h.host_kill_trigger.clone().ok_or_else(|| {
+                    anyhow!("chaining requested but no kill trigger was generated")
+                })?;
                 // Resolve the host file (path) once, then operate on a single
                 // working copy per path so multiple objectives can chain into it.
                 let (host_path, _, _, _) = find_host_qsd(&questdata_dir, &existing_de)?;
@@ -270,7 +284,11 @@ pub fn apply_quest(
                         .map_err(|e| anyhow!("reading host QSD {}: {e}", host_path.display()))?;
                     host_qsds.push((host_path.clone(), q));
                 }
-                let host = &mut host_qsds.iter_mut().find(|(p, _)| p == &host_path).unwrap().1;
+                let host = &mut host_qsds
+                    .iter_mut()
+                    .find(|(p, _)| p == &host_path)
+                    .unwrap()
+                    .1;
                 let (pi, ti) = find_trigger_in(host, existing_de.as_bytes())
                     .ok_or_else(|| anyhow!("host trigger \"{existing_de}\" vanished"))?;
                 our_kill.check_next = host.patterns[pi].triggers[ti].check_next;
@@ -279,10 +297,17 @@ pub fn apply_quest(
                 changes.push(format!(
                     "CHAIN kill trigger \"{}\" into {} after \"{existing_de}\"",
                     h.kill_trigger,
-                    host_path.file_name().and_then(|s| s.to_str()).unwrap_or("?")
+                    host_path
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("?")
                 ));
             } else {
-                set_cell(&mut npc.data[monster_row], NPC_COL_DEAD_EVENT, &h.kill_trigger);
+                set_cell(
+                    &mut npc.data[monster_row],
+                    NPC_COL_DEAD_EVENT,
+                    &h.kill_trigger,
+                );
                 npc_changed = true;
                 changes.push(format!(
                     "MERGE LIST_NPC row {monster_row} (npc {}) col-41 = \"{}\"",
@@ -345,8 +370,7 @@ pub fn apply_quest(
     }
 
     fs::create_dir_all(&questdata_dir).ok();
-    fs::write(&qsd_file, &qsd_bytes)
-        .with_context(|| format!("writing {}", qsd_file.display()))?;
+    fs::write(&qsd_file, &qsd_bytes).with_context(|| format!("writing {}", qsd_file.display()))?;
     write_stb(&mut quest, &quest_path)?;
     write_stb(&mut qdata, &qdata_path)?;
     write_stl(&mut stl, &stl_path)?;
@@ -432,7 +456,11 @@ pub fn delete_quest(root: &Path, quest_sn: i32, dry_run: bool) -> Result<WriteRe
         .iter()
         .enumerate()
         .filter(|(_, r)| {
-            cell(r, QITEM_COL_BELONGING_QUEST).trim().parse::<i32>().ok() == Some(quest_sn)
+            cell(r, QITEM_COL_BELONGING_QUEST)
+                .trim()
+                .parse::<i32>()
+                .ok()
+                == Some(quest_sn)
         })
         .map(|(i, _)| i)
         .collect();
@@ -457,7 +485,8 @@ pub fn delete_quest(root: &Path, quest_sn: i32, dry_run: bool) -> Result<WriteRe
             changes.push(format!("CLEAR LIST_NPC row {i} col-41 (was \"{de}\")"));
         }
     }
-    let host_qsd_edits = unchain_quest_kill_triggers(&questdata_dir, &qsd_name, quest_sn, &mut changes)?;
+    let host_qsd_edits =
+        unchain_quest_kill_triggers(&questdata_dir, &qsd_name, quest_sn, &mut changes)?;
 
     let manifest = crate::manifest::manifest_path(root, quest_sn)
         .ok()
@@ -496,7 +525,10 @@ pub fn delete_quest(root: &Path, quest_sn: i32, dry_run: bool) -> Result<WriteRe
         } else {
             g.original_conversation.clone()
         };
-        let name = Path::new(&g.ifo_path).file_name().and_then(|s| s.to_str()).unwrap_or("?");
+        let name = Path::new(&g.ifo_path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("?");
         changes.push(format!("RESTORE npc {} in {name} -> {to}", g.npc_id));
     }
     if con_exists {
@@ -699,7 +731,8 @@ fn rd_u8(p: &[u8], o: usize) -> u8 {
     p.get(o).copied().unwrap_or(0)
 }
 fn rd_i16(p: &[u8], o: usize) -> i16 {
-    p.get(o..o + 2).map_or(0, |b| i16::from_le_bytes([b[0], b[1]]))
+    p.get(o..o + 2)
+        .map_or(0, |b| i16::from_le_bytes([b[0], b[1]]))
 }
 fn rd_i32(p: &[u8], o: usize) -> i32 {
     p.get(o..o + 4)
@@ -728,7 +761,11 @@ pub fn reconstruct_spec(root: &Path, quest_sn: i32) -> Result<crate::gen::QuestS
         .patterns
         .iter()
         .flat_map(|p| p.triggers.iter())
-        .find(|t| t.rewards.iter().any(|e| e.etype == 0 && rd_u8(&e.payload, 4) == 0))
+        .find(|t| {
+            t.rewards
+                .iter()
+                .any(|e| e.etype == 0 && rd_u8(&e.payload, 4) == 0)
+        })
         .ok_or_else(|| anyhow!("no complete trigger in {}", qsd_file.display()))?;
 
     // One-time iff a COND_014 switch guard is present (on the register trigger).
@@ -783,7 +820,11 @@ pub fn reconstruct_spec(root: &Path, quest_sn: i32) -> Result<crate::gen::QuestS
         .iter()
         .enumerate()
         .filter(|(_, r)| {
-            cell(r, QITEM_COL_BELONGING_QUEST).trim().parse::<i32>().ok() == Some(quest_sn)
+            cell(r, QITEM_COL_BELONGING_QUEST)
+                .trim()
+                .parse::<i32>()
+                .ok()
+                == Some(quest_sn)
         })
         .map(|(i, _)| QUEST_ITEM_TYPE * 1000 + i as i32)
         .collect();
@@ -795,8 +836,12 @@ pub fn reconstruct_spec(root: &Path, quest_sn: i32) -> Result<crate::gen::QuestS
             Some(row) => (
                 monster_for_token(&stb_dir, &questdata_dir, quest_sn, token_sn).unwrap_or(0),
                 cell(row, QITEM_COL_NAME).to_string(),
-                stl_item_desc(&stb_dir, "LIST_QUESTITEM_S.STL", cell(row, QITEM_COL_STL_LINK))
-                    .unwrap_or_default(),
+                stl_item_desc(
+                    &stb_dir,
+                    "LIST_QUESTITEM_S.STL",
+                    cell(row, QITEM_COL_STL_LINK),
+                )
+                .unwrap_or_default(),
                 cell(row, QITEM_COL_ICON).trim().parse::<i32>().ok(),
             ),
             None => (0, String::new(), String::new(), None),
@@ -849,9 +894,14 @@ pub fn reconstruct_spec(root: &Path, quest_sn: i32) -> Result<crate::gen::QuestS
         })
         .collect();
 
-    let (title, start_text, progress_text, complete_text) =
-        stl_quest_texts(&stb_dir, quest_sn).unwrap_or_else(|_| {
-            (format!("Quest #{quest_sn}"), String::new(), String::new(), String::new())
+    let (title, start_text, progress_text, complete_text) = stl_quest_texts(&stb_dir, quest_sn)
+        .unwrap_or_else(|_| {
+            (
+                format!("Quest #{quest_sn}"),
+                String::new(),
+                String::new(),
+                String::new(),
+            )
         });
 
     Ok(QuestSpec {
@@ -928,7 +978,11 @@ fn monster_for_trigger_name(stb_dir: &Path, questdata_dir: &Path, kill: &str) ->
     let npc = load_stb(&file_ci(stb_dir, "LIST_NPC.STB").ok()?).ok()?;
     let id_of = |r: &Vec<String>| r.first().and_then(|s| s.trim().parse::<i32>().ok());
 
-    if let Some(r) = npc.data.iter().find(|r| cell(r, NPC_COL_DEAD_EVENT).trim() == kill) {
+    if let Some(r) = npc
+        .data
+        .iter()
+        .find(|r| cell(r, NPC_COL_DEAD_EVENT).trim() == kill)
+    {
         return id_of(r);
     }
     // Chained: find our trigger, walk back over the check_next run to the head.
@@ -938,7 +992,10 @@ fn monster_for_trigger_name(stb_dir: &Path, questdata_dir: &Path, kill: &str) ->
     while j > 0 && triggers[j - 1].check_next != 0 {
         j -= 1;
     }
-    let head = triggers[j].name.strip_suffix(b"\0").unwrap_or(&triggers[j].name);
+    let head = triggers[j]
+        .name
+        .strip_suffix(b"\0")
+        .unwrap_or(&triggers[j].name);
     npc.data
         .iter()
         .find(|r| cell(r, NPC_COL_DEAD_EVENT).trim().as_bytes() == head)
@@ -955,7 +1012,10 @@ fn stl_quest_texts(stb_dir: &Path, quest_sn: i32) -> Result<(String, String, Str
         .iter()
         .position(|k| k.name == key)
         .ok_or_else(|| anyhow!("no STL key {key}"))?;
-    let lt = stl.language_tables.first().ok_or_else(|| anyhow!("no language table"))?;
+    let lt = stl
+        .language_tables
+        .first()
+        .ok_or_else(|| anyhow!("no language table"))?;
     match lt.rows.get(idx) {
         Some(StringTableRow::QuestRow(q)) => Ok((
             q.text.clone(),
@@ -985,6 +1045,20 @@ pub struct GiverText {
     pub greeting: String,
     pub in_progress: String,
     pub after_complete: String,
+    /// Append mode: the option line added to the NPC's existing dialog
+    /// ("I heard you need some help...").
+    pub hook: String,
+    /// The player's accept choice under the start message.
+    pub accept: String,
+    /// The player's decline choice under the start message (append mode) /
+    /// the dedicated giver's close line (replace mode).
+    pub decline: String,
+    /// The NPC's reply right after the player accepts.
+    pub after_accept: String,
+    /// The player's turn-in choice (shown when the quest can be handed in).
+    pub turnin: String,
+    /// The player's in-progress line (shown while the quest is unfinished).
+    pub progress: String,
 }
 
 /// Upsert the quest-giver's dialog strings into the event-string table (keyed by
@@ -1004,7 +1078,12 @@ fn giver_strings(
     };
     let greeting = text.map_or_else(
         || "Greetings, traveler! I have a task that needs doing.".to_string(),
-        |t| or(&t.greeting, "Greetings, traveler! I have a task that needs doing."),
+        |t| {
+            or(
+                &t.greeting,
+                "Greetings, traveler! I have a task that needs doing.",
+            )
+        },
     );
     let in_progress = text.map_or_else(
         || "You haven't finished yet. Keep at it!".to_string(),
@@ -1014,16 +1093,77 @@ fn giver_strings(
         || "Well done! Here is your reward.".to_string(),
         |t| or(&t.after_complete, "Well done! Here is your reward."),
     );
+    let hook = text.map_or_else(
+        || "I heard you might need some help.".to_string(),
+        |t| or(&t.hook, "I heard you might need some help."),
+    );
+    let accept = text.map_or_else(
+        || "I'll help you. (Accept quest)".to_string(),
+        |t| or(&t.accept, "I'll help you. (Accept quest)"),
+    );
+    let decline = text.map_or_else(
+        || "Maybe another time. (Decline)".to_string(),
+        |t| or(&t.decline, "Maybe another time. (Decline)"),
+    );
+    // The dedicated giver's close line doubles as its decline — same custom
+    // text, its own fallback (it also shows on turn-in / in-progress visits).
+    let bye = text.map_or_else(
+        || "Maybe another time. (Close)".to_string(),
+        |t| or(&t.decline, "Maybe another time. (Close)"),
+    );
+    let after_accept = text.map_or_else(
+        || "Thank you! Return to me when it is done.".to_string(),
+        |t| or(&t.after_accept, "Thank you! Return to me when it is done."),
+    );
+    let turnin = text.map_or_else(
+        || "I've completed the task. (Turn in)".to_string(),
+        |t| or(&t.turnin, "I've completed the task. (Turn in)"),
+    );
+    let progress = text.map_or_else(
+        || "I'm still working on it.".to_string(),
+        |t| or(&t.progress, "I'm still working on it."),
+    );
     crate::convo::GiverStrings {
         greeting: ltb.set_or_append(&k("greet"), &greeting) as i32,
-        accept_option: ltb.set_or_append(&k("accept"), "I'll help you. (Accept quest)") as i32,
-        complete_option: ltb.set_or_append(&k("turnin"), "I've completed the task. (Turn in)") as i32,
-        progress_option: ltb.set_or_append(&k("progopt"), "I'm still working on it.") as i32,
-        bye_option: ltb.set_or_append(&k("bye"), "Maybe another time. (Close)") as i32,
-        after_accept: ltb.set_or_append(&k("afteracc"), "Thank you! Return to me when it is done.") as i32,
+        accept_option: ltb.set_or_append(&k("accept"), &accept) as i32,
+        complete_option: ltb.set_or_append(&k("turnin"), &turnin) as i32,
+        progress_option: ltb.set_or_append(&k("progopt"), &progress) as i32,
+        bye_option: ltb.set_or_append(&k("bye"), &bye) as i32,
+        after_accept: ltb.set_or_append(&k("afteracc"), &after_accept) as i32,
         after_complete: ltb.set_or_append(&k("afterdone"), &after_complete) as i32,
         in_progress: ltb.set_or_append(&k("inprog"), &in_progress) as i32,
         response_close: ltb.set_or_append(&k("close"), "(Close)") as i32,
+        hook_option: ltb.set_or_append(&k("hook"), &hook) as i32,
+        decline_option: ltb.set_or_append(&k("decline"), &decline) as i32,
+    }
+}
+
+/// Read back the option texts previously written for `qid` (the `QG<qid>_*`
+/// LTB keys) so the edit form can pre-fill them. Only the option-line fields
+/// are filled (the narrative fields live in the quest STL); missing file /
+/// keys / blank cells stay empty, meaning "use the default".
+pub fn saved_giver_option_texts(root: &Path, qid: i32) -> GiverText {
+    let ltb = resolve_stb_dir(root)
+        .ok()
+        .and_then(|d| d.parent().map(|p| p.join("EVENT")))
+        .and_then(|e| file_ci(&e, "ulngtb_con.ltb").ok())
+        .and_then(|p| crate::ltb::LtbTable::read_file(&p).ok());
+    let Some(ltb) = ltb else {
+        return GiverText::default();
+    };
+    let get = |s: &str| {
+        ltb.get(&format!("QG{qid}_{s}"))
+            .filter(|t| !t.trim().is_empty())
+            .unwrap_or_default()
+    };
+    GiverText {
+        hook: get("hook"),
+        accept: get("accept"),
+        decline: get("decline"),
+        after_accept: get("afteracc"),
+        turnin: get("turnin"),
+        progress: get("progopt"),
+        ..GiverText::default()
     }
 }
 
@@ -1045,8 +1185,8 @@ pub fn wire_quest_giver(
         .ok_or_else(|| anyhow!("STB dir has no parent"))?
         .join("EVENT");
     let con_name = format!("QG{qid}.con"); // basename — the disk file + IFO use this
-    // LIST_EVENT col 3 is a full VFS path (retail: "3Ddata\Event\EM99-001.con"),
-    // and the client loads exactly that string — a bare basename won't resolve.
+                                           // LIST_EVENT col 3 is a full VFS path (retail: "3Ddata\Event\EM99-001.con"),
+                                           // and the client loads exactly that string — a bare basename won't resolve.
     let con_cell = format!("3Ddata\\Event\\{con_name}");
     let con_path = event_dir.join(&con_name);
 
@@ -1070,22 +1210,23 @@ pub fn wire_quest_giver(
         con_path.display(),
         con_bytes.len()
     ));
-    changes.push(format!("UPSERT 8 dialog strings into {}", ltb_path.display()));
+    changes.push(format!("UPSERT dialog strings into {}", ltb_path.display()));
 
     // 3) LIST_EVENT row (so the filename resolves to a conversation index).
     //    Match an existing row by *basename* (idempotent / fixes an earlier row),
     //    else append. The cell holds the full VFS path.
     let event_path = file_ci(&stb_dir, "LIST_EVENT.STB")?;
     let mut event_stb = load_stb(&event_path)?;
-    let basename_of =
-        |c: &str| c.rsplit(['\\', '/']).next().unwrap_or(c).trim().to_string();
+    let basename_of = |c: &str| c.rsplit(['\\', '/']).next().unwrap_or(c).trim().to_string();
     let existing = event_stb
         .data
         .iter()
         .position(|r| basename_of(cell(r, EVENT_COL_FILE)).eq_ignore_ascii_case(&con_name));
     match existing {
         Some(idx) if cell(&event_stb.data[idx], EVENT_COL_FILE) == con_cell => {
-            changes.push(format!("LIST_EVENT already lists \"{con_cell}\" (row {idx})"));
+            changes.push(format!(
+                "LIST_EVENT already lists \"{con_cell}\" (row {idx})"
+            ));
         }
         Some(idx) => {
             set_cell(&mut event_stb.data[idx], EVENT_COL_FILE, &con_cell);
@@ -1105,7 +1246,11 @@ pub fn wire_quest_giver(
     //    can restore it) — but only when it isn't already our own conversation.
     let mut wirings = Vec::new();
     for p in &placements {
-        let ifo_name = p.ifo_path.file_name().and_then(|s| s.to_str()).unwrap_or("?");
+        let ifo_name = p
+            .ifo_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("?");
         if !p.conversation.trim().is_empty() && !p.conversation.eq_ignore_ascii_case(&con_name) {
             changes.push(format!(
                 "WARN npc {npc_id} in {ifo_name} already had conversation \"{}\" — replacing",
@@ -1124,7 +1269,10 @@ pub fn wire_quest_giver(
             append: false,
         });
         crate::ifo::wire_npc_in_ifo(&p.ifo_path, npc_id, &con_name, dry_run)?;
-        changes.push(format!("WIRE {} (npc {npc_id}) -> {con_name}", p.ifo_path.display()));
+        changes.push(format!(
+            "WIRE {} (npc {npc_id}) -> {con_name}",
+            p.ifo_path.display()
+        ));
     }
 
     if dry_run {
@@ -1203,7 +1351,8 @@ pub fn append_quest_to_npc_dialog(
         );
     }
 
-    // Dialog text: same string set as the dedicated giver (greeting/bye unused).
+    // Dialog text: same string set as the dedicated giver (bye unused; the
+    // greeting doubles as the start message shown before Accept / Decline).
     let ltb_path = file_ci(&event_dir, "ulngtb_con.ltb")?;
     let mut ltb = crate::ltb::LtbTable::read_file(&ltb_path)?;
     let strings = giver_strings(&mut ltb, qid, text);
@@ -1211,8 +1360,9 @@ pub fn append_quest_to_npc_dialog(
     let mut changes = Vec::new();
     let mut outputs: Vec<(PathBuf, Vec<u8>)> = Vec::new();
     for name in &con_names {
-        let path = file_ci(&event_dir, name)
-            .with_context(|| format!("npc {npc_id}'s conversation \"{name}\" not found in EVENT dir"))?;
+        let path = file_ci(&event_dir, name).with_context(|| {
+            format!("npc {npc_id}'s conversation \"{name}\" not found in EVENT dir")
+        })?;
         let mut con = crate::convo::ConFile::read_file(&path)?;
         let re_append = crate::convo::quest_option_qids(&con).contains(&qid);
         crate::convo::append_quest_option(&mut con, qid, complete_trig, &strings)?;
@@ -1455,10 +1605,9 @@ fn unchain_quest_kill_triggers(
                 qsd.patterns[pi].triggers[ti - 1].check_next = cn;
             }
             let removed = qsd.patterns[pi].triggers.remove(ti);
-            let nm = String::from_utf8_lossy(
-                removed.name.strip_suffix(b"\0").unwrap_or(&removed.name),
-            )
-            .into_owned();
+            let nm =
+                String::from_utf8_lossy(removed.name.strip_suffix(b"\0").unwrap_or(&removed.name))
+                    .into_owned();
             changes.push(format!(
                 "UNCHAIN \"{nm}\" from {}",
                 path.file_name().and_then(|s| s.to_str()).unwrap_or("?")
@@ -1494,7 +1643,11 @@ fn file_ci(dir: &Path, name: &str) -> Result<PathBuf> {
     }
     if let Ok(rd) = fs::read_dir(dir) {
         for entry in rd.flatten() {
-            if entry.file_name().to_string_lossy().eq_ignore_ascii_case(name) {
+            if entry
+                .file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case(name)
+            {
                 return Ok(entry.path());
             }
         }

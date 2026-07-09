@@ -165,6 +165,15 @@ impl LtbTable {
         id
     }
 
+    /// The display text (col 1) of the row whose col 0 == `key`, if present.
+    pub fn get(&self, key: &str) -> Option<String> {
+        self.rows
+            .iter()
+            .find(|r| r.first().map(|c| decode_utf16le(c)).as_deref() == Some(key))
+            .and_then(|r| r.get(1))
+            .map(|c| decode_utf16le(c))
+    }
+
     /// Set the text of the row whose col 0 == `key`, or append a new one.
     /// Returns the row id. Makes re-wiring idempotent (no table growth).
     pub fn set_or_append(&mut self, key: &str, text: &str) -> usize {
@@ -190,7 +199,14 @@ mod tests {
             col_cnt: 6,
             rows: vec![
                 vec![Vec::new(); 6],
-                vec![utf16le("EM01"), utf16le("Root"), utf16le("Root"), Vec::new(), Vec::new(), Vec::new()],
+                vec![
+                    utf16le("EM01"),
+                    utf16le("Root"),
+                    utf16le("Root"),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                ],
             ],
         };
         let id = t.append_string("QG", "Accept this quest");

@@ -93,7 +93,10 @@ fn multi_objective_apply_then_delete_restores_qsds_byte_exact() {
         .filter(|m| !m.dead_event_is_free())
         .map(|m| m.id)
         .collect();
-    assert!(!occupied.is_empty(), "need an occupied monster to chain onto");
+    assert!(
+        !occupied.is_empty(),
+        "need an occupied monster to chain onto"
+    );
 
     let sn = ds.next_free_quest_sn();
     let mut applied = false;
@@ -184,7 +187,10 @@ fn multi_objective_apply_then_delete_restores_qsds_byte_exact() {
     // The claimed monster's col-41 is cleared again.
     let ds3 = DataSet::load(&root).unwrap();
     let claim3 = ds3.monsters.iter().find(|m| m.id == claim_monster).unwrap();
-    assert!(claim3.dead_event_is_free(), "claimed monster col-41 cleared");
+    assert!(
+        claim3.dead_event_is_free(),
+        "claimed monster col-41 cleared"
+    );
 
     let _ = std::fs::remove_dir_all(&root);
 }

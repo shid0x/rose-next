@@ -77,7 +77,9 @@ pub fn decode(data: &[u8]) -> Result<DecodedImage> {
             },
         ))
     } else if (pf_flags & DDPF_RGB) != 0 && rgb_bit_count == 16 {
-        Ok(decode_rgb16(pixel_data, width, height, r_mask, g_mask, b_mask))
+        Ok(decode_rgb16(
+            pixel_data, width, height, r_mask, g_mask, b_mask,
+        ))
     } else {
         Err(anyhow!(
             "unsupported DDS format (flags=0x{:x}, bpp={})",
@@ -105,8 +107,7 @@ fn decode_bc1(data: &[u8], width: u32, height: u32) -> DecodedImage {
             let block = &data[off..off + 8];
             let c0 = u16::from_le_bytes([block[0], block[1]]);
             let c1 = u16::from_le_bytes([block[2], block[3]]);
-            let bits =
-                u32::from_le_bytes([block[4], block[5], block[6], block[7]]);
+            let bits = u32::from_le_bytes([block[4], block[5], block[6], block[7]]);
             let (r0, g0, b0) = rgb565(c0);
             let (r1, g1, b1) = rgb565(c1);
             let mut palette = [[0u8; 4]; 4];
@@ -171,8 +172,7 @@ fn decode_bc2(data: &[u8], width: u32, height: u32) -> DecodedImage {
             // color block is same as BC1 but c0>c1 rule doesn't branch
             let c0 = u16::from_le_bytes([block[8], block[9]]);
             let c1 = u16::from_le_bytes([block[10], block[11]]);
-            let bits =
-                u32::from_le_bytes([block[12], block[13], block[14], block[15]]);
+            let bits = u32::from_le_bytes([block[12], block[13], block[14], block[15]]);
             let (r0, g0, b0) = rgb565(c0);
             let (r1, g1, b1) = rgb565(c1);
             let mut palette = [[0u8; 3]; 4];
@@ -238,13 +238,11 @@ fn decode_bc3(data: &[u8], width: u32, height: u32) -> DecodedImage {
             a_pal[1] = a1;
             if a0 > a1 {
                 for i in 1..=6 {
-                    a_pal[i + 1] =
-                        (((7 - i) as u16 * a0 as u16 + i as u16 * a1 as u16) / 7) as u8;
+                    a_pal[i + 1] = (((7 - i) as u16 * a0 as u16 + i as u16 * a1 as u16) / 7) as u8;
                 }
             } else {
                 for i in 1..=4 {
-                    a_pal[i + 1] =
-                        (((5 - i) as u16 * a0 as u16 + i as u16 * a1 as u16) / 5) as u8;
+                    a_pal[i + 1] = (((5 - i) as u16 * a0 as u16 + i as u16 * a1 as u16) / 5) as u8;
                 }
                 a_pal[6] = 0;
                 a_pal[7] = 255;
@@ -252,8 +250,7 @@ fn decode_bc3(data: &[u8], width: u32, height: u32) -> DecodedImage {
 
             let c0 = u16::from_le_bytes([block[8], block[9]]);
             let c1 = u16::from_le_bytes([block[10], block[11]]);
-            let bits =
-                u32::from_le_bytes([block[12], block[13], block[14], block[15]]);
+            let bits = u32::from_le_bytes([block[12], block[13], block[14], block[15]]);
             let (r0, g0, b0) = rgb565(c0);
             let (r1, g1, b1) = rgb565(c1);
             let mut palette = [[0u8; 3]; 4];
@@ -298,7 +295,11 @@ fn rgb565(c: u16) -> (u8, u8, u8) {
     let r = ((c >> 11) & 0x1f) as u8;
     let g = ((c >> 5) & 0x3f) as u8;
     let b = (c & 0x1f) as u8;
-    ((r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2))
+    (
+        (r << 3) | (r >> 2),
+        (g << 2) | (g >> 4),
+        (b << 3) | (b >> 2),
+    )
 }
 
 fn decode_rgb32(

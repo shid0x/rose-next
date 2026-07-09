@@ -21,7 +21,9 @@ fn event_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../../data/3DDATA/EVENT")
         .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../data/3DDATA/EVENT"))
+        .unwrap_or_else(|_| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../data/3DDATA/EVENT")
+        })
 }
 
 fn collect_con(dir: &std::path::Path) -> Vec<PathBuf> {
@@ -49,7 +51,16 @@ fn model(c: &ConFile) -> impl PartialEq + std::fmt::Debug {
         c.event_funcs.clone(),
         c.messages
             .iter()
-            .map(|m| (m.sn, m.mtype, m.value, m.check_func.clone(), m.click_func.clone(), m.str_id))
+            .map(|m| {
+                (
+                    m.sn,
+                    m.mtype,
+                    m.value,
+                    m.check_func.clone(),
+                    m.click_func.clone(),
+                    m.str_id,
+                )
+            })
             .collect::<Vec<_>>(),
         c.menus
             .iter()
@@ -57,7 +68,13 @@ fn model(c: &ConFile) -> impl PartialEq + std::fmt::Debug {
                 m.items
                     .iter()
                     .map(|i| {
-                        (i.mtype, i.child_menu, i.check_func.clone(), i.click_func.clone(), i.str_id)
+                        (
+                            i.mtype,
+                            i.child_menu,
+                            i.check_func.clone(),
+                            i.click_func.clone(),
+                            i.str_id,
+                        )
                     })
                     .collect::<Vec<_>>()
             })
@@ -78,6 +95,8 @@ fn strings(base: i32) -> GiverStrings {
         after_complete: base + 6,
         in_progress: base + 7,
         response_close: base + 8,
+        hook_option: base + 9,
+        decline_option: base + 10,
     }
 }
 
@@ -143,7 +162,10 @@ fn all_retail_con_semantic_rebuild_and_append_remove() {
     let dir = event_dir();
     let files = collect_con(&dir);
     if files.is_empty() {
-        eprintln!("SKIP: no .CON files under {} — game data not present", dir.display());
+        eprintln!(
+            "SKIP: no .CON files under {} — game data not present",
+            dir.display()
+        );
         return;
     }
 
@@ -170,22 +192,31 @@ fn all_retail_con_semantic_rebuild_and_append_remove() {
             continue;
         }
 
-        // 2) append + remove restores the model exactly
+        // 2) append + remove restores the model exactly. Live data files may
+        //    already carry the user's own appended quests — expect a superset.
         let mut work = rebuilt;
-        if let Err(e) = append_quest_option(&mut work, 5503, "5503-3", &strings(100)) {
+        if let Err(e) = append_quest_option(&mut work, 59503, "59503-3", &strings(100)) {
             failures.push(format!("APPEND {}: {e:#}", path.display()));
             continue;
         }
         let appended = ConFile::parse(&work.rebuild()).expect("appended file re-parses");
-        assert_eq!(quest_option_qids(&appended), vec![5503], "{}", path.display());
+        let mut expect = quest_option_qids(&orig);
+        expect.push(59503);
+        expect.sort();
+        assert_eq!(quest_option_qids(&appended), expect, "{}", path.display());
         // the client would decode the same lua + appendix we think we wrote
         let (lua, appendix) = client_view(&appended.raw);
         assert_eq!(lua, orig.lua, "client lua view drifted: {}", path.display());
-        assert_eq!(appendix, appended.appendix, "client appendix view: {}", path.display());
+        assert_eq!(
+            appendix,
+            appended.appendix,
+            "client appendix view: {}",
+            path.display()
+        );
         assert!(!appendix.is_empty(), "{}", path.display());
 
         let mut stripped = appended;
-        remove_quest_option(&mut stripped, 5503);
+        remove_quest_option(&mut stripped, 59503);
         let restored = ConFile::parse(&stripped.rebuild()).expect("stripped file re-parses");
         if model(&restored) != model(&orig) {
             failures.push(format!("APPEND/REMOVE DRIFT {}", path.display()));
@@ -199,7 +230,10 @@ fn all_retail_con_semantic_rebuild_and_append_remove() {
         files.len(),
         failures.join("\n")
     );
-    eprintln!("OK: {} CON files rebuild + append/remove cleanly", files.len());
+    eprintln!(
+        "OK: {} CON files rebuild + append/remove cleanly",
+        files.len()
+    );
 }
 
 #[test]
@@ -215,14 +249,29 @@ fn append_wires_menu_zero_and_appendix() {
     let p = ConFile::parse(&out).unwrap();
 
     // retail nodes untouched, 3 option items appended to menu 0
-    assert_eq!(p.menus.len(), 2 + 4);
+    assert_eq!(p.menus.len(), 2 + 6);
     assert_eq!(p.menus[0].items.len(), 1 + 3);
     assert_eq!(p.menus[0].items[0].str_id, 10); // retail greeting intact
-    let accept = &p.menus[0].items[1];
+                                                // the hook line: gated by CHK_accept but with NO click action — clicking
+                                                // it must open the start-message prompt, not accept the quest
+    let hook = &p.menus[0].items[1];
+    assert_eq!(hook.mtype, SC_MSG_PLAYERSELECT);
+    assert_eq!(hook.check_func, "QE5503_CHK_accept");
+    assert_eq!(hook.click_func, "");
+    assert_eq!(hook.str_id, 109);
+    // hook -> start message -> Accept / Decline choices
+    let start = &p.menus[hook.child_menu as usize];
+    assert_eq!(start.items[0].mtype, SC_MSG_NPCSAY);
+    assert_eq!(start.items[0].str_id, 100);
+    let choices = &p.menus[start.items[0].child_menu as usize];
+    assert_eq!(choices.items.len(), 2);
+    let accept = &choices.items[0];
     assert_eq!(accept.mtype, SC_MSG_PLAYERSELECT);
     assert_eq!(accept.check_func, "QE5503_CHK_accept");
     assert_eq!(accept.click_func, "QE5503_ACT_accept");
     assert_eq!(accept.str_id, 101);
+    assert_eq!(choices.items[1].mtype, SC_MSG_CLOSE);
+    assert_eq!(choices.items[1].str_id, 110);
     // accept -> after-accept response -> close button
     let resp = &p.menus[accept.child_menu as usize];
     assert_eq!(resp.items[0].mtype, SC_MSG_NPCSAY);
@@ -276,13 +325,19 @@ fn two_quests_coexist_and_remove_one() {
     assert_eq!(quest_option_qids(&p), vec![5504]);
 
     // 5504's subtree survived the menu-index remapping
-    let accept = p.menus[0]
+    let hook = p.menus[0]
         .items
         .iter()
         .find(|i| i.check_func == "QE5504_CHK_accept")
-        .expect("5504 accept option still wired");
-    assert_eq!(accept.str_id, 201);
-    let resp = &p.menus[accept.child_menu as usize];
+        .expect("5504 hook option still wired");
+    assert_eq!(hook.str_id, 209);
+    let start = &p.menus[hook.child_menu as usize];
+    assert_eq!(start.items[0].str_id, 200); // start message of 5504
+    let choices = &p.menus[start.items[0].child_menu as usize];
+    assert_eq!(choices.items[0].click_func, "QE5504_ACT_accept");
+    assert_eq!(choices.items[0].str_id, 201);
+    assert_eq!(choices.items[1].str_id, 210); // decline of 5504
+    let resp = &p.menus[choices.items[0].child_menu as usize];
     assert_eq!(resp.items[0].str_id, 205); // after-accept of 5504
     let close = &p.menus[resp.items[0].child_menu as usize];
     assert_eq!(close.items[0].mtype, SC_MSG_CLOSE);

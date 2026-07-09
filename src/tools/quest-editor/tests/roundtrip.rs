@@ -64,7 +64,10 @@ fn all_retail_qsd_round_trip_byte_exact() {
                         .position(|(a, b)| a != b)
                         .map(|p| p.to_string())
                         .unwrap_or_else(|| format!("len {} vs {}", raw.len(), reencoded.len()));
-                    failures.push(format!("DRIFT {} (first diff @ {first_diff})", path.display()));
+                    failures.push(format!(
+                        "DRIFT {} (first diff @ {first_diff})",
+                        path.display()
+                    ));
                 }
             }
             Err(e) => failures.push(format!("PARSE {}: {e:#}", path.display())),

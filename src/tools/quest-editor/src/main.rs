@@ -93,7 +93,9 @@ fn collect_qsd(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
-        for entry in std::fs::read_dir(&d).with_context(|| format!("reading dir {}", d.display()))? {
+        for entry in
+            std::fs::read_dir(&d).with_context(|| format!("reading dir {}", d.display()))?
+        {
             let path = entry?.path();
             if path.is_dir() {
                 stack.push(path);
@@ -212,7 +214,11 @@ fn cmd_dump(file: Option<&String>) -> Result<bool> {
     println!("description: {}", show_bytes(&qsd.description));
     println!("patterns: {}", qsd.patterns.len());
     for (pi, p) in qsd.patterns.iter().enumerate() {
-        println!("  pattern[{pi}] name={} triggers={}", show_bytes(&p.name), p.triggers.len());
+        println!(
+            "  pattern[{pi}] name={} triggers={}",
+            show_bytes(&p.name),
+            p.triggers.len()
+        );
         for t in &p.triggers {
             println!(
                 "    trigger '{}' check_next={} conds={} rewds={}",
@@ -222,18 +228,10 @@ fn cmd_dump(file: Option<&String>) -> Result<bool> {
                 t.rewards.len()
             );
             for c in &t.conditions {
-                println!(
-                    "      COND {:>3}  [{}]",
-                    c.type_id(),
-                    hex_bytes(&c.payload)
-                );
+                println!("      COND {:>3}  [{}]", c.type_id(), hex_bytes(&c.payload));
             }
             for r in &t.rewards {
-                println!(
-                    "      REWD {:>3}  [{}]",
-                    r.type_id(),
-                    hex_bytes(&r.payload)
-                );
+                println!("      REWD {:>3}  [{}]", r.type_id(), hex_bytes(&r.payload));
             }
         }
     }
@@ -294,8 +292,18 @@ fn cmd_data(root: Option<&String>) -> Result<bool> {
     }
 
     println!("\nsample occupied dead-events (the shared-trigger risk):");
-    for m in ds.monsters.iter().filter(|m| !m.dead_event_is_free()).take(10) {
-        println!("  {:>5}  {:<22} -> \"{}\"", m.id, truncate(&m.name, 22), m.dead_event);
+    for m in ds
+        .monsters
+        .iter()
+        .filter(|m| !m.dead_event_is_free())
+        .take(10)
+    {
+        println!(
+            "  {:>5}  {:<22} -> \"{}\"",
+            m.id,
+            truncate(&m.name, 22),
+            m.dead_event
+        );
     }
 
     Ok(true)
@@ -358,7 +366,10 @@ fn build_hunt(ha: &HuntArgs) -> Result<(DataSet, QuestSpec, GeneratedQuest, Stri
     // If the monster already has a dead-event trigger, chain onto it.
     let chain = !monster.dead_event_is_free();
     if chain {
-        println!("(note: {name} already has a quest hook \"{}\" — chaining onto it)", monster.dead_event);
+        println!(
+            "(note: {name} already has a quest hook \"{}\" — chaining onto it)",
+            monster.dead_event
+        );
     }
     let spec = QuestSpec {
         quest_sn: ds.next_free_quest_sn(),
@@ -401,16 +412,26 @@ fn report_issues(ds: &DataSet, spec: &QuestSpec, gen: &GeneratedQuest) -> bool {
 fn cmd_create(args: &[String]) -> Result<bool> {
     let write = args.iter().any(|a| a == "--write");
     let once = args.iter().any(|a| a == "--once");
-    let positional: Vec<String> = args.iter().filter(|a| !a.starts_with("--")).cloned().collect();
+    let positional: Vec<String> = args
+        .iter()
+        .filter(|a| !a.starts_with("--"))
+        .cloned()
+        .collect();
     let ha = parse_hunt_args(&positional)?;
     let (ds, mut spec, mut gen, name) = build_hunt(&ha)?;
     if once {
         spec.one_time_switch = Some(quest_editor::write::next_free_switch(&ha.root)?);
         gen = generate(&spec);
-        println!("(one-time: character switch {})", spec.one_time_switch.unwrap());
+        println!(
+            "(one-time: character switch {})",
+            spec.one_time_switch.unwrap()
+        );
     }
 
-    println!("quest {} \"Hunt: {name}\" -> monster {}", spec.quest_sn, ha.monster_id);
+    println!(
+        "quest {} \"Hunt: {name}\" -> monster {}",
+        spec.quest_sn, ha.monster_id
+    );
     if !report_issues(&ds, &spec, &gen) {
         bail!("validation failed — nothing written");
     }
@@ -438,7 +459,9 @@ fn cmd_list(root: Option<&String>) -> Result<bool> {
     for q in &quests {
         let detail = match &q.spec {
             Some(s) => match &s.kind {
-                QuestKind::Hunt { monster_id, .. } => format!("Hunt monster {monster_id} x{}", s.count),
+                QuestKind::Hunt { monster_id, .. } => {
+                    format!("Hunt monster {monster_id} x{}", s.count)
+                }
                 QuestKind::Fetch { item_sn, .. } => format!("Fetch item {item_sn} x{}", s.count),
             },
             None => "(no manifest — delete only)".to_string(),
@@ -450,7 +473,11 @@ fn cmd_list(root: Option<&String>) -> Result<bool> {
 
 fn cmd_delete(args: &[String]) -> Result<bool> {
     let write = args.iter().any(|a| a == "--write");
-    let pos: Vec<String> = args.iter().filter(|a| !a.starts_with("--")).cloned().collect();
+    let pos: Vec<String> = args
+        .iter()
+        .filter(|a| !a.starts_with("--"))
+        .cloned()
+        .collect();
     if pos.len() < 2 {
         bail!("usage: delete <root> <quest_sn> [--write]");
     }
@@ -571,7 +598,12 @@ fn cmd_ltb_check(args: &[String]) -> Result<bool> {
     }
     let bytes = std::fs::read(&args[0]).with_context(|| format!("reading {}", args[0]))?;
     let t = LtbTable::parse(&bytes)?;
-    println!("rows={} cols={} ({} bytes)", t.rows.len(), t.col_cnt, bytes.len());
+    println!(
+        "rows={} cols={} ({} bytes)",
+        t.rows.len(),
+        t.col_cnt,
+        bytes.len()
+    );
     // Semantic round-trip.
     let rt = LtbTable::parse(&t.to_bytes())?;
     let ok = rt.rows == t.rows && rt.col_cnt == t.col_cnt;
@@ -579,7 +611,10 @@ fn cmd_ltb_check(args: &[String]) -> Result<bool> {
     if let Some(r) = args.get(1).and_then(|s| s.parse::<usize>().ok()) {
         if let Some(row) = t.rows.get(r) {
             for (c, s) in row.iter().enumerate() {
-                println!("  row {r} col {c}: {:?}", quest_editor::ltb::decode_utf16le(s));
+                println!(
+                    "  row {r} col {c}: {:?}",
+                    quest_editor::ltb::decode_utf16le(s)
+                );
             }
         } else {
             println!("  row {r} out of range");
@@ -599,14 +634,22 @@ fn cmd_npc_find(args: &[String]) -> Result<bool> {
     let mut hits = 0;
     for g in &ds.givers {
         if g.name.to_lowercase().contains(&needle) {
-            let p = if placed.contains(&g.id) { "placed" } else { "NOT placed" };
+            let p = if placed.contains(&g.id) {
+                "placed"
+            } else {
+                "NOT placed"
+            };
             println!("  npc {:<6} [town] {:<32} ({p})", g.id, g.name);
             hits += 1;
         }
     }
     for m in &ds.monsters {
         if m.name.to_lowercase().contains(&needle) {
-            let p = if placed.contains(&m.id) { "placed" } else { "NOT placed" };
+            let p = if placed.contains(&m.id) {
+                "placed"
+            } else {
+                "NOT placed"
+            };
             println!("  npc {:<6} [mob]  {:<32} ({p})", m.id, m.name);
             hits += 1;
         }
@@ -619,10 +662,16 @@ fn cmd_npc_find(args: &[String]) -> Result<bool> {
 
 fn cmd_con_wire(args: &[String]) -> Result<bool> {
     let write = args.iter().any(|a| a == "--write");
-    let pos: Vec<String> = args.iter().filter(|a| !a.starts_with("--")).cloned().collect();
+    let pos: Vec<String> = args
+        .iter()
+        .filter(|a| !a.starts_with("--"))
+        .cloned()
+        .collect();
     if pos.len() < 4 {
-        bail!("usage: con-wire <root> <npc_id> <quest_sn> <complete_trigger> [--write]\n\
-               \x20  e.g. con-wire ../data 1001 5503 5503-3 --write");
+        bail!(
+            "usage: con-wire <root> <npc_id> <quest_sn> <complete_trigger> [--write]\n\
+               \x20  e.g. con-wire ../data 1001 5503 5503-3 --write"
+        );
     }
     let root = PathBuf::from(&pos[0]);
     let npc_id: i32 = pos[1].parse().context("npc_id")?;
@@ -641,7 +690,11 @@ fn cmd_con_wire(args: &[String]) -> Result<bool> {
 
 fn cmd_con_append(args: &[String]) -> Result<bool> {
     let write = args.iter().any(|a| a == "--write");
-    let pos: Vec<String> = args.iter().filter(|a| !a.starts_with("--")).cloned().collect();
+    let pos: Vec<String> = args
+        .iter()
+        .filter(|a| !a.starts_with("--"))
+        .cloned()
+        .collect();
     if pos.len() < 4 {
         bail!("usage: con-append <root> <npc_id> <quest_sn> <complete_trigger> [--write]\n\
                \x20  adds the quest as a new option at the end of the NPC's existing dialog\n\
@@ -701,7 +754,11 @@ fn cmd_ifo_find(args: &[String]) -> Result<bool> {
 
 fn cmd_ifo_set(args: &[String]) -> Result<bool> {
     let write = args.iter().any(|a| a == "--write");
-    let pos: Vec<String> = args.iter().filter(|a| !a.starts_with("--")).cloned().collect();
+    let pos: Vec<String> = args
+        .iter()
+        .filter(|a| !a.starts_with("--"))
+        .cloned()
+        .collect();
     if pos.len() < 3 {
         bail!("usage: ifo-set <ifo_file> <npc_id> <conversation_name> [--write]");
     }
@@ -713,9 +770,15 @@ fn cmd_ifo_set(args: &[String]) -> Result<bool> {
         bail!("npc {npc_id} not found in {}", ifo.display());
     }
     if write {
-        println!("set npc {npc_id} conversation = {name} in {} (.bak made)", ifo.display());
+        println!(
+            "set npc {npc_id} conversation = {name} in {} (.bak made)",
+            ifo.display()
+        );
     } else {
-        println!("DRY RUN: npc {npc_id} -> {name} in {} (re-run with --write)", ifo.display());
+        println!(
+            "DRY RUN: npc {npc_id} -> {name} in {} (re-run with --write)",
+            ifo.display()
+        );
     }
     Ok(true)
 }
@@ -780,7 +843,10 @@ fn cmd_con_dump(file: Option<&String>) -> Result<bool> {
     println!("lua: {:?}, {} bytes", kind, c.lua.len());
     if kind == LuaKind::Source {
         let n = c.lua.len().min(700);
-        println!("--- lua preview ---\n{}", String::from_utf8_lossy(&c.lua[..n]));
+        println!(
+            "--- lua preview ---\n{}",
+            String::from_utf8_lossy(&c.lua[..n])
+        );
     } else if kind == LuaKind::Bytecode {
         let n = c.lua.len().min(48);
         let hex: String = c.lua[..n].iter().map(|b| format!("{b:02x} ")).collect();
@@ -788,16 +854,27 @@ fn cmd_con_dump(file: Option<&String>) -> Result<bool> {
     }
     if !c.appendix.is_empty() {
         let qids = quest_editor::convo::quest_option_qids(&c);
-        println!("appendix (QEX1): {} bytes, quest option(s) {:?}", c.appendix.len(), qids);
+        println!(
+            "appendix (QEX1): {} bytes, quest option(s) {:?}",
+            c.appendix.len(),
+            qids
+        );
         let n = c.appendix.len().min(700);
-        println!("--- appendix preview ---\n{}", String::from_utf8_lossy(&c.appendix[..n]));
+        println!(
+            "--- appendix preview ---\n{}",
+            String::from_utf8_lossy(&c.appendix[..n])
+        );
     }
     Ok(true)
 }
 
 fn cmd_create_fetch(args: &[String]) -> Result<bool> {
     let write = args.iter().any(|a| a == "--write");
-    let pos: Vec<String> = args.iter().filter(|a| !a.starts_with("--")).cloned().collect();
+    let pos: Vec<String> = args
+        .iter()
+        .filter(|a| !a.starts_with("--"))
+        .cloned()
+        .collect();
     if pos.len() < 3 {
         bail!("usage: create-fetch <root> <item_sn> <count> [exp] [zuly] [--write]");
     }
@@ -837,7 +914,10 @@ fn cmd_create_fetch(args: &[String]) -> Result<bool> {
     };
     let gen = generate(&spec);
 
-    println!("quest {} \"Gather: {item_name}\" -> bring {count}x item {item_sn}", spec.quest_sn);
+    println!(
+        "quest {} \"Gather: {item_name}\" -> bring {count}x item {item_sn}",
+        spec.quest_sn
+    );
     if !report_issues(&ds, &spec, &gen) {
         bail!("validation failed — nothing written");
     }
@@ -863,7 +943,11 @@ fn cmd_stlcheck(args: &[String]) -> Result<bool> {
         bail!("usage: stlcheck <file.stl> [key]");
     }
     let stl = STL::from_path(Path::new(&args[0])).map_err(|e| anyhow::anyhow!("{e}"))?;
-    let rows = stl.language_tables.first().map(|l| l.rows.len()).unwrap_or(0);
+    let rows = stl
+        .language_tables
+        .first()
+        .map(|l| l.rows.len())
+        .unwrap_or(0);
     println!(
         "format={:?} keys={} languages={} rows/lang={}",
         stl.format,
@@ -875,7 +959,10 @@ fn cmd_stlcheck(args: &[String]) -> Result<bool> {
     if let Some(key) = args.get(1) {
         match stl.keys.iter().position(|k| &k.name == key) {
             Some(idx) => {
-                println!("key \"{key}\" found at index {idx} (id={})", stl.keys[idx].id);
+                println!(
+                    "key \"{key}\" found at index {idx} (id={})",
+                    stl.keys[idx].id
+                );
                 if let Some(lt) = stl.language_tables.first() {
                     if let Some(StringTableRow::QuestRow(q)) = lt.rows.get(idx) {
                         println!(
@@ -913,8 +1000,10 @@ fn cmd_gen(args: &[String]) -> Result<bool> {
     println!("rewards:         exp={exp} zuly={zuly}");
     println!("QSD file:        {}", gen.qsd_filename);
     println!("NPC col-41:      set npc {monster_id} -> \"{kill_trigger}\"");
-    println!("triggers:        register=\"{}\" kill=\"{}\" complete=\"{}\"",
-        gen.register_trigger, kill_trigger, gen.complete_trigger);
+    println!(
+        "triggers:        register=\"{}\" kill=\"{}\" complete=\"{}\"",
+        gen.register_trigger, kill_trigger, gen.complete_trigger
+    );
     println!(
         "\ntest in-game (no dialogs needed):\n  \
          /<cheat> QUEST {sn}        register the quest\n  \

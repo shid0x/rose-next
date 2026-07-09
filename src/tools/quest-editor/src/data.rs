@@ -259,7 +259,10 @@ impl DataSet {
     /// (offset 0 == `next_free_token_item_sn`). Ids beyond the current max are all
     /// free, so a multi-hunt quest gets distinct tokens by bumping the offset.
     pub fn token_item_sn_at(&self, offset: i32) -> i32 {
-        encode_item_no(ItemCategory::QuestItem, self.next_free_quest_item_id() + offset)
+        encode_item_no(
+            ItemCategory::QuestItem,
+            self.next_free_quest_item_id() + offset,
+        )
     }
 }
 
@@ -274,9 +277,8 @@ fn collect_npcs(npc_stb: &STB) -> (Vec<Monster>, Vec<GiverNpc>) {
                 .and_then(|s| s.trim().parse::<i32>().ok())
                 .unwrap_or(0)
         };
-        let col_str = |cpp_col: usize| -> String {
-            row.get(cpp_col + 1).cloned().unwrap_or_default()
-        };
+        let col_str =
+            |cpp_col: usize| -> String { row.get(cpp_col + 1).cloned().unwrap_or_default() };
 
         let id = row
             .first()
@@ -328,10 +330,7 @@ fn collect_quests(stb: &STB) -> Vec<QuestRow> {
         if name.trim().is_empty() {
             continue; // empty placeholder row
         }
-        out.push(QuestRow {
-            sn: i as i32,
-            name,
-        });
+        out.push(QuestRow { sn: i as i32, name });
     }
     out
 }
@@ -414,7 +413,11 @@ fn file_ci(dir: &Path, name: &str) -> Result<PathBuf> {
     }
     if let Ok(rd) = fs::read_dir(dir) {
         for entry in rd.flatten() {
-            if entry.file_name().to_string_lossy().eq_ignore_ascii_case(name) {
+            if entry
+                .file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case(name)
+            {
                 return Ok(entry.path());
             }
         }

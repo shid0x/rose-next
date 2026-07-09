@@ -618,7 +618,7 @@ mod tests {
                 0x01, 0, 0, 0, // iDataCnt
                 0x49, 0x33, 0, 0, // uiItemSN = 13129
                 0x00, 0, 0, 0, // iWhere (0; retail used 13 — behaviorally identical)
-                0x0a, 0, 0, 0, // iRequestCnt = 10
+                0x0a, 0, 0, 0,    // iRequestCnt = 10
                 0x03, // btOp = 3 (<)
                 0, 0, 0, // pad
             ]
@@ -699,7 +699,8 @@ mod tests {
     fn chaining_hunt_splits_out_the_kill_trigger() {
         let mut spec = hunt_spec(5503, 1, 13_968, 3);
         if let QuestKind::Hunt {
-            chain_into_existing, ..
+            chain_into_existing,
+            ..
         } = &mut spec.kind
         {
             *chain_into_existing = true;
@@ -714,7 +715,10 @@ mod tests {
 
         // The kill trigger comes out separately for host insertion.
         assert_eq!(gen.hunts.len(), 1);
-        let kill = gen.hunts[0].host_kill_trigger.clone().expect("host kill trigger");
+        let kill = gen.hunts[0]
+            .host_kill_trigger
+            .clone()
+            .expect("host kill trigger");
         assert_eq!(kill.name, name_bytes("5503-2"));
         assert_eq!(kill.conditions.len(), 2);
         assert_eq!(kill.rewards.len(), 2);
@@ -736,9 +740,10 @@ mod tests {
 
         // Register trigger guards on COND_014 (switch 42 == 0).
         let reg = &triggers[0];
-        assert!(reg.conditions.iter().any(|e| {
-            e.etype == 14 && i16::from_le_bytes([e.payload[0], e.payload[1]]) == 42
-        }));
+        assert!(reg
+            .conditions
+            .iter()
+            .any(|e| { e.etype == 14 && i16::from_le_bytes([e.payload[0], e.payload[1]]) == 42 }));
         // Complete trigger sets the switch via REWD_015 (switch 42 = 1).
         let comp = triggers.last().unwrap();
         assert!(comp.rewards.iter().any(|e| {
@@ -788,7 +793,11 @@ mod tests {
 
         // Complete trigger ANDs registered + 3 objective checks (2 tokens + item).
         let complete = triggers.last().unwrap();
-        let cond4: Vec<_> = complete.conditions.iter().filter(|e| e.etype == 4).collect();
+        let cond4: Vec<_> = complete
+            .conditions
+            .iter()
+            .filter(|e| e.etype == 4)
+            .collect();
         assert_eq!(cond4.len(), 3);
         // The consumed fetch adds a REWD_001 op-0 remove before finish.
         assert!(complete
@@ -829,7 +838,7 @@ mod tests {
 
         let triggers = &gen.qsd.patterns[0].triggers;
         assert_eq!(triggers.len(), 2); // register + complete (no kill)
-        // complete: COND_000 + COND_004; rewards = select + exp + remove + finish
+                                       // complete: COND_000 + COND_004; rewards = select + exp + remove + finish
         assert_eq!(triggers[1].conditions.len(), 2);
         assert_eq!(triggers[1].rewards.len(), 4);
         // the remove reward (REWD_001 op 0) consumes the fetched item

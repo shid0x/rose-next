@@ -24,10 +24,16 @@ pub struct Issue {
 
 impl Issue {
     fn err(m: impl Into<String>) -> Self {
-        Issue { level: Level::Error, message: m.into() }
+        Issue {
+            level: Level::Error,
+            message: m.into(),
+        }
     }
     fn warn(m: impl Into<String>) -> Self {
-        Issue { level: Level::Warning, message: m.into() }
+        Issue {
+            level: Level::Warning,
+            message: m.into(),
+        }
     }
 }
 
@@ -67,9 +73,13 @@ pub fn verify(ds: &DataSet, spec: &QuestSpec, gen: &GeneratedQuest) -> Vec<Issue
 
     // The generated quest data must round-trip (internal sanity).
     let bytes = gen.qsd.to_bytes();
-    let ok = QsdFile::parse(&bytes).map(|p| p.to_bytes() == bytes).unwrap_or(false);
+    let ok = QsdFile::parse(&bytes)
+        .map(|p| p.to_bytes() == bytes)
+        .unwrap_or(false);
     if !ok {
-        out.push(Issue::err("Generated quest data failed its self-check (internal error)."));
+        out.push(Issue::err(
+            "Generated quest data failed its self-check (internal error).",
+        ));
     }
 
     // The new QSD file must not already exist.
@@ -124,9 +134,13 @@ pub fn verify(ds: &DataSet, spec: &QuestSpec, gen: &GeneratedQuest) -> Vec<Issue
             None => out.push(Issue::err("The chosen item is invalid.")),
             Some((cat, id)) => {
                 if id > MAX_ITEM_ID {
-                    out.push(Issue::err("The chosen item's id is too high (must be ≤ 999)."));
+                    out.push(Issue::err(
+                        "The chosen item's id is too high (must be ≤ 999).",
+                    ));
                 } else if ds.item_db.lookup(cat, id).is_none() {
-                    out.push(Issue::warn("The chosen item wasn't found in the item tables."));
+                    out.push(Issue::warn(
+                        "The chosen item wasn't found in the item tables.",
+                    ));
                 }
             }
         },
@@ -136,16 +150,29 @@ pub fn verify(ds: &DataSet, spec: &QuestSpec, gen: &GeneratedQuest) -> Vec<Issue
     // collisions (a monster or token id used twice within the same quest).
     let mut seen_monsters: HashSet<i32> = HashSet::new();
     let mut seen_tokens: HashSet<i32> = HashSet::new();
-    if let QuestKind::Hunt { monster_id, token_item_sn, .. } = &spec.kind {
+    if let QuestKind::Hunt {
+        monster_id,
+        token_item_sn,
+        ..
+    } = &spec.kind
+    {
         seen_monsters.insert(*monster_id);
         seen_tokens.insert(*token_item_sn);
     }
     for (i, o) in spec.extra_objectives.iter().enumerate() {
         let n = i + 2; // objective #1 is the primary
         match o {
-            Objective::Hunt { monster_id, count, token_item_sn, chain_into_existing, .. } => {
+            Objective::Hunt {
+                monster_id,
+                count,
+                token_item_sn,
+                chain_into_existing,
+                ..
+            } => {
                 if *count < 1 {
-                    out.push(Issue::err(format!("Objective {n}: count must be at least 1.")));
+                    out.push(Issue::err(format!(
+                        "Objective {n}: count must be at least 1."
+                    )));
                 }
                 if token_item_sn / 1000 != 13 || token_item_sn % 1000 > MAX_ITEM_ID {
                     out.push(Issue::err(format!(
@@ -162,7 +189,9 @@ pub fn verify(ds: &DataSet, spec: &QuestSpec, gen: &GeneratedQuest) -> Vec<Issue
                     )));
                 }
                 match ds.find_monster(*monster_id) {
-                    None => out.push(Issue::err(format!("Objective {n}: monster {monster_id} not found."))),
+                    None => out.push(Issue::err(format!(
+                        "Objective {n}: monster {monster_id} not found."
+                    ))),
                     Some(m) => {
                         let free = m.dead_event_is_free();
                         if !free && !*chain_into_existing {
@@ -182,10 +211,14 @@ pub fn verify(ds: &DataSet, spec: &QuestSpec, gen: &GeneratedQuest) -> Vec<Issue
             }
             Objective::Fetch { item_sn, count, .. } => {
                 if *count < 1 {
-                    out.push(Issue::err(format!("Objective {n}: count must be at least 1.")));
+                    out.push(Issue::err(format!(
+                        "Objective {n}: count must be at least 1."
+                    )));
                 }
                 match decode_item(*item_sn) {
-                    None => out.push(Issue::err(format!("Objective {n}: the chosen item is invalid."))),
+                    None => out.push(Issue::err(format!(
+                        "Objective {n}: the chosen item is invalid."
+                    ))),
                     Some((cat, id)) => {
                         if id > MAX_ITEM_ID {
                             out.push(Issue::err(format!(
@@ -205,15 +238,21 @@ pub fn verify(ds: &DataSet, spec: &QuestSpec, gen: &GeneratedQuest) -> Vec<Issue
     // Optional reward item.
     if let Some((sn, qty)) = spec.reward_item {
         if qty < 1 {
-            out.push(Issue::warn("Reward item quantity is zero — it won't be given."));
+            out.push(Issue::warn(
+                "Reward item quantity is zero — it won't be given.",
+            ));
         }
         match decode_item(sn) {
             None => out.push(Issue::err("The reward item is invalid.")),
             Some((cat, id)) => {
                 if id > MAX_ITEM_ID {
-                    out.push(Issue::err("The reward item's id is too high (must be ≤ 999)."));
+                    out.push(Issue::err(
+                        "The reward item's id is too high (must be ≤ 999).",
+                    ));
                 } else if ds.item_db.lookup(cat, id).is_none() {
-                    out.push(Issue::warn("The reward item wasn't found in the item tables."));
+                    out.push(Issue::warn(
+                        "The reward item wasn't found in the item tables.",
+                    ));
                 }
             }
         }

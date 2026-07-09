@@ -172,8 +172,7 @@ impl QsdFile {
             let mut triggers = Vec::with_capacity(trigger_count as usize);
             for t in 0..trigger_count {
                 triggers.push(
-                    Trigger::parse(&mut r)
-                        .with_context(|| format!("pattern {p}, trigger {t}"))?,
+                    Trigger::parse(&mut r).with_context(|| format!("pattern {p}, trigger {t}"))?,
                 );
             }
             patterns.push(Pattern { name, triggers });
@@ -224,8 +223,7 @@ impl Trigger {
 
         let mut conditions = Vec::with_capacity(cond_count as usize);
         for c in 0..cond_count {
-            conditions
-                .push(Entity::parse(r).with_context(|| format!("condition {c}"))?);
+            conditions.push(Entity::parse(r).with_context(|| format!("condition {c}"))?);
         }
         let mut rewards = Vec::with_capacity(rewd_count as usize);
         for rw in 0..rewd_count {
