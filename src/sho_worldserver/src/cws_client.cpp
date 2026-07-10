@@ -904,7 +904,7 @@ CWS_ListCLIENT::Del_ACCOUNT(char* szAccount, BYTE btDelLoginBIT, CWS_Server* pCl
                         else {
                             // classTIME::GetCurrentAbsSecond ()
                             // pAccount->m_dwLoginTIME;
-                            LOG_ERROR("{} Account, Sub_ACCOUNT({})",
+                            LOG_DEBUG("{} Account, Sub_ACCOUNT({})",
                                 m_pHashACCOUNT->GetCount(),
                                 pAccount->Get_ACCOUNT());
                         }
