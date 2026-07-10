@@ -103,7 +103,19 @@ public:
         return false;
     }
 
-    bool pop_stale_lethal(uint32_t now_ms, uint32_t grace_ms, int32_t dead_hp, DamageEvent& out) {
+    // A lethal MeleeHitFrame event older than grace_ms is popped for fallback
+    // presentation -- unless swing_still_pending(event) reports that the killer's
+    // confirmed swing animation is still in flight toward its hit frame (slow
+    // attack motions, e.g. cart weapons, legitimately exceed the grace window).
+    // Deferral is bounded by hard_cap_ms so a swing whose consumer never fires
+    // still resolves.
+    template <typename SwingStillPending>
+    bool pop_stale_lethal(uint32_t now_ms,
+        uint32_t grace_ms,
+        uint32_t hard_cap_ms,
+        int32_t dead_hp,
+        SwingStillPending&& swing_still_pending,
+        DamageEvent& out) {
         for (auto it = m_events.begin(); it != m_events.end(); ++it) {
             if (it->presentation_kind != DamagePresentationKind::MeleeHitFrame) {
                 continue;
@@ -111,7 +123,11 @@ public:
             if (!it->lethal && it->hp_after > dead_hp) {
                 continue;
             }
-            if ((now_ms - it->queued_at_ms) < grace_ms) {
+            const uint32_t age_ms = now_ms - it->queued_at_ms;
+            if (age_ms < grace_ms) {
+                continue;
+            }
+            if (age_ms < hard_cap_ms && swing_still_pending(*it)) {
                 continue;
             }
 
@@ -120,6 +136,11 @@ public:
             return true;
         }
         return false;
+    }
+
+    bool pop_stale_lethal(uint32_t now_ms, uint32_t grace_ms, int32_t dead_hp, DamageEvent& out) {
+        return pop_stale_lethal(
+            now_ms, grace_ms, grace_ms, dead_hp, [](const DamageEvent&) { return false; }, out);
     }
 
     bool has_pending_damage() const {

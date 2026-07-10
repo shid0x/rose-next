@@ -3578,11 +3578,39 @@ CObjCHAR::Proc(void) {
         PresentPendingAuthoritativeDeath(NULL, "pending death timeout");
     }
 
+    // Slow attack motions (cart / castle gear weapons, low attack speed) put the
+    // killer's hit frame legitimately later than the stale grace window. While the
+    // attacker is alive, still in its attack command, and still holds this exact
+    // event as its pending confirmed swing, the hit frame is coming -- defer the
+    // stale pop instead of killing the defender mid-swing. Mounted swings key the
+    // event to the cart but track the pending swing on the rider, so check both.
+    // The hard cap keeps the fallback alive for swings whose consumer never fires.
+    static const DWORD kStaleLethalSwingHardCapMs = 6000;
+    auto fnSwingStillPending = [](const Rose::Combat::DamageEvent& event) -> bool {
+        CObjCHAR* pAtkOBJ = g_pObjMGR->Get_CharOBJ(event.attacker_id, true);
+        if (!pAtkOBJ || pAtkOBJ->Get_HP() <= DEAD_HP
+            || pAtkOBJ->Get_COMMAND() != CMD_ATTACK) {
+            return false;
+        }
+        if (pAtkOBJ->HasPendingCombatSwingEvent(event.event_id)) {
+            return true;
+        }
+        if (pAtkOBJ->IsPET()) {
+            CObjCHAR* pRider = ((CObjCART*)pAtkOBJ)->GetParent();
+            if (pRider && pRider->HasPendingCombatSwingEvent(event.event_id)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
     if (this != g_pAVATAR && this->Get_HP() > DEAD_HP) {
         Rose::Combat::DamageEvent staleDeathEvent;
         if (m_CombatDamageQueue.pop_stale_lethal(dwCurrentTime,
                 kPendingAuthoritativeDeathTimeoutMs,
+                kStaleLethalSwingHardCapMs,
                 DEAD_HP,
+                fnSwingStillPending,
                 staleDeathEvent)) {
             CObjCHAR* pAtkOBJ = g_pObjMGR->Get_CharOBJ(staleDeathEvent.attacker_id, true);
             LogString(LOG_DEBUG_,

@@ -171,6 +171,36 @@ struct HpHarness {
             : PresentationResult::PresentedMiss;
     }
 
+    // Mirrors the CObjCHAR::Proc() call: the live-swing predicate defers the
+    // stale pop until the hard cap.
+    PresentationResult present_stale_lethal_with_live_swing(uint32_t now_ms,
+        uint32_t grace_ms,
+        uint32_t hard_cap_ms,
+        bool swing_live) {
+        static const int kDeadHp = 0;
+        DamageEvent e;
+        if (!queue.pop_stale_lethal(
+                now_ms, grace_ms, hard_cap_ms, kDeadHp,
+                [swing_live](const DamageEvent&) { return swing_live; }, e)) {
+            return PresentationResult::NoEvent;
+        }
+
+        set_authoritative_from_event(e);
+        displayed_damage = std::max(0, e.damage_value);
+        ++displayed_digits;
+
+        if (e.lethal || e.hp_after <= 0) {
+            visible_hp = 0;
+            pending_authoritative_death = false;
+            pending_correction = 0;
+            return PresentationResult::PresentedDeath;
+        }
+
+        return displayed_damage > 0
+            ? PresentationResult::PresentedDamage
+            : PresentationResult::PresentedMiss;
+    }
+
     PresentationResult discard_from_attacker(uint32_t attacker, bool is_avatar) {
         DamageEvent e;
         if (!queue.discard_for_attacker(attacker, &e)) {
@@ -767,6 +797,54 @@ main() {
             "fresh lethal melee event should leave visible HP for the normal hit frame");
         expect(monster.hit(10) == PresentationResult::PresentedDeath,
             "fresh lethal melee event should remain queued for hit-frame presentation");
+    }
+
+    {
+        // Slow swing still in flight (cart weapon): the stale fallback must wait
+        // for the hit frame instead of killing the defender mid-animation.
+        HpHarness monster;
+        DamageEvent lethal = event(1, 10, 35, 0, true);
+        lethal.queued_at_ms = 1000;
+        monster.queue.push(lethal);
+        expect(monster.present_stale_lethal_with_live_swing(2600, 1500, 6000, true)
+                == PresentationResult::NoEvent,
+            "stale lethal fallback must defer while the killer's swing is still live");
+        expect(monster.visible_hp == 100,
+            "deferred lethal event should leave visible HP for the late hit frame");
+        expect(monster.hit(10) == PresentationResult::PresentedDeath,
+            "deferred lethal event should remain queued for its hit-frame consumer");
+        expect(monster.displayed_damage == 35,
+            "late hit frame should show the normal final-hit digit");
+    }
+
+    {
+        // Live-swing deferral is bounded: past the hard cap the fallback fires
+        // even if the swing state still claims to be pending.
+        HpHarness monster;
+        DamageEvent lethal = event(1, 10, 35, 0, true);
+        lethal.queued_at_ms = 1000;
+        monster.queue.push(lethal);
+        expect(monster.present_stale_lethal_with_live_swing(6999, 1500, 6000, true)
+                == PresentationResult::NoEvent,
+            "live swing should keep deferring inside the hard cap");
+        expect(monster.present_stale_lethal_with_live_swing(7000, 1500, 6000, true)
+                == PresentationResult::PresentedDeath,
+            "stale lethal fallback must fire at the hard cap despite a live swing");
+        expect(monster.visible_hp == 0, "hard-capped fallback should kill the defender");
+    }
+
+    {
+        // Once the swing dies (interrupt, command change), the original grace
+        // window applies again immediately.
+        HpHarness monster;
+        DamageEvent lethal = event(1, 10, 35, 0, true);
+        lethal.queued_at_ms = 1000;
+        monster.queue.push(lethal);
+        expect(monster.present_stale_lethal_with_live_swing(2600, 1500, 6000, false)
+                == PresentationResult::PresentedDeath,
+            "stale lethal fallback must still fire after grace when no swing is live");
+        expect(monster.displayed_damage == 35,
+            "stale lethal fallback should show the normal final-hit digit");
     }
 
     {
