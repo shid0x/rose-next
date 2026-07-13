@@ -11,6 +11,7 @@
 #include "../Interface/Dlgs/ChattingDlg.h"
 #include "../Interface/Dlgs/CPartyDlg.h"
 #include "../Interface/CTDrawImpl.h"
+#include "../Interface/CUIMediator.h"
 #include "CSkillCommand.h"
 #include "ReloadProcess.h"
 #include "GameData/CParty.h"
@@ -283,6 +284,11 @@ CCreateWindowActionSkill::SendSkillActionReq(int iSkillSlot, int iTarget, D3DXVE
         g_itMGR.OpenDialogBySkill(iSkillSlot, DLG_TYPE_SEPARATE);
     else if (iWindowType == 42)
         g_itMGR.OpenDialogBySkill(iSkillSlot, DLG_TYPE_UPGRADE);
+    else if (iWindowType == SKILL_WINDOW_MONSTER_INSPECTOR) {
+        /// 몬스터 인스펙터: 순수 클라이언트 창. 서버로는 아무것도 보내지 않는다.
+        /// 타겟 검증(몬스터인지, 살아있는지)은 CheckConditionForFireSkill 에서 이미 통과.
+        g_UIMed.OpenMonsterInspector(iTarget);
+    }
 
     return 0;
 }
@@ -582,8 +588,13 @@ CSkillManager::CreateNewSkill(int iSkillSlotType, short nSkillIdx, char cSkillLe
 /*static*/ int
 CSkillManager::GetSkillTargetType(int iSkillIndex) {
     switch (SKILL_TYPE(iSkillIndex)) {
-        case SKILL_BASE_ACTION: ///< 기본 명령( 앉기, 서기, 줍기... ), 감정표현
         case SKILL_CREATE_WINDOW: ///< 창생성( 제조, 파티, 개인상점... )
+            /// 몬스터 인스펙터 창은 유일하게 타겟(몬스터)이 필요한 창생성 스킬.
+            if (SKILL_POWER(iSkillIndex) == SKILL_WINDOW_MONSTER_INSPECTOR)
+                return SKILL_TARGET_OBJECT;
+            return SKILL_TARGET_NONE;
+
+        case SKILL_BASE_ACTION: ///< 기본 명령( 앉기, 서기, 줍기... ), 감정표현
         case SKILL_ACTION_SELF_BOUND_DURATION: ///< 자신에게 발동 지속 마법.( 캐스팅 유 ) 능력치
         case SKILL_ACTION_SELF_BOUND: ///< 자신에게 발동 바로 업 마법.( 캐스팅 유 ) 능력치
         case SKILL_ACTION_SELF_STATE_DURATION: ///< 자신에게 발동 지속 마법.( 캐스팅 유 ) 상태관련

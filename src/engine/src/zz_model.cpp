@@ -48,7 +48,11 @@ zz_model::zz_model(void) :
 	normal_ratio(0),
 	move_velocity(0),
 	com_bone(0),
-	skip_frames(0)
+	skip_frames(0),
+	camtarget_distance_square(0) // was uninitialized: garbage flipped apply_motion
+	                             // into the non-interpolated (keyframe-stepped)
+	                             // branch for models the shadowmap pass never
+	                             // touches (shadow off / not in scene)
 {
 #ifdef ZZ_BLINK_TEST
 	init_blink_();

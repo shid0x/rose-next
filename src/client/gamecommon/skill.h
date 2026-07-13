@@ -66,6 +66,12 @@ enum enumSKILL_ACTION_TYPE {
 class CObjCHAR;
 class CCommand;
 
+/// SKILL_CREATE_WINDOW 스킬의 SKILL_POWER(창 유형) 값.
+/// 11~39 = 제조창, 41 = 분해창, 42 = 재련창 (CCreateWindowActionSkill 참조)
+/// 50 = 몬스터 인스펙터. 타겟(몬스터)이 필요한 유일한 창생성 스킬이며
+///      서버로 패킷을 보내지 않으므로 절대 어그로를 끌지 않는다.
+#define SKILL_WINDOW_MONSTER_INSPECTOR 50
+
 enum SKILL_SLOT_TYPE {
     SKILL_SLOT_MAIN = 0,
     SKILL_SLOT_CLAN,

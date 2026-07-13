@@ -10111,6 +10111,10 @@ void RenderSelectedAvatar(HNODE hModel)
 	model->set_position(pos2);
 	model->set_rotation_local(quat2);
 	model->set_infrustum(true);
+	// UI-driven render: distance-based motion LOD (frame skipping /
+	// keyframe-stepped sampling) must never apply here, whatever
+	// camdist state the model inherited.
+	model->reset_motion_lod();
 	model->update_animation(true, diff_time);
 	model->render(true);
     model->set_position(pos1);

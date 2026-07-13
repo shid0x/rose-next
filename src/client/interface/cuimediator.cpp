@@ -69,6 +69,7 @@ CUIMediator::CreateDamageDigit(int iPoint, float x, float y, float z, bool bIsUS
 void
 CUIMediator::Update() {
     m_DigitEffect.Refresh();
+    m_MonsterInspector.Update();
 }
 
 void
@@ -76,6 +77,7 @@ CUIMediator::Draw() {
     DrawChatBox();
     m_PersonalStoreManager.Draw();
     m_SummonPanel.Draw();
+    m_MonsterInspector.Draw();
 }
 
 void

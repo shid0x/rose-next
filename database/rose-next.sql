@@ -1,1188 +1,700 @@
-CREATE TABLE [dbo].[account]
-(
-	[id] int NOT NULL IDENTITY(1,1),
-	[username] varchar(50) NOT NULL,
-	[password] char(32) NOT NULL,
-	[access_level] int NOT NULL CONSTRAINT DF_account_access_level DEFAULT(0),
-	[email] varchar(100) NOT NULL,
-	[created] datetime NOT NULL CONSTRAINT DF_account_created DEFAULT GETUTCDATE(),
-	[last_connected] datetime,
-	CONSTRAINT PK_account_id PRIMARY KEY (id),
-	CONSTRAINT UQ_username UNIQUE (username),
-	CONSTRAINT UQ_email UNIQUE (email),
+--
+-- PostgreSQL database dump
+--
+
+\restrict yz91RSnRjinxRcsBYAuzWPW0uLiKah0ZFFV3SDGbApmWmIol0twrNC1fiQqdUqs
+
+-- Dumped from database version 18.3
+-- Dumped by pg_dump version 18.3
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+ALTER TABLE IF EXISTS ONLY "public"."union_points" DROP CONSTRAINT IF EXISTS "union_points_character_id_fkey";
+ALTER TABLE IF EXISTS ONLY "public"."storage" DROP CONSTRAINT IF EXISTS "storage_owner_id_fkey";
+ALTER TABLE IF EXISTS ONLY "public"."storage" DROP CONSTRAINT IF EXISTS "storage_item_id_fkey";
+ALTER TABLE IF EXISTS ONLY "public"."mail" DROP CONSTRAINT IF EXISTS "mail_sender_id_fkey";
+ALTER TABLE IF EXISTS ONLY "public"."mail" DROP CONSTRAINT IF EXISTS "mail_recipient_id_fkey";
+ALTER TABLE IF EXISTS ONLY "public"."inventory" DROP CONSTRAINT IF EXISTS "inventory_owner_id_fkey";
+ALTER TABLE IF EXISTS ONLY "public"."inventory" DROP CONSTRAINT IF EXISTS "inventory_item_id_fkey";
+ALTER TABLE IF EXISTS ONLY "public"."friends" DROP CONSTRAINT IF EXISTS "friends_friend_id_fkey";
+ALTER TABLE IF EXISTS ONLY "public"."friends" DROP CONSTRAINT IF EXISTS "friends_character_id_fkey";
+ALTER TABLE IF EXISTS ONLY "public"."clan_member" DROP CONSTRAINT IF EXISTS "clan_member_clan_id_fkey";
+ALTER TABLE IF EXISTS ONLY "public"."clan_member" DROP CONSTRAINT IF EXISTS "clan_member_character_id_fkey";
+DROP INDEX IF EXISTS "public"."character_account_email_index";
+ALTER TABLE IF EXISTS ONLY "public"."worldvar" DROP CONSTRAINT IF EXISTS "worldvar_pkey";
+ALTER TABLE IF EXISTS ONLY "public"."worldvar" DROP CONSTRAINT IF EXISTS "worldvar_name_key";
+ALTER TABLE IF EXISTS ONLY "public"."union_points" DROP CONSTRAINT IF EXISTS "union_points_pkey";
+ALTER TABLE IF EXISTS ONLY "public"."storage" DROP CONSTRAINT IF EXISTS "storage_pkey";
+ALTER TABLE IF EXISTS ONLY "public"."storage" DROP CONSTRAINT IF EXISTS "storage_owner_id_slot_key";
+ALTER TABLE IF EXISTS ONLY "public"."storage" DROP CONSTRAINT IF EXISTS "storage_owner_id_slot_item_id_key";
+ALTER TABLE IF EXISTS ONLY "public"."mail" DROP CONSTRAINT IF EXISTS "mail_pkey";
+ALTER TABLE IF EXISTS ONLY "public"."item" DROP CONSTRAINT IF EXISTS "item_uuid_key";
+ALTER TABLE IF EXISTS ONLY "public"."item" DROP CONSTRAINT IF EXISTS "item_pkey";
+ALTER TABLE IF EXISTS ONLY "public"."inventory" DROP CONSTRAINT IF EXISTS "inventory_pkey";
+ALTER TABLE IF EXISTS ONLY "public"."inventory" DROP CONSTRAINT IF EXISTS "inventory_owner_id_slot_key";
+ALTER TABLE IF EXISTS ONLY "public"."inventory" DROP CONSTRAINT IF EXISTS "inventory_owner_id_slot_item_id_key";
+ALTER TABLE IF EXISTS ONLY "public"."friends" DROP CONSTRAINT IF EXISTS "friends_pkey";
+ALTER TABLE IF EXISTS ONLY "public"."friends" DROP CONSTRAINT IF EXISTS "friends_character_id_friend_id_key";
+ALTER TABLE IF EXISTS ONLY "public"."clan" DROP CONSTRAINT IF EXISTS "clan_pkey";
+ALTER TABLE IF EXISTS ONLY "public"."clan" DROP CONSTRAINT IF EXISTS "clan_name_key";
+ALTER TABLE IF EXISTS ONLY "public"."clan_member" DROP CONSTRAINT IF EXISTS "clan_member_pkey";
+ALTER TABLE IF EXISTS ONLY "public"."character" DROP CONSTRAINT IF EXISTS "character_pkey";
+ALTER TABLE IF EXISTS ONLY "public"."character" DROP CONSTRAINT IF EXISTS "character_name_key";
+ALTER TABLE IF EXISTS ONLY "public"."account" DROP CONSTRAINT IF EXISTS "account_pkey";
+ALTER TABLE IF EXISTS ONLY "public"."account" DROP CONSTRAINT IF EXISTS "account_email_key";
+DROP TABLE IF EXISTS "public"."worldvar";
+DROP TABLE IF EXISTS "public"."union_points";
+DROP TABLE IF EXISTS "public"."storage";
+DROP TABLE IF EXISTS "public"."mail";
+DROP TABLE IF EXISTS "public"."item";
+DROP TABLE IF EXISTS "public"."inventory";
+DROP TABLE IF EXISTS "public"."friends";
+DROP TABLE IF EXISTS "public"."clan_member";
+DROP TABLE IF EXISTS "public"."clan";
+DROP TABLE IF EXISTS "public"."character";
+DROP TABLE IF EXISTS "public"."account";
+--
+-- Name: SCHEMA "public"; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON SCHEMA "public" IS 'standard public schema';
+
+
+SET default_table_access_method = "heap";
+
+--
+-- Name: account; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE "public"."account" (
+    "id" integer NOT NULL,
+    "email" character varying(30) NOT NULL,
+    "password" character(64) NOT NULL,
+    "salt" character(16) NOT NULL,
+    "access_level" integer DEFAULT 0 NOT NULL,
+    "remember_token" character varying(100),
+    "created" timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
-GO
-
-CREATE TABLE [dbo].[character]
-(
-	[id] int NOT NULL IDENTITY(1,1),
-	[account_name] varchar(50) NOT NULL,
-	[name] varchar(30) NOT NULL,
-	[level] smallint NOT NULL CONSTRAINT DF_character_level DEFAULT (1),
-	[job_id] smallint NOT NULL CONSTRAINT DF_character_job_id DEFAULT (0),
-	[money] bigint NOT NULL CONSTRAINT DF_character_money DEFAULT(0),
-	[gender_id] tinyint NOT NULL CONSTRAINT DF_character_gender DEFAULT(0),
-	[face_id] smallint NOT NULL CONSTRAINT DF_character_face_id DEFAULT(1),
-	[hair_id] smallint NOT NULL CONSTRAINT DF_character_hair_id DEFAULT(1),
-	[created] datetime NOT NULL CONSTRAINT DF_character_created DEFAULT GETUTCDATE(),
-	/* Set default respawn and town respawn to adventure plains start point */
-	[map_id] smallint NOT NULL CONSTRAINT DF_character_map_id DEFAULT (22),
-	[respawn_x] float NOT NULL CONSTRAINT DF_character_respawn_x DEFAULT (577987.99),
-	[respawn_y] float NOT NULL CONSTRAINT DF_character_respawn_y DEFAULT (515579.9805),
-	[town_respawn_id] smallint NOT NULL CONSTRAINT DF_character_town_respawn_id DEFAULT (22),
-	[town_respawn_x] float NOT NULL CONSTRAINT DF_character_town_respawn_x DEFAULT (577987.99),
-	[town_respawn_y] float NOT NULL CONSTRAINT DF_character_town_respawn_y DEFAULT (515579.9805),
-	[basic_etc] binary(96) NOT NULL,
-	[basic_info] binary(32) NOT NULL,
-	[basic_ability] binary(48) NOT NULL,
-	[grow_ability] binary(384) NOT NULL,
-	[skill_ability] binary(384) NOT NULL,
-	[quest_data] binary(1024),
-	[inventory] binary(2048) NOT NULL,
-	[hot_icon] binary(128),
-	[wish_list] binary(256),
-	[delete_by_int] int,
-	[party_id] int,
-	[item_serial] int,
-	CONSTRAINT PK_character_id PRIMARY KEY (id),
-	CONSTRAINT UQ_character_name UNIQUE (name),
-)
-
-/****** Object:  Table [dbo].[tblGS_BANK]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-CREATE TABLE [dbo].[tblGS_BANK]
-(
-	[txtACCOUNT] [nvarchar](20) NOT NULL,
-	[blobITEMS] [binary](2250) NULL,
-	[intREWARD] [money] NULL,
-	[txtPASSWORD] [nvarchar](10) NULL,
-	CONSTRAINT [PK_tblGS_BANK] PRIMARY KEY CLUSTERED 
-(
-	[txtACCOUNT] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90) ON [PRIMARY]
-) ON [PRIMARY]
-GO
-/****** Object:  Table [dbo].[tblWS_CLAN]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-CREATE TABLE [dbo].[tblWS_CLAN]
-(
-	[intID] [int] IDENTITY(1,1) NOT NULL,
-	[txtNAME] [nchar](20) NOT NULL,
-	[txtDESC] [nchar](255) NULL,
-	[intMarkIDX1] [smallint] NOT NULL,
-	[intMarkIDX2] [smallint] NULL,
-	[intLEVEL] [smallint] NULL,
-	[intPOINT] [int] NULL,
-	[intAlliedID] [int] NULL,
-	[intRATE] [smallint] NULL,
-	[intMoney] [bigint] NULL,
-	[binDATA] [binary](1024) NULL,
-	[txtMSG] [nvarchar](368) NULL,
-	[intMarkCRC] [smallint] NULL,
-	[intMarkLEN] [smallint] NULL,
-	[binMark] [binary](1024) NULL,
-	[dateMarkREG] [datetime] NULL,
-	CONSTRAINT [PK_tbl_WSCLAN] PRIMARY KEY CLUSTERED 
-(
-	[intID] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90) ON [PRIMARY]
-) ON [PRIMARY]
-GO
-/****** Object:  Table [dbo].[tblWS_ClanCHAR]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-CREATE TABLE [dbo].[tblWS_ClanCHAR]
-(
-	[txtCharNAME] [nchar](30) NOT NULL,
-	[intClanID] [int] NOT NULL,
-	[intPOINT] [int] NULL,
-	[intPOS] [int] NULL,
-	CONSTRAINT [PK_tblWS_ClanCHAR] PRIMARY KEY CLUSTERED 
-(
-	[txtCharNAME] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90) ON [PRIMARY]
-) ON [PRIMARY]
-GO
-/****** Object:  Table [dbo].[tblWS_FRIEND]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-CREATE TABLE [dbo].[tblWS_FRIEND]
-(
-	[intCharID] [int] NOT NULL,
-	[intFriendCNT] [smallint] NOT NULL,
-	[blobFRIENDS] [binary](1024) NULL,
-	CONSTRAINT [PK_tblWS_FRIEND] PRIMARY KEY CLUSTERED 
-(
-	[intCharID] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90) ON [PRIMARY]
-) ON [PRIMARY]
-GO
-/****** Object:  Table [dbo].[tblWS_MEMO]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-CREATE TABLE [dbo].[tblWS_MEMO]
-(
-	[intSN] [bigint] IDENTITY(1,1) NOT NULL,
-	[dwDATE] [int] NOT NULL,
-	[txtNAME] [nvarchar](30) NOT NULL,
-	[txtFROM] [nvarchar](30) NOT NULL,
-	[txtMEMO] [nvarchar](255) NOT NULL,
-	CONSTRAINT [PK_tblWS_MEMO] PRIMARY KEY CLUSTERED 
-(
-	[intSN] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90) ON [PRIMARY]
-) ON [PRIMARY]
-GO
-/****** Object:  Table [dbo].[tblWS_VAR]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-CREATE TABLE [dbo].[tblWS_VAR]
-(
-	[txtNAME] [nvarchar](70) NOT NULL,
-	[dateUPDATE] [datetime] NOT NULL,
-	[binDATA] [varbinary](1024) NOT NULL,
-	CONSTRAINT [PK_tblWS_VAR] PRIMARY KEY CLUSTERED 
-(
-	[txtNAME] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90) ON [PRIMARY]
-) ON [PRIMARY]
-GO
-
-/****** Object:  Table [dbo].[WS_CheatLog]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-CREATE TABLE [dbo].[WS_CheatLog]
-(
-	[Index] [int] NULL,
-	[dateREG] [datetime] NULL,
-	[Account] [nvarchar](20) NULL,
-	[CharName] [nvarchar](30) NULL,
-	[ChannelNo] [char](1) NULL,
-	[CheatCode] [nvarchar](55) NULL
-) ON [PRIMARY]
-GO
-SET ANSI_PADDING ON
-GO
-/****** Object:  Index [IX_tblWS_CLAN]    Script Date: 9/12/2019 2:20:43 PM ******/
-CREATE NONCLUSTERED INDEX [IX_tblWS_CLAN] ON [dbo].[tblWS_CLAN]
-(
-	[txtNAME] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90) ON [PRIMARY]
-GO
-/****** Object:  Index [IX_tblWS_ClanCHAR]    Script Date: 9/12/2019 2:20:43 PM ******/
-CREATE NONCLUSTERED INDEX [IX_tblWS_ClanCHAR] ON [dbo].[tblWS_ClanCHAR]
-(
-	[intClanID] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90) ON [PRIMARY]
-GO
-ALTER TABLE [dbo].[tblGS_BANK] ADD  CONSTRAINT [DF_tblGS_BANK_intREWARD]  DEFAULT ((0)) FOR [intREWARD]
-GO
-ALTER TABLE [dbo].[tblWS_CLAN] ADD  CONSTRAINT [DF_tblWS_GUILD_intMarkIDX]  DEFAULT ((0)) FOR [intMarkIDX1]
-GO
-ALTER TABLE [dbo].[tblWS_CLAN] ADD  CONSTRAINT [DF_tblWS_GUILD_intMarkIDX2]  DEFAULT ((0)) FOR [intMarkIDX2]
-GO
-ALTER TABLE [dbo].[tblWS_CLAN] ADD  CONSTRAINT [DF_tblWS_GUILD_intLEVEL]  DEFAULT ((1)) FOR [intLEVEL]
-GO
-ALTER TABLE [dbo].[tblWS_CLAN] ADD  CONSTRAINT [DF_tblWS_GUILD_intPOINT]  DEFAULT ((0)) FOR [intPOINT]
-GO
-ALTER TABLE [dbo].[tblWS_CLAN] ADD  CONSTRAINT [DF_tblWS_GUILD_intAlliedID1]  DEFAULT ((0)) FOR [intAlliedID]
-GO
-ALTER TABLE [dbo].[tblWS_CLAN] ADD  CONSTRAINT [DF_tblWS_GUILD_intRATE]  DEFAULT ((100)) FOR [intRATE]
-GO
-ALTER TABLE [dbo].[tblWS_CLAN] ADD  CONSTRAINT [DF_tblWS_GUILD_intMoney]  DEFAULT ((0)) FOR [intMoney]
-GO
-ALTER TABLE [dbo].[tblWS_CLAN] ADD  CONSTRAINT [DF_tblWS_CLAN_intMarkLEN]  DEFAULT ((0)) FOR [intMarkLEN]
-GO
-ALTER TABLE [dbo].[tblWS_ClanCHAR] ADD  CONSTRAINT [DF_tblWS_GuildCHAR_intPOINT]  DEFAULT ((0)) FOR [intPOINT]
-GO
-ALTER TABLE [dbo].[tblWS_ClanCHAR] ADD  CONSTRAINT [DF_tblWS_GuildCHAR_intPOS]  DEFAULT ((0)) FOR [intPOS]
-GO
-ALTER TABLE [dbo].[tblWS_FRIEND] ADD  CONSTRAINT [DF_tblWS_FRIEND_intFriendCNT]  DEFAULT ((0)) FOR [intFriendCNT]
-GO
-/****** Object:  StoredProcedure [dbo].[AddCharacterLog]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-Create Proc [dbo].[AddCharacterLog]
-	@AccountName nvarchar(20),
-	@CharName nvarchar(30),
-	@DelAdd tinyint
-AS
-Insert Into GS_CharacterLog
-	( dateREG, AccountName, CharName, DelAdd)
-Values
-	(Default, @AccountName, @CharName, @DelAdd) 
-
-GO
-/****** Object:  StoredProcedure [dbo].[AddCheatLog]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-CREATE PROCEDURE [dbo].[AddCheatLog]
-	@Account nvarchar(20),
-	@CharName nvarchar(30),
-	@ChannelNo tinyint,
-	@CheatCode nvarchar(55)
-AS
-Insert Into WS_CheatLog
-	(Account, CharName, ChannelNo, CheatCode)
-Values(@Account, @CharName, @ChannelNo, @CheatCode) 
-
-GO
-/****** Object:  StoredProcedure [dbo].[AddClanLog]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-CREATE Proc [dbo].[AddClanLog]
-	@CharName nvarchar(32),
-	@ClanName nvarchar(20),
-	@ClanLevel smallint,
-	@Point int,
-	@Success tinyint,
-	@Location varchar(24),
-	@LocX int,
-	@LocY int
-As
-Insert Into WS_ClanLog
-	(dateREG, CharName, ClanName, ClanLevel, Point, Success, Location, LocX, LocY)
-Values
-	(Default, @CharName, @ClanName, @ClanLevel, @Point, @Success, @Location, @LocX, @LocY) 
-
-GO
-/****** Object:  StoredProcedure [dbo].[AddCreateLog]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-Create Proc [dbo].[AddCreateLog]
-	@CharID int,
-	@CharName nvarchar(30),
-	@ItemID varchar(10),
-	@ItemName varchar(50),
-	@Stuff1 varchar(24),
-	@Stuff2 varchar(24),
-	@Stuff3 varchar(24),
-	@Stuff4 varchar(24),
-	@Making tinyint,
-	@Success tinyint,
-	@Location varchar(24),
-	@LocX int,
-	@LocY int
-AS
-Insert Into GS_CreateLog
-	( dateREG, CharID, CharName, ItemID, ItemName, Stuff1, Stuff2, Stuff3, Stuff4, Making, Success, Location, LocX, LocY)
-Values
-	( Default, @CharID, @CharName, @ItemID, @ItemName, @Stuff1, @Stuff2, @Stuff3, @Stuff4, @Making, @Success, @Location, @LocX, @LocY ) 
-
-GO
-/****** Object:  StoredProcedure [dbo].[AddDieLog]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-CREATE Proc [dbo].[AddDieLog]
-	@CharName varchar(32),
-	@Money bigint,
-	@KillPos varchar(24),
-	@CharLevel smallint,
-	@Exp int,
-	@PosX int,
-	@PosY int,
-	@ObjectName varchar(50)
-As
-Insert Into GS_DieLog
-	(dateREG, CharName, [Money], CharLevel, [Exp], KillPos, PosX, PosY, ObjectName)
-Values(Default, @CharName, @Money, @CharLevel, @Exp, @KillPos, @PosX, @PosY, @ObjectName) 
-
-GO
-/****** Object:  StoredProcedure [dbo].[AddGemmingLog]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-CREATE Proc [dbo].[AddGemmingLog]
-	@CharID int,
-	@CharName nvarchar(30),
-	@ItemID varchar(10),
-	@ItemName varchar(50),
-	@JewelID varchar(10),
-	@JewelName varchar(24),
-	@Gemming tinyint,
-	@Success tinyint,
-	@Location varchar(24),
-	@LocX int,
-	@LocY int
-AS
-Insert Into GS_GemmingLog
-	( dateREG, CharID, CharName, ItemID, ItemName, JewelID, JewelName, Gemming, Success, Location, LocX, LocY)
-Values
-	( Default, @CharID, @CharName, @ItemID, @ItemName, @JewelID, @JewelName, @Gemming, @Success, @Location, @LocX, @LocY) 
-
-GO
-/****** Object:  StoredProcedure [dbo].[AddItemLog]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-CREATE Proc [dbo].[AddItemLog]
-	@Action int,
-	@SbjAccount nvarchar(20),
-	@SbjCharID int,
-	@SbjCharName nvarchar(30),
-	@ItemID varchar(10),
-	@ItemName varchar(50),
-	@ItemCount smallint,
-	@ItemSN bigint,
-	@Money bigint,
-	@Location varchar(24),
-	@LocX int,
-	@LocY int,
-	@ObjAccount nvarchar(20),
-	@ObjCharID int,
-	@ObjCharName nvarchar(30),
-	@SbjIP varchar(15),
-	@ObjIP varchar(15)
-AS
-Insert Into GS_ItemLog
-	( dateREG, [Action], SbjAccount, SbjCharID, SbjCharName, ItemID, ItemName, ItemCount, ItemSN, [Money], Location, LocX, LocY, ObjAccount, ObjCharID, ObjCharName, SbjIP, ObjIP)
-Values
-	(Default, @Action, @SbjAccount, @SbjCharID, @SbjCharName, @ItemID, @ItemName, @ItemCount, @ItemSN, @Money, @Location, @LocX, @LocY, @ObjAccount, @ObjCharID, @ObjCharName, @SbjIP, @ObjIP) 
-
-GO
-/****** Object:  StoredProcedure [dbo].[AddLevelUpLog]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-Create Proc [dbo].[AddLevelUpLog]
-	@CharID int,
-	@CharName nvarchar(30),
-	@toLevel smallint,
-	@BPoint smallint,
-	@SPoint smallint,
-	@Location varchar(24),
-	@LocX int,
-	@LocY int
-AS
-Insert Into GS_LevelUpLog
-	( dateREG, CharID, CharName, toLevel, BPoint, SPoint, Location, LocX, LocY)
-Values
-	(Default, @CharID, @CharName, @toLevel, @BPoint, @SPoint, @Location, @LocX, @LocY) 
-
-GO
-/****** Object:  StoredProcedure [dbo].[AddLoginLog]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-CREATE Proc [dbo].[AddLoginLog]
-	@Login tinyint,
-	@CharName nvarchar(30),
-	@Channel tinyint,
-	@CharLevel smallint,
-	@Money bigint,
-	@Location varchar(24),
-	@LocX int,
-	@LocY int,
-	@LoginIP varchar(15)
-AS
-Insert Into WS_LoginLog
-	( dateREG, Login, CharName, Channel, CharLevel, [Money], Location, LocX, LocY, LoginIP)
-Values
-	(Default, @Login, @CharName, @Channel, @CharLevel, @Money, @Location, @LocX, @LocY, @LoginIP) 
-
-GO
-/****** Object:  StoredProcedure [dbo].[AddPeriodicCHARLog]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-Create Proc [dbo].[AddPeriodicCHARLog]
-	@CharName varchar(32),
-	@Channel tinyint,
-	@CharLevel smallint,
-	@Money bigint,
-	@Exp int,
-	@BPoint smallint,
-	@SPoint smallint,
-	@Location varchar(24),
-	@LocX int,
-	@LocY int
-As
-Insert Into GS_PeriodicCHARLog
-	(dateREG, CharName, Channel, CharLevel, [Money], [Exp], BPoint, SPoint, Location, LocX, LocY)
-Values
-	(Default, @CharName, @Channel, @CharLevel, @Money, @Exp, @BPoint, @SPoint, @Location, @LocX, @LocY) 
-
-GO
-/****** Object:  StoredProcedure [dbo].[AddQuestLog]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-Create Proc [dbo].[AddQuestLog]
-	@CharID int,
-	@CharName nvarchar(30),
-	@QuestID int,
-	@QuestDo tinyint
-AS
-Insert Into GS_QuestLog
-	( dateREG, CharID, CharName, QuestID, QuestDo)
-Values
-	(Default, @CharID, @CharName, @QuestID, @QuestDo) 
-
-GO
-/****** Object:  StoredProcedure [dbo].[AddSkillLog]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-Create Proc [dbo].[AddSkillLog]
-	@CharID int,
-	@CharName nvarchar(30),
-	@SkillID int,
-	@SkillName varchar(24),
-	@SkillLevel smallint,
-	@SPoint smallint,
-	@Location varchar(24),
-	@LocX int,
-	@LocY int
-AS
-Insert Into GS_SkillLog
-	( dateREG, CharID, CharName, SkillID, SkillName, SkillLevel, SPoint, Location, LocX, LocY)
-Values
-	(Default, @CharID, @CharName, @SkillID, @SkillName, @SkillLevel, @SPoint, @Location, @LocX, @LocY) 
-
-GO
-/****** Object:  StoredProcedure [dbo].[AddUpgradeLog]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-Create Proc [dbo].[AddUpgradeLog]
-	@CharID int,
-	@CharName nvarchar(30),
-	@ItemID varchar(10),
-	@ItemName varchar(50),
-	@UpLevel smallint,
-	@Success tinyint,
-	@Location varchar(24),
-	@LocX int,
-	@LocY int
-AS
-Insert Into GS_UpgradeLog
-	( dateREG, CharID, CharName, ItemID, ItemName, UpLevel, Success, Location, LocX, LocY)
-Values
-	( Default, @CharID, @CharName, @ItemID, @ItemName, @UpLevel, @Success, @Location, @LocX, @LocY) 
-
-GO
-
-/****** Object:  StoredProcedure [dbo].[gs_M_DefLOG]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-CREATE PROCEDURE [dbo].[gs_M_DefLOG]
-	@iMoney int,
-	@szSUB nvarchar(32),
-	@szSBJIP varchar(15),
-	@szACT varchar(24),
-	@szLOC nvarchar(50),
-	@szITEM nvarchar(200)
-AS
-INSERT tblGS_LOG
-	( dateREG, intMoney, txtSUBJECT, txtSBJIP, txtACTION, txtLOC, txtITEM )
-VALUES( default, @iMoney, @szSUB, @szSBJIP, @szACT, @szLOC, @szITEM ) 
-
-GO
-/****** Object:  StoredProcedure [dbo].[gs_M_DescLOG]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-CREATE PROCEDURE [dbo].[gs_M_DescLOG]
-	@iMoney int,
-	@szSUB nvarchar(32),
-	@szSBJIP varchar(15),
-	@szACT varchar(24),
-	@szLOC nvarchar(50),
-	@szITEM nvarchar(200),
-	@szDESC nvarchar(200)
-AS
-INSERT tblGS_LOG
-	( dateREG, intMoney, txtSUBJECT, txtSBJIP, txtACTION, txtLOC, txtITEM,txtDESC )
-VALUES( default, @iMoney, @szSUB, @szSBJIP, @szACT, @szLOC, @szITEM, @szDESC ) 
-
-GO
-/****** Object:  StoredProcedure [dbo].[gs_M_LogInOut]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-CREATE PROCEDURE [dbo].[gs_M_LogInOut]
-	@iMoney int,
-	@szSUB nvarchar(32),
-	@szOBJ nvarchar(32),
-	@szSBJIP varchar(15),
-	@szACT varchar(24),
-	@szLOC nvarchar(50),
-	@szITEM nvarchar(200)
-AS
-INSERT tblGS_LOG
-	( dateREG, intMoney, txtSUBJECT, txtSBJIP, txtACTION, txtLOC, txtITEM, txtOBJECT )
-VALUES( default, @iMoney, @szSUB, @szSBJIP, @szACT, @szLOC, @szITEM, @szOBJ ) 
-
-GO
-/****** Object:  StoredProcedure [dbo].[gs_M_ObjDescLOG]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-CREATE PROCEDURE [dbo].[gs_M_ObjDescLOG]
-	@iMoney int,
-	@szSUB nvarchar(32),
-	@szSBJIP varchar(15),
-	@szACT varchar(24),
-	@szLOC nvarchar(50),
-	@szITEM nvarchar(200),
-	@szOBJ nvarchar(32),
-	@szOBJIP nvarchar(15),
-	@szDESC nvarchar(200)
-AS
-INSERT tblGS_LOG
-	( dateREG, intMoney, txtSUBJECT, txtSBJIP, txtACTION, txtLOC, txtITEM, txtOBJECT, txtOBJIP, txtDESC )
-VALUES( default, @iMoney, @szSUB, @szSBJIP, @szACT, @szLOC, @szITEM, @szOBJ, @szOBJIP, @szDESC ) 
-
-GO
-/****** Object:  StoredProcedure [dbo].[gs_M_ObjLOG]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-CREATE PROCEDURE [dbo].[gs_M_ObjLOG]
-	@iMoney int,
-	@szSUB nvarchar(32),
-	@szSBJIP varchar(15),
-	@szACT varchar(24),
-	@szLOC nvarchar(50),
-	@szITEM nvarchar(200),
-	@szOBJ nvarchar(32),
-	@szOBJIP nvarchar(15)
-AS
-INSERT tblGS_LOG
-	( dateREG, intMoney, txtSUBJECT, txtSBJIP, txtACTION, txtLOC, txtITEM, txtOBJECT, txtOBJIP )
-VALUES( default, @iMoney, @szSUB, @szSBJIP, @szACT, @szLOC, @szITEM, @szOBJ, @szOBJIP )
-
-GO
-/****** Object:  StoredProcedure [dbo].[gs_SelectBANK]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER OFF
-GO
-
-
-/****** Object:  Stored Procedure dbo.gs_SelectBANK    Script Date: 10/24/2005 4:10:57 PM ******/
-CREATE PROCEDURE [dbo].[gs_SelectBANK]
-	@szAccount  nvarchar(30)
-AS
-SELECT *
-FROM tblGS_BANK
-WHERE txtACCOUNT=@szAccount
-GO
-
-/****** Object:  StoredProcedure [dbo].[ws_ClanBinUPDATE]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER OFF
-GO
-
-
-/****** Object:  Stored Procedure dbo.ws_ClanBinUPDATE    Script Date: 10/24/2005 4:10:57 PM ******/
-
-
-CREATE PROCEDURE [dbo].[ws_ClanBinUPDATE]
-	@iClanID	int,
-	@binDAT	binary(1024)
-AS
-BEGIN TRAN upt_data
-
-UPDATE tblWS_CLAN SET binDATA=@binDAT WHERE intID = @iClanID;
-
-IF @@ERROR <> 0
-	BEGIN
-	ROLLBACK TRAN upt_data;
-	RETURN 0;
-END
-
-COMMIT TRAN upt_data;
-RETURN 1;
-
-GO
-/****** Object:  StoredProcedure [dbo].[ws_ClanCharADD]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-/****** Object:  Stored Procedure dbo.ws_ClanCharADD    Script Date: 10/24/2005 4:10:57 PM ******/
-
-
-
-
-CREATE PROCEDURE [dbo].[ws_ClanCharADD]
-	@szCharName	nchar(30),
-	@iClanID	int,
-	@iClanPOS	int
-AS
-SELECT intClanID
-FROM tblWS_ClanCHAR
-where txtCharNAME=@szCharName;
-IF @@ROWCOUNT >= 1
-		RETURN -1;
-
-BEGIN TRAN ins_char
-INSERT tblWS_ClanCHAR
-	(txtCharNAME, intClanID, intPOS )
-VALUES( @szCharName, @iClanID, @iClanPOS );
-
-IF @@ERROR = 0
-	BEGIN
-	COMMIT TRAN ins_char;
-	RETURN 0;
-END
-
-ROLLBACK TRAN ins_char;
-RETURN -2;
-
-
-
-
-
-
-GO
-/****** Object:  StoredProcedure [dbo].[ws_ClanCharADJ]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-/****** Object:  Stored Procedure dbo.ws_ClanCharADJ    Script Date: 10/24/2005 4:10:58 PM ******/
-
-
-
-
-CREATE PROCEDURE [dbo].[ws_ClanCharADJ]
-	@szCharName	nchar(30),
-	@iAdjPoint	int,
-	@iAdjPos	int
-AS
-DECLARE	@iCurPoint	int;
-DECLARE	@iCurPos	int;
-
-SELECT @iCurPoint=intPOINT, @iCurPos=intPOS
-FROM tblWS_ClanCHAR
-where txtCharNAME=@szCharName;
-IF @@ROWCOUNT <> 1
-		RETURN -1;
-
-BEGIN TRAN upd_char
-SET @iCurPoint = @iCurPoint + @iAdjPoint;
-SET @iCurPos   = @iCurPos	+ @iAdjPos;
-
-UPDATE tblWS_ClanCHAR SET intPOINT=@iCurPoint, intPOS=@iCurPos where txtCharNAME=@szCharName;
-
-IF @@ERROR = 0
-	BEGIN
-	COMMIT TRAN upd_char;
-	RETURN 0;
-END
-
-ROLLBACK TRAN upd_char;
-RETURN -2;
-
-
-
-
-
-
-GO
-/****** Object:  StoredProcedure [dbo].[ws_ClanCharALL]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-/****** Object:  Stored Procedure dbo.ws_ClanCharALL    Script Date: 10/24/2005 4:10:58 PM ******/
-
-
-
-
-CREATE PROCEDURE [dbo].[ws_ClanCharALL]
-	@iClanID	int
-AS
-SELECT txtCharNAME, intPOINT, intPOS
-from tblWS_ClanCHAR
-where intClanID = @iClanID;
-	-- RETURN @@ROWCOUNT;
-
-
-
-
-
-GO
-/****** Object:  StoredProcedure [dbo].[ws_ClanCharDEL]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-/****** Object:  Stored Procedure dbo.ws_ClanCharDEL    Script Date: 10/24/2005 4:10:58 PM ******/
-
-
-
-
-CREATE PROCEDURE [dbo].[ws_ClanCharDEL]
-	@szCharName	nchar(30)
-AS
-SELECT intClanID
-FROM tblWS_ClanCHAR
-where txtCharNAME=@szCharName;
-IF @@ROWCOUNT < 1
-		RETURN -1;
--- not found
-
-BEGIN TRAN del_char
-DELETE from tblWS_ClanCHAR where txtCharNAME = @szCharName;
-
-IF @@ERROR = 0
-	BEGIN
-	COMMIT TRAN del_char;
-	RETURN 0;
-END
-
-ROLLBACK TRAN del_char;
-RETURN -2;			-- db error
-
-
-
-
-
-
-GO
-/****** Object:  StoredProcedure [dbo].[ws_ClanCharGET]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-/****** Object:  Stored Procedure dbo.ws_ClanCharGET    Script Date: 10/24/2005 4:10:58 PM ******/
-
-
-
-
-CREATE PROCEDURE [dbo].[ws_ClanCharGET]
-	@szCharName	nchar(30)
-AS
-SELECT intClanID, intPOINT, intPOS
-from tblWS_ClanCHAR
-where txtCharNAME = @szCharName;
-
-
-
-
-
-
-GO
-/****** Object:  StoredProcedure [dbo].[ws_ClanDELETE]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-/****** Object:  Stored Procedure dbo.ws_ClanDELETE    Script Date: 10/24/2005 4:10:58 PM ******/
-
-
-
-
-CREATE PROCEDURE [dbo].[ws_ClanDELETE]
-	@szClanName	nvarchar(20)
-AS
-DECLARE @del_error1 int;
-DECLARE @del_error2 int;
-
-DECLARE @iClanID	int;
-
--- ??? ??ID??
-SELECT @iClanID=intID
-from tblWS_CLAN
-where txtNAME = @szClanName;
-IF @@ROWCOUNT <= 0 
-		RETURN -1;
-
-BEGIN TRAN del_clan
-
-DELETE from tblWS_ClanCHAR where intClanID = @iClanID
-SET @del_error1 = @@ERROR;
-
-DELETE from tblWS_CLAN where intID = @iClanID;--txtNAME = @szClanName;
-SET @del_error2 = @@ERROR;
-
-IF @del_error1 = 0 AND @del_error2 = 0
-	BEGIN
-	COMMIT TRAN del_clan;
-	SELECT @iClanID;
-	RETURN 0;
-END
-
-ROLLBACK TRAN del_clan
-RETURN -2;
-
-
-
-
-
-
-GO
-/****** Object:  StoredProcedure [dbo].[ws_ClanINSERT]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-/****** Object:  Stored Procedure dbo.ws_ClanINSERT    Script Date: 10/24/2005 4:10:58 PM ******/
-
-
-
-
-CREATE PROCEDURE [dbo].[ws_ClanINSERT]
-	@szClanName	nvarchar(20),
-	@szClanDesc	nvarchar(255),
-	@iMark1	int,
-	@iMark2	int
-AS
-SELECT intID
-FROM tblWS_CLAN
-WHERE txtNAME=@szClanName;
-IF @@ROWCOUNT >= 1
-		RETURN -1;
-
-BEGIN TRAN ins_clan
-INSERT tblWS_CLAN
-	(txtNAME, txtDESC, intMarkIdx1, intMarkIdx2)
-VALUES(
-		@szClanName,
-		@szClanDesc,
-		@iMark1,
-		@iMark2 );
-
-IF @@ERROR = 0
-	BEGIN
-	COMMIT TRAN ins_clan;
-	SELECT intID
-	FROM tblWS_CLAN
-	WHERE txtNAME=@szClanName;
-	RETURN 0;
-END
-
-ROLLBACK TRAN ins_clan
-RETURN -2;
-
-
-
-
-
-
-GO
-/****** Object:  StoredProcedure [dbo].[ws_ClanMarkUPDATE]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-
-
-/****** Object:  Stored Procedure dbo.ws_ClanMarkUPDATE    Script Date: 10/24/2005 4:10:58 PM ******/
-
-
-
-CREATE   PROCEDURE [dbo].[ws_ClanMarkUPDATE]
-	@iClanID	int,
-	@iDataCRC	int,
-	@iDataLEN	int,
-	@binDATA	binary(1024)
-AS
-BEGIN TRAN upt_mark
-
-DECLARE @dateCur	datetime;
-DECLARE @intRowCount int
-;
-
-SET @dateCur = getdate();
-
-UPDATE tblWS_CLAN SET intMarkCRC=@iDataCRC, intMarkLEN=@iDataLEN, binMARK=@binDATA, dateMarkREG=@dateCur  
-	WHERE intID = @iClanID
-;
-
-set @intRowCount = @@ROWCOUNT
-
-IF @@ERROR <> 0
-	BEGIN
-	ROLLBACK TRAN upt_mark;
-	RETURN -1;
-END
-
-COMMIT TRAN upt_mark;
-RETURN @intRowCount;
-
-
-
-
-
-
-GO
-/****** Object:  StoredProcedure [dbo].[ws_ClanMOTD]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-/****** Object:  Stored Procedure dbo.ws_ClanMOTD    Script Date: 10/24/2005 4:10:58 PM ******/
-
-
-
-
-CREATE PROCEDURE [dbo].[ws_ClanMOTD]
-	@iClanID	int,
-	@szMessage	nvarchar(368)
-AS
-
-BEGIN TRAN upd_clan
-
-UPDATE tblWS_CLAN SET txtMSG=@szMessage where intID = @iClanID;
-
-IF @@ERROR = 0
-	BEGIN
-	COMMIT TRAN upd_clan;
-	RETURN 0;
-END
-
-ROLLBACK TRAN upd_clan
-RETURN -1;
-
-
-
-
-
-
-GO
-/****** Object:  StoredProcedure [dbo].[ws_ClanSELECT]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-/****** Object:  Stored Procedure dbo.ws_ClanSELECT    Script Date: 10/24/2005 4:10:58 PM ******/
-
-
-
-
-CREATE PROCEDURE [dbo].[ws_ClanSELECT]
-	@iClanID	int
-AS
-SELECT *
-from tblWS_CLAN
-where intID = @iClanID;
-
-
-
-
-
-
-GO
-/****** Object:  StoredProcedure [dbo].[ws_ClanSLOGAN]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER OFF
-GO
-
-
-/****** Object:  Stored Procedure dbo.ws_ClanSLOGAN    Script Date: 10/24/2005 4:10:58 PM ******/
-
-
-
-
-CREATE PROCEDURE [dbo].[ws_ClanSLOGAN]
-	@iClanID	int,
-	@szMessage	nvarchar(255)
-AS
-
-BEGIN TRAN upd_clan
-
-UPDATE tblWS_CLAN SET txtDESC=@szMessage where intID = @iClanID;
-
-IF @@ERROR = 0
-	BEGIN
-	COMMIT TRAN upd_clan;
-	RETURN 0;
-END
-
-ROLLBACK TRAN upd_clan
-RETURN -1;
-
-
-
-
-
-GO
-/****** Object:  StoredProcedure [dbo].[ws_ClanUPDATE]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-
-/****** Object:  Stored Procedure dbo.ws_ClanUPDATE    Script Date: 10/24/2005 4:10:57 PM ******/
-
---Create Proc
-
-CREATE PROCEDURE [dbo].[ws_ClanUPDATE]
-	@iClanID	int,
-	@szField	varchar(20),
-	@iAdjValue	int
-AS
-DECLARE	@szQry varchar(500)
-
-SET @szQry = 'UPDATE tblWS_CLAN SET ' + @szField + ' = ' + @szField + ' + ' + cast(@iAdjValue as varchar) + ' WHERE intID= ' + cast ( @iClanID as varchar )
-
-BEGIN TRAN upt_clan
-EXEC (  @szQry )
-
-IF @@ERROR <> 0
-	BEGIN
-	ROLLBACK TRAN upt_clan;
-	RETURN 0;
-END
-
-COMMIT TRAN upt_clan;
-
-SET @szQry = 'SELECT ' + @szField + ' FROM tblWS_CLAN WHERE intID= ' + cast ( @iClanID as varchar )
-EXEC ( @szQry  )
-RETURN 1;
-
-GO
-
-/****** Object:  StoredProcedure [dbo].[ws_GetFRIEND]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER OFF
-GO
-
-
-/****** Object:  Stored Procedure dbo.ws_GetFRIEND    Script Date: 10/24/2005 4:10:58 PM ******/
-
-
-
-
-CREATE PROCEDURE [dbo].[ws_GetFRIEND]
-	@iCharIDX	int
-AS
-SELECT intFriendCNT, blobFRIENDS
-FROM tblWS_FRIEND
-WHERE intCharID=@iCharIDX
-
-
-
-
-
-GO
-/****** Object:  StoredProcedure [dbo].[ws_GetMEMO]    Script Date: 9/12/2019 2:20:43 PM ******/
-SET ANSI_NULLS OFF
-GO
-SET QUOTED_IDENTIFIER OFF
-GO
-
-
-/****** Object:  Stored Procedure dbo.ws_GetMEMO    Script Date: 10/24/2005 4:10:58 PM ******/
-
-
-
-
-CREATE PROCEDURE [dbo].[ws_GetMEMO]
-	@szName	nvarchar(30)
-AS
-SELECT TOP 5
-	dwDATE, txtFROM, txtMEMO
-FROM tblWS_MEMO
-WHERE txtNAME=@szName
-ORDER BY dwDATE ASC
-
-
-
-
-
-GO
+
+
+--
+-- Name: account_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE "public"."account" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME "public"."account_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: character; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE "public"."character" (
+    "id" integer NOT NULL,
+    "account_email" character varying(30) NOT NULL,
+    "name" character varying(30) NOT NULL,
+    "gender_id" smallint DEFAULT 0 NOT NULL,
+    "job_id" smallint DEFAULT 0 NOT NULL,
+    "face_id" integer DEFAULT 1 NOT NULL,
+    "hair_id" integer DEFAULT 1 NOT NULL,
+    "level" smallint DEFAULT 1 NOT NULL,
+    "exp" integer DEFAULT 0 NOT NULL,
+    "hp" integer DEFAULT 50 NOT NULL,
+    "mp" integer DEFAULT 40 NOT NULL,
+    "stamina" integer DEFAULT 5000 NOT NULL,
+    "max_hp" integer DEFAULT 50 NOT NULL,
+    "max_mp" integer DEFAULT 40 NOT NULL,
+    "max_stamina" integer DEFAULT 5000 NOT NULL,
+    "str" smallint DEFAULT 15 NOT NULL,
+    "dex" smallint DEFAULT 15 NOT NULL,
+    "intt" smallint DEFAULT 15 NOT NULL,
+    "con" smallint DEFAULT 15 NOT NULL,
+    "cha" smallint DEFAULT 10 NOT NULL,
+    "sen" smallint DEFAULT 10 NOT NULL,
+    "stat_points" smallint DEFAULT 0 NOT NULL,
+    "skill_points" smallint DEFAULT 0 NOT NULL,
+    "money" bigint DEFAULT 0 NOT NULL,
+    "storage_money" bigint DEFAULT 0 NOT NULL,
+    "map_id" smallint DEFAULT 22 NOT NULL,
+    "respawn_x" real DEFAULT 577987.99 NOT NULL,
+    "respawn_y" real DEFAULT 515579.9805 NOT NULL,
+    "town_respawn_id" smallint DEFAULT 22 NOT NULL,
+    "town_respawn_x" real DEFAULT 577987.99 NOT NULL,
+    "town_respawn_y" real DEFAULT 515579.9805 NOT NULL,
+    "union_id" smallint DEFAULT 0 NOT NULL,
+    "skills" "jsonb" DEFAULT '[11, 12, 16, 19, 20, 21, 7001]'::"jsonb" NOT NULL,
+    "quests" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "hotbar" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "wishlist" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "created" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    "delete_by" timestamp with time zone,
+    CONSTRAINT "character_level_positive" CHECK (("level" > 0)),
+    CONSTRAINT "character_money_positive" CHECK (("money" >= 0)),
+    CONSTRAINT "character_storage_money_positive" CHECK (("storage_money" >= 0))
+);
+
+
+--
+-- Name: character_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE "public"."character" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME "public"."character_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: clan; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE "public"."clan" (
+    "id" integer NOT NULL,
+    "name" character varying(30) NOT NULL,
+    "description" character varying(255),
+    "motd" character varying(1024),
+    "level" smallint DEFAULT 1 NOT NULL,
+    "points" bigint DEFAULT 0 NOT NULL,
+    "money" bigint DEFAULT 0 NOT NULL,
+    "marker_front" smallint DEFAULT 0 NOT NULL,
+    "marker_back" smallint DEFAULT 0 NOT NULL,
+    "marker_crc" smallint,
+    "created" timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: clan_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE "public"."clan" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME "public"."clan_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: clan_member; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE "public"."clan_member" (
+    "id" integer NOT NULL,
+    "character_id" integer NOT NULL,
+    "clan_id" integer NOT NULL,
+    "rank" smallint DEFAULT 1 NOT NULL,
+    "points" bigint DEFAULT 0 NOT NULL,
+    "joined" timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: clan_member_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE "public"."clan_member" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME "public"."clan_member_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: friends; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE "public"."friends" (
+    "id" integer NOT NULL,
+    "character_id" integer NOT NULL,
+    "friend_id" integer NOT NULL
+);
+
+
+--
+-- Name: friends_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE "public"."friends" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME "public"."friends_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: inventory; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE "public"."inventory" (
+    "id" integer NOT NULL,
+    "owner_id" integer NOT NULL,
+    "item_id" integer NOT NULL,
+    "slot" smallint NOT NULL,
+    "quantity" smallint DEFAULT 1 NOT NULL,
+    CONSTRAINT "inventory_quantity_positive" CHECK (("quantity" >= 0)),
+    CONSTRAINT "inventory_slot_positive" CHECK (("slot" >= 0))
+);
+
+
+--
+-- Name: inventory_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE "public"."inventory" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME "public"."inventory_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: item; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE "public"."item" (
+    "id" integer NOT NULL,
+    "uuid" "uuid" NOT NULL,
+    "game_data_id" integer DEFAULT 0 NOT NULL,
+    "type_id" integer DEFAULT 0 NOT NULL,
+    "stat_id" integer DEFAULT 0 NOT NULL,
+    "grade" integer DEFAULT 0 NOT NULL,
+    "durability" integer DEFAULT 10 NOT NULL,
+    "lifespan" integer DEFAULT 1000 NOT NULL,
+    "appraisal" boolean DEFAULT false NOT NULL,
+    "socket" boolean DEFAULT false NOT NULL,
+    "crafted" boolean DEFAULT false NOT NULL,
+    CONSTRAINT "grade_positive" CHECK (("grade" >= 0))
+);
+
+
+--
+-- Name: item_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE "public"."item" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME "public"."item_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: mail; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE "public"."mail" (
+    "id" integer NOT NULL,
+    "sent" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    "sender_id" integer NOT NULL,
+    "recipient_id" integer NOT NULL,
+    "message" character varying(255) NOT NULL
+);
+
+
+--
+-- Name: mail_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE "public"."mail" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME "public"."mail_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: storage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE "public"."storage" (
+    "id" integer NOT NULL,
+    "owner_id" integer NOT NULL,
+    "item_id" integer NOT NULL,
+    "slot" smallint NOT NULL,
+    "quantity" smallint DEFAULT 1 NOT NULL,
+    CONSTRAINT "storage_quantity_positive" CHECK (("quantity" >= 0)),
+    CONSTRAINT "storage_slot_positive" CHECK (("slot" >= 0))
+);
+
+
+--
+-- Name: storage_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE "public"."storage" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME "public"."storage_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: union_points; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE "public"."union_points" (
+    "id" integer NOT NULL,
+    "character_id" integer NOT NULL,
+    "union1" integer DEFAULT 0 NOT NULL,
+    "union2" integer DEFAULT 0 NOT NULL,
+    "union3" integer DEFAULT 0 NOT NULL,
+    "union4" integer DEFAULT 0 NOT NULL,
+    "union5" integer DEFAULT 0 NOT NULL,
+    "union6" integer DEFAULT 0 NOT NULL,
+    "union7" integer DEFAULT 0 NOT NULL,
+    "union8" integer DEFAULT 0 NOT NULL,
+    "union9" integer DEFAULT 0 NOT NULL,
+    "union10" integer DEFAULT 0 NOT NULL
+);
+
+
+--
+-- Name: union_points_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE "public"."union_points" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME "public"."union_points_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: worldvar; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE "public"."worldvar" (
+    "id" integer NOT NULL,
+    "name" character varying(50) NOT NULL,
+    "data" "jsonb" NOT NULL,
+    "modified" timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: worldvar_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE "public"."worldvar" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME "public"."worldvar_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: account account_email_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."account"
+    ADD CONSTRAINT "account_email_key" UNIQUE ("email");
+
+
+--
+-- Name: account account_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."account"
+    ADD CONSTRAINT "account_pkey" PRIMARY KEY ("id");
+
+
+--
+-- Name: character character_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."character"
+    ADD CONSTRAINT "character_name_key" UNIQUE ("name");
+
+
+--
+-- Name: character character_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."character"
+    ADD CONSTRAINT "character_pkey" PRIMARY KEY ("id");
+
+
+--
+-- Name: clan_member clan_member_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."clan_member"
+    ADD CONSTRAINT "clan_member_pkey" PRIMARY KEY ("id");
+
+
+--
+-- Name: clan clan_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."clan"
+    ADD CONSTRAINT "clan_name_key" UNIQUE ("name");
+
+
+--
+-- Name: clan clan_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."clan"
+    ADD CONSTRAINT "clan_pkey" PRIMARY KEY ("id");
+
+
+--
+-- Name: friends friends_character_id_friend_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."friends"
+    ADD CONSTRAINT "friends_character_id_friend_id_key" UNIQUE ("character_id", "friend_id");
+
+
+--
+-- Name: friends friends_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."friends"
+    ADD CONSTRAINT "friends_pkey" PRIMARY KEY ("id");
+
+
+--
+-- Name: inventory inventory_owner_id_slot_item_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."inventory"
+    ADD CONSTRAINT "inventory_owner_id_slot_item_id_key" UNIQUE ("owner_id", "slot", "item_id");
+
+
+--
+-- Name: inventory inventory_owner_id_slot_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."inventory"
+    ADD CONSTRAINT "inventory_owner_id_slot_key" UNIQUE ("owner_id", "slot");
+
+
+--
+-- Name: inventory inventory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."inventory"
+    ADD CONSTRAINT "inventory_pkey" PRIMARY KEY ("id");
+
+
+--
+-- Name: item item_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."item"
+    ADD CONSTRAINT "item_pkey" PRIMARY KEY ("id");
+
+
+--
+-- Name: item item_uuid_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."item"
+    ADD CONSTRAINT "item_uuid_key" UNIQUE ("uuid");
+
+
+--
+-- Name: mail mail_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."mail"
+    ADD CONSTRAINT "mail_pkey" PRIMARY KEY ("id");
+
+
+--
+-- Name: storage storage_owner_id_slot_item_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."storage"
+    ADD CONSTRAINT "storage_owner_id_slot_item_id_key" UNIQUE ("owner_id", "slot", "item_id");
+
+
+--
+-- Name: storage storage_owner_id_slot_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."storage"
+    ADD CONSTRAINT "storage_owner_id_slot_key" UNIQUE ("owner_id", "slot");
+
+
+--
+-- Name: storage storage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."storage"
+    ADD CONSTRAINT "storage_pkey" PRIMARY KEY ("id");
+
+
+--
+-- Name: union_points union_points_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."union_points"
+    ADD CONSTRAINT "union_points_pkey" PRIMARY KEY ("id");
+
+
+--
+-- Name: worldvar worldvar_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."worldvar"
+    ADD CONSTRAINT "worldvar_name_key" UNIQUE ("name");
+
+
+--
+-- Name: worldvar worldvar_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."worldvar"
+    ADD CONSTRAINT "worldvar_pkey" PRIMARY KEY ("id");
+
+
+--
+-- Name: character_account_email_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "character_account_email_index" ON "public"."character" USING "btree" ("account_email");
+
+
+--
+-- Name: clan_member clan_member_character_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."clan_member"
+    ADD CONSTRAINT "clan_member_character_id_fkey" FOREIGN KEY ("character_id") REFERENCES "public"."character"("id") ON DELETE CASCADE;
+
+
+--
+-- Name: clan_member clan_member_clan_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."clan_member"
+    ADD CONSTRAINT "clan_member_clan_id_fkey" FOREIGN KEY ("clan_id") REFERENCES "public"."clan"("id") ON DELETE CASCADE;
+
+
+--
+-- Name: friends friends_character_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."friends"
+    ADD CONSTRAINT "friends_character_id_fkey" FOREIGN KEY ("character_id") REFERENCES "public"."character"("id") ON DELETE CASCADE;
+
+
+--
+-- Name: friends friends_friend_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."friends"
+    ADD CONSTRAINT "friends_friend_id_fkey" FOREIGN KEY ("friend_id") REFERENCES "public"."character"("id") ON DELETE CASCADE;
+
+
+--
+-- Name: inventory inventory_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."inventory"
+    ADD CONSTRAINT "inventory_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "public"."item"("id") ON DELETE CASCADE;
+
+
+--
+-- Name: inventory inventory_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."inventory"
+    ADD CONSTRAINT "inventory_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "public"."character"("id") ON DELETE CASCADE;
+
+
+--
+-- Name: mail mail_recipient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."mail"
+    ADD CONSTRAINT "mail_recipient_id_fkey" FOREIGN KEY ("recipient_id") REFERENCES "public"."character"("id") ON DELETE CASCADE;
+
+
+--
+-- Name: mail mail_sender_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."mail"
+    ADD CONSTRAINT "mail_sender_id_fkey" FOREIGN KEY ("sender_id") REFERENCES "public"."character"("id") ON DELETE CASCADE;
+
+
+--
+-- Name: storage storage_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."storage"
+    ADD CONSTRAINT "storage_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "public"."item"("id") ON DELETE CASCADE;
+
+
+--
+-- Name: storage storage_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."storage"
+    ADD CONSTRAINT "storage_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "public"."character"("id") ON DELETE CASCADE;
+
+
+--
+-- Name: union_points union_points_character_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."union_points"
+    ADD CONSTRAINT "union_points_character_id_fkey" FOREIGN KEY ("character_id") REFERENCES "public"."character"("id") ON DELETE CASCADE;
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+\unrestrict yz91RSnRjinxRcsBYAuzWPW0uLiKah0ZFFV3SDGbApmWmIol0twrNC1fiQqdUqs
+

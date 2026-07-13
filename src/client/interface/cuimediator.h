@@ -6,6 +6,7 @@
 #include "CDigitEffect.h"
 #include "PersonalStoreManager.h"
 #include "CSummonInfoPanel.h"
+#include "CMonsterInspectorPanel.h"
 
 #include "CObjCHAR.h"
 
@@ -16,6 +17,7 @@ private:
     CDigitEffect m_DigitEffect;
     CPersonalStoreManager m_PersonalStoreManager;
     CSummonInfoPanel m_SummonPanel;
+    CMonsterInspectorPanel m_MonsterInspector;
 
 public:
     CUIMediator();
@@ -41,6 +43,16 @@ public:
     bool SummonPanelMouseMove(int x, int y) { return m_SummonPanel.OnMouseMove(x, y); }
     bool SummonPanelLButtonUp(int x, int y) { return m_SummonPanel.OnLButtonUp(x, y); }
     bool IsSummonPanelDragging() { return m_SummonPanel.IsDragging(); }
+
+    /// 몬스터 인스펙터 창 (몬스터 인스펙터 스킬이 연다 — skill.cpp)
+    void OpenMonsterInspector(int iClientObjIdx) { m_MonsterInspector.Open(iClientObjIdx); }
+    void CloseMonsterInspector() { m_MonsterInspector.Close(); }
+    bool MonsterInspectorLButtonDown(int x, int y) {
+        return m_MonsterInspector.OnLButtonDown(x, y);
+    }
+    bool MonsterInspectorMouseMove(int x, int y) { return m_MonsterInspector.OnMouseMove(x, y); }
+    bool MonsterInspectorLButtonUp(int x, int y) { return m_MonsterInspector.OnLButtonUp(x, y); }
+    bool IsMonsterInspectorDragging() { return m_MonsterInspector.IsDragging(); }
 };
 
 extern CUIMediator g_UIMed;

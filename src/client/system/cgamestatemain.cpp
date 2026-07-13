@@ -1226,6 +1226,10 @@ CGameStateMain::ProcWndMsgInstant(unsigned uiMsg, WPARAM wParam, LPARAM lParam) 
     POINT ptMouse = {LOWORD(lParam), HIWORD(lParam)};
     switch (uiMsg) {
         case WM_LBUTTONDOWN: {
+            // 몬스터 인스펙터 패널 위 클릭은 전부 소비( 닫기 / 드래그 시작 ) —
+            // 클릭이 월드로 새어나가 이동/공격하지 않게 한다.
+            if (g_UIMed.MonsterInspectorLButtonDown(ptMouse.x, ptMouse.y))
+                return 1;
             // 소환몹 정보 패널을 잡으면 드래그를 시작하고 클릭을 소비해
             // 아바타 이동/UI 클릭으로 새어나가지 않게 한다.
             if (g_UIMed.SummonPanelLButtonDown(ptMouse.x, ptMouse.y))
@@ -1233,11 +1237,17 @@ CGameStateMain::ProcWndMsgInstant(unsigned uiMsg, WPARAM wParam, LPARAM lParam) 
             break;
         }
         case WM_LBUTTONUP: {
+            if (g_UIMed.MonsterInspectorLButtonUp(ptMouse.x, ptMouse.y))
+                return 1;
             if (g_UIMed.SummonPanelLButtonUp(ptMouse.x, ptMouse.y))
                 return 1;
             break;
         }
         case WM_MOUSEMOVE: {
+            // 몬스터 인스펙터: hover 좌표 추적( 드랍 아이콘 이름 표시용, 소비하지 않음 ).
+            // 드래그 중일 때만 이동을 소비한다.
+            if (g_UIMed.MonsterInspectorMouseMove(ptMouse.x, ptMouse.y))
+                return 1;
             // 소환몹 패널 드래그 중이면 좌버튼 이동을 패널 이동으로 소비한다.
             if ((wParam & MK_LBUTTON) && g_UIMed.IsSummonPanelDragging()) {
                 g_UIMed.SummonPanelMouseMove(ptMouse.x, ptMouse.y);

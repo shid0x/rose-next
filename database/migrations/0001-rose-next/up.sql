@@ -48,7 +48,8 @@ CREATE TABLE character
     town_respawn_y real NOT NULL DEFAULT(515579.9805),
     -- Other
     union_id smallint NOT NULL DEFAULT 0,
-    skills jsonb NOT NULL DEFAULT '[11, 12, 16, 19, 20, 21]'::jsonb,
+    -- 7001 = Monster Inspector (client-only window skill, appended LIST_SKILL row)
+    skills jsonb NOT NULL DEFAULT '[11, 12, 16, 19, 20, 21, 7001]'::jsonb,
     quests jsonb NOT NULL DEFAULT '{}'::jsonb,
     hotbar jsonb NOT NULL DEFAULT '[]'::jsonb,
     wishlist jsonb NOT NULL DEFAULT '[]'::jsonb,

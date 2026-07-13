@@ -255,6 +255,19 @@ public:
 
 	void set_camtarget_distance_square (float camtarget_distance_square_in);
 
+	// Reset all distance-based motion LOD state so the next apply_motion()
+	// runs at full rate with smooth (interpolated) sampling. Meant for
+	// UI-driven renders (RenderSelectedAvatar) where camera-distance LOD
+	// makes no sense: skip_frames frame skipping, camdist_square (skip
+	// recompute source) and camtarget_distance_square (interpolated-vs-
+	// keyframe branch) are all zeroed.
+	void reset_motion_lod ()
+	{
+		skip_frames = 0;
+		camdist_square = 0.0f;
+		camtarget_distance_square = 0.0f;
+	}
+
 	// link to dummy node
 	void link_dummy (zz_visible * vis, uint32 dummy_index);
 	// no unlink_dummy()
