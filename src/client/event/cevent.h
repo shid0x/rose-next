@@ -4,6 +4,9 @@
 #ifndef __CEVENT_H
 #define __CEVENT_H
 #include "..\util\classLUA.h"
+
+#include <string>
+#include <vector>
 //-------------------------------------------------------------------------------------------------
 
 struct tagSCRIPTMSG {
@@ -91,6 +94,26 @@ private:
     /// bool			m_bItemEvent;
     int m_iEventDlgType;
 
+    // Quest-signal cache for NPC overhead icons: names of the quest-editor
+    // accept / turn-in check functions found in the node tree. Scanned once
+    // (the node tree never changes after Load).
+    bool m_bQuestFuncsScanned;
+    std::vector<std::string> m_QuestAcceptFuncs;
+    std::vector<std::string> m_QuestCompleteFuncs;
+    void ScanQuestCheckFuncs();
+
+    // Retail path: QSD trigger names harvested from this conversation's Lua
+    // string constants (readable even in compiled bytecode) and classified by
+    // the trigger's own condition/reward composition in the quest data.
+    struct tagQuestTriggerRef {
+        std::string m_Name;
+        int m_iAddQuestSN; // quest granted by REWD_000 op1, or -1
+        bool m_bAccept; // offers a new quest
+        bool m_bTurnIn; // completes / advances a registered quest
+    };
+    std::vector<tagQuestTriggerRef> m_QuestTriggerRefs;
+    void ScanQuestTriggerRefs();
+
     char* ParseMESSAGE(char* szMessage);
     classDLLNODE<tagEventITEM>* Add_ClickITEM(tagSCRIPTITEM* pScrITEM);
     void Del_ClickITEMS(void);
@@ -108,6 +131,12 @@ public:
     bool Load(char* szFileName);
     bool Start(short nEventIDX);
     short Conversation(int iMenuIDX);
+
+    // Headless probe of this conversation's quest options for the NPC overhead
+    // icon: 0 = no quest, 1 = quest available (accept check passes), 3 = quest
+    // ready to turn in (complete check passes). Uses a throwaway Lua state and
+    // never touches m_pLUA / the dialog UI.
+    short GetQuestSignal();
 
     static void Click_ITEM(int iHandle);
     static void Click_CLOSE(int iHandle);

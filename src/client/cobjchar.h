@@ -911,8 +911,10 @@ public:
 ///
 
 class CObjMOB: public CObjCHAR {
-private:
+protected:
     short m_nQuestIDX;
+
+private:
     int m_iMobAniSkill;
 
 public:
@@ -1081,7 +1083,11 @@ public:
     // 05.05.19 icarus:: 와우 스타일의 NPC 퀘스트 노출 작업...
 public:
     // 서버에서 npc 추가 패킷을 받고 생성시 기본값 -1,
+    // -1 = not evaluated yet; 0 = none; 1 = quest available; 3 = ready to turn in.
+    // Evaluated in Proc() from the NPC's conversation quest options; drawn by
+    // CNameBox::DrawNpcName (QUEST_EMOTICON_* sprites).
     short m_nQuestSignal;
+    DWORD m_dwQuestSignalTIME;
     //	int				Proc (void);
 };
 

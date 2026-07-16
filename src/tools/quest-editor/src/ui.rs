@@ -287,6 +287,10 @@ struct QuestCreator {
     placements: Option<PlacementInfo>,
     /// Receiver for an in-flight background placement scan.
     placements_rx: Option<std::sync::mpsc::Receiver<PlacementInfo>>,
+    /// Trigger classification over every QSD (lazy; for "already offers" info).
+    trigger_index: Option<crate::classify::TriggerIndex>,
+    /// Cached "this NPC's dialog already offers …" lines for the selected giver.
+    giver_offers: Option<(i32, Vec<String>)>,
 
     // dev knobs
     hide_in_use: bool,
@@ -365,6 +369,8 @@ impl Default for QuestCreator {
             giver_progress_text: DEFAULT_PROGRESS_TEXT.to_string(),
             placements: None,
             placements_rx: None,
+            trigger_index: None,
+            giver_offers: None,
             hide_in_use: false,
             token_icon: String::new(),
             dry_run: false,
@@ -498,6 +504,8 @@ impl QuestCreator {
                 self.error = None;
                 self.placements = None; // stale for the new folder
                 self.placements_rx = None; // orphan any in-flight scan (its send just fails)
+                self.trigger_index = None; // stale for the new folder
+                self.giver_offers = None;
                 self.icons = None; // reload the icon atlas for the new folder
                                    // Kick the IFO scan off right away so the results are usually
                                    // ready long before the quest-giver checkbox is ticked.
@@ -553,6 +561,65 @@ impl QuestCreator {
             }
         }
         self.placements.is_some()
+    }
+
+    /// Compute (and cache) the "this NPC's dialog already offers …" lines for
+    /// the giver picker — the same trigger classification the client's overhead
+    /// quest icons use (classify.rs). One quest = one line (accept/turn-in merged).
+    fn ensure_giver_offers(&mut self, npc_id: i32, conv: &str) {
+        if self.giver_offers.as_ref().map(|(id, _)| *id) == Some(npc_id) {
+            return;
+        }
+        let mut lines: Vec<String> = Vec::new();
+        if let Some(ds) = &self.data {
+            if self.trigger_index.is_none() {
+                // One pass over every QSD (~200 small files); cached per folder.
+                self.trigger_index = crate::classify::TriggerIndex::load(&ds.root).ok();
+            }
+            if let Some(idx) = &self.trigger_index {
+                let offers = crate::classify::resolve_con_path(&ds.root, conv)
+                    .and_then(|p| crate::convo::ConFile::read_file(&p))
+                    .map(|con| crate::classify::dialog_offers(&con, idx))
+                    .unwrap_or_default();
+
+                // Aggregate per quest SN: (accept?, turn-in?), keeping order.
+                let mut quests: Vec<(Option<i32>, bool, bool)> = Vec::new();
+                for o in &offers {
+                    let sn = if o.class.turn_in {
+                        o.class.required_quest_sn
+                    } else {
+                        o.class.add_quest_sn
+                    };
+                    match quests.iter_mut().find(|(s, ..)| *s == sn && sn.is_some()) {
+                        Some(q) => {
+                            q.1 |= o.class.accept;
+                            q.2 |= o.class.turn_in;
+                        }
+                        None => quests.push((sn, o.class.accept, o.class.turn_in)),
+                    }
+                }
+                for (sn, accept, turn_in) in quests {
+                    let kind = match (accept, turn_in) {
+                        (true, true) => "accept + turn-in",
+                        (true, false) => "accept",
+                        _ => "turn-in",
+                    };
+                    match sn {
+                        Some(s) => {
+                            let name = ds
+                                .quests
+                                .iter()
+                                .find(|q| q.sn == s)
+                                .map(|q| q.name.as_str())
+                                .unwrap_or("?");
+                            lines.push(format!("{s} \"{name}\" ({kind})"));
+                        }
+                        None => lines.push(format!("({kind})")),
+                    }
+                }
+            }
+        }
+        self.giver_offers = Some((npc_id, lines));
     }
 
     fn ui_pick_folder(&mut self, ui: &mut egui::Ui) {
@@ -1709,6 +1776,17 @@ impl QuestCreator {
                 ui.label(egui::RichText::new(format!("Giver: {name} (npc {id})")).strong());
                 if let Some(conv) = conv {
                     ui.label(format!("This NPC already has a conversation (\"{conv}\"):"));
+                    self.ensure_giver_offers(*id, conv);
+                    if let Some((cid, lines)) = &self.giver_offers {
+                        if *cid == *id {
+                            let text = if lines.is_empty() {
+                                "Its dialog has no quest options yet.".to_string()
+                            } else {
+                                format!("Its dialog already offers: {}", lines.join("  ·  "))
+                            };
+                            ui.label(egui::RichText::new(text).weak().small());
+                        }
+                    }
                     ui.radio_value(
                         &mut self.giver_append,
                         true,

@@ -6,6 +6,7 @@
 
 use std::collections::HashSet;
 
+use crate::classify::TriggerIndex;
 use crate::data::{DataSet, ItemCategory};
 use crate::gen::{GeneratedQuest, Objective, QuestKind, QuestSpec};
 use crate::qsd::QsdFile;
@@ -80,6 +81,29 @@ pub fn verify(ds: &DataSet, spec: &QuestSpec, gen: &GeneratedQuest) -> Vec<Issue
         out.push(Issue::err(
             "Generated quest data failed its self-check (internal error).",
         ));
+    }
+
+    // Icon compatibility: the client's NPC overhead quest icons ("!" / "?")
+    // classify triggers by reward composition (classify.rs mirrors the client's
+    // cevent.cpp). The generated register/complete triggers must classify as
+    // accept / turn-in, or the icons for this quest silently never appear.
+    let icon_idx = TriggerIndex::from_qsd(&gen.qsd);
+    match icon_idx.classify(&gen.register_trigger) {
+        Some(c) if c.accept && c.add_quest_sn == Some(spec.quest_sn) => {}
+        _ => out.push(Issue::err(format!(
+            "Internal: register trigger {} does not classify as a quest offer — \
+             the NPC \"!\" icon would never show (generator regression).",
+            gen.register_trigger
+        ))),
+    }
+    match icon_idx.classify(&gen.complete_trigger) {
+        Some(c) if c.turn_in => {}
+        _ => out.push(Issue::warn(format!(
+            "Turn-in trigger {} does not classify as a completion, so the NPC \"?\" \
+             icon will not show. A quest with no EXP/zuly/item reward looks like a \
+             quest-abandon option to the client — add any reward to fix.",
+            gen.complete_trigger
+        ))),
     }
 
     // The new QSD file must not already exist.

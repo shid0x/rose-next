@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
+use quest_editor::classify;
 use quest_editor::convo::{ConFile, LuaKind};
 use quest_editor::data::DataSet;
 use quest_editor::gen::{generate, GeneratedQuest, QuestKind, QuestSpec};
@@ -36,6 +37,7 @@ fn main() -> ExitCode {
         Some("delete") => cmd_delete(&args[1..]),
         Some("con-verify") => cmd_con_verify(args.get(1)),
         Some("con-dump") => cmd_con_dump(args.get(1)),
+        Some("con-triggers") => cmd_con_triggers(&args[1..]),
         Some("con-build") => cmd_con_build(&args[1..]),
         Some("ifo-find") => cmd_ifo_find(&args[1..]),
         Some("ifo-set") => cmd_ifo_set(&args[1..]),
@@ -68,6 +70,10 @@ fn main() -> ExitCode {
             eprintln!(
                 "  quest-editor delete <root> <quest_sn> [--write]\n\
                  \x20                            remove an editor-created quest (dry-run unless --write)"
+            );
+            eprintln!(
+                "  quest-editor con-triggers <root> <con-file | npc-id>\n\
+                 \x20                            list the quests an NPC's dialog offers (accept/turn-in)"
             );
             return ExitCode::FAILURE;
         }
@@ -864,6 +870,87 @@ fn cmd_con_dump(file: Option<&String>) -> Result<bool> {
             "--- appendix preview ---\n{}",
             String::from_utf8_lossy(&c.appendix[..n])
         );
+    }
+    Ok(true)
+}
+
+/// List the QSD quest triggers a conversation's Lua can fire and how each one
+/// classifies (accept / turn-in) — i.e. which quests an NPC's dialog already
+/// offers. Mirrors the client's overhead quest-icon logic (see classify.rs).
+fn cmd_con_triggers(args: &[String]) -> Result<bool> {
+    let (root, what) = match args {
+        [r, w, ..] => (PathBuf::from(r), w.clone()),
+        _ => bail!("usage: con-triggers <root> <con-file | npc-id>"),
+    };
+
+    let index = classify::TriggerIndex::load(&root)?;
+
+    // Quest names for friendlier output (LIST_QUEST row index == quest SN).
+    let quest_names: BTreeMap<i32, String> = {
+        use roselib::files::STB;
+        use roselib::io::RoseFile;
+        match quest_editor::data::resolve_stb_dir(&root)
+            .and_then(|d| STB::from_path(&d.join("LIST_QUEST.STB")).map_err(|e| anyhow::anyhow!(e)))
+        {
+            Ok(stb) => stb
+                .data
+                .iter()
+                .enumerate()
+                .filter_map(|(i, row)| {
+                    let name = row.get(1)?.trim();
+                    (!name.is_empty()).then(|| (i as i32, name.to_string()))
+                })
+                .collect(),
+            Err(_) => BTreeMap::new(),
+        }
+    };
+
+    // A numeric argument is a placed NPC id -> its zone conversation(s).
+    let con_names: Vec<String> = if let Ok(npc_id) = what.parse::<i32>() {
+        let found = quest_editor::ifo::find_npc(&root, npc_id)?;
+        let mut names: Vec<String> = found
+            .iter()
+            .map(|p| p.conversation.clone())
+            .filter(|c| !c.trim().is_empty())
+            .collect();
+        names.dedup();
+        if names.is_empty() {
+            bail!("npc {npc_id} has no placed conversation (no dialog)");
+        }
+        names
+    } else {
+        vec![what]
+    };
+
+    for name in con_names {
+        let path = match classify::resolve_con_path(&root, &name) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("warning: {e:#} (stale zone wiring?)");
+                continue;
+            }
+        };
+        let con = ConFile::read_file(&path)?;
+        let offers = classify::dialog_offers(&con, &index);
+        println!("=== {} ===", path.display());
+        if offers.is_empty() {
+            println!("  (no quest options detected)");
+        }
+        for o in offers {
+            let (kind, sn) = if o.class.turn_in {
+                ("turn-in", o.class.required_quest_sn)
+            } else {
+                ("accept ", o.class.add_quest_sn)
+            };
+            let qname = sn
+                .and_then(|s| quest_names.get(&s))
+                .map(|n| format!(" \"{n}\""))
+                .unwrap_or_default();
+            match sn {
+                Some(s) => println!("  {kind}  {:<20} quest {s}{qname}", o.trigger),
+                None => println!("  {kind}  {}", o.trigger),
+            }
+        }
     }
     Ok(true)
 }

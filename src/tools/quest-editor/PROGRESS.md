@@ -260,6 +260,37 @@ item `13:129`. (Validate the id exists in the item DB when generating.)
 
 ## Status log
 
+### 2026-07-15 — Trigger classification (`classify.rs`): what a dialog offers + icon-compat verify
+
+Fallout from the client's new NPC overhead quest icons ("!" / "?"), which
+classify QSD triggers by reward composition and harvest trigger names from
+`.CON` Lua blobs. `classify.rs` is the Rust mirror of the client's
+`cevent.cpp` logic — **keep the two in sync** (rules documented in the module
+header; measured on retail data: 737 dialog-referenced triggers → 152 accepts,
+281 turn-ins, 7 abandon-only filtered).
+
+- `TriggerIndex::load(root)` classifies every trigger in `3DDATA/QUESTDATA`;
+  `dialog_offers(con, idx)` = the quest options a conversation can fire.
+  Harvest handles **both** bytecode (printable runs between binary separator
+  bytes) and Lua **source** (quoted literals — needed for our generated
+  givers/appendixes, where the whole line is one printable run).
+- CLI **`con-triggers <root> <con-file | npc-id>`** lists an NPC dialog's
+  quest options with quest names. Found real data drift immediately: NPC 1035's
+  zone IFO still points at deleted `QG5504.con` (stale wiring from an old
+  delete; the command warns instead of failing).
+- The wizard's giver picker now shows "Its dialog already offers: 5512
+  "Panel 1" (accept + turn-in)" for the selected NPC (lazy `TriggerIndex`,
+  cached per folder).
+- `verify.rs` icon-compat check: generated register/complete triggers must
+  classify accept / turn-in. Register failing = generator regression (Error);
+  complete failing = the quest grants **no** exp/zuly/item, which makes its
+  finish trigger indistinguishable from a quest-abandon option → no "?" icon
+  (Warning, user-fixable by adding any reward). Unit tests in `classify.rs`
+  lock generated Hunt/Fetch output to the classifier.
+
+Next big feature (planned, not started): **multi-step chain quests** — see
+`multi step chain quest.md` for the retail op2/op3 chain model + design sketch.
+
 ### 2026-07-04 — Append mode: add a quest option to an NPC's EXISTING dialog (QEX1 appendix)
 
 Until now wiring a quest-giver **replaced** the NPC's whole conversation

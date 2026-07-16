@@ -4,6 +4,7 @@
 //! condition/reward views, the template generator, STB/STL writers, and the
 //! egui UI) are added in later phases — see `PROGRESS.md`.
 
+pub mod classify;
 pub mod convo;
 pub mod data;
 pub mod dds;

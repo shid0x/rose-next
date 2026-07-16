@@ -36,6 +36,7 @@ CObjUSER::CObjUSER() {
 
     m_iSummonMobCapacity = 0;
     m_bWaitUpdateInventory = false;
+    m_bQuestUpdate = false;
     m_dwLastBattleTime = 0;
 
     m_AruaAddHp = 0;

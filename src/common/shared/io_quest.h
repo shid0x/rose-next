@@ -791,6 +791,17 @@ public:
 
     BYTE GetCheckNext() { return m_btCheckNEXT; }
 
+    // Read-only introspection (client NPC overhead quest icons classify triggers
+    // by their condition/reward composition).
+    unsigned int GetCondCNT() { return m_uiCondCNT; }
+    unsigned int GetRewdCNT() { return m_uiRewdCNT; }
+    uniQstENTITY* GetCOND(unsigned int uiIDX) {
+        return (uiIDX < m_uiCondCNT) ? m_ppCondition[uiIDX] : NULL;
+    }
+    uniQstENTITY* GetREWD(unsigned int uiIDX) {
+        return (uiIDX < m_uiRewdCNT) ? m_ppReward[uiIDX] : NULL;
+    }
+
 #ifdef __SERVER
     int m_iOwerNpcIDX;
     bool Load(FILE* fpIN, STBDATA* pSTB, int iLangCol);

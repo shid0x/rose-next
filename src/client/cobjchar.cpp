@@ -4963,6 +4963,7 @@ CObjMOB::Proc() {
 // 05.05.19 icarus:: WOW방식의 퀘스트 노출 시스템 적용을 위해 추가..
 CObjNPC::CObjNPC() {
     m_nQuestSignal = -1;
+    m_dwQuestSignalTIME = 0;
 }
 
 void
@@ -4975,8 +4976,23 @@ CObjNPC::GetEventValue() {
     return m_iEventSTATUS;
 }
 
+// Overhead quest icon refresh: quest packets flip g_pAVATAR->m_bQuestUpdate
+// (reset after the char loop in ProcOBJECT), while the periodic tick catches
+// conditions with no packet of their own (fetch-item counts, level checks).
+#define QUEST_SIGNAL_REFRESH_MS 2000
+
 int
 CObjNPC::Proc() {
+    if (m_nQuestIDX > 0 && g_pAVATAR) {
+        DWORD dwNow = g_GameDATA.GetGameTime();
+
+        if (m_nQuestSignal < 0 || g_pAVATAR->m_bQuestUpdate
+            || dwNow - m_dwQuestSignalTIME >= QUEST_SIGNAL_REFRESH_MS) {
+            m_nQuestSignal = g_pEventLIST->GetNpcQuestSignal(m_nQuestIDX);
+            m_dwQuestSignalTIME = dwNow;
+        }
+    }
+
     return CObjMOB::Proc();
 }
 

@@ -88,4 +88,25 @@ CEventLIST::Run_EVENT(int iOwnerObjIDX, short nQuestIDX, short nEventIDX, int iE
 }
 
 //-------------------------------------------------------------------------------------------------
+short
+CEventLIST::GetNpcQuestSignal(short nQuestIDX) {
+    if (nQuestIDX <= 0)
+        return 0;
+
+    char* szQuestFILE = EVENT_FILENAME(nQuestIDX);
+    if (szQuestFILE == NULL || szQuestFILE[0] == '\0')
+        return 0;
+
+    t_HASHKEY HashKEY = this->Add_EVENT(szQuestFILE);
+    if (!HashKEY)
+        return 0;
+
+    CEvent* pEvent = this->Get_DATAUseKEY(HashKEY);
+    if (pEvent == NULL)
+        return 0;
+
+    return pEvent->GetQuestSignal();
+}
+
+//-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------

@@ -177,8 +177,8 @@ CNameBox::GetTargetMobNameColor(int iAvatarLv, int iMobLv) {
 void
 CNameBox::DrawNpcName(float x, float y, float z, CObjCHAR* pCharOBJ, bool bTargeted) {
     /// 이코티콘 이미지의 사이즈 상수
-    const int emoticon_width = 72;
-    const int emoticon_height = 62;
+    const int emoticon_width = 32;
+    const int emoticon_height = 32;
 
     bool bDrawQuestEmoticon = false;
     int QuestEmoticonGid = 0;
@@ -204,6 +204,10 @@ CNameBox::DrawNpcName(float x, float y, float z, CObjCHAR* pCharOBJ, bool bTarge
             break;
     }
 
+    // Sprite missing from Ui.TSI / UI_strID.ID (run scripts/add-quest-emoticons.py)
+    if (QuestEmoticonGid < 0)
+        bDrawQuestEmoticon = false;
+
     const char* pName = pCharOBJ->Get_NAME();
     assert(pName);
 
@@ -215,9 +219,10 @@ CNameBox::DrawNpcName(float x, float y, float z, CObjCHAR* pCharOBJ, bool bTarge
 
     D3DXMATRIX mat;
 
+    // Centered above the name lines (name top is at y - 60 / y - 48)
     if (bDrawQuestEmoticon)
-        g_DrawImpl.Draw(x - emoticon_width,
-            y - emoticon_height,
+        g_DrawImpl.Draw(x - emoticon_width / 2,
+            y - 62 - emoticon_height,
             z,
             0,
             QuestEmoticonGid,

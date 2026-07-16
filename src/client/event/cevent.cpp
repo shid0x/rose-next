@@ -7,6 +7,7 @@
 #include "CEvent.h"
 #include "Quest_FUNC.h"
 #include "Game_FUNC.h"
+#include "io_quest.h"
 #include "..\IO_EVENT.h"
 #include "tgamectrl/TGameCtrl.h"
 #include "OBJECT.h"
@@ -119,6 +120,8 @@ CEvent::CEvent(int iEventDlgType) {
 
     m_iLuaAppendixLEN = 0;
     m_pLuaAppendixDATA = NULL;
+
+    m_bQuestFuncsScanned = false;
 
     m_pLUA = NULL;
 
@@ -712,6 +715,255 @@ CEvent::Conversation(int iMenuIDX) {
     }
 
     return nValiedCNT;
+}
+
+//-------------------------------------------------------------------------------------------------
+// Quest-editor check-function naming: replace-mode giver .CONs use bare
+// CHK_accept / CHK_complete, append-mode (QEX1) options are namespaced
+// QE<questSN>_CHK_accept / _CHK_complete. Retail conversations use neither
+// (verified over all retail .CONs), so a name match means "quest option".
+static bool
+IsQuestEditorCheckFunc(const char* szName, const char* szSuffix) {
+    if (szName == NULL || szName[0] == '\0')
+        return false;
+
+    const char* pBase = szName;
+    if (pBase[0] == 'Q' && pBase[1] == 'E' && isdigit((unsigned char)pBase[2])) {
+        const char* p = pBase + 2;
+        while (isdigit((unsigned char)*p))
+            p++;
+        if (*p != '_')
+            return false;
+        pBase = p + 1;
+    }
+
+    return strcmp(pBase, szSuffix) == 0;
+}
+
+static void
+AddUniqueFuncName(std::vector<std::string>& List, const char* szName) {
+    for (size_t i = 0; i < List.size(); i++)
+        if (List[i] == szName)
+            return;
+    List.push_back(szName);
+}
+
+void
+CEvent::ScanQuestCheckFuncs() {
+    m_bQuestFuncsScanned = true;
+
+    for (int iMenu = 0; iMenu < m_iScrDataCNT; iMenu++) {
+        for (short nI = 0; nI < m_pScrDATA[iMenu].m_iScrItemCNT; nI++) {
+            const char* szCheck = m_pScrDATA[iMenu].m_pScrITEM[nI].m_CheckFunc.Get();
+            if (szCheck == NULL)
+                continue;
+
+            if (IsQuestEditorCheckFunc(szCheck, "CHK_accept"))
+                AddUniqueFuncName(m_QuestAcceptFuncs, szCheck);
+            else if (IsQuestEditorCheckFunc(szCheck, "CHK_complete"))
+                AddUniqueFuncName(m_QuestCompleteFuncs, szCheck);
+        }
+    }
+
+    this->ScanQuestTriggerRefs();
+}
+
+// Printable-ASCII runs in a Lua blob. Lua 4 bytecode stores string constants
+// with binary length/type bytes between them, so constant boundaries always
+// break a run — trigger names come out whole (validated over all retail .CONs).
+static void
+HarvestLuaStrings(const char* pData, int iLen, std::vector<std::string>& Out) {
+    int iStart = -1;
+    for (int i = 0; i <= iLen; i++) {
+        char c = (i < iLen) ? pData[i] : '\0';
+        if (c >= 0x21 && c <= 0x7e) {
+            if (iStart < 0)
+                iStart = i;
+            continue;
+        }
+        if (iStart >= 0) {
+            int iRun = i - iStart;
+            if (iRun >= 2 && iRun <= 32)
+                Out.push_back(std::string(pData + iStart, iRun));
+            iStart = -1;
+        }
+    }
+}
+
+// Classify a QSD trigger (with its check_next fail-over chain, same walk as
+// CQuestDATA::CheckQUEST) by its reward composition:
+//  - accept: adds a quest (REWD_000 op 1)
+//  - turn-in: requires a registered quest (COND_000) and either advances it
+//    (REWD_000 op 2 swap / op 3 reset-start) or deletes it (op 0) while
+//    granting something (item give / ability / calc reward / hp-mp / skill).
+//    Delete-only chains are quest-abandon options and stay unclassified.
+static void
+ClassifyQuestTrigger(CQuestTRIGGER* pEntry, bool& bAccept, bool& bTurnIn, int& iAddQuestSN) {
+    bAccept = bTurnIn = false;
+    iAddQuestSN = -1;
+
+    bool bHasQuestCond = false, bGrant = false, bDelete = false, bAdvance = false;
+
+    int iGuard = 0;
+    for (CQuestTRIGGER* pT = pEntry; pT && iGuard < 64; iGuard++) {
+        for (unsigned int uiC = 0; uiC < pT->GetCondCNT(); uiC++) {
+            uniQstENTITY* pCOND = pT->GetCOND(uiC);
+            if (pCOND && (pCOND->iType & 0xffff) == 0)
+                bHasQuestCond = true;
+        }
+
+        for (unsigned int uiR = 0; uiR < pT->GetRewdCNT(); uiR++) {
+            uniQstENTITY* pREWD = pT->GetREWD(uiR);
+            if (pREWD == NULL)
+                continue;
+
+            switch (pREWD->iType & 0xffff) {
+                case 0:
+                    switch (pREWD->m_Rewd000.btOp) {
+                        case 0:
+                            bDelete = true;
+                            break;
+                        case 1:
+                            bAccept = true;
+                            iAddQuestSN = pREWD->m_Rewd000.iQuestSN;
+                            break;
+                        case 2:
+                        case 3:
+                            bAdvance = true;
+                            break;
+                            // op 4 = select-context only; no state change
+                    }
+                    break;
+                case 1: // item give/remove
+                    if (pREWD->m_Rewd001.btOp == 1)
+                        bGrant = true;
+                    break;
+                case 3: // ability
+                case 5: // calculated exp/item/zuly reward
+                case 6: // hp/mp
+                case 14: // skill
+                    bGrant = true;
+                    break;
+            }
+        }
+
+        pT = pT->GetCheckNext() ? pT->m_pNextTrigger : NULL;
+    }
+
+    bTurnIn = bHasQuestCond && (bAdvance || (bDelete && bGrant));
+}
+
+void
+CEvent::ScanQuestTriggerRefs() {
+    std::vector<std::string> Strings;
+    if (m_pLuaDATA && m_iLuaDataLEN > 0)
+        HarvestLuaStrings(m_pLuaDATA, m_iLuaDataLEN, Strings);
+    if (m_pLuaAppendixDATA && m_iLuaAppendixLEN > 0)
+        HarvestLuaStrings(m_pLuaAppendixDATA, m_iLuaAppendixLEN, Strings);
+
+    for (size_t i = 0; i < Strings.size(); i++) {
+        CQuestTRIGGER* pTrigger = g_QuestList.GetQuest(::StrToHashKey(Strings[i].c_str()));
+        if (pTrigger == NULL)
+            continue;
+
+        bool bDup = false;
+        for (size_t j = 0; j < m_QuestTriggerRefs.size() && !bDup; j++)
+            bDup = (m_QuestTriggerRefs[j].m_Name == Strings[i]);
+        if (bDup)
+            continue;
+
+        tagQuestTriggerRef Ref;
+        Ref.m_Name = Strings[i];
+        ClassifyQuestTrigger(pTrigger, Ref.m_bAccept, Ref.m_bTurnIn, Ref.m_iAddQuestSN);
+        if (Ref.m_bAccept || Ref.m_bTurnIn)
+            m_QuestTriggerRefs.push_back(Ref);
+    }
+}
+
+// Calls one check function in the throwaway state; 1 if it exists and returned
+// >= 1. Existence is verified first so a malformed file cannot pop the
+// "function not found" ErrorBOX every refresh tick.
+static bool
+CallQuestCheckFunc(classLUA& LUA, CEvent* pEvent, const char* szFunc) {
+    int iTop = LUA.Stack_GetElementCount();
+    LUA.GetGlobal(szFunc);
+    bool bIsFunction = LUA.Is_Function(-1) || LUA.Is_CFunction(-1);
+    LUA.Stack_SetTop(iTop);
+
+    if (!bIsFunction)
+        return false;
+
+    return lua_CallIntFUNC(LUA.m_pState, szFunc, ZZ_PARAM_INT, pEvent, ZZ_PARAM_END) >= 1;
+}
+
+// True when the trigger's conditions currently pass for the local avatar.
+// bDoReward=false walks conditions only; rewards are skipped, so probing has
+// no side effects. COND_013 (NPC binder) is a server-only check and always
+// passes on the client, which is exactly right for a per-NPC probe.
+static bool
+QuestTriggerConditionsPass(const char* szTriggerName) {
+    return g_QuestList.CheckQUEST(g_pAVATAR, ::StrToHashKey(szTriggerName), false)
+        == QST_RESULT_SUCCESS;
+}
+
+short
+CEvent::GetQuestSignal() {
+    if (g_pAVATAR == NULL)
+        return 0;
+
+    if (!m_bQuestFuncsScanned)
+        this->ScanQuestCheckFuncs();
+
+    if (m_QuestTriggerRefs.empty() && m_QuestAcceptFuncs.empty()
+        && m_QuestCompleteFuncs.empty())
+        return 0;
+
+    // Retail/QSD path first — pure condition walks, no Lua involved. Turn-in
+    // beats available when an NPC has both.
+    for (size_t i = 0; i < m_QuestTriggerRefs.size(); i++)
+        if (m_QuestTriggerRefs[i].m_bTurnIn
+            && QuestTriggerConditionsPass(m_QuestTriggerRefs[i].m_Name.c_str()))
+            return 3;
+
+    bool bAvailable = false;
+    for (size_t i = 0; i < m_QuestTriggerRefs.size() && !bAvailable; i++) {
+        const tagQuestTriggerRef& Ref = m_QuestTriggerRefs[i];
+        if (!Ref.m_bAccept)
+            continue;
+        // Never re-offer a quest that is already in the log (retail register
+        // triggers do not always carry that guard themselves).
+        if (Ref.m_iAddQuestSN >= 0
+            && g_pAVATAR->Quest_GetRegistered(Ref.m_iAddQuestSN) < QUEST_PER_PLAYER)
+            continue;
+        bAvailable = QuestTriggerConditionsPass(Ref.m_Name.c_str());
+    }
+
+    // Quest-editor Lua check functions (dialog-exact gating; also covers any
+    // future custom check logic). Skipped when the QSD path already decided.
+    if (!m_QuestAcceptFuncs.empty() || !m_QuestCompleteFuncs.empty()) {
+        if (m_pLuaDATA && m_iLuaDataLEN > 0) {
+            // Same load order as Start(), but into a local state so an open
+            // dialog's m_pLUA (and its pending click items) is never disturbed.
+            classLUA LUA;
+            bool bLoaded = (LUA.Do_Buffer(m_pLuaDATA, m_iLuaDataLEN) == 0);
+            if (bLoaded && m_pLuaAppendixDATA && m_iLuaAppendixLEN > 0)
+                bLoaded = (LUA.Do_Buffer(m_pLuaAppendixDATA, m_iLuaAppendixLEN) == 0);
+
+            if (bLoaded) {
+                QF_Init(LUA.m_pState);
+
+                for (size_t i = 0; i < m_QuestCompleteFuncs.size(); i++)
+                    if (CallQuestCheckFunc(LUA, this, m_QuestCompleteFuncs[i].c_str()))
+                        return 3;
+
+                if (!bAvailable)
+                    for (size_t i = 0; i < m_QuestAcceptFuncs.size() && !bAvailable; i++)
+                        bAvailable = CallQuestCheckFunc(LUA, this, m_QuestAcceptFuncs[i].c_str());
+            }
+        }
+    }
+
+    return bAvailable ? 1 : 0;
 }
 
 //-------------------------------------------------------------------------------------------------
