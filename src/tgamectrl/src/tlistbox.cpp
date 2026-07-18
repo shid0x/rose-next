@@ -18,6 +18,12 @@ CTListBox::CTListBox(void) {
     m_iCharHeight = 6;
     m_iMaxSize = 0;
     m_pFontMgr = NULL;
+    m_ptLastMouse.x = -1;
+    m_ptLastMouse.y = -1;
+    m_bLinkHovered = false;
+    ZeroMemory(m_HoveredLinkData, sizeof(m_HoveredLinkData));
+    m_ptHoveredPos.x = 0;
+    m_ptHoveredPos.y = 0;
 }
 
 CTListBox::~CTListBox(void) {
@@ -107,6 +113,9 @@ CTListBox::Process(UINT uiMsg, WPARAM wParam, LPARAM lParam) {
 
     POINT ptMouse = {LOWORD(lParam), HIWORD(lParam)};
 
+    if (uiMsg == WM_MOUSEMOVE)
+        m_ptLastMouse = ptMouse;
+
     if (uiMsg == WM_LBUTTONDOWN)
         int mm = 0;
 
@@ -140,6 +149,8 @@ CTListBox::Process(UINT uiMsg, WPARAM wParam, LPARAM lParam) {
 
 void
 CTListBox::Draw() {
+    m_bLinkHovered = false;
+
     if (!IsVision() || m_pFontMgr == NULL || m_bOwnerDraw)
         return;
 
@@ -166,13 +177,72 @@ CTListBox::Draw() {
 
         if (m_ITM[i].m_szTxt) {
             m_ITM[i].m_bDrawn = true;
-            if (strlen(m_ITM[i].m_szTxt) > 0)
-                m_pFontMgr->Draw(m_iFont, true, 0, iPosY, dwColor, m_ITM[i].m_szTxt);
-            else
+            if (strlen(m_ITM[i].m_szTxt) > 0) {
+                if (m_ITM[i].m_nLinkCount > 0)
+                    DrawLineWithLinks(m_ITM[i], iPosY);
+                else
+                    m_pFontMgr->Draw(m_iFont, true, 0, iPosY, dwColor, m_ITM[i].m_szTxt);
+            } else
                 m_pFontMgr->Draw(m_iFont, true, 0, iPosY, dwColor, " ");
             iPosY += m_iCharHeight + m_iLineSpace;
         }
     }
+}
+
+///링크 라인은 plain / link 세그먼트를 각각의 색으로 나눠 그린다.
+///픽셀 오프셋은 append 시점에 미리 계산된 값을 쓴다 (프레임당 폰트 측정 금지).
+void
+CTListBox::DrawLineWithLinks(const t_list_item& itm, int iPosY) {
+    char szBuf[MAX_PATH];
+    const int iLen = (int)strlen(itm.m_szTxt);
+    int iCursor = 0; ///현재 char 오프셋
+    int iPlainX = 0; ///다음 plain 세그먼트가 그려질 픽셀 x
+
+    for (int k = 0; k < itm.m_nLinkCount; ++k) {
+        const t_list_link& link = itm.m_Links[k];
+        int iBegin = (int)link.m_wBegin;
+        int iEnd = (int)link.m_wEnd;
+        if (iBegin < iCursor || iEnd > iLen || iBegin >= iEnd)
+            continue;
+
+        if (iBegin > iCursor) {
+            int iCnt = iBegin - iCursor;
+            strncpy(szBuf, itm.m_szTxt + iCursor, iCnt);
+            szBuf[iCnt] = '\0';
+            m_pFontMgr->Draw(m_iFont, true, iPlainX, iPosY, itm.m_dwColor, szBuf);
+        }
+
+        int iCnt = iEnd - iBegin;
+        strncpy(szBuf, itm.m_szTxt + iBegin, iCnt);
+        szBuf[iCnt] = '\0';
+        m_pFontMgr->Draw(m_iFont, true, (int)link.m_xBegin, iPosY, link.m_dwColor, szBuf);
+
+        RECT rcLink = {m_sPosition.x + link.m_xBegin,
+            m_sPosition.y + iPosY,
+            m_sPosition.x + link.m_xEnd,
+            m_sPosition.y + iPosY + m_iCharHeight};
+        if (PtInRect(&rcLink, m_ptLastMouse)) {
+            m_bLinkHovered = true;
+            memcpy(m_HoveredLinkData, link.m_Data, TLB_LINK_DATA_SIZE);
+            m_ptHoveredPos = m_ptLastMouse;
+        }
+
+        iCursor = iEnd;
+        iPlainX = (int)link.m_xEnd;
+    }
+
+    if (iCursor < iLen)
+        m_pFontMgr->Draw(m_iFont, true, iPlainX, iPosY, itm.m_dwColor, itm.m_szTxt + iCursor);
+}
+
+bool
+CTListBox::GetHoveredLink(unsigned char* pOutData, POINT& ptOut) {
+    if (!m_bLinkHovered)
+        return false;
+    if (pOutData)
+        memcpy(pOutData, m_HoveredLinkData, TLB_LINK_DATA_SIZE);
+    ptOut = m_ptHoveredPos;
+    return true;
 }
 
 /*
@@ -203,6 +273,7 @@ CTListBox::SetText(int index, const char* text, D3DCOLOR dwColor) {
         return;
 
     t_list_item itm;
+    itm.m_nLinkCount = 0;
     int iLen = (int)strlen(text);
     if (iLen <= m_nMaxPutChar)
         strcpy(itm.m_szTxt, text);
@@ -224,6 +295,7 @@ CTListBox::AppendText(const char* szTxt, D3DCOLOR dwColor, bool bAutoIncValue) {
 
     t_list_item itm;
     itm.m_bDrawn = false;
+    itm.m_nLinkCount = 0;
     int iLen = (int)strlen(szTxt);
 
     CTSplitString szString;
@@ -257,6 +329,151 @@ CTListBox::AppendText(const char* szTxt, D3DCOLOR dwColor, bool bAutoIncValue) {
     if (bAutoIncValue)
         SetValue(GetMaximum());
 }
+
+///완성된 한 라인( 소스 스트링의 [iLineBegin,iLineEnd) 구간 )을 링크 오프셋 재계산 후 추가.
+///픽셀 extent는 여기서 한번만 측정한다.
+void
+CTListBox::PushLineWithLinks(const char* szTxt,
+    D3DCOLOR dwColor,
+    const t_list_link* pLinks,
+    int iLinkCount,
+    int iLineBegin,
+    int iLineEnd) {
+    if ((m_iMaxSize > 0) && !m_ITM.empty() && (m_iMaxSize <= (int)m_ITM.size()))
+        m_ITM.pop_front();
+
+    t_list_item itm;
+    itm.m_bDrawn = false;
+    itm.m_nLinkCount = 0;
+    itm.m_dwColor = dwColor;
+
+    int iCnt = iLineEnd - iLineBegin;
+    if (iCnt < 0)
+        iCnt = 0;
+    if (iCnt >= (int)sizeof(itm.m_szTxt))
+        iCnt = (int)sizeof(itm.m_szTxt) - 1;
+    strncpy(itm.m_szTxt, szTxt + iLineBegin, iCnt);
+    itm.m_szTxt[iCnt] = '\0';
+
+    char szPrefix[MAX_PATH];
+    for (int k = 0; k < iLinkCount && itm.m_nLinkCount < TLB_MAX_LINE_LINKS; ++k) {
+        int iBegin = (int)pLinks[k].m_wBegin;
+        int iEnd = (int)pLinks[k].m_wEnd;
+        if (iBegin < iLineBegin || iEnd > iLineEnd || iBegin >= iEnd)
+            continue;
+
+        t_list_link& dst = itm.m_Links[itm.m_nLinkCount];
+        dst = pLinks[k];
+        dst.m_wBegin = (unsigned short)(iBegin - iLineBegin);
+        dst.m_wEnd = (unsigned short)(iEnd - iLineBegin);
+
+        int iPre = (int)dst.m_wBegin;
+        SIZE szExtent = {0, 0};
+        if (iPre > 0 && m_pFontMgr) {
+            strncpy(szPrefix, itm.m_szTxt, iPre);
+            szPrefix[iPre] = '\0';
+            szExtent = m_pFontMgr->GetFontTextExtent(m_iFont, szPrefix);
+        }
+        dst.m_xBegin = (short)szExtent.cx;
+
+        int iPreEnd = (int)dst.m_wEnd;
+        szExtent.cx = dst.m_xBegin;
+        if (m_pFontMgr) {
+            strncpy(szPrefix, itm.m_szTxt, iPreEnd);
+            szPrefix[iPreEnd] = '\0';
+            szExtent = m_pFontMgr->GetFontTextExtent(m_iFont, szPrefix);
+        }
+        dst.m_xEnd = (short)szExtent.cx;
+
+        ++itm.m_nLinkCount;
+    }
+
+    m_ITM.push_back(itm);
+}
+
+///링크 세그먼트를 절대 중간에서 자르지 않는 word-wrap 추가.
+///측정은 append 시점 한정 (CTSplitString 주석의 "프레임마다 실행 금지" 준수).
+void
+CTListBox::AppendTextEx(const char* szTxt,
+    D3DCOLOR dwColor,
+    const t_list_link* pLinks,
+    int iLinkCount,
+    bool bAutoIncValue) {
+    if (szTxt == NULL)
+        return;
+
+    if (iLinkCount <= 0 || pLinks == NULL) {
+        AppendText(szTxt, dwColor, bAutoIncValue);
+        return;
+    }
+
+    if (iLinkCount > TLB_MAX_LINE_LINKS)
+        iLinkCount = TLB_MAX_LINE_LINKS;
+
+    int iLen = (int)strlen(szTxt);
+
+    SIZE szSize = {0, 0};
+    if (m_pFontMgr)
+        szSize = m_pFontMgr->GetFontTextExtent(m_iFont, szTxt);
+
+    if (szSize.cx <= m_iWidth || m_nMaxPutChar <= 0 || m_pFontMgr == NULL) {
+        PushLineWithLinks(szTxt, dwColor, pLinks, iLinkCount, 0, iLen);
+    } else {
+        unsigned uiCodePage = CTControlMgr::GetInstance()->GetCodePage();
+        char szProbe[MAX_PATH];
+        int iLineBegin = 0;
+        int iPos = 0;
+        int iLastSpace = -1;
+
+        while (iPos < iLen) {
+            ///단위: 링크 전체 or MBCS 문자 하나
+            int iUnitEnd = -1;
+            bool bIsLink = false;
+            for (int k = 0; k < iLinkCount; ++k) {
+                if ((int)pLinks[k].m_wBegin == iPos && pLinks[k].m_wEnd > pLinks[k].m_wBegin) {
+                    iUnitEnd = (int)pLinks[k].m_wEnd;
+                    bIsLink = true;
+                    break;
+                }
+            }
+            if (!bIsLink) {
+                const char* pNext = CharNextExA((WORD)uiCodePage, szTxt + iPos, 0);
+                iUnitEnd = (int)(pNext - szTxt);
+                if (iUnitEnd <= iPos)
+                    iUnitEnd = iPos + 1;
+            }
+            if (iUnitEnd > iLen)
+                iUnitEnd = iLen;
+
+            int iCnt = iUnitEnd - iLineBegin;
+            if (iCnt >= (int)sizeof(szProbe))
+                iCnt = (int)sizeof(szProbe) - 1;
+            strncpy(szProbe, szTxt + iLineBegin, iCnt);
+            szProbe[iCnt] = '\0';
+            SIZE szProbeSize = m_pFontMgr->GetFontTextExtent(m_iFont, szProbe);
+
+            if (szProbeSize.cx > m_iWidth && iPos > iLineBegin) {
+                int iBreak = (iLastSpace > iLineBegin) ? iLastSpace + 1 : iPos;
+                PushLineWithLinks(szTxt, dwColor, pLinks, iLinkCount, iLineBegin, iBreak);
+                iLineBegin = iBreak;
+                iLastSpace = -1;
+                iPos = iBreak;
+                continue;
+            }
+
+            if (!bIsLink && szTxt[iPos] == ' ')
+                iLastSpace = iPos;
+            iPos = iUnitEnd;
+        }
+
+        if (iLineBegin < iLen)
+            PushLineWithLinks(szTxt, dwColor, pLinks, iLinkCount, iLineBegin, iLen);
+    }
+
+    if (bAutoIncValue)
+        SetValue(GetMaximum());
+}
+
 void
 CTListBox::ClearText() {
     m_ITM.clear();

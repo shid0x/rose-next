@@ -6,10 +6,26 @@
 
 using namespace std;
 
+#define TLB_MAX_LINE_LINKS 4
+#define TLB_LINK_DATA_SIZE 8
+
+/// Inline "link" segment inside a list line: a char range drawn in its own
+/// color, hoverable, carrying an opaque payload for the owning dialog.
+typedef struct {
+    unsigned short m_wBegin; ///char offset into m_szTxt (inclusive)
+    unsigned short m_wEnd; ///char offset into m_szTxt (exclusive)
+    short m_xBegin; ///pixel x extent, precomputed at append time
+    short m_xEnd;
+    D3DCOLOR m_dwColor;
+    unsigned char m_Data[TLB_LINK_DATA_SIZE]; ///opaque payload (owner-defined)
+} t_list_link;
+
 typedef struct {
     char m_szTxt[MAX_PATH];
     D3DCOLOR m_dwColor;
     bool m_bDrawn;
+    unsigned char m_nLinkCount;
+    t_list_link m_Links[TLB_MAX_LINE_LINKS];
 } t_list_item;
 
 typedef deque<t_list_item> li_item_vec;
@@ -58,6 +74,16 @@ public:
     virtual bool IsLastItemDrawn();
     ///텍스트 추가 삭제
     void AppendText(const char* szTxt, D3DCOLOR dwColor, bool bAutoIncValue = true);
+    ///링크 세그먼트를 포함한 라인 추가 (links must be sorted, non-overlapping)
+    void AppendTextEx(const char* szTxt,
+        D3DCOLOR dwColor,
+        const t_list_link* pLinks,
+        int iLinkCount,
+        bool bAutoIncValue = true);
+    ///마우스가 링크 위에 있으면 payload/좌표를 돌려준다 (updated during Draw)
+    bool GetHoveredLink(unsigned char* pOutData, POINT& ptOut);
+    ///hover 판정용 마우스 좌표 갱신 (Update 경로에서 매 프레임 호출해도 됨)
+    void SetHoverMousePos(POINT pt) { m_ptLastMouse = pt; }
     void SetText(int index, const char* text, D3DCOLOR dwColor);
     void DeleteText(int iLineNo);
     const char* GetText(int iLineNo);
@@ -90,6 +116,15 @@ public:
 protected:
     ///리스트가 선택가능한 타입일경우 메세지 처리하는 method
     bool ProcessSelectable(UINT uiMsg, WPARAM wParam, LPARAM lParam);
+    ///한 라인을 링크 세그먼트별로 나눠 그린다. 링크 hover도 여기서 판정.
+    void DrawLineWithLinks(const t_list_item& itm, int iPosY);
+    ///라인 완성 helper: 링크 오프셋 재계산 후 push_back
+    void PushLineWithLinks(const char* szTxt,
+        D3DCOLOR dwColor,
+        const t_list_link* pLinks,
+        int iLinkCount,
+        int iLineBegin,
+        int iLineEnd);
 
 protected:
     li_item_vec m_ITM; ///리스트아이템
@@ -104,5 +139,10 @@ protected:
     int m_iMaxSize; ///리스트에 추가될수 있는 아이템의 최대 갯수
     ITFont* m_pFontMgr;
     int m_iFont;
+    ///링크 hover 상태 (Draw에서 갱신)
+    POINT m_ptLastMouse;
+    bool m_bLinkHovered;
+    unsigned char m_HoveredLinkData[TLB_LINK_DATA_SIZE];
+    POINT m_ptHoveredPos;
 };
 #endif ///_TLISTBOX_

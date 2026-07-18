@@ -427,6 +427,7 @@
     <ClCompile Include="Interface\ClanMarkManager.cpp" />
     <ClCompile Include="Interface\ClanMarkTransfer.cpp" />
     <ClCompile Include="Interface\CLoading.cpp" />
+    <ClCompile Include="Interface\ChatItemLink.cpp" />
     <ClCompile Include="Interface\CMonsterInspectorPanel.cpp" />
     <ClCompile Include="Interface\CNameBox.cpp" />
     <ClCompile Include="Interface\CSummonInfoPanel.cpp" />
@@ -817,6 +818,7 @@
     <ClInclude Include="Interface\CDragItem.h" />
     <ClInclude Include="Interface\CDragNDropMgr.h" />
     <ClInclude Include="Interface\CEnduranceProperty.h" />
+    <ClInclude Include="Interface\ChatItemLink.h" />
     <ClInclude Include="Interface\CHelpMgr.h" />
     <ClInclude Include="Interface\CIndicate.h" />
     <ClInclude Include="Interface\CInfo.h" />

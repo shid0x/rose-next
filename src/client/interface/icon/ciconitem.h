@@ -35,6 +35,7 @@ public:
     virtual bool IsEnable();
     virtual const char* GetName();
     virtual int GetIndex();
+    virtual bool IsItemIcon() { return true; }
 
     CItem* GetCItem();
     int GetItemNo();

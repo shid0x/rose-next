@@ -933,7 +933,9 @@ CRecvPACKET::Recv_gsv_CHAT() {
         g_itMGR.AppendChatMsg(CStr::Printf("%s>%s", pCHAR->Get_NAME(), szMsg),
             IT_MGR::CHAT_TYPE_ALL);
 
-        g_UIMed.AddChatMsg(m_pRecvPacket->m_gsv_CHAT.m_wObjectIDX, szMsg);
+        ///머리위 말풍선은 단색이라 아이템 링크 토큰을 "[Name]" 평문으로 바꿔 보여준다
+        std::string strBubble = ChatItemLink_Strip(szMsg);
+        g_UIMed.AddChatMsg(m_pRecvPacket->m_gsv_CHAT.m_wObjectIDX, strBubble.c_str());
 
 #ifdef __VIRTUAL_SERVER
         g_Cheat.DoCheat(szMsg);
@@ -961,7 +963,8 @@ CRecvPACKET::Recv_gsv_PARTY_CHAT() {
         }
         g_itMGR.AppendChatMsg(CStr::Printf("%s>%s", member.m_strName.c_str(), szMsg),
             IT_MGR::CHAT_TYPE_PARTY);
-        g_UIMed.AddChatMsg(m_pRecvPacket->m_gsv_CHAT.m_wObjectIDX, szMsg);
+        std::string strBubble = ChatItemLink_Strip(szMsg);
+        g_UIMed.AddChatMsg(m_pRecvPacket->m_gsv_CHAT.m_wObjectIDX, strBubble.c_str());
     }
     _RPT1(_CRT_WARN, "Recv_gsv_PARTY_CHAT_2(%d)\n", g_GameDATA.GetGameTime());
 }

@@ -2,6 +2,8 @@
 
 #include "cslot.h"
 #include "../CGoodsDlg.h"
+#include "../ChattingDLG.h"
+#include "../../IT_MGR.h"
 #include "../../Icon/CIconItem.h"
 #include "../../CDragItem.h"
 #include "../../CDragNDropMgr.h"
@@ -86,6 +88,19 @@ CSlot::Process(UINT uiMsg, WPARAM wParam, LPARAM lParam) {
         case WM_LBUTTONDOWN: {
             if (CWinCtrl::IsInside(pt.x, pt.y)) {
                 if (m_pIcon) {
+                    ///SHIFT+click : 아이템 링크를 채팅 입력창에 추가 ( 드래그/사용 대신 )
+                    ///CSlotBuyPrivateStore의 shift 벌크구매는 이 함수 진입 전에 처리됨
+                    if (m_pIcon->IsItemIcon() && GetAsyncKeyState(VK_SHIFT) < 0) {
+                        CIconItem* pItemIcon = (CIconItem*)m_pIcon;
+                        tagITEM& sItem = pItemIcon->GetItem();
+                        if (!sItem.IsEmpty()) {
+                            CChatDLG* pChatDlg = g_itMGR.GetChatDLG();
+                            if (pChatDlg)
+                                pChatDlg->AddItemLinkToInput(sItem);
+                        }
+                        uiRet = uiMsg;
+                        break;
+                    }
                     if (m_pIcon->Process(uiMsg, wParam, lParam) == 0) {
                         if (m_bDragAvailable && m_pDragItem && m_pIcon->IsEnable()) {
                             m_bClicked = true;

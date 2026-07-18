@@ -5,6 +5,7 @@
 #include <queue>
 #include "tgamectrl/tdialog.h"
 #include "tgamectrl/iactionlistener.h"
+#include "../chatitemlink.h"
 
 /// 0: false, 1: true, 2:true(can't change)
 struct ChatFilter {
@@ -30,7 +31,12 @@ public:
     virtual bool Create(const char* IDD);
     virtual unsigned int Process(UINT uiMsg, WPARAM wParam, LPARAM lParam);
     virtual void Update(POINT ptMouse);
+    virtual void Draw();
     virtual void Show();
+
+    ///아이템 링크: 인벤토리 shift+click 이 호출. "[Name] "을 입력창에 추가하고
+    ///send 시점에 wire token으로 치환된다.
+    bool AddItemLinkToInput(tagITEM& sItem);
 
     virtual unsigned ActionPerformed(CActionEvent* e);
 
@@ -121,6 +127,12 @@ protected:
 
     bool IsChatBlock();
     void SetFocusEditBox(unsigned iID);
+
+    ///아이템 링크 내부 처리
+    void SubstitutePendingItemLinks(std::string& stMsg);
+    void PurgeStalePendingItemLinks(const char* szCurrentInput);
+    void FeedItemLinkHover(POINT ptMouse);
+    void DrawHoveredItemLinkTooltip();
     int GetActiveListBox();
     int GetActiveScrollBar();
     void AppendMsg2sys(const char* pszMsg, DWORD dwColor, int iFilterType);
@@ -155,6 +167,13 @@ protected:
 
     std::string m_strLastSendMsg; /// 마지막 서버에 보낸 입력글 저장
     int m_iSelectedTab; /// 현재 탭 구분
+
+    ///send 대기중인 아이템 링크 ( 입력창의 "[Name]" ↔ wire token 매핑 )
+    struct PendingItemLink {
+        std::string strDisplay;
+        std::string strToken;
+    };
+    std::vector<PendingItemLink> m_PendingItemLinks;
 
     short m_nChatLineCNT; /// 채팅 라인수
 

@@ -47,6 +47,8 @@ public:
     virtual void Update(POINT ptMouse);
     virtual unsigned Process(unsigned uiMsg, WPARAM wParam, LPARAM lParam);
     virtual int GetIndex();
+    ///CIconItem만 true — 채팅 아이템 링크(shift+click)의 대상 판별용
+    virtual bool IsItemIcon() { return false; }
 
     POINT GetPosition() { return m_ptPosition; }
 

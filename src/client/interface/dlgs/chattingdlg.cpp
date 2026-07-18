@@ -6,6 +6,8 @@
 #include "ExchangeDlg.h"
 #include "CPartyDlg.h"
 #include "../CToolTipMgr.h"
+#include "../CInfo.h"
+#include "../../GameCommon/Item.h"
 #include "../../GameData/CExchange.h"
 #include "../../Network/CNetwork.h"
 #include "util/string_util.h"
@@ -139,6 +141,8 @@ void
 CChatDLG::Update(POINT ptMouse) {
     CTDialog::Update(ptMouse);
 
+    FeedItemLinkHover(ptMouse);
+
     ///이하 툴팁 표시
     CTDialog* pDlg = CTDialog::GetProcessMouseOverDialog();
     if (pDlg && pDlg != this)
@@ -159,6 +163,161 @@ CChatDLG::Update(POINT ptMouse) {
                 pCtrl->GetControlID());
             break;
         }
+    }
+}
+
+void
+CChatDLG::Draw() {
+    CTDialog::Draw();
+
+    ///링크 hover는 리스트박스 Draw중에 판정되므로 그 직후에 툴팁을 등록한다
+    ///( CToolTipMgr는 g_itMGR.Update() 끝에서 그리므로 같은 프레임에 표시됨 )
+    DrawHoveredItemLinkTooltip();
+}
+
+namespace {
+const int s_ChatListBoxIDs[] = {
+    CChatDLG::IID_LISTBOX_ALL,
+    CChatDLG::IID_LISTBOX_WHISPER,
+    CChatDLG::IID_LISTBOX_TRADE,
+    CChatDLG::IID_LISTBOX_PARTY,
+    CChatDLG::IID_LISTBOX_CLAN,
+    CChatDLG::IID_LISTBOX_ALLIED,
+    CChatDLG::IDD_LISTBOX_TOP,
+};
+const int s_ChatListBoxCount = sizeof(s_ChatListBoxIDs) / sizeof(s_ChatListBoxIDs[0]);
+
+///토큰을 파싱해서 링크 세그먼트가 있으면 AppendTextEx로, 없으면 기존 경로로 추가
+void
+AppendChatLineParsed(CTListBox* pListBox, const char* pszMsg, DWORD dwColor, bool bAutoInc) {
+    char szDisplay[512];
+    ChatItemLinkRange sRanges[CHAT_ITEM_LINK_MAX_PER_MSG];
+    int iLinks = ChatItemLink_Decode(pszMsg,
+        szDisplay,
+        sizeof(szDisplay),
+        sRanges,
+        CHAT_ITEM_LINK_MAX_PER_MSG);
+
+    if (iLinks <= 0) {
+        pListBox->AppendText(pszMsg, dwColor, bAutoInc);
+        return;
+    }
+
+    t_list_link sLinks[CHAT_ITEM_LINK_MAX_PER_MSG];
+    for (int i = 0; i < iLinks; ++i) {
+        ZeroMemory(&sLinks[i], sizeof(t_list_link));
+        sLinks[i].m_wBegin = (unsigned short)sRanges[i].iBegin;
+        sLinks[i].m_wEnd = (unsigned short)sRanges[i].iEnd;
+        sLinks[i].m_dwColor = sRanges[i].dwColor;
+        memcpy(sLinks[i].m_Data, sRanges[i].Item, sizeof(sRanges[i].Item));
+    }
+    pListBox->AppendTextEx(szDisplay, dwColor, sLinks, iLinks, bAutoInc);
+}
+} // namespace
+
+void
+CChatDLG::FeedItemLinkHover(POINT ptMouse) {
+    for (int i = 0; i < s_ChatListBoxCount; ++i) {
+        CWinCtrl* pCtrl = Find(s_ChatListBoxIDs[i]);
+        if (pCtrl && pCtrl->GetControlType() == CTRL_LISTBOX)
+            ((CTListBox*)pCtrl)->SetHoverMousePos(ptMouse);
+    }
+}
+
+void
+CChatDLG::DrawHoveredItemLinkTooltip() {
+    for (int i = 0; i < s_ChatListBoxCount; ++i) {
+        CWinCtrl* pCtrl = Find(s_ChatListBoxIDs[i]);
+        if (pCtrl == NULL || pCtrl->GetControlType() != CTRL_LISTBOX)
+            continue;
+
+        unsigned char byData[8];
+        POINT ptHover;
+        if (!((CTListBox*)pCtrl)->GetHoveredLink(byData, ptHover))
+            continue;
+
+        tagITEM sItem;
+        if (!ChatItemLink_ItemFromBytes(byData, sItem))
+            return;
+
+        CItem TipItem(&sItem);
+        CInfo Info;
+        DWORD dwInfoType = 0;
+        if (GetAsyncKeyState(VK_RBUTTON) < 0)
+            dwInfoType |= INFO_STATUS_DETAIL;
+        TipItem.GetToolTip(Info, 0, dwInfoType);
+
+        POINT ptTip = ptHover;
+        ptTip.x += 12;
+        ptTip.y += 12;
+        Info.SetPosition(ptTip);
+        CToolTipMgr::GetInstance().RegistInfo(Info);
+        return;
+    }
+}
+
+bool
+CChatDLG::AddItemLinkToInput(tagITEM& sItem) {
+    std::string strDisplay = ChatItemLink_DisplayName(sItem);
+    if (strDisplay.empty())
+        return false;
+
+    CWinCtrl* pCtrl = Find(IID_EDITBOX);
+    if (pCtrl == NULL || pCtrl->GetControlType() != CTRL_EDITBOX)
+        return false;
+    CTEditBox* pEditBox = (CTEditBox*)pCtrl;
+
+    ///입력창에서 지워진 링크는 버린다 ( cap이 유령 엔트리로 차지 않도록 )
+    PurgeStalePendingItemLinks(pEditBox->get_text());
+
+    if ((int)m_PendingItemLinks.size() >= CHAT_ITEM_LINK_MAX_PER_MSG) {
+        g_itMGR.AppendChatMsg("You can only link 3 items per message.",
+            IT_MGR::CHAT_TYPE_SYSTEM);
+        return false;
+    }
+
+    ///AppendText는 입력 제한 초과시 조용히 거부하므로 실제로 붙었는지 확인한다
+    const char* szBefore = pEditBox->get_text();
+    int iLenBefore = szBefore ? (int)strlen(szBefore) : 0;
+    pEditBox->AppendText((char*)strDisplay.c_str());
+    const char* szAfter = pEditBox->get_text();
+    int iLenAfter = szAfter ? (int)strlen(szAfter) : 0;
+    if (iLenAfter < iLenBefore + (int)strDisplay.size())
+        return false;
+    pEditBox->AppendText(" ");
+
+    PendingItemLink sLink;
+    sLink.strDisplay = strDisplay;
+    sLink.strToken = ChatItemLink_Encode(sItem);
+    m_PendingItemLinks.push_back(sLink);
+
+    pEditBox->SetFocus(true);
+    return true;
+}
+
+void
+CChatDLG::PurgeStalePendingItemLinks(const char* szCurrentInput) {
+    std::vector<PendingItemLink>::iterator iter = m_PendingItemLinks.begin();
+    while (iter != m_PendingItemLinks.end()) {
+        if (szCurrentInput == NULL || strstr(szCurrentInput, iter->strDisplay.c_str()) == NULL)
+            iter = m_PendingItemLinks.erase(iter);
+        else
+            ++iter;
+    }
+}
+
+void
+CChatDLG::SubstitutePendingItemLinks(std::string& stMsg) {
+    size_t nFrom = 0;
+    for (size_t i = 0; i < m_PendingItemLinks.size(); ++i) {
+        const PendingItemLink& sLink = m_PendingItemLinks[i];
+        size_t nPos = stMsg.find(sLink.strDisplay, nFrom);
+        if (nPos == std::string::npos)
+            nPos = stMsg.find(sLink.strDisplay); ///사용자가 순서를 바꿔 편집했을 때
+        if (nPos == std::string::npos)
+            continue; ///이름이 편집돼 사라짐 → 평문으로 전송 (링크 포기)
+        stMsg.replace(nPos, sLink.strDisplay.size(), sLink.strToken);
+        nFrom = nPos + sLink.strToken.size();
     }
 }
 
@@ -317,8 +476,6 @@ CChatDLG::SendChatMsg(char* szMsg) {
     if (strlen(szMsg) < 1)
         return;
 
-    m_strLastSendMsg = szMsg;
-
     ActiveListBoxMoveEnd();
 
     if (IsChatBlock()) {
@@ -326,6 +483,21 @@ CChatDLG::SendChatMsg(char* szMsg) {
         return;
     }
     string stMsg = szMsg;
+
+    ///아이템 링크: "[Name]" → wire token 치환 ( GM 명령어는 제외 )
+    if (stMsg[0] != '/')
+        SubstitutePendingItemLinks(stMsg);
+
+    ///서버는 129 byte 초과 채팅을 IS_HACKING 처리한다 — 넘길 바에 보내지 않는다.
+    ///여기서 return하면 입력창/pending 링크가 유지되어 사용자가 줄여서 재전송할 수 있다.
+    if ((int)stMsg.size() > CHAT_MSG_WIRE_MAX) {
+        g_itMGR.AppendChatMsg("Message too long to send.", IT_MGR::CHAT_TYPE_SYSTEM);
+        return;
+    }
+
+    m_PendingItemLinks.clear();
+    m_strLastSendMsg = stMsg;
+
     string stTargetID;
     string stRealMsg;
 
@@ -842,7 +1014,7 @@ CChatDLG::AppendMsg2ListBox(int iListBoxID, int iScrollBarID, const char* pszMsg
         CTListBox* pListBox = (CTListBox*)pCtrl;
 
         if (pListBox->GetValue() >= pListBox->GetMaximum() - pListBox->GetExtent()) {
-            pListBox->AppendText(pszMsg, dwColor, true);
+            AppendChatLineParsed(pListBox, pszMsg, dwColor, true);
             pListBox->SetValue(pListBox->GetMaximum());
 
             pCtrl = Find(iScrollBarID);
@@ -852,7 +1024,7 @@ CChatDLG::AppendMsg2ListBox(int iListBoxID, int iScrollBarID, const char* pszMsg
                 pScrollBar->SetValue(pListBox->GetMaximum());
             }
         } else {
-            pListBox->AppendText(pszMsg, dwColor, false);
+            AppendChatLineParsed(pListBox, pszMsg, dwColor, false);
         }
     }
 }

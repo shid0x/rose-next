@@ -629,6 +629,9 @@
     <ClCompile Include="Interface\CNameBox.cpp">
       <Filter>Source Files\Interface</Filter>
     </ClCompile>
+    <ClCompile Include="Interface\ChatItemLink.cpp">
+      <Filter>Source Files\Interface</Filter>
+    </ClCompile>
     <ClCompile Include="Interface\CMonsterInspectorPanel.cpp">
       <Filter>Source Files\Interface</Filter>
     </ClCompile>
@@ -1778,6 +1781,9 @@
       <Filter>Source Files\Interface</Filter>
     </ClInclude>
     <ClInclude Include="Interface\CNameBox.h">
+      <Filter>Source Files\Interface</Filter>
+    </ClInclude>
+    <ClInclude Include="Interface\ChatItemLink.h">
       <Filter>Source Files\Interface</Filter>
     </ClInclude>
     <ClInclude Include="Interface\CMonsterInspectorPanel.h">
