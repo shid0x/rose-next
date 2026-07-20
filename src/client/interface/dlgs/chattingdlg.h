@@ -133,6 +133,8 @@ protected:
     void PurgeStalePendingItemLinks(const char* szCurrentInput);
     void FeedItemLinkHover(POINT ptMouse);
     void DrawHoveredItemLinkTooltip();
+    ///ALT+click 된 링크의 장비 아이템 미리보기 창 열기. true = 열림(클릭 소비)
+    bool TryOpenHoveredItemLinkPreview();
     int GetActiveListBox();
     int GetActiveScrollBar();
     void AppendMsg2sys(const char* pszMsg, DWORD dwColor, int iFilterType);

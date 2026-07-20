@@ -15,6 +15,7 @@
 #include "../../../System/CGame.h"
 #include "../../../Network/CNetwork.h"
 #include "../../../GameCommon/Item.h"
+#include "../../CUIMediator.h"
 
 #include "tgamectrl/tdialog.h"
 #include "tgamectrl/tcommand.h"
@@ -88,6 +89,17 @@ CSlot::Process(UINT uiMsg, WPARAM wParam, LPARAM lParam) {
         case WM_LBUTTONDOWN: {
             if (CWinCtrl::IsInside(pt.x, pt.y)) {
                 if (m_pIcon) {
+                    ///ALT+click : 장비 아이템 3D 미리보기 ( 입혀보기 — 장착/서버 통신 없음 ).
+                    ///CTRL+click 은 위시리스트 등록( CIconItem::Process )이 이미 쓰고 있다.
+                    ///미리보기 불가 타입이면 소비하지 않고 기존 동작으로 넘어간다.
+                    if (m_pIcon->IsItemIcon() && GetAsyncKeyState(VK_MENU) < 0) {
+                        CIconItem* pItemIcon = (CIconItem*)m_pIcon;
+                        tagITEM& sItem = pItemIcon->GetItem();
+                        if (!sItem.IsEmpty() && g_UIMed.OpenItemPreview(sItem)) {
+                            uiRet = uiMsg;
+                            break;
+                        }
+                    }
                     ///SHIFT+click : 아이템 링크를 채팅 입력창에 추가 ( 드래그/사용 대신 )
                     ///CSlotBuyPrivateStore의 shift 벌크구매는 이 함수 진입 전에 처리됨
                     if (m_pIcon->IsItemIcon() && GetAsyncKeyState(VK_SHIFT) < 0) {

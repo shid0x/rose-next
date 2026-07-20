@@ -428,7 +428,9 @@
     <ClCompile Include="Interface\ClanMarkTransfer.cpp" />
     <ClCompile Include="Interface\CLoading.cpp" />
     <ClCompile Include="Interface\ChatItemLink.cpp" />
+    <ClCompile Include="Interface\CItemPreviewPanel.cpp" />
     <ClCompile Include="Interface\CMonsterInspectorPanel.cpp" />
+    <ClCompile Include="Interface\OverlayPanelUtil.cpp" />
     <ClCompile Include="Interface\CNameBox.cpp" />
     <ClCompile Include="Interface\CSummonInfoPanel.cpp" />
     <ClCompile Include="Interface\CTDrawImpl.cpp" />
@@ -825,7 +827,9 @@
     <ClInclude Include="Interface\ClanMarkManager.h" />
     <ClInclude Include="Interface\ClanMarkTransfer.h" />
     <ClInclude Include="Interface\CLoading.h" />
+    <ClInclude Include="Interface\CItemPreviewPanel.h" />
     <ClInclude Include="Interface\CMonsterInspectorPanel.h" />
+    <ClInclude Include="Interface\OverlayPanelUtil.h" />
     <ClInclude Include="Interface\CNameBox.h" />
     <ClInclude Include="Interface\CSummonInfoPanel.h" />
     <ClInclude Include="Interface\CTDrawImpl.h" />

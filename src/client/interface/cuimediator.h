@@ -7,6 +7,7 @@
 #include "PersonalStoreManager.h"
 #include "CSummonInfoPanel.h"
 #include "CMonsterInspectorPanel.h"
+#include "CItemPreviewPanel.h"
 
 #include "CObjCHAR.h"
 
@@ -18,6 +19,7 @@ private:
     CPersonalStoreManager m_PersonalStoreManager;
     CSummonInfoPanel m_SummonPanel;
     CMonsterInspectorPanel m_MonsterInspector;
+    CItemPreviewPanel m_ItemPreview;
 
 public:
     CUIMediator();
@@ -53,6 +55,14 @@ public:
     bool MonsterInspectorMouseMove(int x, int y) { return m_MonsterInspector.OnMouseMove(x, y); }
     bool MonsterInspectorLButtonUp(int x, int y) { return m_MonsterInspector.OnLButtonUp(x, y); }
     bool IsMonsterInspectorDragging() { return m_MonsterInspector.IsDragging(); }
+
+    /// 아이템 미리보기 창 (ALT+클릭 — 인벤토리 CSlot / 채팅 아이템 링크가 연다)
+    bool OpenItemPreview(tagITEM& sItem) { return m_ItemPreview.Open(sItem); }
+    void CloseItemPreview() { m_ItemPreview.Close(); }
+    bool ItemPreviewLButtonDown(int x, int y) { return m_ItemPreview.OnLButtonDown(x, y); }
+    bool ItemPreviewMouseMove(int x, int y) { return m_ItemPreview.OnMouseMove(x, y); }
+    bool ItemPreviewLButtonUp(int x, int y) { return m_ItemPreview.OnLButtonUp(x, y); }
+    bool IsItemPreviewDragging() { return m_ItemPreview.IsDragging(); }
 };
 
 extern CUIMediator g_UIMed;

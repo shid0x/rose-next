@@ -78,6 +78,7 @@ CUIMediator::Draw() {
     m_PersonalStoreManager.Draw();
     m_SummonPanel.Draw();
     m_MonsterInspector.Draw();
+    m_ItemPreview.Draw();
 }
 
 void

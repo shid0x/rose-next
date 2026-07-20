@@ -635,6 +635,12 @@
     <ClCompile Include="Interface\CMonsterInspectorPanel.cpp">
       <Filter>Source Files\Interface</Filter>
     </ClCompile>
+    <ClCompile Include="Interface\CItemPreviewPanel.cpp">
+      <Filter>Source Files\Interface</Filter>
+    </ClCompile>
+    <ClCompile Include="Interface\OverlayPanelUtil.cpp">
+      <Filter>Source Files\Interface</Filter>
+    </ClCompile>
     <ClCompile Include="Interface\CSummonInfoPanel.cpp">
       <Filter>Source Files\Interface</Filter>
     </ClCompile>
@@ -1787,6 +1793,12 @@
       <Filter>Source Files\Interface</Filter>
     </ClInclude>
     <ClInclude Include="Interface\CMonsterInspectorPanel.h">
+      <Filter>Source Files\Interface</Filter>
+    </ClInclude>
+    <ClInclude Include="Interface\CItemPreviewPanel.h">
+      <Filter>Source Files\Interface</Filter>
+    </ClInclude>
+    <ClInclude Include="Interface\OverlayPanelUtil.h">
       <Filter>Source Files\Interface</Filter>
     </ClInclude>
     <ClInclude Include="Interface\CSummonInfoPanel.h">

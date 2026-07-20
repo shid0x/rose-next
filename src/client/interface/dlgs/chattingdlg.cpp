@@ -7,6 +7,7 @@
 #include "CPartyDlg.h"
 #include "../CToolTipMgr.h"
 #include "../CInfo.h"
+#include "../CUIMediator.h"
 #include "../../GameCommon/Item.h"
 #include "../../GameData/CExchange.h"
 #include "../../Network/CNetwork.h"
@@ -257,6 +258,28 @@ CChatDLG::DrawHoveredItemLinkTooltip() {
 }
 
 bool
+CChatDLG::TryOpenHoveredItemLinkPreview() {
+    for (int i = 0; i < s_ChatListBoxCount; ++i) {
+        CWinCtrl* pCtrl = Find(s_ChatListBoxIDs[i]);
+        if (pCtrl == NULL || pCtrl->GetControlType() != CTRL_LISTBOX)
+            continue;
+
+        unsigned char byData[8];
+        POINT ptHover;
+        if (!((CTListBox*)pCtrl)->GetHoveredLink(byData, ptHover))
+            continue;
+
+        tagITEM sItem;
+        if (!ChatItemLink_ItemFromBytes(byData, sItem))
+            return false;
+
+        ///장비 아이템만 열린다 — 소모품 링크 등은 소비하지 않고 기존 동작 유지
+        return g_UIMed.OpenItemPreview(sItem);
+    }
+    return false;
+}
+
+bool
 CChatDLG::AddItemLinkToInput(tagITEM& sItem) {
     std::string strDisplay = ChatItemLink_DisplayName(sItem);
     if (strDisplay.empty())
@@ -400,6 +423,12 @@ CChatDLG::Process(UINT uiMsg, WPARAM wParam, LPARAM lParam) {
     //	}
     //	return uiMsg;
     //}
+
+    ///ALT+click 된 아이템 링크: 장비 미리보기 창 열기( 링크 위가 아니면 통과 )
+    if (uiMsg == WM_LBUTTONDOWN && GetAsyncKeyState(VK_MENU) < 0) {
+        if (TryOpenHoveredItemLinkPreview())
+            return uiMsg;
+    }
 
     unsigned iProcID = 0;
     if (iProcID = CTDialog::Process(uiMsg, wParam, lParam)) {

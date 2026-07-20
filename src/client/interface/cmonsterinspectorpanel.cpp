@@ -15,6 +15,7 @@
 #include "IO_ImageRes.h"
 #include "CInfo.h"
 #include "CToolTipMgr.h"
+#include "OverlayPanelUtil.h"
 #include "../GameCommon/Item.h"
 #include "tgamectrl/resourcemgr.h"
 
@@ -60,55 +61,12 @@ const D3DCOLOR kColHp = D3DCOLOR_ARGB(255, 255, 255, 255);
 const D3DCOLOR kColBg = D3DCOLOR_ARGB(215, 255, 255, 255);    /// 배경(ID_BLACK_PANEL 틴트)
 const D3DCOLOR kColClose = D3DCOLOR_ARGB(255, 255, 120, 120);
 
-/// 화면 스프라이트 블록 안에서 절대 좌표에 텍스트를 그린다.
-void
-DrawTextAt(int x, int y, int w, int h, D3DCOLOR color, DWORD format, int iFont, const char* msg) {
-    D3DXMATRIX mat;
-    D3DXMatrixTranslation(&mat, (float)x, (float)y, 0.0f);
-    ::setTransformSprite(mat);
-
-    RECT rc = {0, 0, w, h};
-    ::drawFont(g_GameDATA.m_hFONT[iFont], true, &rc, color, format | DT_SINGLELINE, msg);
-}
+/// 텍스트/배경 드로잉과 팬 카메라 프레이밍은 OverlayPanelUtil 공용 헬퍼 사용.
+using OverlayPanel::DrawTextAt;
 
 void
 DrawPanelBg(int x, int y, int w, int h) {
-    if (w <= 0 || h <= 0)
-        return;
-
-    /// ID_BLACK_PANEL 원본은 상단에 밝아지는 그라데이션이 구워져 있다:
-    /// - 통째로 늘리면 위쪽에 넓은 밝은 띠가 생기고,
-    /// - 얇은 스트립으로 타일링하면 스트립마다 밝은 윗줄이 반복돼 흰 줄이 생긴다.
-    /// 그래서 DrawFit 을 쓰지 않고, 스프라이트 아래쪽의 평탄한 소스 영역만 잘라
-    /// 한 번에 늘려 그린다( DrawFit 과 동일한 지오메트리 스케일 방식 ).
-    CImageRes* pImageRes = CImageResManager::GetSingleton().GetImageRes(IMAGE_RES_UI);
-    if (pImageRes == NULL)
-        return;
-
-    int iBlackPanel = CResourceMgr::GetInstance()->GetImageNID(IMAGE_RES_UI, "ID_BLACK_PANEL");
-    stTexture* pTextureInfo = pImageRes->GetTexture(iBlackPanel);
-    stSprite* pSpriteInfo = pImageRes->GetSprite(iBlackPanel);
-    if (pTextureInfo == NULL || pSpriteInfo == NULL || pTextureInfo->m_Texture == NULL)
-        return;
-
-    RECT rcSrc = pSpriteInfo->m_Rect;
-    int iSrcH = rcSrc.bottom - rcSrc.top;
-    int iKeepH = iSrcH / 4;
-    if (iKeepH < 2)
-        iKeepH = 2;
-    rcSrc.top = rcSrc.bottom - iKeepH - 1;
-    rcSrc.bottom -= 1; /// 확대 필터링시 경계 텍셀 블리딩 방지
-
-    float fScaleWidth = (float)w / (rcSrc.right - rcSrc.left);
-    float fScaleHeight = (float)h / (rcSrc.bottom - rcSrc.top);
-
-    D3DXMATRIX mat;
-    D3DXVECTOR2 scale(fScaleWidth, fScaleHeight);
-    D3DXVECTOR2 pos((float)x, (float)y);
-    D3DXMatrixTransformation2D(&mat, NULL, NULL, &scale, NULL, NULL, &pos);
-    ::setTransformSprite(mat);
-
-    ::drawSprite(pTextureInfo->m_Texture, &rcSrc, NULL, &D3DXVECTOR3(0, 0, 0), kColBg);
+    OverlayPanel::DrawPanelBg(x, y, w, h, kColBg);
 }
 
 /// 퍼핏 이름( 엔진 노드 이름 충돌 방지용 카운터 포함 )
@@ -646,14 +604,8 @@ CMonsterInspectorPanel::PuppetDrawInPane(const RECT& rcPane) {
     /// 아바타 셀렉션 카메라 프레이밍( 엔진 내부 단위 = m, getModelHeight 는 cm ).
     /// RenderSelectedAvatar 는 모델(원점=발)을 z = -1.4 에 두므로, 모델 중심에
     /// 카메라 높이를 맞추고 직교 세로 폭( view_length / ratio )이 모델 높이보다
-    /// 여유있게 크도록 view_length 를 잡는다.
-    ///
-    /// 엔진에는 증감( update* ) 인터페이스만 있어서 절대값을 지정하려면 현재값을
-    /// 알아야 한다 — 싱글턴 기본값( 2.15 / -0.10 )에서 시작해 이 파일이 유일한
-    /// 사용자이므로 정적 미러로 추적한다.
-    static float s_fCurLength = 2.15f;
-    static float s_fCurHeight = -0.10f;
-
+    /// 여유있게 크도록 view_length 를 잡는다. 절대값 지정은 OverlayPanelUtil 의
+    /// 공용 미러를 통해서만 한다( 아이템 미리보기 패널과 공유 ).
     float fModelH = m_fPuppetModelHeight * 0.01f; /// cm -> m
     float fRatio = fPaneW / fPaneH;
 
@@ -662,13 +614,10 @@ CMonsterInspectorPanel::PuppetDrawInPane(const RECT& rcPane) {
         fWantLength = 0.7f; /// 초소형 몹 과도한 줌인 방지
     float fWantHeight = -1.4f + fModelH * 0.5f;  /// 모델 세로 중심
 
-    ::updateAvatarSelectionCameraLength(fWantLength - s_fCurLength);
-    s_fCurLength = fWantLength;
-    ::updateAvatarSelectionCameraHeight(fWantHeight - s_fCurHeight);
-    s_fCurHeight = fWantHeight;
+    OverlayPanel::PaneCameraSetFrame(fWantLength, fWantHeight);
 
     /// 천천히 궤도 회전( 라디안/프레임, 모델이 도는 것처럼 보인다 )
-    ::updateAvatarSelectionCameraSeta(0.01f);
+    OverlayPanel::PaneCameraSpin(0.01f);
 
     /// 지금까지 그린 패널 스프라이트를 먼저 백버퍼로 밀어낸 뒤,
     /// 팬 영역 뷰포트에서 모델을 그리고 원래 파이프라인으로 복귀한다.
