@@ -860,6 +860,24 @@ CItem::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
             break;
     }
 
+    /// 장비 아이템: ALT+클릭 미리보기 안내 ( CItemPreviewPanel 이 지원하는
+    /// 타입만 — 단축키는 초록( TIP_KEY ), 설명은 회색 )
+    switch (nItemType) {
+        case ITEM_TYPE_FACE_ITEM:
+        case ITEM_TYPE_HELMET:
+        case ITEM_TYPE_ARMOR:
+        case ITEM_TYPE_GAUNTLET:
+        case ITEM_TYPE_BOOTS:
+        case ITEM_TYPE_KNAPSACK:
+        case ITEM_TYPE_WEAPON:
+        case ITEM_TYPE_SUBWPN:
+            ToolTip.AddString(TIP_KEY "Alt+Click" TIP_END ": preview on your character",
+                D3DCOLOR_ARGB(255, 185, 185, 185));
+            break;
+        default:
+            break;
+    }
+
     // 가격을 표시하나?
     if ((dwType & INFO_ADD_PRICE) || (dwType & INFO_ADD_PRICE_SELL)
         || (dwType & INFO_ADD_PRICE_STORAGE_FEE) || (dwType & INFO_ADD_PRICE_PRIVATESTORE)

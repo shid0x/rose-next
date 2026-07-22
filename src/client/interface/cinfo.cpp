@@ -25,7 +25,7 @@ IsBlankText(const char* pszTxt) {
     return true;
 }
 
-/// Strip inline category-color markup bytes (TIP_CAT / TIP_END) so width and
+/// Strip inline color markup bytes (TIP_CAT / TIP_END / TIP_KEY) so width and
 /// length are measured on the visible text only. CTString::Draw consumes the
 /// markup; the stored line keeps it, but layout must ignore it.
 std::string
@@ -35,7 +35,7 @@ StripTipMarkup(const char* pszTxt) {
         return out;
     out.reserve(strlen(pszTxt));
     for (const char* p = pszTxt; *p; ++p) {
-        if (*p != TIP_CAT[0] && *p != TIP_END[0])
+        if (*p != TIP_CAT[0] && *p != TIP_END[0] && *p != TIP_KEY[0])
             out.push_back(*p);
     }
     return out;

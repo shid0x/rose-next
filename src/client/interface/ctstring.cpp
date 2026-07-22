@@ -5,8 +5,11 @@
 namespace {
 /// Distinct color for tooltip category labels (a muted dark blue-ish).
 const DWORD kToolTipCategoryColor = D3DCOLOR_ARGB(255, 95, 150, 225);
+/// Shortcut-key runs (TIP_KEY — e.g. "Alt+Click") render green.
+const DWORD kToolTipKeyColor = D3DCOLOR_ARGB(255, 110, 230, 110);
 const char kTipCatBegin = TIP_CAT[0];
 const char kTipCatEnd = TIP_END[0];
+const char kTipKeyBegin = TIP_KEY[0];
 } // namespace
 
 CTString::CTString(void) {}
@@ -64,7 +67,7 @@ CTString::Draw(RECT& rcDraw) {
     for (size_t i = 0; i <= m_strText.size(); ++i) {
         char c = (i < m_strText.size()) ? m_strText[i] : '\0';
 
-        if (c == kTipCatBegin || c == kTipCatEnd || c == '\0') {
+        if (c == kTipCatBegin || c == kTipCatEnd || c == kTipKeyBegin || c == '\0') {
             if (!strRun.empty()) {
                 drawFont(m_hFont, true, &rcRun, dwColor, m_uFormat, strRun.c_str());
                 rcRun.left += getFontTextExtent(m_hFont, strRun.c_str()).cx;
@@ -72,6 +75,8 @@ CTString::Draw(RECT& rcDraw) {
             }
             if (c == kTipCatBegin)
                 dwColor = kToolTipCategoryColor;
+            else if (c == kTipKeyBegin)
+                dwColor = kToolTipKeyColor;
             else if (c == kTipCatEnd)
                 dwColor = m_dwColor;
         } else {

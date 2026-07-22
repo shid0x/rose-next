@@ -9,7 +9,8 @@
 /// Only honored for left-aligned CInfo lines (see CTString::Draw); the bytes
 /// are stripped before width measurement in CInfo.
 #define TIP_CAT "\x01" /// begin category-colored run
-#define TIP_END "\x02" /// end category-colored run (back to base color)
+#define TIP_END "\x02" /// end colored run (back to base color)
+#define TIP_KEY "\x03" /// begin shortcut-key-colored run (green) — e.g. "Alt+Click"
 
 /**
  * 초기에 작성된 string class : CInfo에서 사용중이다
