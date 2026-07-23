@@ -345,6 +345,19 @@ int setShadowmapSize ( int Size )
 }
 
 ZZ_SCRIPT
+int setShadowmapSizeOverride ( int Size )
+{
+	CHECK_INTERFACE(setShadowmapSizeOverride);
+	static int old;
+	old = state->shadowmap_size_user;
+	state->shadowmap_size_user = Size;
+	if (Size > 0) {
+		state->shadowmap_size = Size;
+	}
+	return old;
+}
+
+ZZ_SCRIPT
 int useDrawViewFrustum ( int bDraw )
 {
 	CHECK_INTERFACE(useDrawViewFrustum);

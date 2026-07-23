@@ -105,8 +105,9 @@ protected:
 
         IID_RADIOBUTTON_FULLSCREEN = 121,
         IID_RADIOBUTTON_WINDOWMODE = 122,
-        IID_LIST_GAMMA = 127,
-        IID_SCROLLBAR_GAMMA = 128,
+        /// 127/128 were the abandoned gamma slider; repurposed for shadow quality
+        IID_LIST_SHADOWQUALITY = 127,
+        IID_SCROLLBAR_SHADOWQUALITY = 128,
 
         IID_TABBUTTON_KEYBOARD = 155,
         IID_RADIOBOX_KEYBOARD = 160,

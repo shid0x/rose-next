@@ -105,6 +105,9 @@ struct zz_render_state
 	vec3 clear_color;
 	zz_cull_mode_type cull_mode;
 	int shadowmap_size;
+	// User-forced shadowmap resolution. 0 = follow quality preset/script.
+	// Re-applied after every set_display_quality_level preset switch.
+	int shadowmap_size_user;
 	int glowmap_size; // default is 128
 	vec3 glow_color; // object glow color scale
 	vec3 glow_color_fullscene; // fullscene glow color scale

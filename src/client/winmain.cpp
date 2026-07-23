@@ -42,6 +42,13 @@ Init_DEVICE(void) {
     ::openFileSystem("data.idx");
     ::doScript("scripts/init.lua");
 
+    // SHADOWQUALITY (rose-next.ini [VIDEO]) overrides the classic 256px
+    // character shadowmap set up by INIT.LUA. Uses the engine-side override
+    // (not setShadowmapSize) because INIT.LUA and the options dialog call
+    // setDisplayQualityLevel, whose presets reset the raw shadowmap size.
+    ::setShadowmapSizeOverride(
+        ShadowQualityToShadowmapSize(g_ClientStorage.GetShadowQuality()));
+
     t_OptionResolution Resolution = g_ClientStorage.GetResolution();
     ::setDisplayQualityLevel(c_iPeformances[g_ClientStorage.GetVideoPerformance()]);
     t_OptionVideo Video;

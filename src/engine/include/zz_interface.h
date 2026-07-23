@@ -224,6 +224,10 @@ void setClearColor ( float fClearColorX, float fClearColorY, float fClearColorZ 
 ZZ_SCRIPT
 int setShadowmapSize ( int iSize );
 
+/// 프리셋과 무관하게 쉐도우맵 크기를 강제한다. 0이면 프리셋을 따른다.
+ZZ_SCRIPT
+int setShadowmapSizeOverride ( int iSize );
+
 /// 쉐도우맵 블러 타입
 /// 주의: attachWindow() 전에 호출되어야 함(init.lua 권장)
 /// @iBlurType : 0(블러사용안함), 1(블러 한번 적용), 2(블러 두번 적용)...

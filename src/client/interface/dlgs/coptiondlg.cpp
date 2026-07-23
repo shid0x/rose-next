@@ -88,6 +88,16 @@ COptionDlg::Create(const char* szIDD) {
                 pListBox->AppendText("1", g_dwWHITE);
         }
 
+        /// 그림자 품질 슬라이더 (구 감마 슬라이더 재활용)
+        pCtrl = pContainer->Find(IID_LIST_SHADOWQUALITY);
+        assert(pCtrl);
+        if (pCtrl && pCtrl->GetControlType() == CTRL_LISTBOX) {
+            CTListBox* pListBox = (CTListBox*)pCtrl;
+            pListBox->SetExtent(1);
+            for (int i = 0; i <= g_iMaxShadowQuality; ++i)
+                pListBox->AppendText("1", g_dwWHITE);
+        }
+
         /*
         pCtrl = pContainer->Find( IID_LIST_ANTIALSING );
         assert( pCtrl );
@@ -424,6 +434,20 @@ COptionDlg::ChangeVideoOption() {
                 // resetScreen();
 
                 m_VideoOption.iPerformance = iID;
+            }
+        }
+
+        pCtrl = pContainer->Find(IID_LIST_SHADOWQUALITY);
+        assert(pCtrl);
+        if (pCtrl && pCtrl->GetControlType() == CTRL_LISTBOX) {
+            CTListBox* pListBox = (CTListBox*)pCtrl;
+            short iID = pListBox->GetValue();
+            if (m_VideoOption.iShadowQuality != (UINT)iID) {
+                m_VideoOption.iShadowQuality = iID;
+                setShadowmapSizeOverride(ShadowQualityToShadowmapSize(iID));
+                // setDisplayQualityLevel recreates the render targets, which is
+                // what actually resizes the shadowmap texture
+                setDisplayQualityLevel(c_iPeformances[m_VideoOption.iPerformance]);
             }
         }
 
@@ -814,6 +838,13 @@ COptionDlg::GetCurrentOption() {
         if (pCtrl && pCtrl->GetControlType() == CTRL_SCROLLBAR) {
             CTScrollBar* pScrollBar = (CTScrollBar*)pCtrl;
             pScrollBar->SetValue(m_VideoOption.iPerformance);
+        }
+
+        pCtrl = pContainer->Find(IID_SCROLLBAR_SHADOWQUALITY);
+        assert(pCtrl);
+        if (pCtrl && pCtrl->GetControlType() == CTRL_SCROLLBAR) {
+            CTScrollBar* pScrollBar = (CTScrollBar*)pCtrl;
+            pScrollBar->SetValue(m_VideoOption.iShadowQuality);
         }
 
         pCtrl = pContainer->Find(IID_RADIOBOX_FULLSCREEN);

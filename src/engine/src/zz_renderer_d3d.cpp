@@ -829,9 +829,9 @@ bool zz_renderer_d3d::initialize ()
 		ZZ_LOG("r_d3d: initialize() failed. Device does not support two simultaneous textuers!\n");
 	}
 
-	if ((state.shadowmap_blur_type > 0) && (shadowmap_pixels == NULL)) {
-		shadowmap_pixels = zz_new vec3[state.shadowmap_size*state.shadowmap_size]; // deleted in cleanup()
-	}
+	// shadowmap_pixels (CPU-side blur_map buffer) is intentionally not
+	// allocated: shadowmap blur runs on the GPU (blur_shadowmap), and at
+	// 2048px the buffer would cost 48MB of 32-bit address space.
 
 	init_device_objects();
 	znzin->init_device_objects();
@@ -1194,6 +1194,7 @@ bool zz_renderer_d3d::restore_device_objects ()
 			zz_assertf(0, "renderer_d3d: getsurfacelevel(shadowmap_surface) failed. [%s]\n", get_hresult_string(hr));
 			return false;
 		}
+		ZZ_LOG("r_d3d: shadowmap created (%dx%d)\n", state.shadowmap_size, state.shadowmap_size);
 
 		assert(NULL == shadowmap_forblur);
 		// create blurred shadowmap texture

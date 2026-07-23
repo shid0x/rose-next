@@ -22,6 +22,8 @@ struct t_OptionVideo {
     UINT iFullScreen;
     UINT iUseRoughMap;
     UINT iAntiAlising;
+    // Character shadowmap resolution: 0 = classic 256px, 1 = 1024px, 2 = 2048px
+    UINT iShadowQuality;
     // Render the game even if window is not focused
     bool background_render;
 };
@@ -72,6 +74,21 @@ const int g_iDefaultCamera = 1;
 const int g_iDefaultPerfromance = 3;
 const int g_iDefaultFullScreen = 0;
 const int g_iDefaultAntiAlising = 2; // <AntiAlising /> 2x MSAA
+const int g_iDefaultShadowQuality = 1;
+const int g_iMaxShadowQuality = 2;
+
+/// SHADOWQUALITY → engine shadowmap override size (0 = classic INIT.LUA size)
+inline int
+ShadowQualityToShadowmapSize(UINT iQuality) {
+    switch (iQuality) {
+        case 1:
+            return 1024;
+        case 2:
+            return 2048;
+        default:
+            return 0;
+    }
+}
 const int c_iDefaultControlType = 1;
 
 const int c_iDefaultScreenWidth = 1024;
@@ -115,6 +132,7 @@ public:
     void SetVideoPerformance(int iValue) { m_VideoOption.iPerformance = iValue; }
     void SetUseRoughMap(UINT iUseRoughMap) { m_VideoOption.iUseRoughMap = iUseRoughMap; }
     UINT GetUseRoughMap() { return m_VideoOption.iUseRoughMap; }
+    UINT GetShadowQuality() { return m_VideoOption.iShadowQuality; }
     ///*********************************************************************/
     /// Sound
     void SetSoundOption(t_OptionSound& option);

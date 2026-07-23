@@ -40,6 +40,7 @@ zz_render_state::zz_render_state(void) :
 	use_render_state(true),
 	cull_mode(zz_render_state::ZZ_CULLMODE_CW),
 	shadowmap_size(ZZ_RS_SHADOWMAP_SIZE),
+	shadowmap_size_user(0),
 	use_wire_mode(false),
 	clear_color(0, 0, 0),
 	time_delay(0),
@@ -243,6 +244,10 @@ void zz_render_state::set_display_quality_level (int level)
 			znzin->set_use_motion_interpolation(true);
 			znzin->terrain_blocks->set_num_reuse(1000);
 			break;
+	}
+
+	if (shadowmap_size_user > 0 && use_shadowmap) {
+		shadowmap_size = shadowmap_size_user;
 	}
 
 	// after changing, restore rederer device

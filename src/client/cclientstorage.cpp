@@ -93,6 +93,10 @@ CClientStorage::Load() {
         GetPrivateProfileInt("VIDEO", "FULLSCREEN", g_iDefaultFullScreen, g_szIniFileName);
     m_VideoOption.iAntiAlising =
         GetPrivateProfileInt("VIDEO", "ANTIALISING", g_iDefaultAntiAlising, g_szIniFileName);
+    m_VideoOption.iShadowQuality =
+        GetPrivateProfileInt("VIDEO", "SHADOWQUALITY", g_iDefaultShadowQuality, g_szIniFileName);
+    if (m_VideoOption.iShadowQuality > (UINT)g_iMaxShadowQuality)
+        m_VideoOption.iShadowQuality = g_iMaxShadowQuality;
     m_VideoOption.background_render = ReadBool("VIDEO", "BACKGROUND_RENDER", true);
 
     m_SoundOption.iBgmVolume =
@@ -207,6 +211,9 @@ CClientStorage::Save() {
     itoa(m_VideoOption.iAntiAlising, szTemp, 10);
     WritePrivateProfileString("VIDEO", "ANTIALISING", szTemp, g_szIniFileName);
     // </AntiAlising>
+
+    itoa(m_VideoOption.iShadowQuality, szTemp, 10);
+    WritePrivateProfileString("VIDEO", "SHADOWQUALITY", szTemp, g_szIniFileName);
 
     WriteBool("VIDEO", "BACKGROUND_RENDER", m_VideoOption.background_render);
 
