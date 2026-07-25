@@ -746,6 +746,14 @@ bool zz_renderer_d3d::initialize ()
 	state.vertex_shader_version = (device_capability.VertexShaderVersion & 0x0F) +
 		((device_capability.VertexShaderVersion >> 8) & 0x0F)*10;
 
+	// pixel_shader_version was declared and zero-initialized but never assigned, so
+	// any capability check against it silently read 0.
+	state.pixel_shader_version = (device_capability.PixelShaderVersion & 0x0F) +
+		((device_capability.PixelShaderVersion >> 8) & 0x0F)*10;
+
+	ZZ_LOG("r_d3d: shader version vs(%d) ps(%d)\n",
+		state.vertex_shader_version, state.pixel_shader_version);
+
 	state.max_simultaneous_textures = device_capability.MaxSimultaneousTextures;
 
 	// save initial available texture memory

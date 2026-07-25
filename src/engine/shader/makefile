@@ -31,9 +31,11 @@ VMACROS=\
 /DC_WORLD_TM=c24 \
 /DC_BONESTART=30
 
-DXSDKPATH=../DX90CSDK
-VCOMP=${DXSDKPATH}/Utilities/vsa.exe /Zi ${VMACROS}
-PCOMP=${DXSDKPATH}/Utilities/psa.exe 
+# The original ../DX90CSDK tree is no longer in the repo; the shader assemblers
+# now ship under thirdparty/directx9/utilities.
+DXSDKPATH=../../../thirdparty/directx9
+VCOMP=${DXSDKPATH}/utilities/vsa.exe /Zi ${VMACROS}
+PCOMP=${DXSDKPATH}/utilities/psa.exe
 	
 all : \
 ${OUTPUTDIR}/glow.vso \
