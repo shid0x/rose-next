@@ -45,6 +45,66 @@ event(uint32_t id, uint32_t attacker, int damage, int hp_after, bool lethal = fa
     return e;
 }
 
+// Models the object state that CObjCHAR::Proc()'s fnSwingStillPending inspects, so
+// the cart / castle-gear tests can exercise *why* a swing counts as live instead of
+// just toggling a bool.
+//
+// Mirrors src/client/cobjchar.cpp: the attacker must resolve, be alive, still be in
+// CMD_ATTACK, and still hold this exact event as its pending confirmed swing. A
+// mounted swing keys the queued event to the *cart* index while the pending swing is
+// tracked on the rider, so a pet attacker additionally checks its parent -- and that
+// parent check deliberately does not re-test the rider's alive/attacking state,
+// matching the real predicate.
+struct SwingWorld {
+    struct Attacker {
+        uint32_t id = 0;
+        bool alive = true; // Get_HP() > DEAD_HP
+        bool attacking = true; // Get_COMMAND() == CMD_ATTACK
+        bool is_pet = false; // IsPET(): cart / castle gear
+        uint32_t parent_id = 0; // CObjCART::GetParent(), 0 == none
+        uint32_t pending_event = 0; // HasPendingCombatSwingEvent()
+    };
+
+    std::vector<Attacker> attackers;
+
+    void add(const Attacker& a) { attackers.push_back(a); }
+
+    const Attacker* find(uint32_t id) const {
+        for (const auto& a: attackers) {
+            if (a.id == id) {
+                return &a;
+            }
+        }
+        return nullptr;
+    }
+
+    Attacker* find_mut(uint32_t id) {
+        for (auto& a: attackers) {
+            if (a.id == id) {
+                return &a;
+            }
+        }
+        return nullptr;
+    }
+
+    bool swing_still_pending(const DamageEvent& event) const {
+        const Attacker* atk = find(event.attacker_id);
+        if (!atk || !atk->alive || !atk->attacking) {
+            return false;
+        }
+        if (event.event_id != 0 && atk->pending_event == event.event_id) {
+            return true;
+        }
+        if (atk->is_pet) {
+            const Attacker* rider = find(atk->parent_id);
+            if (rider && event.event_id != 0 && rider->pending_event == event.event_id) {
+                return true;
+            }
+        }
+        return false;
+    }
+};
+
 struct HpHarness {
     int visible_hp = 100;
     int authoritative_hp = 100;
@@ -182,6 +242,41 @@ struct HpHarness {
         if (!queue.pop_stale_lethal(
                 now_ms, grace_ms, hard_cap_ms, kDeadHp,
                 [swing_live](const DamageEvent&) { return swing_live; }, e)) {
+            return PresentationResult::NoEvent;
+        }
+
+        set_authoritative_from_event(e);
+        displayed_damage = std::max(0, e.damage_value);
+        ++displayed_digits;
+
+        if (e.lethal || e.hp_after <= 0) {
+            visible_hp = 0;
+            pending_authoritative_death = false;
+            pending_correction = 0;
+            return PresentationResult::PresentedDeath;
+        }
+
+        return displayed_damage > 0
+            ? PresentationResult::PresentedDamage
+            : PresentationResult::PresentedMiss;
+    }
+
+    // Same as present_stale_lethal_with_live_swing, but takes the real predicate
+    // shape (event -> bool) so a test can model the attacker state that decides it
+    // rather than hard-coding the answer.
+    template <typename SwingStillPending>
+    PresentationResult present_stale_lethal_with_predicate(uint32_t now_ms,
+        uint32_t grace_ms,
+        uint32_t hard_cap_ms,
+        SwingStillPending&& swing_still_pending) {
+        static const int kDeadHp = 0;
+        DamageEvent e;
+        if (!queue.pop_stale_lethal(now_ms,
+                grace_ms,
+                hard_cap_ms,
+                kDeadHp,
+                swing_still_pending,
+                e)) {
             return PresentationResult::NoEvent;
         }
 
@@ -845,6 +940,155 @@ main() {
             "stale lethal fallback must still fire after grace when no swing is live");
         expect(monster.displayed_damage == 35,
             "stale lethal fallback should show the normal final-hit digit");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Cart / castle-gear stale-lethal deferral.
+    //
+    // The blocks above cover the *timing* of the live-swing deferral with a
+    // hard-coded bool. These cover how the predicate decides, which is where the
+    // mounted case actually broke: the queued event is keyed to the cart's client
+    // index while the pending confirmed swing is tracked on the rider, so looking
+    // the swing up on the cart alone finds nothing, the fallback fires at 1.5 s and
+    // the target dies mid-swing (the stone-hammer battle cart repro, 1c97f7ef).
+    // ---------------------------------------------------------------------------
+    const uint32_t kCart = 55;
+    const uint32_t kRider = 10;
+    const uint32_t kSwingEvent = 7;
+
+    auto mounted_world = [&]() {
+        SwingWorld world;
+        SwingWorld::Attacker cart;
+        cart.id = kCart;
+        cart.is_pet = true;
+        cart.parent_id = kRider;
+        cart.pending_event = 0; // the cart itself never holds the pending swing
+        world.add(cart);
+
+        SwingWorld::Attacker rider;
+        rider.id = kRider;
+        rider.pending_event = kSwingEvent; // the rider does
+        world.add(rider);
+        return world;
+    };
+
+    auto mounted_lethal = [&]() {
+        DamageEvent lethal = event(kSwingEvent, kCart, 35, 0, true);
+        lethal.queued_at_ms = 1000;
+        return lethal;
+    };
+
+    {
+        SwingWorld world = mounted_world();
+        HpHarness monster;
+        monster.queue.push(mounted_lethal());
+
+        expect(monster.present_stale_lethal_with_predicate(2600,
+                   1500,
+                   6000,
+                   [&](const DamageEvent& e) { return world.swing_still_pending(e); })
+                == PresentationResult::NoEvent,
+            "mounted swing must defer: event keyed to the cart, swing tracked on the rider");
+        expect(monster.visible_hp == 100,
+            "cart-killed target must stay alive until the late hit frame");
+        expect(monster.hit(kCart) == PresentationResult::PresentedDeath,
+            "deferred cart event must remain queued for its hit-frame consumer");
+        expect(monster.displayed_damage == 35,
+            "cart hit frame should show the normal final-hit digit");
+    }
+
+    {
+        // The rider moved on to a different swing: this orphan is never going to be
+        // consumed, so the grace window must apply normally.
+        SwingWorld world = mounted_world();
+        world.find_mut(kRider)->pending_event = kSwingEvent + 1;
+
+        HpHarness monster;
+        monster.queue.push(mounted_lethal());
+
+        expect(monster.present_stale_lethal_with_predicate(2600,
+                   1500,
+                   6000,
+                   [&](const DamageEvent& e) { return world.swing_still_pending(e); })
+                == PresentationResult::PresentedDeath,
+            "mounted deferral must not apply when the rider holds a different event id");
+    }
+
+    {
+        // Cart destroyed / dismounted mid-swing.
+        SwingWorld world = mounted_world();
+        world.find_mut(kCart)->alive = false;
+
+        HpHarness monster;
+        monster.queue.push(mounted_lethal());
+
+        expect(monster.present_stale_lethal_with_predicate(2600,
+                   1500,
+                   6000,
+                   [&](const DamageEvent& e) { return world.swing_still_pending(e); })
+                == PresentationResult::PresentedDeath,
+            "mounted deferral must not apply once the cart is dead");
+    }
+
+    {
+        // Swing interrupted out of CMD_ATTACK: no hit frame is coming.
+        SwingWorld world = mounted_world();
+        world.find_mut(kCart)->attacking = false;
+
+        HpHarness monster;
+        monster.queue.push(mounted_lethal());
+
+        expect(monster.present_stale_lethal_with_predicate(2600,
+                   1500,
+                   6000,
+                   [&](const DamageEvent& e) { return world.swing_still_pending(e); })
+                == PresentationResult::PresentedDeath,
+            "mounted deferral must not apply once the cart leaves its attack command");
+    }
+
+    {
+        // The parent fallback is gated on IsPET(). An ordinary attacker that happens
+        // to carry a parent id must not inherit someone else's pending swing.
+        SwingWorld world = mounted_world();
+        world.find_mut(kCart)->is_pet = false;
+
+        HpHarness monster;
+        monster.queue.push(mounted_lethal());
+
+        expect(monster.present_stale_lethal_with_predicate(2600,
+                   1500,
+                   6000,
+                   [&](const DamageEvent& e) { return world.swing_still_pending(e); })
+                == PresentationResult::PresentedDeath,
+            "rider lookup must stay gated on IsPET so non-pet attackers do not defer");
+    }
+
+    {
+        // Deferral is re-evaluated every tick: once the swing stops matching, the
+        // original grace applies immediately rather than waiting for the hard cap.
+        SwingWorld world = mounted_world();
+        HpHarness monster;
+        monster.queue.push(mounted_lethal());
+
+        expect(monster.present_stale_lethal_with_predicate(2600,
+                   1500,
+                   6000,
+                   [&](const DamageEvent& e) { return world.swing_still_pending(e); })
+                == PresentationResult::NoEvent,
+            "live mounted swing should defer on the first tick");
+
+        world.find_mut(kRider)->pending_event = 0; // swing ended without consuming
+
+        expect(monster.present_stale_lethal_with_predicate(2700,
+                   1500,
+                   6000,
+                   [&](const DamageEvent& e) { return world.swing_still_pending(e); })
+                == PresentationResult::PresentedDeath,
+            "fallback must fire as soon as the swing stops matching, not at the hard cap");
+        expect(monster.visible_hp == 0,
+            "abandoned mounted swing must still kill the defender");
+        expect(monster.displayed_damage == 35,
+            "abandoned mounted swing should still show the final-hit digit");
     }
 
     {
