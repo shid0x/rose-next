@@ -829,6 +829,11 @@ to_client_damage_event(const Packets::DamageEvent* req) {
     // Damage-meter attribution only; 0 = normal attack / unknown (and any
     // packet from a pre-skill_id server reads as 0).
     event.skill_id = req->skill_id();
+    // Meter credit target when it differs from the attacker (DoT caster,
+    // summon owner). Wire carries a server index; store the client index.
+    event.source_attacker_id = (req->source_attacker_id() != 0)
+        ? (uint32_t)g_pObjMGR->Get_ClientObjectIndex((WORD)req->source_attacker_id())
+        : 0;
     return event;
 }
 }

@@ -96,6 +96,24 @@ mirror_lethal_packet_to_summon_owner(CObjCHAR& defender,
         send_packet(*pOwnerUSER, packet);
     }
 }
+
+// Damage-meter display metadata: when the attacker is a player's summon,
+// resolve the owner's object index so the client can credit the owner.
+// Same caller-index + hash validation as mirror_lethal_packet_to_summon_owner;
+// returns 0 for non-summon attackers or a stale/despawned owner.
+uint32_t
+resolve_summon_owner_index(CObjCHAR& attacker) {
+    if (!attacker.GetCallerUsrIDX()) {
+        return 0;
+    }
+
+    CObjCHAR* pOwner = g_pObjMGR->Get_CharOBJ(attacker.GetCallerUsrIDX(), true);
+    if (!pOwner || pOwner->Get_CharHASH() != attacker.GetCallerHASH()) {
+        return 0;
+    }
+
+    return pOwner->Get_INDEX();
+}
 } // namespace
 
 CAI_OBJ*
@@ -578,9 +596,16 @@ bool
 CObjCHAR::Send_combat_damage_event(CObjCHAR* pAtkOBJ,
     uniDAMAGE sDamage,
     Packets::DamagePresentationKind presentationKind,
-    short nSkillIDX) {
+    short nSkillIDX,
+    int iSourceObjIDX) {
     if (!pAtkOBJ) {
         return false;
+    }
+
+    // Meter attribution: explicit source (DoT caster) wins; otherwise credit
+    // a summon attacker's owner automatically.
+    if (iSourceObjIDX == 0) {
+        iSourceObjIDX = (int)resolve_summon_owner_index(*pAtkOBJ);
     }
 
     uint32_t eventId = g_nextCombatEventId.fetch_add(1);
@@ -605,7 +630,8 @@ CObjCHAR::Send_combat_damage_event(CObjCHAR* pAtkOBJ,
         eventId,
         defenderSeq,
         presentationKind,
-        nSkillIDX);
+        nSkillIDX,
+        (uint32_t)iSourceObjIDX);
     const bool bSent = send_packet_nearby(*this, packet);
     mirror_lethal_packet_to_summon_owner(*this, *this, sDamage, packet);
     return bSent;
@@ -635,7 +661,12 @@ CObjCHAR::Send_combat_swing(CObjCHAR* pTarget, uniDAMAGE sDamage) {
         (sDamage.m_wACTION & DMG_ACT_DEAD) ? 1 : 0,
         pTarget->Get_DEF(),
         pTarget->m_IngSTATUS.IsSET(FLAG_ING_DEC_DPOWER) ? 1 : 0);
-    Packet packet = build_combat_swing_packet(*this, *pTarget, sDamage, eventId, defenderSeq);
+    Packet packet = build_combat_swing_packet(*this,
+        *pTarget,
+        sDamage,
+        eventId,
+        defenderSeq,
+        resolve_summon_owner_index(*this));
     const bool bSent = send_packet_nearby(*this, packet);
     // Broadcast is centered on the attacker; the summon defender's owner may be
     // outside that neighborhood.
@@ -1178,7 +1209,7 @@ CObjCHAR::Give_DAMAGE(CObjCHAR* pTarget,
 }
 
 void
-CObjCHAR::Give_STATUS_DAMAGE(short nDamage) {
+CObjCHAR::Give_STATUS_DAMAGE(short nDamage, short nSkillIDX, int iSourceObjIDX) {
     if (nDamage <= 0 || this->Get_HP() <= 0) {
         return;
     }
@@ -1197,7 +1228,9 @@ CObjCHAR::Give_STATUS_DAMAGE(short nDamage) {
 
     this->Send_combat_damage_event(this,
         sDamage,
-        Packets::DamagePresentationKind::StatusTick);
+        Packets::DamagePresentationKind::StatusTick,
+        nSkillIDX,
+        iSourceObjIDX);
 }
 
 //-------------------------------------------------------------------------------------------------

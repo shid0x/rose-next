@@ -179,14 +179,31 @@ CDamageMeter::OnCombatDamageEvent(const Rose::Combat::DamageEvent& event, CObjCH
             pAtkOBJ = pRider;
     }
 
+    // Credit target: the wire's source_attacker_id (DoT caster, summon owner)
+    // wins over the raw attacker. For a status tick the attacker is the victim
+    // and the source is the caster — that's attribution, not a pet. For a
+    // summon swing the attacker is the pet and the source is the owner — fold
+    // the damage into the owner and remember it was pet damage.
+    CObjCHAR* pCreditOBJ = pAtkOBJ;
+    bool bPetSample = false;
+    if (event.source_attacker_id != 0) {
+        CObjCHAR* pSrcOBJ = g_pObjMGR->Get_CharOBJ((int)event.source_attacker_id, false);
+        if (pSrcOBJ != NULL && pSrcOBJ != pAtkOBJ) {
+            bPetSample =
+                (event.presentation_kind != Rose::Combat::DamagePresentationKind::StatusTick);
+            pCreditOBJ = pSrcOBJ;
+        }
+    }
+
     BYTE btSource = METER_SRC_OTHER;
-    if (pAtkOBJ == g_pAVATAR) {
-        btSource = METER_SRC_SELF;
-    } else if (pAtkOBJ != NULL) {
-        const WORD wAtkSvrIdx = g_pObjMGR->Get_ServerObjectIndex(pAtkOBJ->Get_INDEX());
-        if (IsOwnSummon(wAtkSvrIdx))
+    if (pCreditOBJ == g_pAVATAR) {
+        btSource = bPetSample ? METER_SRC_OWN_PET : METER_SRC_SELF;
+    } else if (pCreditOBJ != NULL) {
+        const WORD wCreditSvrIdx = g_pObjMGR->Get_ServerObjectIndex(pCreditOBJ->Get_INDEX());
+        // Own-summon fallback for events without a wire source (legacy paths).
+        if (IsOwnSummon(wCreditSvrIdx))
             btSource = METER_SRC_OWN_PET;
-        else if (pAtkOBJ->IsUSER() && CParty::GetInstance().IsPartyMember(wAtkSvrIdx))
+        else if (pCreditOBJ->IsUSER() && CParty::GetInstance().IsPartyMember(wCreditSvrIdx))
             btSource = METER_SRC_PARTY;
     }
 
@@ -222,10 +239,14 @@ CDamageMeter::OnCombatDamageEvent(const Rose::Combat::DamageEvent& event, CObjCH
     sample.bLethal = event.lethal;
     sample.bIncoming = bIncoming;
 
-    if (bIncoming && pAtkOBJ == g_pAVATAR) {
+    // Row name = credit character (owner for pets, caster for DoTs). An
+    // incoming tick whose credit is still the avatar itself is an
+    // unattributed self-tick (old server / caster unknown).
+    if (bIncoming && pCreditOBJ == g_pAVATAR) {
         sample.strAttacker = "DoT / Status";
-    } else if (pAtkOBJ != NULL && pAtkOBJ->Get_NAME() != NULL && pAtkOBJ->Get_NAME()[0] != '\0') {
-        sample.strAttacker = pAtkOBJ->Get_NAME();
+    } else if (pCreditOBJ != NULL && pCreditOBJ->Get_NAME() != NULL
+        && pCreditOBJ->Get_NAME()[0] != '\0') {
+        sample.strAttacker = pCreditOBJ->Get_NAME();
     } else {
         sample.strAttacker = "Unknown";
     }

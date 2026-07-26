@@ -75,7 +75,8 @@ private:
     bool Send_combat_damage_event(CObjCHAR* pAtkOBJ,
         uniDAMAGE sDamage,
         Rose::Network::Packets::DamagePresentationKind presentationKind,
-        short nSkillIDX = 0);
+        short nSkillIDX = 0,
+        int iSourceObjIDX = 0);
     bool Send_combat_swing(CObjCHAR* pTarget, uniDAMAGE sDamage);
 
 protected:
@@ -124,7 +125,10 @@ public:
         Rose::Network::Packets::DamagePresentationKind kind
         = Rose::Network::Packets::DamagePresentationKind::Immediate,
         short nSkillIDX = 0);
-    void Give_STATUS_DAMAGE(short nDamage);
+    // nSkillIDX / iSourceObjIDX are meter display metadata: the skill that
+    // applied the status and the caster's object index (StatusEffects stores
+    // both per slot). 0 = unknown; damage/presentation behavior is unaffected.
+    void Give_STATUS_DAMAGE(short nDamage, short nSkillIDX = 0, int iSourceObjIDX = 0);
 
     // Mirror of the client's CObjCHAR::IsProjectilePresentedSkillDamage. Decides
     // whether a skill's damage event should be presented at projectile-impact

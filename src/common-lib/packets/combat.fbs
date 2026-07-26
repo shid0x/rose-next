@@ -25,6 +25,12 @@ table DamageEvent {
 	// Display metadata only (damage meter attribution); presentation logic
 	// must not branch on it.
 	skill_id: int32;
+	// Object index of the character that ultimately caused this damage when it
+	// differs from attacker_id: the DoT caster (status ticks put the victim in
+	// attacker_id) or a summon's owner. 0 = same as attacker_id / unknown.
+	// Display metadata only, same contract as skill_id — presentation keys on
+	// attacker_id and must never branch on this.
+	source_attacker_id: uint32;
 }
 
 table CombatSwing {

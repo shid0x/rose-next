@@ -133,7 +133,8 @@ build_damage_event(flatbuffers::FlatBufferBuilder& builder,
     uint32_t event_id,
     uint32_t defender_seq,
     Packets::DamagePresentationKind presentation_kind,
-    int32_t skill_id = 0) {
+    int32_t skill_id = 0,
+    uint32_t source_attacker_id = 0) {
     Packets::DamageEventBuilder damage_builder(builder);
     damage_builder.add_event_id(event_id);
     damage_builder.add_defender_seq(defender_seq);
@@ -145,6 +146,7 @@ build_damage_event(flatbuffers::FlatBufferBuilder& builder,
     damage_builder.add_presentation_kind(presentation_kind);
     damage_builder.add_lethal((damage.m_wACTION & DMG_ACT_DEAD) != 0);
     damage_builder.add_skill_id(skill_id);
+    damage_builder.add_source_attacker_id(source_attacker_id);
     return damage_builder.Finish();
 }
 
@@ -163,7 +165,8 @@ build_combat_swing_packet(CObjCHAR& attacker,
     CObjCHAR& defender,
     uniDAMAGE damage,
     uint32_t event_id,
-    uint32_t defender_seq) {
+    uint32_t defender_seq,
+    uint32_t source_attacker_id) {
     flatbuffers::FlatBufferBuilder builder;
     builder.ForceDefaults(true);
 
@@ -175,7 +178,9 @@ build_combat_swing_packet(CObjCHAR& attacker,
         damage,
         event_id,
         defender_seq,
-        presentation_kind_for_normal_attack(attacker));
+        presentation_kind_for_normal_attack(attacker),
+        0,
+        source_attacker_id);
 
     Packets::CombatSwingBuilder swing_builder(builder);
     swing_builder.add_attacker_id(attacker.Get_INDEX());
@@ -196,7 +201,8 @@ build_damage_event_packet(CObjCHAR& attacker,
     uint32_t event_id,
     uint32_t defender_seq,
     Packets::DamagePresentationKind presentation_kind,
-    int32_t skill_id) {
+    int32_t skill_id,
+    uint32_t source_attacker_id) {
     flatbuffers::FlatBufferBuilder builder;
     builder.ForceDefaults(true);
 
@@ -207,7 +213,8 @@ build_damage_event_packet(CObjCHAR& attacker,
         event_id,
         defender_seq,
         presentation_kind,
-        skill_id);
+        skill_id,
+        source_attacker_id);
     return build_packet_from_offset(builder, damage_event, Packets::PacketType::DamageEvent);
 }
     /*

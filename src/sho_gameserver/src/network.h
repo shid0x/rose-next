@@ -32,18 +32,23 @@ build_packet_from_offset(flatbuffers::FlatBufferBuilder& builder,
 
 Packet build_char_move_packet(CObjCHAR& character);
 Packet build_char_move_attack_packet(CObjCHAR& character);
+// skill_id / source_attacker_id are display metadata for the client damage
+// meter (DoT caster, summon owner); presentation logic must not branch on
+// them. 0 = unknown / same as attacker.
 Packet build_combat_swing_packet(CObjCHAR& attacker,
     CObjCHAR& defender,
     uniDAMAGE damage,
     uint32_t event_id,
-    uint32_t defender_seq);
+    uint32_t defender_seq,
+    uint32_t source_attacker_id = 0);
 Packet build_damage_event_packet(CObjCHAR& attacker,
     CObjCHAR& defender,
     uniDAMAGE damage,
     uint32_t event_id,
     uint32_t defender_seq,
     Packets::DamagePresentationKind presentation_kind,
-    int32_t skill_id = 0);
+    int32_t skill_id = 0,
+    uint32_t source_attacker_id = 0);
 
 //Packet build_update_stats_all_packet(classUSER& user);
 Packet build_update_hpmp_packet(classUSER& user, uint32_t hp, uint32_t mp);

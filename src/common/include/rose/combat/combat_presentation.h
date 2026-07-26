@@ -38,6 +38,11 @@ struct DamageEvent {
     // 0 for normal attacks / unknown. Read only by CDamageMeter; never consulted
     // by combat presentation logic. Not wire data; must not be serialized.
     int32_t skill_id = 0;
+    // Client object index of the character to credit when it differs from
+    // attacker_id (DoT caster, summon owner) — converted from the wire's
+    // server-index field at receive. 0 = same as attacker_id / unknown. Meter
+    // display metadata only, same contract as skill_id.
+    uint32_t source_attacker_id = 0;
     uint32_t raw_damage = 0;
     int32_t damage_value = 0;
     int32_t hp_after = 0;

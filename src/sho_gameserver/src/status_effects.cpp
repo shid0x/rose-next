@@ -270,7 +270,13 @@ StatusEffects::Proc(CObjCHAR* pCharOBJ, DWORD dwPassTIME) {
                 if (pCharOBJ->Get_HP() > 0) {
                     short nValue = STATE_APPLY_ABILITY_VALUE(m_nIngSTBIdx[ING_POISONED], 0);
 
-                    pCharOBJ->Give_STATUS_DAMAGE(nValue);
+                    // Meter attribution: the poison slot stores the applying
+                    // skill and the caster's object index (m_iTargetOBJ is the
+                    // speller for skill-applied statuses — Skill_ApplyIngSTATUS
+                    // passes pSpeller->Get_INDEX()).
+                    pCharOBJ->Give_STATUS_DAMAGE(nValue,
+                        m_nIngSKILL[ING_POISONED],
+                        m_iTargetOBJ[ING_POISONED]);
                 }
             } else {
                 this->ClearStatusFLAG(FLAG_ING_POISONED);
