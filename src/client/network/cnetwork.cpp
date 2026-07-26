@@ -902,6 +902,24 @@ CNetwork::recv_damage_event(Packet& p) {
     }
 
     Rose::Combat::DamageEvent event = to_client_damage_event(req);
+
+    // Damage-meter attribution only (skill_id is never read by presentation
+    // logic): standalone FlatBuffer DamageEvents carry no skill index, but
+    // skill projectiles (SKILL_TYPE_05/06 via server Skill_START) arrive right
+    // after the caster's skill-start packet, so the caster's pending/active
+    // skill is the best-effort source label. CombatSwing packets are normal
+    // attacks and intentionally keep skill_id == 0.
+    if (event.presentation_kind == Rose::Combat::DamagePresentationKind::ProjectileImpact) {
+        CObjCHAR* pCaster = g_pObjMGR->Get_CharOBJ(event.attacker_id, false);
+        if (pCaster) {
+            if (pCaster->m_nToDoSkillIDX) {
+                event.skill_id = pCaster->m_nToDoSkillIDX;
+            } else if (pCaster->m_nActiveSkillIDX) {
+                event.skill_id = pCaster->m_nActiveSkillIDX;
+            }
+        }
+    }
+
     defender->PushCombatDamageEvent(event);
     LogString(LOG_DEBUG_,
         "CombatTrace FlatDamageEvent queued: attacker %d defender %d event %u seq %u kind %d damage %d hp_after %d\n",

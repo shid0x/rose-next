@@ -8,6 +8,7 @@
 #include "CSummonInfoPanel.h"
 #include "CMonsterInspectorPanel.h"
 #include "CItemPreviewPanel.h"
+#include "CDamageMeterPanel.h"
 
 #include "CObjCHAR.h"
 
@@ -20,6 +21,7 @@ private:
     CSummonInfoPanel m_SummonPanel;
     CMonsterInspectorPanel m_MonsterInspector;
     CItemPreviewPanel m_ItemPreview;
+    CDamageMeterPanel m_DamageMeterPanel;
 
 public:
     CUIMediator();
@@ -63,6 +65,14 @@ public:
     bool ItemPreviewMouseMove(int x, int y) { return m_ItemPreview.OnMouseMove(x, y); }
     bool ItemPreviewLButtonUp(int x, int y) { return m_ItemPreview.OnLButtonUp(x, y); }
     bool IsItemPreviewDragging() { return m_ItemPreview.IsDragging(); }
+
+    /// 데미지 미터 패널 ( "/dps" 채팅 명령이 토글 — ChattingDlg )
+    void ToggleDamageMeter() { m_DamageMeterPanel.Toggle(); }
+    bool IsDamageMeterVisible() { return m_DamageMeterPanel.IsVisible(); }
+    bool DamageMeterLButtonDown(int x, int y) { return m_DamageMeterPanel.OnLButtonDown(x, y); }
+    bool DamageMeterMouseMove(int x, int y) { return m_DamageMeterPanel.OnMouseMove(x, y); }
+    bool DamageMeterLButtonUp(int x, int y) { return m_DamageMeterPanel.OnLButtonUp(x, y); }
+    bool IsDamageMeterDragging() { return m_DamageMeterPanel.IsDragging(); }
 };
 
 extern CUIMediator g_UIMed;

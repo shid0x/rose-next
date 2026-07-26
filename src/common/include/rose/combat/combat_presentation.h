@@ -32,6 +32,12 @@ struct DamageEvent {
     // against CObjCHAR::m_dwLastAuthoritativeSyncSeq to detect a heal/sync that
     // superseded the checkpoint. Not wire data; must not be serialized.
     uint32_t arrival_seq = 0;
+    // Client-local damage-source attribution for the damage meter. Exact skill
+    // index when the source packet carried one (legacy GSV_DAMAGE_OF_SKILL),
+    // best-effort caster active-skill guess for FlatBuffer skill projectiles,
+    // 0 for normal attacks / unknown. Read only by CDamageMeter; never consulted
+    // by combat presentation logic. Not wire data; must not be serialized.
+    int32_t skill_id = 0;
     uint32_t raw_damage = 0;
     int32_t damage_value = 0;
     int32_t hp_after = 0;

@@ -26,6 +26,7 @@
 
 #include "GameCommon/Item.h"
 #include "GameData/CParty.h"
+#include "GameData/CDamageMeter.h"
 #include "rose/io/stb.h"
 #include "Misc/GameUtil.h"
 #include "CommandFilter.h"
@@ -2091,6 +2092,10 @@ CObjCHAR::PushCombatDamageEvent(const Rose::Combat::DamageEvent& event) {
     }
     m_CombatDamageQueue.push(queuedEvent);
 
+    // Damage-meter tap: observation only. The meter copies what it needs and
+    // never mutates the event, the queue, or any presentation state.
+    CDamageMeter::GetInstance().OnCombatDamageEvent(queuedEvent, this);
+
     // The server has already committed a lethal hit on the local avatar. If the
     // presentation animation is destroyed before its hit frame (dropped swing
     // command, lost projectile, despawned attacker), no future event will fold
@@ -2791,6 +2796,7 @@ CObjCHAR::ConvertDamageOfSkillToDamage(gsv_DAMAGE_OF_SKILL stDamageOfSkill, uint
         event.defender_seq = event.event_id;
         event.attacker_id = g_pObjMGR->Get_ClientObjectIndex(stDamageOfSkill.m_wSpellObjIDX);
         event.defender_id = this->Get_INDEX();
+        event.skill_id = stDamageOfSkill.m_nSkillIDX;
         event.raw_damage = stDamageOfSkill.m_wDamage;
         event.damage_value = Damage.m_wVALUE;
         event.hp_after = (Damage.m_wACTION & DMG_ACT_DEAD) ? DEAD_HP : stDamageOfSkill.m_iHP_AFTER;

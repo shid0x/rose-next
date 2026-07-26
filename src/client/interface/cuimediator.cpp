@@ -77,6 +77,7 @@ CUIMediator::Draw() {
     DrawChatBox();
     m_PersonalStoreManager.Draw();
     m_SummonPanel.Draw();
+    m_DamageMeterPanel.Draw();
     m_MonsterInspector.Draw();
     m_ItemPreview.Draw();
 }

@@ -13,6 +13,7 @@
 #include "../../Network/CNetwork.h"
 #include "util/string_util.h"
 #include "../../GameData/CParty.h"
+#include "../../GameData/CDamageMeter.h"
 #include "../../Util/Localizing.h"
 
 #include "tgamectrl/teditbox.h"
@@ -512,6 +513,22 @@ CChatDLG::SendChatMsg(char* szMsg) {
         return;
     }
     string stMsg = szMsg;
+
+    /// Local client commands — handled here, never sent to the server.
+    /// "/dps" toggles the damage meter panel, "/dps reset" clears its data.
+    if (stMsg == "/dps" || stMsg == "/dps reset") {
+        if (stMsg == "/dps reset") {
+            CDamageMeter::GetInstance().Reset();
+            g_itMGR.AppendChatMsg("Damage meter reset.", IT_MGR::CHAT_TYPE_SYSTEM);
+        } else {
+            g_UIMed.ToggleDamageMeter();
+        }
+
+        CWinCtrl* pEditCtrl = Find(IID_EDITBOX);
+        if (pEditCtrl != NULL && pEditCtrl->GetControlType() == CTRL_EDITBOX)
+            ((CTEditBox*)pEditCtrl)->clear_text();
+        return;
+    }
 
     ///아이템 링크: "[Name]" → wire token 치환 ( GM 명령어는 제외 )
     if (stMsg[0] != '/')
