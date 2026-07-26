@@ -577,7 +577,8 @@ CObjCHAR::Send_gsv_DAMAGE2Target(CObjCHAR* pAtkOBJ, int wDamage) {
 bool
 CObjCHAR::Send_combat_damage_event(CObjCHAR* pAtkOBJ,
     uniDAMAGE sDamage,
-    Packets::DamagePresentationKind presentationKind) {
+    Packets::DamagePresentationKind presentationKind,
+    short nSkillIDX) {
     if (!pAtkOBJ) {
         return false;
     }
@@ -603,7 +604,8 @@ CObjCHAR::Send_combat_damage_event(CObjCHAR* pAtkOBJ,
         sDamage,
         eventId,
         defenderSeq,
-        presentationKind);
+        presentationKind,
+        nSkillIDX);
     const bool bSent = send_packet_nearby(*this, packet);
     mirror_lethal_packet_to_summon_owner(*this, *this, sDamage, packet);
     return bSent;
@@ -1134,7 +1136,8 @@ void
 CObjCHAR::Give_DAMAGE(CObjCHAR* pTarget,
     uniDAMAGE sDamage,
     bool bDropItem,
-    Packets::DamagePresentationKind kind) {
+    Packets::DamagePresentationKind kind,
+    short nSkillIDX) {
     if (this->m_IngSTATUS.IsSET(FLAG_ING_REVIVE)) {
         this->m_IngSTATUS.ExpireSTATUS(ING_REVIVE);
     }
@@ -1143,12 +1146,12 @@ CObjCHAR::Give_DAMAGE(CObjCHAR* pTarget,
 
     switch (Apply_DAMAGE(pTarget, sDamage, &pOutITEM, bDropItem)) {
         case SEND_DAMAGE_TO_SECTOR:
-            pTarget->Send_combat_damage_event(this, sDamage, kind);
+            pTarget->Send_combat_damage_event(this, sDamage, kind, nSkillIDX);
             return;
 
         case SEND_DAMAGE_TO_TARGET:
             // 데미지 전송 :: 아바타만 해당 ...
-            pTarget->Send_combat_damage_event(this, sDamage, kind);
+            pTarget->Send_combat_damage_event(this, sDamage, kind, nSkillIDX);
 
             if (pTarget->m_IngSTATUS.IsSET(FLAG_ING_SHIELD_DAMAGE)) {
                 // 방패 데미지 설정됐다 !!!
@@ -1161,7 +1164,11 @@ CObjCHAR::Give_DAMAGE(CObjCHAR* pTarget,
 
                         if (sDamage.m_wDamage > 0) {
                             sDamage.m_wDamage |= DMG_BIT_IMMEDIATE;
-                            pTarget->Give_DAMAGE(this, sDamage);
+                            pTarget->Give_DAMAGE(this,
+                                sDamage,
+                                true,
+                                Packets::DamagePresentationKind::Immediate,
+                                nShieldSKILL);
                         }
                     }
                 }
@@ -1645,7 +1652,7 @@ CObjCHAR::Skill_START(CObjCHAR* pTarget) {
                     = IsProjectilePresentedSkill(Get_ActiveSKILL())
                         ? Packets::DamagePresentationKind::ProjectileImpact
                         : Packets::DamagePresentationKind::Immediate;
-                this->Give_DAMAGE(pTarget, sDamage, true, kind);
+                this->Give_DAMAGE(pTarget, sDamage, true, kind, Get_ActiveSKILL());
                 this->Skill_ChangeIngSTATUS(pTarget);
             }
 

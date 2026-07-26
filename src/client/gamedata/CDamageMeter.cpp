@@ -167,10 +167,13 @@ CDamageMeter::OnCombatDamageEvent(const Rose::Combat::DamageEvent& event, CObjCH
 
     // Resolve the attacker now — object slots are recycled, names and party
     // membership cannot be resolved later. Cart / castle gear damage is keyed
-    // to the cart object; credit the rider.
+    // to the mount object; credit the rider. IsPET() covers both OBJ_CART and
+    // OBJ_CGEAR (castle gear is its own type — checking OBJ_CART alone made
+    // castle gear damage vanish from the meter), and CObjCastleGear derives
+    // from CObjCART so GetParent() is valid for both.
     CObjCHAR* pAtkOBJ =
         (event.attacker_id > 0) ? g_pObjMGR->Get_CharOBJ((int)event.attacker_id, false) : NULL;
-    if (pAtkOBJ != NULL && pAtkOBJ->Get_TYPE() == OBJ_CART) {
+    if (pAtkOBJ != NULL && pAtkOBJ->IsPET()) {
         CObjCHAR* pRider = ((CObjCART*)pAtkOBJ)->GetParent();
         if (pRider != NULL)
             pAtkOBJ = pRider;
@@ -187,7 +190,15 @@ CDamageMeter::OnCombatDamageEvent(const Rose::Combat::DamageEvent& event, CObjCH
             btSource = METER_SRC_PARTY;
     }
 
-    const bool bIncoming = (pDefender == g_pAVATAR);
+    // Same mount fold on the defender side: a hit keyed to the avatar's
+    // cart/castle gear is damage taken by the avatar.
+    CObjCHAR* pDefOBJ = pDefender;
+    if (pDefOBJ->IsPET()) {
+        CObjCHAR* pRider = ((CObjCART*)pDefOBJ)->GetParent();
+        if (pRider != NULL)
+            pDefOBJ = pRider;
+    }
+    const bool bIncoming = (pDefOBJ == g_pAVATAR);
 
     // Keep only what the views consume: our side's outgoing damage, and
     // anything that hits the avatar. Stranger-vs-mob spectator data is dropped.

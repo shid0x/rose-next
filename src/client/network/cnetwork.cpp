@@ -826,6 +826,9 @@ to_client_damage_event(const Packets::DamageEvent* req) {
     event.hp_after = req->hp_after();
     event.presentation_kind = to_client_presentation_kind(req->presentation_kind());
     event.lethal = req->lethal();
+    // Damage-meter attribution only; 0 = normal attack / unknown (and any
+    // packet from a pre-skill_id server reads as 0).
+    event.skill_id = req->skill_id();
     return event;
 }
 }
@@ -904,12 +907,13 @@ CNetwork::recv_damage_event(Packet& p) {
     Rose::Combat::DamageEvent event = to_client_damage_event(req);
 
     // Damage-meter attribution only (skill_id is never read by presentation
-    // logic): standalone FlatBuffer DamageEvents carry no skill index, but
-    // skill projectiles (SKILL_TYPE_05/06 via server Skill_START) arrive right
-    // after the caster's skill-start packet, so the caster's pending/active
-    // skill is the best-effort source label. CombatSwing packets are normal
-    // attacks and intentionally keep skill_id == 0.
-    if (event.presentation_kind == Rose::Combat::DamagePresentationKind::ProjectileImpact) {
+    // logic). The wire field is authoritative; this heuristic remains as a
+    // fallback for events an older server sent without it: skill projectiles
+    // arrive right after the caster's skill-start packet, so the caster's
+    // pending/active skill is the best-effort source label. CombatSwing
+    // packets are normal attacks and intentionally keep skill_id == 0.
+    if (event.skill_id == 0
+        && event.presentation_kind == Rose::Combat::DamagePresentationKind::ProjectileImpact) {
         CObjCHAR* pCaster = g_pObjMGR->Get_CharOBJ(event.attacker_id, false);
         if (pCaster) {
             if (pCaster->m_nToDoSkillIDX) {

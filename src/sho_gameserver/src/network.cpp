@@ -132,7 +132,8 @@ build_damage_event(flatbuffers::FlatBufferBuilder& builder,
     uniDAMAGE damage,
     uint32_t event_id,
     uint32_t defender_seq,
-    Packets::DamagePresentationKind presentation_kind) {
+    Packets::DamagePresentationKind presentation_kind,
+    int32_t skill_id = 0) {
     Packets::DamageEventBuilder damage_builder(builder);
     damage_builder.add_event_id(event_id);
     damage_builder.add_defender_seq(defender_seq);
@@ -143,6 +144,7 @@ build_damage_event(flatbuffers::FlatBufferBuilder& builder,
     damage_builder.add_hp_after(defender.Get_HP());
     damage_builder.add_presentation_kind(presentation_kind);
     damage_builder.add_lethal((damage.m_wACTION & DMG_ACT_DEAD) != 0);
+    damage_builder.add_skill_id(skill_id);
     return damage_builder.Finish();
 }
 
@@ -193,12 +195,19 @@ build_damage_event_packet(CObjCHAR& attacker,
     uniDAMAGE damage,
     uint32_t event_id,
     uint32_t defender_seq,
-    Packets::DamagePresentationKind presentation_kind) {
+    Packets::DamagePresentationKind presentation_kind,
+    int32_t skill_id) {
     flatbuffers::FlatBufferBuilder builder;
     builder.ForceDefaults(true);
 
-    const auto damage_event =
-        build_damage_event(builder, attacker, defender, damage, event_id, defender_seq, presentation_kind);
+    const auto damage_event = build_damage_event(builder,
+        attacker,
+        defender,
+        damage,
+        event_id,
+        defender_seq,
+        presentation_kind,
+        skill_id);
     return build_packet_from_offset(builder, damage_event, Packets::PacketType::DamageEvent);
 }
     /*

@@ -74,7 +74,8 @@ private:
     bool Send_gsv_DAMAGE2Target(CObjCHAR* pAtkOBJ, int wDamage);
     bool Send_combat_damage_event(CObjCHAR* pAtkOBJ,
         uniDAMAGE sDamage,
-        Rose::Network::Packets::DamagePresentationKind presentationKind);
+        Rose::Network::Packets::DamagePresentationKind presentationKind,
+        short nSkillIDX = 0);
     bool Send_combat_swing(CObjCHAR* pTarget, uniDAMAGE sDamage);
 
 protected:
@@ -116,9 +117,13 @@ public:
     CAI_OBJ* AI_FindNextOBJ();
 
 public:
+    // nSkillIDX is display metadata for the client damage meter (skill
+    // attribution in the DamageEvent packet); it does not affect damage or
+    // presentation behavior. 0 = normal attack / unknown.
     void Give_DAMAGE(CObjCHAR* pTarget, uniDAMAGE sDamage, bool bDropItem = true,
         Rose::Network::Packets::DamagePresentationKind kind
-        = Rose::Network::Packets::DamagePresentationKind::Immediate);
+        = Rose::Network::Packets::DamagePresentationKind::Immediate,
+        short nSkillIDX = 0);
     void Give_STATUS_DAMAGE(short nDamage);
 
     // Mirror of the client's CObjCHAR::IsProjectilePresentedSkillDamage. Decides

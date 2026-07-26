@@ -42,7 +42,8 @@ Packet build_damage_event_packet(CObjCHAR& attacker,
     uniDAMAGE damage,
     uint32_t event_id,
     uint32_t defender_seq,
-    Packets::DamagePresentationKind presentation_kind);
+    Packets::DamagePresentationKind presentation_kind,
+    int32_t skill_id = 0);
 
 //Packet build_update_stats_all_packet(classUSER& user);
 Packet build_update_hpmp_packet(classUSER& user, uint32_t hp, uint32_t mp);

@@ -21,6 +21,10 @@ table DamageEvent {
 	hp_after: int32;
 	presentation_kind: DamagePresentationKind;
 	lethal: bool;
+	// LIST_SKILL row that produced this damage, 0 = normal attack / unknown.
+	// Display metadata only (damage meter attribution); presentation logic
+	// must not branch on it.
+	skill_id: int32;
 }
 
 table CombatSwing {
