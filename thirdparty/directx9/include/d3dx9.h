@@ -7,6 +7,11 @@
 //
 //////////////////////////////////////////////////////////////////////////////
 
+#include <winapifamily.h>
+
+#pragma region Desktop Family
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+
 #ifdef  __D3DX_INTERNAL__
 #error Incorrect D3DX header used
 #endif
@@ -14,6 +19,17 @@
 #ifndef __D3DX9_H__
 #define __D3DX9_H__
 
+// Current name of the DLL shipped in the same SDK as this header.
+
+
+#define D3DX9_DLL_W L"d3dx9_43.dll"
+#define D3DX9_DLL_A "d3dx9_43.dll"
+
+#ifdef UNICODE
+    #define D3DX9_DLL D3DX9_DLL_W
+#else
+    #define D3DX9_DLL D3DX9_DLL_A
+#endif
 
 // Defines
 #include <limits.h>
@@ -50,9 +66,11 @@
 #include "d3dx9mesh.h"
 #include "d3dx9shader.h"
 #include "d3dx9effect.h"
+
 #include "d3dx9tex.h"
 #include "d3dx9shape.h"
 #include "d3dx9anim.h"
+
 
 
 // Errors
@@ -74,3 +92,5 @@ enum _D3DXERR {
 
 #endif //__D3DX9_H__
 
+#endif /* WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP) */
+#pragma endregion

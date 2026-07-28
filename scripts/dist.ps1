@@ -23,6 +23,8 @@ $discord_ver = "2.5.6"
 
 $texconv = Join-Path $rose_next_root thirdparty directxtex-$directxtex_ver texconv.exe
 $discord_dll = (Join-Path $rose_next_root thirdparty discord-$discord_ver lib x86 discord_game_sdk.dll)
+# Required at runtime: D3DX9 is no longer statically linked. See doc/d3d9ex-migration.md.
+$d3dx9_dll = (Join-Path $rose_next_root thirdparty directx9 bin x86 d3dx9_43.dll)
 
 $squash_script = Join-Path $PSScriptRoot "squash-migrations.ps1"
 
@@ -47,6 +49,7 @@ if ($client -eq $true) {
     xcopy /Y (Join-Path $build_root rosenext.exe) $client_out
     xcopy /Y (Join-Path $build_root znzin.dll) $client_out
     xcopy /Y $discord_dll $client_out
+    xcopy /Y $d3dx9_dll $client_out
 
     Write-Host "Collecting client assets"
     if ($config -eq "debug") {
