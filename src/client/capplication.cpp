@@ -351,11 +351,34 @@ CApplication::ResizeWindowByClientSize(int& iClientWidth,
             GetSystemMetrics(SM_CXSCREEN),
             GetSystemMetrics(SM_CYSCREEN));
 
-        if (iClientWidth > GetSystemMetrics(SM_CXSCREEN))
-            iClientWidth = GetSystemMetrics(SM_CXSCREEN);
+        // Windows refuses to size a WS_THICKFRAME window beyond SM_CXMAXTRACK /
+        // SM_CYMAXTRACK (desktop plus a small border allowance) unless the app handles
+        // WM_GETMINMAXINFO, which this client does not. Clamping the *client* size
+        // against the raw screen size ignores the caption and frame, so asking for a
+        // client area as large as the desktop produced a window taller than the limit:
+        // MoveWindow silently delivered a shorter client area than the backbuffer, D3D
+        // stretched the backbuffer to fit, and every UI hit-test drifted further off the
+        // further down the screen you clicked. Clamp against the room actually left for
+        // the client area instead.
+        RECT deco = {0, 0, 0, 0};
+        AdjustWindowRect(&deco, DEFAULT_WINDOWED_STYLE, FALSE);
+        const int deco_width = (deco.right - deco.left);
+        const int deco_height = (deco.bottom - deco.top);
 
-        if (iClientHeight > GetSystemMetrics(SM_CYSCREEN))
-            iClientHeight = GetSystemMetrics(SM_CYSCREEN);
+        int max_client_width = GetSystemMetrics(SM_CXMAXTRACK) - deco_width;
+        int max_client_height = GetSystemMetrics(SM_CYMAXTRACK) - deco_height;
+
+        if (max_client_width > GetSystemMetrics(SM_CXSCREEN))
+            max_client_width = GetSystemMetrics(SM_CXSCREEN);
+
+        if (max_client_height > GetSystemMetrics(SM_CYSCREEN))
+            max_client_height = GetSystemMetrics(SM_CYSCREEN);
+
+        if (iClientWidth > max_client_width)
+            iClientWidth = max_client_width;
+
+        if (iClientHeight > max_client_height)
+            iClientHeight = max_client_height;
 
         RECT client_rect = {0, 0, iClientWidth, iClientHeight};
         if (AdjustWindowRect(&client_rect, DEFAULT_WINDOWED_STYLE, FALSE)) {
@@ -378,6 +401,43 @@ CApplication::ResizeWindowByClientSize(int& iClientWidth,
 
             SetWIDTH(iClientWidth);
             SetHEIGHT(iClientHeight);
+
+            // Whatever Windows actually granted is the truth. If the real client area
+            // still differs from what the engine was told, the backbuffer would be
+            // stretched to fit it and mouse coordinates would no longer line up with what
+            // is drawn. Re-sync to the real size rather than render at the wrong one --
+            // the clamp above should make this unreachable, but a silent stretch is
+            // exactly the failure this whole function has to rule out.
+            if (update_engine) {
+                RECT actual_rect = {0, 0, 0, 0};
+                if (GetClientRect(m_hWND, &actual_rect)) {
+                    const int actual_width = actual_rect.right - actual_rect.left;
+                    const int actual_height = actual_rect.bottom - actual_rect.top;
+
+                    if (actual_width > 0 && actual_height > 0 &&
+                        (actual_width != iClientWidth || actual_height != iClientHeight)) {
+                        LOG_ERROR("Windowed client area is {}x{} but {}x{} was requested; "
+                                  "re-syncing the renderer to the real size.",
+                            actual_width,
+                            actual_height,
+                            iClientWidth,
+                            iClientHeight);
+
+                        iClientWidth = actual_width;
+                        iClientHeight = actual_height;
+
+                        setScreen(iClientWidth,
+                            iClientHeight,
+                            iDepth,
+                            g_pCApp->IsFullScreenMode());
+                        setBuffer(iClientWidth, iClientHeight, iDepth);
+                        resetScreen();
+
+                        SetWIDTH(iClientWidth);
+                        SetHEIGHT(iClientHeight);
+                    }
+                }
+            }
         } else {
             assert(0 && "AdjustWindowRect is Failed");
         }

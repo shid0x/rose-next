@@ -115,13 +115,28 @@ merely a stepping stone.
 Commit 3 therefore means "drop MSAA and rework presentation", not "set an enum".
 
 **Observation from commit 1 testing (2026-07-28):** windowed mode performs measurably worse
-than fullscreen, and the FPS limiter does not hold correctly in windowed mode. Both predate
-this work and are *not* caused by the pool migration. They are, however, the classic
-symptoms of BitBlt-model presentation under DWM — which is exactly what `FLIPEX` addresses,
-and the `Present(..., hwnd, ...)` destination-window override adds its own windowed-mode
-cost. This raises the potential payoff of commit 3, but does not remove the MSAA conflict
-above. Treat as evidence to weigh, not as a plan. Worth confirming the FPS-limiter bug is
-independent of presentation before assuming flip-model would fix it.
+than fullscreen, and the frame rate ran unbounded there. Both predate this work and are
+*not* caused by the pool migration.
+
+Two of the three windowed complaints turned out to have nothing to do with presentation
+and are now fixed independently (see git history, both validated in game):
+
+- **Unbounded frame rate** — there is no software frame limiter in the engine at all;
+  vsync is the only cap, and the windowed branch hardcoded
+  `D3DPRESENT_INTERVAL_IMMEDIATE` while fullscreen honoured `state.use_vsync`. The
+  interval is now decided once for both modes. Suspecting this was independent of
+  presentation was correct — do not credit `FLIPEX` for it.
+- **UI hit-testing drifted in windowed mode** — Windows clamps a `WS_THICKFRAME` window
+  to `SM_C*MAXTRACK` and the client had no `WM_GETMINMAXINFO` handler, so a client area
+  the size of the desktop silently came back short, D3D stretched the backbuffer to fit,
+  and mouse coordinates drifted further off the lower down the screen you clicked.
+
+What remains genuinely open is windowed **performance**, which is still consistent with
+BitBlt-model presentation under DWM — what `FLIPEX` addresses, with the
+`Present(..., hwnd, ...)` override adding its own cost. That keeps some payoff on the
+table for commit 3 but does not remove the MSAA conflict above. Evidence to weigh, not a
+plan — and re-measure now that the frame rate is actually capped, since the earlier
+"windowed feels worse" impression was formed while it was running unbounded.
 
 ---
 
