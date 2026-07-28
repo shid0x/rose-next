@@ -10,8 +10,74 @@ Three separate commits, deliberately ordered by risk:
 | Commit | Content | Status |
 |---|---|---|
 | **1** | Remove `D3DPOOL_MANAGED`; run entirely on `D3DPOOL_DEFAULT` under **ordinary D3D9** | **done — builds clean, validated in-game** |
-| 2 | `Direct3DCreate9Ex` / `CreateDeviceEx` / `PresentEx` / `CheckDeviceState` / `ResetEx` | not started |
+| 2 | `Direct3DCreate9Ex` / `CreateDeviceEx` / `PresentEx` / `CheckDeviceState` / `ResetEx` | **done — builds clean, validated in-game** |
 | 3 | `D3DSWAPEFFECT_FLIPEX` — *investigate only, may be rejected* | not started |
+
+> **Validated on 2026-07-28:** rendering correct, text correct (after the D3DX9 upgrade
+> below), clean log, and **alt-tab no longer triggers a device reset** — the headline
+> benefit of the whole exercise.
+>
+> **Not yet exercised**, and worth covering before trusting this in anger: resolution
+> change, fullscreen ↔ windowed toggle, MSAA on/off, lock screen, and an extended spell
+> minimised (the `S_PRESENT_OCCLUDED` throttle is the newest and least-tested code path).
+> `D3DERR_DEVICEREMOVED` remains untested and unhandled beyond a clean abort.
+>
+> To force the legacy D3D9 path for A/B testing, use **either**:
+> - `rose-next.ini` → `[VIDEO]` → `D3D9EX=0`
+> - environment → `ROSE_NO_D3D9EX=1`
+>
+> The log confirms which path is live (`CreateDeviceEx() ok. running D3D9Ex.`), and the
+> resource-stats header prints `(D3D9Ex)` or `(D3D9)`. **Always confirm via the log** — a
+> toggle that silently does nothing produces a false negative.
+
+### Resolved — text did not render under D3D9Ex (D3DX9 upgrade)
+
+Symptom: no chat, item descriptions, or player names. Everything else rendered; input worked.
+
+**Confirmed** by A/B: forcing `D3D9EX=0` brought text back.
+
+Cause: **D3DX9 was statically linked from the vendored pre-2005 SDK**
+(`thirdparty/directx9/lib/d3dx9.lib` is 5.68 MB — a static lib, not an ~80 KB import lib;
+`znzin.dll` imports `d3d9.dll` but no `d3dx9_XX.dll`). That D3DX predates D3D9Ex, and
+`ID3DXFont` caches glyphs in a **`D3DPOOL_MANAGED`** texture, which a 9Ex device rejects.
+
+Supporting evidence:
+- No error dialog appeared, yet `zz_font_d3d.cpp` pops one if `D3DXCreateFontIndirect`
+  fails — so creation succeeded and *drawing* is what fails, matching a lazily-created
+  glyph cache.
+- `ID3DXSprite` still works (UI renders). Sprite uses dynamic vertex buffers, no MANAGED
+  texture; font uses a MANAGED texture. Font breaks, sprite does not.
+- Commit 1 already moved every resource *we* compile off MANAGED, so the only MANAGED
+  allocations left in the process are inside prebuilt third-party D3DX code.
+
+Scope was narrower than it first appeared: our D3DX use is ~95% **math**
+(`D3DXVECTOR3`/`D3DXMATRIX`/`D3DXQUATERNION`), which is header-only and allocation-free.
+Every other device-touching D3DX call takes an explicit pool *from us*
+(`D3DXCreateTextureFromFileInMemoryEx`, `D3DXCreateCubeTexture`). `ID3DXFont` was the only
+component allocating a pool internally — so there was no second landmine behind it.
+
+**Fix applied: upgraded D3DX9 from the 2005-era static lib to the June 2010 redist.**
+
+- Source: the **`Microsoft.DXSDK.D3DX` NuGet package** (9.29.952.8, 9.4 MB) — same bits as
+  the 572 MB DXSDK installer without the installer. Grab it from
+  `https://www.nuget.org/api/v2/package/Microsoft.DXSDK.D3DX/9.29.952.8` (it is a zip).
+- `thirdparty/directx9/include/d3dx9*.h` replaced (11 files, 1:1 with the old set).
+- `thirdparty/directx9/lib/d3dx9.lib` replaced: **5.68 MB static lib → 86 KB import lib**.
+- `thirdparty/directx9/bin/x86/d3dx9_43.dll` added (new, tracked).
+- **Zero API churn** — the solution built clean with no source changes.
+
+**New runtime dependency:** `d3dx9_43.dll` must now ship with the client. Verify with
+`dumpbin /dependents bin/release/znzin.dll`, which should list `d3dx9_43.dll` alongside
+`d3d9.dll`. It is copied automatically by `scripts/post-build.ps1` and bundled by
+`scripts/dist.ps1`. **A deploy that forgets it will fail to start**, so any hand-rolled
+copy to the run directory needs it too.
+
+Options that were considered and not taken, kept for the record:
+- **B** — replace `ID3DXFont` with an in-house GDI glyph rasteriser (SYSTEMMEM surface →
+  DEFAULT texture). Would drop the D3DX runtime dependency entirely and leave D3DX as a
+  header-only math library. Rejected as much more work with a high-visibility regression
+  surface (CJK charsets, kerning) for a benefit the upgrade already delivers.
+- **C** — stop at commit 1 and shelve 9Ex.
 
 ### Expected behaviour change (inherent to commit 1)
 
@@ -88,11 +154,29 @@ ones (`normalization_cubemap`, `sprite_vertexbuffer_*`, `boundingbox_*`,
 `shadowmap_overlay_texture`), and they are either recreated in `restore_device_objects()`
 or lazily on next use. Flipping them to DEFAULT is behaviourally a no-op.
 
-### Bundled SDK headers lack 9Ex (commit 2 blocker)
+### Bundled SDK headers lacked 9Ex — resolved in commit 2
 
-`thirdparty/directx9/include/d3d9.h` has no `IDirect3D9Ex`, `Direct3DCreate9Ex`, or
-`D3DDISPLAYMODEEX` — pre-Vista DX9.0c. Commit 2 must move to current Windows SDK headers.
+The vendored `thirdparty/directx9/include/d3d9.h` was pre-Vista DX9.0c: no `IDirect3D9Ex`,
+`Direct3DCreate9Ex`, or `D3DDISPLAYMODEEX`.
+
+**How it was fixed:** `d3d9.h`, `d3d9types.h` and `d3d9caps.h` were *deleted* from the
+vendored SDK so the Windows 10 SDK supplies them (`Include\<ver>\shared\`, which has full
+9Ex). The rest of the vendored SDK stays, because **D3DX9 is not in the Windows SDK** and
+the engine depends on it heavily (`D3DXCreateTextureFromFileInMemoryEx`, `ID3DXSprite`,
+`D3DXFilterCubeTexture`, …).
+
+Why deletion rather than reordering include paths: MSVC searches every `/I` path *before*
+the system include dirs, so the vendored copy always won regardless of ordering. Removing
+it is the only way to let the SDK header through. `d3dx9.h` uses a *quoted*
+`#include "d3d9.h"`, which searches its own directory first and then falls through to the
+`/I` list — so it now picks up the SDK header cleanly. The build requires a Windows 10 SDK,
+which it already did (`WindowsTargetPlatformVersion` is `10.0`).
+
 **Do not hand-declare the COM interfaces** (vtable-order / ABI risk for no gain).
+
+**No linker change was needed.** The vendored `d3d9.lib` predates `Direct3DCreate9Ex`, so
+that entry point is resolved with `GetProcAddress` on `d3d9.dll` instead of being imported.
+That also provides the graceful fallback to plain D3D9 at no extra cost.
 
 ---
 
@@ -199,6 +283,76 @@ before `Reset`, so this shakes out missing registrations and retained COM refs:
 - [ ] MSAA on and off (both `fsaa_type` paths)
 
 ---
+
+## Commit 2 — D3D9Ex device and status semantics
+
+### Design
+
+`IDirect3D9Ex`/`IDirect3DDevice9Ex` derive from the plain interfaces, so `d3d` and
+`d3d_device` keep pointing at the same objects and **every existing call site is
+unchanged**. Two extra pointers, `d3d_ex` / `d3d_device_ex`, are non-NULL only when the Ex
+device exists and are used purely for the Ex-only entry points. They are **borrowed
+aliases** — nulled before the real pointer is released, never released themselves.
+`is_d3d9ex()` is the single predicate for "are we on 9Ex".
+
+Creation order: `Direct3DCreate9Ex` (dynamically resolved) → `CreateDeviceEx` → on failure,
+fall through to the inherited `CreateDevice` → `Direct3DCreate9`. Because a device created
+from an Ex factory is Ex-capable even via plain `CreateDevice`, the success path
+`QueryInterface`s for `IDirect3DDevice9Ex` and adopts the Ex paths if it is one. Without
+that, `TestCooperativeLevel()` would return `S_OK` forever and the legacy reset path would
+strand the renderer in a lost state that never clears.
+
+### Status handling
+
+`translate_present_result()` maps a `PresentEx`/`CheckDeviceState` HRESULT onto an intent.
+The subtlety worth remembering: `S_PRESENT_OCCLUDED` and `S_PRESENT_MODE_CHANGED` are
+**success** codes, so a plain `FAILED()` test misses them entirely.
+
+| Status | Meaning | Action |
+|---|---|---|
+| `D3D_OK` | fine | carry on |
+| `S_PRESENT_OCCLUDED` | minimised / fully obscured | throttle (`Sleep`), **never** reset |
+| `S_PRESENT_MODE_CHANGED` | display mode changed | rebuild swapchain |
+| `D3DERR_DEVICEHUNG` | driver reset / TDR | `ResetEx` |
+| `D3DERR_DEVICEREMOVED` | adapter gone | unrecoverable in place — see below |
+
+`CheckDeviceState()` is consulted **only after a present returns something unusual**, per
+Microsoft's guidance, not polled every frame.
+
+`reset_device()` and `wait_device_lost()` branch on `is_d3d9ex()`: the Ex path uses
+`CheckDeviceState()` + `ResetEx()`, the legacy path keeps its original
+`TestCooperativeLevel()` + `Reset()` logic verbatim so commit 1's validated behaviour is
+untouched.
+
+### Deliberately conservative
+
+`ResetEx` still runs the **full** invalidate → reset → restore cycle. 9Ex can preserve more
+across a reset than legacy D3D9 does, so this leaves performance on the table — but it is
+correct either way, and it keeps commit 2 to one behavioural change at a time. Revisit only
+once the Ex path is proven stable.
+
+### Known limitations
+
+- **`D3DERR_DEVICEREMOVED` throws.** Recovering means rebuilding the `IDirect3D9Ex` object
+  and every device resource from scratch, which this renderer cannot currently do in place.
+  It is logged clearly first. Rare in practice (driver upgrade, adapter change, some
+  remoting transitions), but it is a real hole — a genuine fix is its own piece of work.
+- **`FLIPEX` is not enabled**, so presentation is unchanged from commit 1. Windowed-mode
+  performance is therefore expected to be the same as before; see the commit 3 notes.
+
+### Test matrix for commit 2
+
+Run each twice — once normally, once with `ROSE_NO_D3D9EX=1` — and compare:
+
+- [ ] Confirm the log says `running D3D9Ex` (and `(D3D9Ex)` in resource stats)
+- [ ] Fullscreen alt-tab, repeatedly — under 9Ex this should **not** trigger a reset at all
+- [ ] Minimise / restore (exercises `S_PRESENT_OCCLUDED`; watch for a CPU spin while hidden)
+- [ ] Lock screen (Win+L) and return
+- [ ] Resolution change, and fullscreen ↔ windowed toggle
+- [ ] MSAA on and off
+- [ ] Load a new map immediately after alt-tab
+- [ ] Extended idle while minimised, then restore
+- [ ] Clean shutdown from both fullscreen and windowed
 
 ## Gotchas
 

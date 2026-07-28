@@ -48,6 +48,12 @@ private:
 	DWORD _device_lost_last_log_tick;
 	DWORD _device_lost_poll_count;
 
+	// D3D9Ex only: window minimised/obscured (S_PRESENT_OCCLUDED). Not a lost device --
+	// tracked separately so the occluded case throttles instead of triggering a reset.
+	bool _device_occluded;
+	// D3DERR_DEVICEREMOVED: no Reset can recover this, the D3D object must be recreated.
+	bool _device_removed;
+
 	// --- D3DPOOL_MANAGED -> D3DPOOL_DEFAULT migration instrumentation ---
 	// Cumulative creation counts indexed by D3DPOOL (0=DEFAULT, 1=MANAGED, 2=SYSTEMMEM,
 	// 3=SCRATCH). Once the migration is complete the MANAGED slots must stay at zero;
@@ -70,6 +76,12 @@ private:
 
 	char _sprite_name[ZZ_MAX_STRING]; // current sprite name in begin/end block
 
+	// CreateDeviceEx/ResetEx want a D3DDISPLAYMODEEX for fullscreen and NULL for windowed.
+	// Fills "storage" from the present parameters and returns it, or NULL when windowed.
+	static D3DDISPLAYMODEEX * _fill_fullscreen_mode_ex (
+		D3DDISPLAYMODEEX & storage,
+		const D3DPRESENT_PARAMETERS & pp);
+
 	// wrapper for CreateDevice
 	HRESULT _create_device (
     UINT Adapter,
@@ -86,6 +98,15 @@ protected:
 
 	// direct3d device
 	LPDIRECT3DDEVICE9 d3d_device;
+
+	// --- D3D9Ex ---
+	// IDirect3D9Ex/IDirect3DDevice9Ex derive from the plain interfaces, so d3d and
+	// d3d_device above stay valid and every existing call site keeps working unchanged.
+	// These aliases are non-NULL only when the Ex device was created successfully, and
+	// exist purely for the Ex-only entry points (PresentEx/CheckDeviceState/ResetEx).
+	// They are borrowed pointers to the same objects -- do NOT release them separately.
+	IDirect3D9Ex * d3d_ex;
+	IDirect3DDevice9Ex * d3d_device_ex;
 
 	// vertex buffers & index buffers
 	zz_pool<LPDIRECT3DTEXTURE9> d3d_textures;
@@ -356,6 +377,25 @@ public:
 	LPDIRECT3DDEVICE9 get_device ();
 
 	bool has_device ();
+
+	// True when running on a D3D9Ex device. Under D3D9Ex the device is not lost by
+	// alt-tab, lock, UAC or RDP, TestCooperativeLevel() always returns S_OK, and
+	// D3DPOOL_MANAGED is unavailable (removed in commit 1). See doc/d3d9ex-migration.md.
+	bool is_d3d9ex () const
+	{
+		return (d3d_device_ex != NULL);
+	}
+
+	// Maps a PresentEx()/CheckDeviceState() status onto what the renderer should do.
+	enum e_device_status {
+		ZZ_DEVICE_OK = 0,       // carry on
+		ZZ_DEVICE_OCCLUDED,     // window minimised/obscured: throttle, do NOT reset
+		ZZ_DEVICE_MODE_CHANGED, // display mode changed underneath us
+		ZZ_DEVICE_NEEDS_RESET,  // recoverable via ResetEx (or legacy Reset)
+		ZZ_DEVICE_LOST_HARD     // device removed: needs full recreation
+	};
+
+	e_device_status translate_present_result (HRESULT hr) const;
 
 	// gamma control section
 	bool set_gamma (const zz_gamma& gamma);

@@ -164,8 +164,57 @@ zz_renderer_d3d::zz_renderer_d3d () : zz_renderer()
 	_stat_texture_restore_failures = 0;
 	_stat_buffer_restore_failures = 0;
 
+	_device_occluded = false;
+	_device_removed = false;
+
 	// d3d must be released in cleanup()
-	d3d = Direct3DCreate9(D3D_SDK_VERSION);
+	d3d = NULL;
+	d3d_ex = NULL;
+	d3d_device_ex = NULL;
+
+	// Prefer D3D9Ex. Direct3DCreate9Ex is resolved dynamically instead of linked: the
+	// vendored d3d9.lib predates the entry point, and a runtime lookup gives the graceful
+	// fallback to plain D3D9 for free.
+	//
+	// Either of these forces the legacy D3D9 path, for A/B testing a suspected regression:
+	//   rose-next.ini   ->  [VIDEO]  D3D9EX=0
+	//   environment     ->  ROSE_NO_D3D9EX=1
+	bool allow_d3d9ex = true;
+
+	if (::GetPrivateProfileIntA("VIDEO", "D3D9EX", 1, "./rose-next.ini") == 0) {
+		allow_d3d9ex = false;
+		ZZ_LOG("r_d3d: rose-next.ini [VIDEO] D3D9EX=0. forcing plain D3D9.\n");
+	}
+
+	if (::GetEnvironmentVariableA("ROSE_NO_D3D9EX", NULL, 0) != 0) {
+		allow_d3d9ex = false;
+		ZZ_LOG("r_d3d: ROSE_NO_D3D9EX set. forcing plain D3D9.\n");
+	}
+
+	if (allow_d3d9ex) {
+		typedef HRESULT (WINAPI * pfn_direct3dcreate9ex)(UINT, IDirect3D9Ex**);
+
+		HMODULE d3d9_dll = ::GetModuleHandleA("d3d9.dll");
+		if (!d3d9_dll) d3d9_dll = ::LoadLibraryA("d3d9.dll");
+
+		if (d3d9_dll) {
+			pfn_direct3dcreate9ex create_ex =
+				(pfn_direct3dcreate9ex)::GetProcAddress(d3d9_dll, "Direct3DCreate9Ex");
+
+			if (create_ex && SUCCEEDED(create_ex(D3D_SDK_VERSION, &d3d_ex)) && d3d_ex) {
+				d3d = d3d_ex; // IDirect3D9Ex is-a IDirect3D9
+				ZZ_LOG("r_d3d: Direct3DCreate9Ex() ok.\n");
+			}
+			else {
+				d3d_ex = NULL;
+			}
+		}
+	}
+
+	if (!d3d) {
+		ZZ_LOG("r_d3d: D3D9Ex unavailable. using plain D3D9.\n");
+		d3d = Direct3DCreate9(D3D_SDK_VERSION);
+	}
 
 	if (!d3d) {
 		ZZ_LOG("r_d3d: Cannot create Direct3D object.!\n");
@@ -184,6 +233,7 @@ zz_renderer_d3d::zz_renderer_d3d () : zz_renderer()
 zz_renderer_d3d::~zz_renderer_d3d ()
 {
 	cleanup();
+	d3d_ex = NULL; // borrowed alias of d3d -- never released separately
 	SAFE_RELEASE(d3d); // created in initialize()
 	//ZZ_LOG("r_d3d: zz_renderer_d3d destroyed\n");
 }
@@ -484,6 +534,25 @@ bool zz_renderer_d3d::check_glowable ()
 }
 
 
+D3DDISPLAYMODEEX * zz_renderer_d3d::_fill_fullscreen_mode_ex (
+	D3DDISPLAYMODEEX & storage,
+	const D3DPRESENT_PARAMETERS & pp)
+{
+	if (pp.Windowed) {
+		return NULL; // must be NULL for windowed devices
+	}
+
+	ZeroMemory(&storage, sizeof(storage));
+	storage.Size             = sizeof(D3DDISPLAYMODEEX);
+	storage.Width            = pp.BackBufferWidth;
+	storage.Height           = pp.BackBufferHeight;
+	storage.Format           = pp.BackBufferFormat;
+	storage.RefreshRate      = pp.FullScreen_RefreshRateInHz;
+	storage.ScanLineOrdering = D3DSCANLINEORDERING_PROGRESSIVE;
+
+	return &storage;
+}
+
 HRESULT zz_renderer_d3d::_create_device (
     UINT Adapter,
     D3DDEVTYPE DeviceType,
@@ -496,16 +565,58 @@ HRESULT zz_renderer_d3d::_create_device (
 	const int max_retry = 3;
 	HRESULT hr;
 
+	d3d_device_ex = NULL; // recomputed below; this funnel is retried with other flags
+
 	for (int retry_count = 0; retry_count < 3; ++retry_count) {
+		if (d3d_ex) {
+			D3DDISPLAYMODEEX fullscreen_mode;
+			D3DDISPLAYMODEEX * p_fullscreen_mode =
+				_fill_fullscreen_mode_ex(fullscreen_mode, *pPresentationParameters);
+
+			IDirect3DDevice9Ex * device_ex = NULL;
+			if (SUCCEEDED(hr = d3d_ex->CreateDeviceEx(
+				Adapter,
+				DeviceType,
+				hFocusWindow,
+				BehaviorFlags,
+				pPresentationParameters,
+				p_fullscreen_mode,
+				&device_ex)))
+			{
+				d3d_device_ex = device_ex;
+				*ppReturnedDeviceInterface = device_ex; // IDirect3DDevice9Ex is-a IDirect3DDevice9
+				ZZ_LOG("r_d3d: CreateDeviceEx() ok. running D3D9Ex.\n");
+				return hr;
+			}
+
+			// Fall through to the plain path. IDirect3D9Ex::CreateDevice is inherited and
+			// legal; we simply keep is_d3d9ex() false and drive the legacy code paths.
+			ZZ_LOG("r_d3d: CreateDeviceEx() failed. [%s] trying plain CreateDevice.\n",
+				get_hresult_string(hr));
+		}
+
 		if (SUCCEEDED(hr = d3d->CreateDevice(
 			Adapter,
 			DeviceType,
-			hFocusWindow, 
+			hFocusWindow,
 			BehaviorFlags,
 			pPresentationParameters,
 			ppReturnedDeviceInterface)))
 		{
-			// succeeded
+			// A device created from an IDirect3D9Ex factory is Ex-capable even via the
+			// inherited CreateDevice. Detect that rather than assuming otherwise: on such
+			// a device TestCooperativeLevel() always returns S_OK, so driving the legacy
+			// reset path would strand us in a lost state that never clears.
+			if (d3d_ex && *ppReturnedDeviceInterface) {
+				IDirect3DDevice9Ex * probe = NULL;
+				if (SUCCEEDED((*ppReturnedDeviceInterface)->QueryInterface(
+						IID_IDirect3DDevice9Ex, (void**)&probe)) && probe)
+				{
+					d3d_device_ex = probe;
+					probe->Release(); // QI addref'd; we only keep a borrowed alias
+					ZZ_LOG("r_d3d: CreateDevice() returned an Ex-capable device.\n");
+				}
+			}
 			return hr;
 		}
 		// createdevice failed
@@ -815,6 +926,7 @@ bool zz_renderer_d3d::initialize ()
 		behavior_flags = D3DCREATE_SOFTWARE_VERTEXPROCESSING;
 
 		// re-create d3d_device by software_vertex_processing mode
+		d3d_device_ex = NULL; // borrowed alias; _create_device() recomputes it
 		if (FAILED(hr = d3d_device->Release())) {
 			ZZ_LOG("r_d3d: d3d_device->release() failed. %s\n", get_hresult_string(hr));
 			throw ("r_d3d: d3d_device->release() failed\n");
@@ -1530,8 +1642,9 @@ void zz_renderer_d3d::cleanup ()
 		ZZ_SAFE_DELETE(shadowmap_pixels); // created in initialize
 	}
 
+	d3d_device_ex = NULL; // borrowed alias of d3d_device -- never released separately
 	SAFE_RELEASE(d3d_device); // created in initialize()
-	ZZ_LOG("r_d3d: cLeAnUpDoNe\n"); 
+	ZZ_LOG("r_d3d: cLeAnUpDoNe\n");
 }
 
 void zz_renderer_d3d::set_cullmode (zz_render_state::zz_cull_mode_type cullmode)
@@ -3023,7 +3136,8 @@ void zz_renderer_d3d::log_resource_stats (const char * phase)
 
 	const double to_mb = 1.0 / (1024.0 * 1024.0);
 
-	ZZ_LOG("r_d3d: --- resource stats [%s] ---\n", phase ? phase : "?");
+	ZZ_LOG("r_d3d: --- resource stats [%s] (%s) ---\n",
+		phase ? phase : "?", is_d3d9ex() ? "D3D9Ex" : "D3D9");
 	ZZ_LOG("r_d3d:   created tex  DEFAULT=%lu MANAGED=%lu SYSTEMMEM=%lu SCRATCH=%lu\n",
 		_stat_created_texture[0], _stat_created_texture[1],
 		_stat_created_texture[2], _stat_created_texture[3]);
@@ -3047,12 +3161,24 @@ void zz_renderer_d3d::wait_device_lost ()
 {
 	zz_assert(d3d_device);
 
-	HRESULT hr = d3d_device->TestCooperativeLevel();
+	// NOTE: this used to sample TestCooperativeLevel() once *outside* the loop, so a
+	// genuinely lost device span here forever. The status is now re-read each iteration.
+	HRESULT hr;
 
-	do {
+	for (;;) {
+		if (d3d_device_ex) {
+			// TestCooperativeLevel() is deprecated under D3D9Ex (always S_OK).
+			HWND hwnd = view ? (HWND)view->get_handle() : NULL;
+			hr = d3d_device_ex->CheckDeviceState(hwnd);
+			if (translate_present_result(hr) != ZZ_DEVICE_NEEDS_RESET) break;
+		}
+		else {
+			hr = d3d_device->TestCooperativeLevel();
+			if (D3DERR_DEVICELOST != hr) break;
+		}
+
 		::Sleep( 100 ); // Yield CPU to other process
 	}
-	while (D3DERR_DEVICELOST == hr);
 
 	if (hr == D3DERR_OUTOFVIDEOMEMORY) {
 		throw "out of videomemory";
@@ -3068,7 +3194,6 @@ bool zz_renderer_d3d::reset_device ()
 
 	::Sleep( 16 ); // avoid spinning while the OS is not ready to restore fullscreen D3D
 
-	HRESULT hr = d3d_device->TestCooperativeLevel();
 	DWORD now = ::GetTickCount();
 
 	if (_device_lost_start_tick == 0) {
@@ -3081,20 +3206,74 @@ bool zz_renderer_d3d::reset_device ()
 	++_device_lost_poll_count;
 
 	assert(_device_lost);
-	// If the device was lost, do not render until we get it back
-	if ( D3DERR_DEVICELOST == hr ) {
-		if (now - _device_lost_last_log_tick >= 1000) {
-			ZZ_LOG("r_d3d: d3d_device still lost. elapsed=%lu ms, polls=%lu\n",
+
+	bool ready_to_reset = false;
+
+	if (d3d_device_ex) {
+		// TestCooperativeLevel() is deprecated under D3D9Ex and always returns S_OK, so
+		// the legacy poll below would spin forever. CheckDeviceState() is the supported
+		// query.
+		HWND hwnd = view ? (HWND)view->get_handle() : NULL;
+		e_device_status status =
+			translate_present_result(d3d_device_ex->CheckDeviceState(hwnd));
+
+		if (status == ZZ_DEVICE_OCCLUDED) {
+			// Minimised or fully hidden. Keep waiting -- resetting here would churn for
+			// as long as the user stays alt-tabbed.
+			if (now - _device_lost_last_log_tick >= 1000) {
+				ZZ_LOG("r_d3d: d3d_device occluded. elapsed=%lu ms, polls=%lu\n",
+					now - _device_lost_start_tick,
+					_device_lost_poll_count);
+				_device_lost_last_log_tick = now;
+			}
+		}
+		else if (status == ZZ_DEVICE_LOST_HARD) {
+			// D3DERR_DEVICEREMOVED. No Reset can recover this: the IDirect3D9Ex object
+			// itself has to be rebuilt, which this renderer cannot do in place.
+			ZZ_LOG("r_d3d: d3d_device removed. cannot recover by reset.\n");
+			throw "d3d device removed";
+		}
+		else {
+			// OK, mode changed, or hung -- rebuild the swapchain to match reality.
+			ZZ_LOG("r_d3d: d3d_device ready for reset(ex). elapsed=%lu ms, polls=%lu\n",
 				now - _device_lost_start_tick,
 				_device_lost_poll_count);
-			_device_lost_last_log_tick = now;
+			ready_to_reset = true;
 		}
 	}
-	// Check if the device needs to be reset.
-	else if ( D3DERR_DEVICENOTRESET == hr ) {
-		ZZ_LOG("r_d3d: d3d_device ready for reset. elapsed=%lu ms, polls=%lu\n",
-			now - _device_lost_start_tick,
-			_device_lost_poll_count);
+	else {
+		HRESULT hr = d3d_device->TestCooperativeLevel();
+
+		// If the device was lost, do not render until we get it back
+		if ( D3DERR_DEVICELOST == hr ) {
+			if (now - _device_lost_last_log_tick >= 1000) {
+				ZZ_LOG("r_d3d: d3d_device still lost. elapsed=%lu ms, polls=%lu\n",
+					now - _device_lost_start_tick,
+					_device_lost_poll_count);
+				_device_lost_last_log_tick = now;
+			}
+		}
+		// Check if the device needs to be reset.
+		else if ( D3DERR_DEVICENOTRESET == hr ) {
+			ZZ_LOG("r_d3d: d3d_device ready for reset. elapsed=%lu ms, polls=%lu\n",
+				now - _device_lost_start_tick,
+				_device_lost_poll_count);
+			ready_to_reset = true;
+		}
+		else if ( D3DERR_OUTOFVIDEOMEMORY == hr ) {
+			ZZ_LOG("r_d3d: reset_devicer() failed. out of memory!\n");
+			throw "out of memory";
+		}
+		else {
+			_device_lost = false; // device returned
+			_device_lost_start_tick = 0;
+			_device_lost_last_log_tick = 0;
+			_device_lost_poll_count = 0;
+		}
+	}
+
+	if (ready_to_reset) {
+		HRESULT hr;
 
 		if (!znzin->flush_delayed(true /* entrance */, true /* exit */)) {
 			ZZ_LOG("r_d3d: swap_buffers() failed. flush_delayed() failed.\n");
@@ -3113,7 +3292,18 @@ bool zz_renderer_d3d::reset_device ()
 		}
 
 		// Reset the device
-		if( FAILED( hr = d3d_device->Reset( &_parameters ) ) ) {
+		if (d3d_device_ex) {
+			D3DDISPLAYMODEEX fullscreen_mode;
+			D3DDISPLAYMODEEX * p_fullscreen_mode =
+				_fill_fullscreen_mode_ex(fullscreen_mode, _parameters);
+
+			hr = d3d_device_ex->ResetEx( &_parameters, p_fullscreen_mode );
+		}
+		else {
+			hr = d3d_device->Reset( &_parameters );
+		}
+
+		if( FAILED( hr ) ) {
 			ZZ_LOG("r_d3d: d3d_device reset failed. %s\n", get_hresult_string(hr));
 			throw "device reset() failed";
 		}
@@ -3132,35 +3322,113 @@ bool zz_renderer_d3d::reset_device ()
 		++_stat_reset_cycles;
 		log_resource_stats("after-reset");
 		_device_lost = false; // device returned
+		_device_occluded = false;
+		_device_removed = false;
 		_device_lost_start_tick = 0;
 		_device_lost_last_log_tick = 0;
 		_device_lost_poll_count = 0;
 	}
-	else if ( D3DERR_OUTOFVIDEOMEMORY == hr ) {
-		ZZ_LOG("r_d3d: reset_devicer() failed. out of memory!\n");
-		throw "out of memory";
-	}
-	else {
-		_device_lost = false; // device returned
-		_device_lost_start_tick = 0;
-		_device_lost_last_log_tick = 0;
-		_device_lost_poll_count = 0;
-	}
+
 	return _device_lost;
+}
+
+// Classify a PresentEx()/Present()/CheckDeviceState() status.
+// Note S_PRESENT_OCCLUDED and S_PRESENT_MODE_CHANGED are *successes* (S_ codes), so a
+// plain FAILED() test misses them entirely.
+zz_renderer_d3d::e_device_status zz_renderer_d3d::translate_present_result (HRESULT hr) const
+{
+	switch (hr) {
+		case D3D_OK:
+			return ZZ_DEVICE_OK;
+
+		// Minimised, or fully obscured by another window. Not an error and NOT a reset
+		// condition -- resetting here would loop forever while the user is alt-tabbed.
+		case S_PRESENT_OCCLUDED:
+			return ZZ_DEVICE_OCCLUDED;
+
+		// Desktop mode/topology changed underneath us.
+		case S_PRESENT_MODE_CHANGED:
+			return ZZ_DEVICE_MODE_CHANGED;
+
+		// Driver reset/TDR. Recoverable by rebuilding the device.
+		case D3DERR_DEVICEHUNG:
+		case D3DERR_DEVICELOST:
+		case D3DERR_DEVICENOTRESET:
+			return ZZ_DEVICE_NEEDS_RESET;
+
+		// Adapter physically gone (driver upgrade, remoting change). A reset cannot fix
+		// this -- the IDirect3D9Ex object itself has to be recreated.
+		case D3DERR_DEVICEREMOVED:
+			return ZZ_DEVICE_LOST_HARD;
+
+		default:
+			return FAILED(hr) ? ZZ_DEVICE_NEEDS_RESET : ZZ_DEVICE_OK;
+	}
 }
 
 void zz_renderer_d3d::swap_buffers (HWND hwnd)
 {
-	HRESULT hr = d3d_device->Present(NULL, NULL, hwnd, NULL);
+	HRESULT hr;
 
-	if( D3DERR_DEVICELOST == hr ) {
-		if (!_device_lost) {
-			_device_lost_start_tick = ::GetTickCount();
-			_device_lost_last_log_tick = _device_lost_start_tick;
-			_device_lost_poll_count = 0;
-			ZZ_LOG("r_d3d: swap_buffers() device lost.\n");
+	if (d3d_device_ex) {
+		// Still D3DSWAPEFFECT_DISCARD, so passing hDestWindowOverride remains legal.
+		// (D3DSWAPEFFECT_FLIPEX would forbid it -- see doc/d3d9ex-migration.md commit 3.)
+		hr = d3d_device_ex->PresentEx(NULL, NULL, hwnd, NULL, 0);
+	}
+	else {
+		hr = d3d_device->Present(NULL, NULL, hwnd, NULL);
+	}
+
+	e_device_status status = translate_present_result(hr);
+
+	if (status == ZZ_DEVICE_OK) {
+		_device_occluded = false;
+		return;
+	}
+
+	// Microsoft's guidance is to consult CheckDeviceState() only after a present returns
+	// something unusual, rather than polling it every frame.
+	if (d3d_device_ex && status != ZZ_DEVICE_LOST_HARD) {
+		e_device_status confirmed =
+			translate_present_result(d3d_device_ex->CheckDeviceState(hwnd));
+		if (confirmed != ZZ_DEVICE_OK) {
+			status = confirmed;
 		}
-		_device_lost = true;
+	}
+
+	switch (status) {
+		case ZZ_DEVICE_OK:
+			_device_occluded = false;
+			break;
+
+		case ZZ_DEVICE_OCCLUDED:
+			// Throttle instead of spinning at full rate against a hidden window.
+			if (!_device_occluded) {
+				ZZ_LOG("r_d3d: swap_buffers() occluded. throttling.\n");
+			}
+			_device_occluded = true;
+			::Sleep(16);
+			break;
+
+		case ZZ_DEVICE_MODE_CHANGED:
+			// A 9Ex device survives this; the swapchain just needs rebuilding to match.
+			ZZ_LOG("r_d3d: swap_buffers() display mode changed.\n");
+			_device_occluded = false;
+			_device_lost = true;
+			break;
+
+		case ZZ_DEVICE_NEEDS_RESET:
+		case ZZ_DEVICE_LOST_HARD:
+			_device_occluded = false;
+			if (!_device_lost) {
+				_device_lost_start_tick = ::GetTickCount();
+				_device_lost_last_log_tick = _device_lost_start_tick;
+				_device_lost_poll_count = 0;
+				ZZ_LOG("r_d3d: swap_buffers() device lost. [%s]\n", get_hresult_string(hr));
+			}
+			_device_lost = true;
+			_device_removed = (status == ZZ_DEVICE_LOST_HARD);
+			break;
 	}
 }
 
