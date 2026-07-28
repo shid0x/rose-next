@@ -157,6 +157,13 @@ zz_renderer_d3d::zz_renderer_d3d () : zz_renderer()
 	sphere_buffer = NULL;
 	cylinder_buffer = NULL;
 
+	memset(_stat_created_texture, 0, sizeof(_stat_created_texture));
+	memset(_stat_created_vertex_buffer, 0, sizeof(_stat_created_vertex_buffer));
+	memset(_stat_created_index_buffer, 0, sizeof(_stat_created_index_buffer));
+	_stat_reset_cycles = 0;
+	_stat_texture_restore_failures = 0;
+	_stat_buffer_restore_failures = 0;
+
 	// d3d must be released in cleanup()
 	d3d = Direct3DCreate9(D3D_SDK_VERSION);
 
@@ -1371,7 +1378,7 @@ bool zz_renderer_d3d::restore_device_objects ()
 			1, // UINT MipLevels,
 			0,					// DWORD Usage,(0, D3DUSAGE_RENDERTARGET, or D3DUSAGE_DYNAMIC)
 			D3DFMT_UNKNOWN, // D3DFMT_DXT5, // D3DFMT_UNKNOWN, // D3DFMT_DXT5, // D3DFMT_UNKNOWN,		// D3DFORMAT Format,
-			D3DPOOL_MANAGED,
+			D3DPOOL_DEFAULT, // recreated by restore_device_objects(); D3DX stages the upload
 			D3DX_FILTER_NONE, // DWORD Filter, D3DX_DEFAULT = (D3DX_FILTER_TRIANGLE | D3DX_FILTER_DITHER)
 			D3DX_FILTER_NONE, // DWORD MipFilterw D3DX_DEFAULT = (D3DX_FILTER_BOX)
 			0,					// D3DCOLOR ColorKey,
@@ -2991,6 +2998,51 @@ void zz_renderer_d3d::clear_zbuffer ()
 	d3d_device->Clear(0L, NULL, D3DCLEAR_ZBUFFER, 0, 1.0f, 0L);
 }
 
+// Instrumentation for the D3DPOOL_MANAGED -> D3DPOOL_DEFAULT migration.
+// MANAGED counts must read zero once the migration is complete; a non-zero value means
+// some creation path was missed. Address-space figures matter because the client is a
+// 32-bit process: managed resources keep a driver-side system-memory shadow copy, so
+// removing them should show up as a real drop in committed bytes.
+void zz_renderer_d3d::log_resource_stats (const char * phase)
+{
+	// Walk our own address space. VirtualQuery lives in kernel32, so this needs no extra
+	// link dependency (psapi) added to the build.
+	MEMORY_BASIC_INFORMATION mbi;
+	BYTE * addr = NULL;
+	SIZE_T committed = 0;
+	SIZE_T reserved = 0;
+
+	while (::VirtualQuery(addr, &mbi, sizeof(mbi)) == sizeof(mbi)) {
+		if (mbi.State == MEM_COMMIT) committed += mbi.RegionSize;
+		if (mbi.State != MEM_FREE)   reserved  += mbi.RegionSize;
+
+		BYTE * next = (BYTE*)mbi.BaseAddress + mbi.RegionSize;
+		if (next <= addr) break; // wrapped or made no progress
+		addr = next;
+	}
+
+	const double to_mb = 1.0 / (1024.0 * 1024.0);
+
+	ZZ_LOG("r_d3d: --- resource stats [%s] ---\n", phase ? phase : "?");
+	ZZ_LOG("r_d3d:   created tex  DEFAULT=%lu MANAGED=%lu SYSTEMMEM=%lu SCRATCH=%lu\n",
+		_stat_created_texture[0], _stat_created_texture[1],
+		_stat_created_texture[2], _stat_created_texture[3]);
+	ZZ_LOG("r_d3d:   created vb   DEFAULT=%lu MANAGED=%lu SYSTEMMEM=%lu SCRATCH=%lu\n",
+		_stat_created_vertex_buffer[0], _stat_created_vertex_buffer[1],
+		_stat_created_vertex_buffer[2], _stat_created_vertex_buffer[3]);
+	ZZ_LOG("r_d3d:   created ib   DEFAULT=%lu MANAGED=%lu SYSTEMMEM=%lu SCRATCH=%lu\n",
+		_stat_created_index_buffer[0], _stat_created_index_buffer[1],
+		_stat_created_index_buffer[2], _stat_created_index_buffer[3]);
+	ZZ_LOG("r_d3d:   live tex=%u vb=%u ib=%u\n",
+		d3d_textures.get_num_running(),
+		vertex_buffer_pool.get_num_running(),
+		index_buffer_pool.get_num_running());
+	ZZ_LOG("r_d3d:   reset_cycles=%lu tex_restore_fail=%lu buf_restore_fail=%lu\n",
+		_stat_reset_cycles, _stat_texture_restore_failures, _stat_buffer_restore_failures);
+	ZZ_LOG("r_d3d:   address space: committed=%.1f MB reserved=%.1f MB\n",
+		(double)committed * to_mb, (double)reserved * to_mb);
+}
+
 void zz_renderer_d3d::wait_device_lost ()
 {
 	zz_assert(d3d_device);
@@ -3048,6 +3100,7 @@ bool zz_renderer_d3d::reset_device ()
 			ZZ_LOG("r_d3d: swap_buffers() failed. flush_delayed() failed.\n");
 		}
 		ZZ_LOG("r_d3d: d3d_device reset start.\n");
+		log_resource_stats("before-reset");
 
 		if (!invalidate_device_objects()) { // invalidate default pool objects
 			ZZ_LOG("r_d3d: invalidate_device_objects1() failed\n");
@@ -3076,6 +3129,8 @@ bool zz_renderer_d3d::reset_device ()
 		}
 
 		ZZ_LOG("r_d3d: d3d_device reset done.\n");
+		++_stat_reset_cycles;
+		log_resource_stats("after-reset");
 		_device_lost = false; // device returned
 		_device_lost_start_tick = 0;
 		_device_lost_last_log_tick = 0;
@@ -3386,9 +3441,11 @@ zz_handle zz_renderer_d3d::create_vertex_buffer (const zz_device_resource& vres,
 		pool = D3DPOOL_DEFAULT;
 	}
 	else {
-		// static mesh
+		// static mesh. D3DPOOL_DEFAULT since the MANAGED pool is gone; the buffer is
+		// refilled by update_vertex_buffer() (static path, lock flags 0) after every
+		// restore, sourcing from the mesh's permanent CPU-side vertex array.
 		usage = D3DUSAGE_WRITEONLY;
-		pool = D3DPOOL_MANAGED;
+		pool = D3DPOOL_DEFAULT;
 	}
 	if (!state.use_hw_vertex_processing_support) { // if software vertex processing
 		usage |= D3DUSAGE_SOFTWAREPROCESSING;
@@ -3410,9 +3467,12 @@ zz_handle zz_renderer_d3d::create_vertex_buffer (const zz_device_resource& vres,
 	{
 		ZZ_LOG("r_d3d: createvertexbuffer(%d, %d, %d) failed. [%s]\n",
 			buffer_size, usage, pool, get_hresult_string(hr));
+		++_stat_buffer_restore_failures;
 		zz_assert(0);
 		return false;
 	}
+
+	_count_pool_creation(_stat_created_vertex_buffer, (int)pool);
 
 	return index_of_vertex_buffer_pool;
 }
@@ -3498,16 +3558,16 @@ zz_handle zz_renderer_d3d::create_index_buffer (const zz_device_resource& ires, 
 	int index_of_index_buffer_pool;
 
 	DWORD usage;
-	D3DPOOL pool = D3DPOOL_MANAGED;
+	D3DPOOL pool = D3DPOOL_DEFAULT;
 	D3DFORMAT format = D3DFMT_INDEX16;
-	
+
 	if (ires.get_dynamic() && ires.get_pool() == zz_device_resource::ZZ_POOL_DEFAULT) { // dynamic mesh
 		usage = D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY;
 		pool = D3DPOOL_DEFAULT;
 	}
-	else { // static mesh
+	else { // static mesh -- see the matching comment in create_vertex_buffer()
 		usage = D3DUSAGE_WRITEONLY;
-		pool = D3DPOOL_MANAGED;
+		pool = D3DPOOL_DEFAULT;
 	}
 
 	// get new index buffer handle
@@ -3523,8 +3583,11 @@ zz_handle zz_renderer_d3d::create_index_buffer (const zz_device_resource& ires, 
 		)))
 	{
 		ZZ_LOG("r_d3d: CreateIndexBuffer failed\n");
+		++_stat_buffer_restore_failures;
 		return ZZ_HANDLE_NULL;
 	}
+
+	_count_pool_creation(_stat_created_index_buffer, (int)pool);
 
 	return index_of_index_buffer_pool;
 }
@@ -3806,6 +3869,7 @@ zz_handle zz_renderer_d3d::download_texture (zz_texture * tex)
 		ZZ_LOG("r_d3d: d3dxcreatetexturefromfileinmemoryex(%s, %dx%d) failed.[%s]\n",
 			texture_path, read_width, read_height, get_hresult_string(hr));
 
+		++_stat_texture_restore_failures;
 		zz_assert(0);
 
 #ifdef USE_VFS_THREAD_TEXTURE_LOADING
@@ -3815,6 +3879,8 @@ zz_handle zz_renderer_d3d::download_texture (zz_texture * tex)
 		return ZZ_HANDLE_NULL;
 	}
 	//ZZ_PROFILER_END(Pdownload_texture);
+
+	_count_pool_creation(_stat_created_texture, (int)pool);
 
 #ifdef USE_VFS_THREAD_TEXTURE_LOADING
 	assert(znzin->vfs_thread->is_valid_handle(vfs_handle));
@@ -4652,11 +4718,27 @@ bool zz_renderer_d3d::create_normalization_cubemap (int width, int mipmap_level)
 {
 	HRESULT hr;
 
-	hr = D3DXCreateCubeTexture(d3d_device, width, mipmap_level, 0, D3DFMT_X8R8G8B8, 
-		D3DPOOL_MANAGED, &normalization_cubemap);
+	// D3DPOOL_DEFAULT textures cannot be locked, so build the faces in a lockable
+	// D3DPOOL_SYSTEMMEM staging cubemap and UpdateTexture() it into the real one.
+	// Both must share format/size/miplevels for UpdateTexture to copy every level.
+	LPDIRECT3DCUBETEXTURE9 staging_cubemap = NULL;
+
+	hr = D3DXCreateCubeTexture(d3d_device, width, mipmap_level, 0, D3DFMT_X8R8G8B8,
+		D3DPOOL_SYSTEMMEM, &staging_cubemap);
 
 	if(FAILED(hr))
 	{
+		ZZ_LOG("r_d3d: create_normalization_cubemap() staging create failed. [%s]\n", get_hresult_string(hr));
+		return false;
+	}
+
+	hr = D3DXCreateCubeTexture(d3d_device, width, mipmap_level, 0, D3DFMT_X8R8G8B8,
+		D3DPOOL_DEFAULT, &normalization_cubemap);
+
+	if(FAILED(hr))
+	{
+		ZZ_LOG("r_d3d: create_normalization_cubemap() create failed. [%s]\n", get_hresult_string(hr));
+		SAFE_RELEASE(staging_cubemap);
 		return false;
 	}
 
@@ -4666,10 +4748,10 @@ bool zz_renderer_d3d::create_normalization_cubemap (int width, int mipmap_level)
 		D3DXVECTOR3 Normal;
 		float w,h;
 		D3DSURFACE_DESC ddsdDesc;
-		
-		normalization_cubemap->GetLevelDesc(0, &ddsdDesc);
 
-		normalization_cubemap->LockRect((D3DCUBEMAP_FACES)i, 0, &Locked, NULL, 0);
+		staging_cubemap->GetLevelDesc(0, &ddsdDesc);
+
+		staging_cubemap->LockRect((D3DCUBEMAP_FACES)i, 0, &Locked, NULL, 0);
 
 		for (unsigned int y = 0; y < ddsdDesc.Height; y++)
 		{
@@ -4722,11 +4804,23 @@ bool zz_renderer_d3d::create_normalization_cubemap (int width, int mipmap_level)
 
 			}
 		}
-		normalization_cubemap->UnlockRect((D3DCUBEMAP_FACES)i, 0);
+		staging_cubemap->UnlockRect((D3DCUBEMAP_FACES)i, 0);
 	}
 
+	// filter on the staging copy while it is still lockable
 	if ((mipmap_level == 0) || (mipmap_level > 1))
-		D3DXFilterCubeTexture(normalization_cubemap, NULL, 0, D3DX_FILTER_LINEAR);
+		D3DXFilterCubeTexture(staging_cubemap, NULL, 0, D3DX_FILTER_LINEAR);
+
+	// copies every mip level of all six faces into the DEFAULT-pool cubemap
+	hr = d3d_device->UpdateTexture(staging_cubemap, normalization_cubemap);
+
+	SAFE_RELEASE(staging_cubemap);
+
+	if (FAILED(hr)) {
+		ZZ_LOG("r_d3d: create_normalization_cubemap() UpdateTexture failed. [%s]\n", get_hresult_string(hr));
+		SAFE_RELEASE(normalization_cubemap);
+		return false;
+	}
 
 	return true;
 }
@@ -5344,10 +5438,12 @@ bool zz_renderer_d3d::draw_sprite_cover ( zz_texture * tex, const zz_rect * src_
 	if(sprite_vertexbuffer_cover == NULL)
 	{
     
-		if (FAILED(hr = d3d_device->CreateVertexBuffer( 24 * sizeof(MYLINEVERTEX),  
-			D3DUSAGE_WRITEONLY,
+		// Locked and refilled on every draw, so this must be DYNAMIC now that it lives in
+		// D3DPOOL_DEFAULT -- a plain DEFAULT buffer locked per-frame stalls the pipeline.
+		if (FAILED(hr = d3d_device->CreateVertexBuffer( 24 * sizeof(MYLINEVERTEX),
+			D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY,
 			D3DFVF_XYZRHW | D3DFVF_DIFFUSE,
-			D3DPOOL_MANAGED,
+			D3DPOOL_DEFAULT,
 			&sprite_vertexbuffer_cover, NULL )))
   	    zz_assertf(0, "renderer_d3d: restore_device_objects() failed. createvertexbuffer() for glow_vb failed. [%s]", get_hresult_string(hr));
 	}
@@ -5355,10 +5451,10 @@ bool zz_renderer_d3d::draw_sprite_cover ( zz_texture * tex, const zz_rect * src_
 	if(sprite_vertexbuffer_origin == NULL)
 	{
 
-        if (FAILED(hr = d3d_device->CreateVertexBuffer( 6 * sizeof(VERTEX_SPRITE),  
-			D3DUSAGE_WRITEONLY,
+        if (FAILED(hr = d3d_device->CreateVertexBuffer( 6 * sizeof(VERTEX_SPRITE),
+			D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, // locked every draw; see comment above
 			D3DFVF_SPRITE,
-			D3DPOOL_MANAGED,
+			D3DPOOL_DEFAULT,
 			&sprite_vertexbuffer_origin, NULL )))
   	    zz_assertf(0, "renderer_d3d: restore_device_objects() failed. createvertexbuffer() for glow_vb failed. [%s]", get_hresult_string(hr));
 	
@@ -5500,7 +5596,7 @@ bool zz_renderer_d3d::draw_sprite_cover ( zz_texture * tex, const zz_rect * src_
 		point[1] = texture_center.y + t*vector[1];
 		
 	    	
-		sprite_vertexbuffer_origin->Lock( 0, 0, (void**)&gVertPool2, 0 );
+		sprite_vertexbuffer_origin->Lock( 0, 0, (void**)&gVertPool2, D3DLOCK_DISCARD );
 
         gVertPool2[0].position.x = texture_center.x - length_xy[0]; gVertPool2[0].position.y = texture_center.y - length_xy[1]; gVertPool2[0].position.z = center_.z; gVertPool2[0].position.w = 1.0f; gVertPool2[0].color = origin_color; gVertPool2[0].uv.x = rect.left/texture_width; gVertPool2[0].uv.y = rect.top/texture_height;
 		gVertPool2[1].position.x = texture_center.x - length_xy[0]; gVertPool2[1].position.y = texture_center.y + length_xy[1]; gVertPool2[1].position.z = center_.z; gVertPool2[1].position.w = 1.0f; gVertPool2[1].color = origin_color; gVertPool2[1].uv.x = rect.left/texture_width; gVertPool2[1].uv.y = rect.bottom/texture_height; 
@@ -5524,7 +5620,7 @@ bool zz_renderer_d3d::draw_sprite_cover ( zz_texture * tex, const zz_rect * src_
 	    set_texture_stage_state(0, ZZ_TSS_COLOROP, D3DTOP_SELECTARG1 );
  
 		
-		sprite_vertexbuffer_cover->Lock( 0, 0, (void**)&gVertPool, 0 ); 
+		sprite_vertexbuffer_cover->Lock( 0, 0, (void**)&gVertPool, D3DLOCK_DISCARD );
 		
 		
 		
@@ -5662,10 +5758,10 @@ bool zz_renderer_d3d::draw_sprite_ex ( zz_texture * tex, const zz_rect * src_rec
 	if(sprite_vertexbuffer_origin_ex == NULL)
 	{
 
-        if (FAILED(hr = d3d_device->CreateVertexBuffer( 6 * sizeof(VERTEX_SPRITE),  
-			D3DUSAGE_WRITEONLY,
+        if (FAILED(hr = d3d_device->CreateVertexBuffer( 6 * sizeof(VERTEX_SPRITE),
+			D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, // locked every draw; see comment above
 			D3DFVF_SPRITE,
-			D3DPOOL_MANAGED,
+			D3DPOOL_DEFAULT,
 			&sprite_vertexbuffer_origin_ex, NULL )))
   	    zz_assertf(0, "renderer_d3d: restore_device_objects() failed. createvertexbuffer() for glow_vb failed. [%s]", get_hresult_string(hr));
 	
@@ -5720,7 +5816,7 @@ bool zz_renderer_d3d::draw_sprite_ex ( zz_texture * tex, const zz_rect * src_rec
 	texture_width = (float)tex->get_width();
 	texture_height = (float)tex->get_height();
 	
-	sprite_vertexbuffer_origin_ex->Lock( 0, 0, (void**)&gVertPool, 0 );
+	sprite_vertexbuffer_origin_ex->Lock( 0, 0, (void**)&gVertPool, D3DLOCK_DISCARD );
 
     gVertPool[0].position.x = texture_center.x - length_xy[0]; gVertPool[0].position.y = texture_center.y - length_xy[1]; gVertPool[0].position.z = center_.z; gVertPool[0].position.w = 1.0f; gVertPool[0].color = color; gVertPool[0].uv.x = rect.left/texture_width; gVertPool[0].uv.y = rect.top/texture_height;
 	gVertPool[1].position.x = texture_center.x - length_xy[0]; gVertPool[1].position.y = texture_center.y + length_xy[1]; gVertPool[1].position.z = center_.z; gVertPool[1].position.w = 1.0f; gVertPool[1].color = color; gVertPool[1].uv.x = rect.left/texture_width; gVertPool[1].uv.y = rect.bottom/texture_height; 
@@ -5966,13 +6062,16 @@ void zz_renderer_d3d::draw_visible_boundingbox(const mat4& matrix, float min_vec
 	
 	if(boundingbox_vertexbuffer == NULL || boundingbox_indexbuffer ==NULL)
 	{
-		d3d_device->CreateVertexBuffer(8*sizeof(MYLINEVERTEX), D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_DIFFUSE,
-                                       D3DPOOL_MANAGED, &boundingbox_vertexbuffer, NULL );
+		// vertex data is rewritten on every draw -> DYNAMIC; index data is written once
+		// immediately below and never again -> plain static DEFAULT.
+		d3d_device->CreateVertexBuffer(8*sizeof(MYLINEVERTEX),
+									   D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_DIFFUSE,
+                                       D3DPOOL_DEFAULT, &boundingbox_vertexbuffer, NULL );
 
-    
-	      
-		d3d_device->CreateIndexBuffer(24*sizeof(unsigned short), 0, D3DFMT_INDEX16, 
-										   D3DPOOL_MANAGED, &boundingbox_indexbuffer, NULL);
+
+
+		d3d_device->CreateIndexBuffer(24*sizeof(unsigned short), 0, D3DFMT_INDEX16,
+										   D3DPOOL_DEFAULT, &boundingbox_indexbuffer, NULL);
  
 		WORD indexList[24]  =  {0, 1,
 								1, 2,
@@ -5987,15 +6086,17 @@ void zz_renderer_d3d::draw_visible_boundingbox(const mat4& matrix, float min_vec
 								2, 6,
 								3, 7};
 		
-		VOID *index = NULL; 
-		boundingbox_indexbuffer->Lock(0,0,(void**)&index,D3DLOCK_DISCARD);
+		VOID *index = NULL;
+		// static DEFAULT buffer, filled once here -- D3DLOCK_DISCARD is only legal on
+		// D3DUSAGE_DYNAMIC buffers and would fail now that this is no longer MANAGED.
+		boundingbox_indexbuffer->Lock(0,0,(void**)&index,0);
 		memcpy(index, indexList, 24*sizeof(WORD));
 	    boundingbox_indexbuffer->Unlock();
 	
 	}
      
 	MYLINEVERTEX *vertex_pool;
-	boundingbox_vertexbuffer->Lock( 0, 0, (void**)&vertex_pool, 0 );
+	boundingbox_vertexbuffer->Lock( 0, 0, (void**)&vertex_pool, D3DLOCK_DISCARD );
     
 	vertex_pool[0].pos.x=min_vec[0];vertex_pool[0].pos.y=max_vec[1];vertex_pool[0].pos.z=max_vec[2];vertex_pool[0].diffuse=color;
 	vertex_pool[1].pos.x=min_vec[0];vertex_pool[1].pos.y=min_vec[1];vertex_pool[1].pos.z=max_vec[2];vertex_pool[1].diffuse=color;

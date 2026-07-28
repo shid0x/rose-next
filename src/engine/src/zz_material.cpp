@@ -177,8 +177,8 @@ bool zz_material::set_texture (int index, const char * filename)
 
 	if (!tex->get_path()) { // if not already set.
 		tex->set_property(
-			filename, 0, 0, false /* dynamic */, -1 /* miplevels */, true /* usefilter */, 
-			zz_device_resource::ZZ_POOL_MANAGED,
+			filename, 0, 0, false /* dynamic */, -1 /* miplevels */, true /* usefilter */,
+			zz_device_resource::ZZ_POOL_DEFAULT,
 			ZZ_FMT_UNKNOWN, false /* for_image */ );
 	}
 	return _set_texture(index, (zz_texture*)tex);

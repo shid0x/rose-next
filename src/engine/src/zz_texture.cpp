@@ -51,7 +51,12 @@ zz_texture::zz_texture() :
 	texture_locked(false)
 {
 	load_weight = 1;
-	res.set_pool( zz_device_resource::ZZ_POOL_MANAGED );
+	// D3DPOOL_DEFAULT: D3DPOOL_MANAGED is illegal under D3D9Ex and costs a driver-side
+	// system-memory shadow copy of every texture, which matters in a 32-bit process.
+	// Default-pool textures are destroyed by invalidate_device_objects() and rebuilt by
+	// restore_device_objects(), which reloads from the VFS via load_real() -- the same
+	// call init_device_objects() already used. See doc/d3d9ex-migration.md.
+	res.set_pool( zz_device_resource::ZZ_POOL_DEFAULT );
 }
 
 zz_texture::~zz_texture ()

@@ -224,8 +224,8 @@ zz_sfx_ocean::zz_sfx_ocean () :	time_interval(ZZ_MSEC_TO_TIME(100)),	texture_ind
 		sprintf(filename, waterpath, i+1);
 
 		tex = static_cast<zz_texture*>(znzin->textures->spawn(NULL, ZZ_RUNTIME_TYPE(zz_texture), false /* not to autoload */));
-		tex->set_property(filename, 0, 0, false /* dynamic */, 1 /* miplevels */, true /* usefilter */, 
-			zz_device_resource::ZZ_POOL_MANAGED, ZZ_FMT_UNKNOWN, true /* for image */);
+		tex->set_property(filename, 0, 0, false /* dynamic */, 1 /* miplevels */, true /* usefilter */,
+			zz_device_resource::ZZ_POOL_DEFAULT, ZZ_FMT_UNKNOWN, true /* for image */);
 		if (tex->load()) {
 			tex->lock_texture();
 			ocean_textures.push_back(tex);
@@ -536,8 +536,8 @@ void zz_screen_sfx::make_tiles1()
 	{
 		m_tiles[i] = new TileBehavior;
         
-		d3d_device->CreateVertexBuffer(6*sizeof(VERTEX_TRAIL),D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_TEX1,
-                                      D3DPOOL_MANAGED, &m_tiles[i]->m_pVBTile, NULL );  
+		d3d_device->CreateVertexBuffer(6*sizeof(VERTEX_TRAIL),D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_TEX1,
+                                      D3DPOOL_DEFAULT, &m_tiles[i]->m_pVBTile, NULL );
                            
 		grid_x=i%5;
 		grid_y=i/5;
@@ -625,8 +625,8 @@ void zz_screen_sfx::make_tiles2()
 	{
 		m_tiles[i] = new TileBehavior;
         
-		d3d_device->CreateVertexBuffer(6*sizeof(VERTEX_TRAIL),D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_TEX1,
-                                      D3DPOOL_MANAGED, &m_tiles[i]->m_pVBTile, NULL );  
+		d3d_device->CreateVertexBuffer(6*sizeof(VERTEX_TRAIL),D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_TEX1,
+                                      D3DPOOL_DEFAULT, &m_tiles[i]->m_pVBTile, NULL );
                            
 		center_x=length_x+i*length_x*2.0f;
 		center_y=length_y;
@@ -712,8 +712,8 @@ void zz_screen_sfx::make_tiles3()
 		grid_x=i%2;
 		grid_y=i/2;
 		
-		d3d_device->CreateVertexBuffer(6*sizeof(VERTEX_TRAIL),D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_TEX1,
-										D3DPOOL_MANAGED, &m_tiles[i]->m_pVBTile, NULL );  
+		d3d_device->CreateVertexBuffer(6*sizeof(VERTEX_TRAIL),D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_TEX1,
+										D3DPOOL_DEFAULT, &m_tiles[i]->m_pVBTile, NULL );
 	                        
 		center_x=length_x+grid_x*length_x*2.0f;
 		center_y=length_y+grid_y*length_y*2.0f;
@@ -771,8 +771,8 @@ void zz_screen_sfx::make_tiles4()
 
 	m_tiles[0] = new TileBehavior;
 	
-	if(FAILED(hr = d3d_device->CreateVertexBuffer(6*sizeof(MYLINEVERTEX),D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_DIFFUSE,
-		D3DPOOL_MANAGED, &m_tiles[0]->m_pVBTile, NULL ))) 
+	if(FAILED(hr = d3d_device->CreateVertexBuffer(6*sizeof(MYLINEVERTEX),D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DFVF_XYZ | D3DFVF_DIFFUSE,
+		D3DPOOL_DEFAULT, &m_tiles[0]->m_pVBTile, NULL )))
 	{
 			return;
 	}

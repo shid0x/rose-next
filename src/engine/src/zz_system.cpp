@@ -553,6 +553,15 @@ bool zz_system::call_device_objects_func_ (zz_manager::zz_device_objects_func fu
 bool zz_system::invalidate_device_objects ()
 {
 	zz_manager_mesh_ishared::s_invalidate_device_objects();
+
+	// zz_screen_sfx is not a zz_node, so the walk below never reaches it. It owns
+	// D3DPOOL_DEFAULT resources -- its render target always did, and its tile vertex
+	// buffers do since the pool migration -- and Reset() fails outright while any of them
+	// are still alive. clear() releases them all and resets texture_setup_onoff, so an
+	// effect that is mid-play rebuilds itself lazily on the next render.
+	// See doc/d3d9ex-migration.md.
+	screen_sfx.clear();
+
 	//ZZ_LOG("system: INV-");
 	return call_device_objects_func_(&zz_node::invalidate_device_objects);
 }

@@ -48,6 +48,24 @@ private:
 	DWORD _device_lost_last_log_tick;
 	DWORD _device_lost_poll_count;
 
+	// --- D3DPOOL_MANAGED -> D3DPOOL_DEFAULT migration instrumentation ---
+	// Cumulative creation counts indexed by D3DPOOL (0=DEFAULT, 1=MANAGED, 2=SYSTEMMEM,
+	// 3=SCRATCH). Once the migration is complete the MANAGED slots must stay at zero;
+	// they are the check that a pool flip actually took effect. Live counts are already
+	// available from vertex_buffer_pool/index_buffer_pool/texture_pool sizes.
+	DWORD _stat_created_texture[4];
+	DWORD _stat_created_vertex_buffer[4];
+	DWORD _stat_created_index_buffer[4];
+
+	DWORD _stat_reset_cycles;
+	DWORD _stat_texture_restore_failures;
+	DWORD _stat_buffer_restore_failures;
+
+	void _count_pool_creation (DWORD * counters, int pool_in)
+	{
+		if (pool_in >= 0 && pool_in < 4) ++counters[pool_in];
+	}
+
 	bool _sprite_began;
 
 	char _sprite_name[ZZ_MAX_STRING]; // current sprite name in begin/end block
@@ -454,6 +472,12 @@ public:
 	{
 		return _device_lost;
 	}
+
+	// Logs pool creation counters plus this process's private/committed bytes.
+	// "phase" is a short tag such as "startup" or "after-reset". Used to verify the
+	// pool migration and to measure the 32-bit address-space saving with real data
+	// instead of assuming the full texture footprint is recovered.
+	void log_resource_stats (const char * phase);
 
 	bool screen_state_matches () const;
 

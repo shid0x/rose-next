@@ -319,10 +319,11 @@ void zz_mesh::set_dynamic (bool true_or_false)
 void zz_mesh::set_pool (bool bindable)
 {
 	if (bindable) {
-		if (vbuf_res->get_dynamic())
-			vbuf_res->set_pool( zz_device_resource::ZZ_POOL_DEFAULT );
-		else
-			vbuf_res->set_pool( zz_device_resource::ZZ_POOL_MANAGED );
+		// Both dynamic and static meshes now use the default pool; ZZ_POOL_MANAGED is
+		// illegal under D3D9Ex. Static buffers are rebuilt after a device reset from the
+		// mesh's CPU-side vertex/index arrays, which are retained for the object's
+		// lifetime. See doc/d3d9ex-migration.md.
+		vbuf_res->set_pool( zz_device_resource::ZZ_POOL_DEFAULT );
 	}
 	else {
 		vbuf_res->set_pool( zz_device_resource::ZZ_POOL_SCRATCH );

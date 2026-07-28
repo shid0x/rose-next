@@ -7348,8 +7348,8 @@ int setLazyBufferSize ( int iTextureSize, int iNormalMeshSize, int iTerrainMeshS
 ZZ_SCRIPT
 HNODE loadTexture ( 	ZSTRING pTextureName, ZSTRING pTextureFileName, int iMipLevels, int bUseFilter )
 {
-	return loadTextureWithPool( pTextureName, pTextureFileName, iMipLevels, bUseFilter, 
-		zz_device_resource::zz_resource_pool::ZZ_POOL_MANAGED );
+	return loadTextureWithPool( pTextureName, pTextureFileName, iMipLevels, bUseFilter,
+		zz_device_resource::zz_resource_pool::ZZ_POOL_DEFAULT );
 }
 
 ZZ_SCRIPT
@@ -7792,12 +7792,23 @@ int getSpriteTextureColor(HNODE hTexture,
 	
 	zz_handle tex_handle = tex->get_texture_handle();
 	LPDIRECT3DTEXTURE9 d3d_tex = r->get_texture(tex_handle);
-		
+
+	if (!d3d_tex) return 0;
+
 	D3DSURFACE_DESC d3dsd;
 	d3d_tex->GetLevelDesc( 0, &d3dsd );
 
+	// Only D3DPOOL_SYSTEMMEM/SCRATCH (and dynamic) textures are lockable. Since the pool
+	// migration every ordinary texture lives in D3DPOOL_DEFAULT, where this read-back
+	// cannot work. This entry point currently has no callers anywhere in the client; if it
+	// is ever revived, give the source texture ZZ_POOL_SYSTEMMEM or cache its pixels at
+	// load time rather than reintroducing a lock here.
 	D3DLOCKED_RECT rect;
-	d3d_tex->LockRect( 0, &rect, NULL, D3DLOCK_READONLY );
+	if (FAILED(d3d_tex->LockRect( 0, &rect, NULL, D3DLOCK_READONLY ))) {
+		ZZ_LOG("interface: getSpriteTextureColor() failed. texture(%s) is not lockable.\n",
+			tex->get_path() ? tex->get_path() : "(null)");
+		return 0;
+	}
 
 	int width, height;
 
@@ -7917,12 +7928,14 @@ int getSpriteTextureColor(HNODE hTexture,
 	
 	
 	d3d_tex->UnlockRect(0);
+
+	return 1;
 }
 
 
 
 ZZ_DLL
-int inputSpriteSFX ( HNODE hTexture, 
+int inputSpriteSFX ( HNODE hTexture,
     const ZZ_RECT * pSrcRect,
     const ZZ_VECTOR *pCenter,
     const ZZ_VECTOR *pPosition,
