@@ -757,16 +757,7 @@ bool zz_renderer_d3d::initialize ()
 		
 		_parameters.EnableAutoDepthStencil = TRUE;
 		_parameters.AutoDepthStencilFormat = depthstencil_format;
-		
-		if (state.use_vsync) {
-			_parameters.PresentationInterval = D3DPRESENT_INTERVAL_ONE; // same as D3DPRESENT_INTERVAL_DEFAULT
-			ZZ_LOG("interface: vsync on.\n");
-		}
-		else {
-			_parameters.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
-			ZZ_LOG("interface: vsync off.\n");
-		}
-		
+
 		ZZ_LOG("r_d3d: fullscreen-mode(%dx%d) enabled.\n", state.buffer_width, state.buffer_height);
 		//ShowCursor(FALSE);
 	}
@@ -792,8 +783,28 @@ bool zz_renderer_d3d::initialize ()
 		_parameters.MultiSampleType = D3DMULTISAMPLE_TYPE(state.fsaa_type);
 		_parameters.EnableAutoDepthStencil = TRUE;
 		_parameters.AutoDepthStencilFormat = depthstencil_format;
-		_parameters.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
 		ZZ_LOG("r_d3d: WiNmOdE(%dx%d).\n", state.buffer_width, state.buffer_height);
+	}
+
+	// Applied to both modes from one place. Windowed mode used to hardcode
+	// D3DPRESENT_INTERVAL_IMMEDIATE and ignore state.use_vsync (which defaults to true),
+	// so vsync was silently forced off there and the frame rate ran unbounded -- there is
+	// no software frame limiter anywhere else in the engine. Keeping the decision in a
+	// single place stops the two branches drifting apart again.
+	//
+	// rose-next.ini -> [VIDEO] VSYNC=0 uncaps the frame rate. The exported useVSync()
+	// script hook is never called by the client, so without this there would be no way
+	// to turn vsync off now that windowed mode respects it.
+	state.use_vsync =
+		(::GetPrivateProfileIntA("VIDEO", "VSYNC", state.use_vsync ? 1 : 0, "./rose-next.ini") != 0);
+
+	if (state.use_vsync) {
+		_parameters.PresentationInterval = D3DPRESENT_INTERVAL_ONE; // same as D3DPRESENT_INTERVAL_DEFAULT
+		ZZ_LOG("r_d3d: vsync on.\n");
+	}
+	else {
+		_parameters.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+		ZZ_LOG("r_d3d: vsync off.\n");
 	}
 
 	// d3d_device must be released in cleanup()
