@@ -20,20 +20,20 @@ available. Thanks to everyone who contributed to the original release.
 This is a full client + server stack. Everything is **32-bit (x86) Windows**.
 
 ```
-Client (C++/DX9)  ←→  LoginServer  ←→  WorldServer  ←→  GameServer
+Client (C++/D3D9Ex) ←→ LoginServer  ←→  WorldServer  ←→  GameServer
                               ↕              ↕               ↕
                         PostgreSQL DB   Game Data (STB/STL)  Game Data
 ```
 
 | Component        | Location                | Tech                          |
 | ---------------- | ----------------------- | ----------------------------- |
-| Game client      | `src/client/`           | C++, DirectX 9, Win32         |
+| Game client      | `src/client/`           | C++, Direct3D 9Ex, Win32      |
 | Login server     | `src/sho_loginserver/`  | C++ (authentication)          |
 | World server     | `src/sho_worldserver/`  | C++ (world/channel mgmt)      |
 | Game server      | `src/sho_gameserver/`   | C++ (combat, zones, NPCs)     |
 | Shared C++       | `src/common/`, `src/common-server/` | items, quests, sockets |
 | Shared Rust      | `src/common-lib/`       | logger, config, FlatBuffers   |
-| 3D engine        | `src/engine/`           | DirectX 9 rendering           |
+| 3D engine        | `src/engine/`           | Direct3D 9Ex rendering        |
 | UI framework     | `src/tgamectrl/`        | custom GUI controls           |
 | Asset pipeline   | `src/pipeline/`         | Rust asset baking tool        |
 | Dev tools        | `src/tools/`            | VFS browser, NPC shop editor  |
@@ -175,6 +175,11 @@ override the source with `-in`).
 To run the client, put the resulting `data.idx` and `rose.vfs` **next to
 `rosenext.exe`**, wherever you choose to run it from. (`Exes/` is just a
 convenient staging folder; there's nothing special about it.)
+
+> **Also required next to `rosenext.exe`:** `znzin.dll`, `triggervfs.dll`,
+> `discord_game_sdk.dll` and **`d3dx9_43.dll`**. The build and packaging scripts
+> place these for you; if you assemble a run folder by hand and the client exits
+> immediately at startup, a missing DLL is the usual cause.
 
 > The separate `assets/` baking pipeline (`build-assets.ps1`, `assets/bake.manifest`)
 > is the original asset-authoring workflow and is **not** required for this

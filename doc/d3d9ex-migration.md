@@ -94,8 +94,8 @@ merely a stepping stone.
 
 ### What we actually get (do not oversell)
 
-- **Real:** no device loss on alt-tab / lock / UAC / RDP under 9Ex. Today that path does a
-  full VFS texture reload and `throw`s on failure ([`zz_renderer_d3d.cpp:3063`](../src/engine/src/zz_renderer_d3d.cpp#L3063)).
+- **Real:** no device loss on alt-tab / lock / UAC / RDP under 9Ex. The legacy path does a
+  full VFS texture reload and `throw`s on failure (`reset_device()`).
 - **Real, but measure it:** 32-bit address-space relief. Instrumented in Stage C.
 - **Probably unavailable:** flip-model presentation. See "FLIPEX blockers" below.
 - **Not a thing:** raw FPS gains. 9Ex is not a performance patch.
@@ -124,12 +124,11 @@ mundane bugs accounted for everything. Measure the boring causes first.
 `D3DSWAPEFFECT_FLIPEX` conflicts with two live features:
 
 1. **MSAA is a real user setting.** `state.fsaa_type` is validated via
-   `CheckDeviceMultiSampleType` ([`:603`](../src/engine/src/zz_renderer_d3d.cpp#L603)) and applied at
-   [`:635`](../src/engine/src/zz_renderer_d3d.cpp#L635) / [`:674`](../src/engine/src/zz_renderer_d3d.cpp#L674).
+   `CheckDeviceMultiSampleType` and applied to `_parameters.MultiSampleType` in both the
+   fullscreen and windowed present-parameter branches of `initialize()`.
    Multisampling requires `D3DSWAPEFFECT_DISCARD`.
-2. **`swap_buffers` overrides the destination window** —
-   `Present(NULL, NULL, hwnd, NULL)` at [`:3099`](../src/engine/src/zz_renderer_d3d.cpp#L3099).
-   FLIPEX forbids the override.
+2. **`swap_buffers()` overrides the destination window** — it passes `hwnd` as
+   `hDestWindowOverride` to `Present`/`PresentEx`. FLIPEX forbids the override.
 
 Commit 3 therefore means "drop MSAA and rework presentation", not "set an enum".
 
@@ -161,29 +160,31 @@ plan — and re-measure now that the frame rate is actually capped, since the ea
 
 ## Why this is tractable (audit findings)
 
-The D3D surface area is unusually well-funnelled:
+> Symbol names below are deliberately **not** line-linked: this section describes the
+> pre-migration audit, and the code has since moved. Grep for the symbol.
 
-- One `Direct3DCreate9` — [`:161`](../src/engine/src/zz_renderer_d3d.cpp#L161)
-- One `CreateDevice` funnel — `_create_device()` [`:493`](../src/engine/src/zz_renderer_d3d.cpp#L493)
-- Lost/reset logic in three functions: `wait_device_lost()` [`:2994`](../src/engine/src/zz_renderer_d3d.cpp#L2994),
-  `reset_device()` [`:3011`](../src/engine/src/zz_renderer_d3d.cpp#L3011), `swap_buffers()` [`:3097`](../src/engine/src/zz_renderer_d3d.cpp#L3097)
+The D3D surface area is unusually well-funnelled (all in `src/engine/src/zz_renderer_d3d.cpp`):
+
+- One `Direct3DCreate9` call, in the `zz_renderer_d3d` constructor
+- One `CreateDevice` funnel — `_create_device()`, used by all four fallback attempts
+- Lost/reset logic in three functions: `wait_device_lost()`, `reset_device()`,
+  `swap_buffers()`
 
 **The decisive finding:** for both textures and meshes, `init_device_objects()` and
 `restore_device_objects()` are *identical code* differing only by pool filter
-([`zz_texture.cpp:184-242`](../src/engine/src/zz_texture.cpp#L184-L242),
-[`zz_mesh.cpp:131-194`](../src/engine/src/zz_mesh.cpp#L131-L194)).
+(`zz_texture.cpp`, `zz_mesh.cpp`).
 
 - Textures rebuild via `load_real()` → reloads from VFS, retains no decoded CPU copy.
 - Meshes rebuild via `update_vertex_buffer()` with **no** file reload → vertex/index data
   lives in RAM permanently, so static buffers can already restore themselves.
 
 So for the bulk of resources the migration really is a pool flip. Pool is already a
-first-class concept: `zz_device_resource::zz_resource_pool`
-([`zz_device_resource.h:26-32`](../src/engine/include/zz_device_resource.h#L26-L32)),
-values mirror `D3DPOOL`, and `ZZ_POOL_SYSTEMMEM` already exists (still legal under 9Ex).
+first-class concept: `zz_device_resource::zz_resource_pool` (in
+`src/engine/include/zz_device_resource.h`), values mirror `D3DPOOL`, and
+`ZZ_POOL_SYSTEMMEM` already exists (still legal under 9Ex).
 
 **Internal renderer resources are already reset-cycle-aware.** `invalidate_device_objects()`
-([`:1398`](../src/engine/src/zz_renderer_d3d.cpp#L1398)) already `SAFE_RELEASE`s the managed
+already `SAFE_RELEASE`s the managed
 ones (`normalization_cubemap`, `sprite_vertexbuffer_*`, `boundingbox_*`,
 `shadowmap_overlay_texture`), and they are either recreated in `restore_device_objects()`
 or lazily on next use. Flipping them to DEFAULT is behaviourally a no-op.
@@ -224,11 +225,11 @@ fixed *before* any pool flip.
 | # | Site | Problem | Fix | Status |
 |---|---|---|---|---|
 | A1 | `create_normalization_cubemap` | MANAGED cubemap filled procedurally via `LockRect` | Fill a `SYSTEMMEM` staging cubemap, `UpdateTexture` into a DEFAULT one | done |
-| A2 | `getSpriteTextureColor` [`zz_interface.cpp:7713`](../src/engine/src/zz_interface.cpp#L7713) | `LockRect(D3DLOCK_READONLY)` pixel read-back | **Dead code — zero callers repo-wide.** Guard the lock, fail gracefully | done |
+| A2 | `getSpriteTextureColor` (`zz_interface.cpp`) | `LockRect(D3DLOCK_READONLY)` pixel read-back | **Dead code — zero callers repo-wide.** Guard the lock, fail gracefully | done |
 
-Bulk texture upload is *not* affected: it goes through
-`D3DXCreateTextureFromFileInMemoryEx` with pool as a parameter
-([`:3789-3798`](../src/engine/src/zz_renderer_d3d.cpp#L3789-L3798)); D3DX stages internally.
+Bulk texture upload is *not* affected: `download_texture()` goes through
+`D3DXCreateTextureFromFileInMemoryEx` with the pool as a parameter, and D3DX stages
+the upload internally.
 
 ### Stage C — instrumentation — **done**
 

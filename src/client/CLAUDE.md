@@ -2,7 +2,7 @@
 
 ## Overview
 
-DirectX 9 Win32 game client. Single-threaded game loop with packet-based server communication. All code is C++ built with VS2019 targeting x86.
+Direct3D 9Ex (with plain D3D9 fallback) Win32 game client. Single-threaded game loop with packet-based server communication. All code is C++ built with VS2019 targeting x86.
 
 ## Key Subsystems
 
@@ -258,13 +258,29 @@ Client-only DPS meter fed by the authoritative combat event stream. **Zero comba
 
 **Diagnostic**: if a stutter seems to span unrelated subsystems (camera + UI + animation) and gets worse as monitor refresh rate climbs above the 64 Hz timer rate, suspect timer precision before swap-chain queue depth or driver state. Confirm with `QueryPerformanceCounter` traces of actual frame durations alongside `timeGetTime()` deltas — they should agree.
 
-## Fullscreen Swap Chain
+## Device, Swap Chain & Screen Modes
 
-`zz_renderer_d3d.cpp` fullscreen present parameters ([zz_renderer_d3d.cpp:629-642](src/engine/src/zz_renderer_d3d.cpp#L629-L642)) intentionally use:
+The client runs on a **Direct3D 9Ex** device when the platform provides one, falling back to plain D3D9 otherwise. Full design notes, rationale and the outstanding gaps live in [doc/d3d9ex-migration.md](doc/d3d9ex-migration.md) — read that before touching device creation, present, or reset. Highlights that bite from the client side:
+
+- `D3DPOOL_MANAGED` is **illegal** on a 9Ex device and is gone from everything we compile. New device resources go in `D3DPOOL_DEFAULT` and must survive the invalidate/restore cycle. `D3DPOOL_SYSTEMMEM` is still legal and is the escape hatch for anything that genuinely needs `LockRect`.
+- **`d3dx9_43.dll` is a hard runtime dependency.** D3DX9 is no longer statically linked; the client will not start without the DLL next to it. The old 2005-era static D3DX allocated `ID3DXFont`'s glyph cache in `D3DPOOL_MANAGED`, so on a 9Ex device font creation succeeded but `DrawText` silently drew nothing — no chat, no item names, no player names, while sprites (and therefore the rest of the UI) rendered fine. If text vanishes wholesale, suspect the D3DX runtime before the font code.
+- **A/B switch:** `rose-next.ini` → `[VIDEO] D3D9EX=0`, or `ROSE_NO_D3D9EX=1` in the environment, forces the legacy path. Always confirm via the log which path is live — a toggle that silently does nothing produces a false negative (this cost a debugging round).
+
+Present parameters ([zz_renderer_d3d.cpp:734-800](src/engine/src/zz_renderer_d3d.cpp#L734-L800)) intentionally use:
 - `BackBufferCount = 1` — minimum flip-queue depth, makes it harder for a missed-vsync frame to lock the pipeline into a half-rate beat.
-- `SwapEffect = D3DSWAPEFFECT_DISCARD` (regardless of FSAA) — runtime-managed back buffers instead of `D3DSWAPEFFECT_FLIP`'s driver-managed flip queue, which on AMD could pin the present cadence after a single overrun.
+- `SwapEffect = D3DSWAPEFFECT_DISCARD` (regardless of FSAA) — runtime-managed back buffers instead of `D3DSWAPEFFECT_FLIP`'s driver-managed flip queue, which on AMD could pin the present cadence after a single overrun. **`D3DSWAPEFFECT_FLIPEX` was evaluated and rejected** — it conflicts with MSAA (a live user setting) and with the `Present(..., hwnd, ...)` destination-window override; see the migration doc for why the motivating symptom turned out to be something else entirely.
 
 These were tightened while diagnosing the sticky-stutter bug. Neither change alone fixed the perceived stutter — the timer-precision fix above did — but both narrow the surface for residual driver-side queue pathologies and are kept defensively. Do not raise `BackBufferCount` back to 2 or restore `D3DSWAPEFFECT_FLIP` without a measured reason.
+
+**Vsync is the only frame cap in the engine** — there is no software frame limiter anywhere. The presentation interval is therefore decided **once, after** the fullscreen/windowed split ([zz_renderer_d3d.cpp:798](src/engine/src/zz_renderer_d3d.cpp#L798)); keep it that way. The windowed branch used to hardcode `D3DPRESENT_INTERVAL_IMMEDIATE` and ignore `state.use_vsync` (which defaults to true), so windowed mode ran unbounded while fullscreen was capped — which also accounted for the long-standing "windowed feels worse than fullscreen" impression. `[VIDEO] VSYNC=0` in `rose-next.ini` uncaps deliberately; the exported `useVSync()` script hook is never called by anything, so the INI is the only knob.
+
+### Window sizing must match the backbuffer
+
+In windowed mode the backbuffer is created at the requested client size and D3D **stretches it to whatever the client area actually is**. Mouse input is raw client pixels, so any mismatch silently desyncs hit-testing from what is drawn — the error grows with distance from the origin, which reads as "the checkbox is a bit off" rather than an obvious break.
+
+`CApplication::ResizeWindowByClientSize` therefore clamps against the room actually left for the *client* area (`SM_C*MAXTRACK` minus the decoration size), not against the raw screen size, and re-syncs the renderer if the granted client rect still differs from the request. Windows refuses to size a `WS_THICKFRAME` window past `SM_C*MAXTRACK` unless the app handles `WM_GETMINMAXINFO`, which this client does not — so on a 1920×1080 desktop a requested 1080-tall client area came back as 1061 and everything below the top of the screen drifted.
+
+**Known gap:** there is no `WM_SIZE` handler, so dragging the window's resize frame reproduces exactly this stretch-and-drift. Fixing it needs a device reset per resize (or on `WM_EXITSIZEMOVE`).
 
 ## Build
 
@@ -274,7 +290,7 @@ Built as part of `rose-next.sln` (x86/Win32). Depends on:
 - `tgamectrl` — UI controls
 - `lib_util` — utilities
 - `common-lib` (Rust) — FFI staticlib
-- Thirdparty: DirectX 9, lua4, imgui, ogg/vorbis, flatbuffers, sqlite, zlib
+- Thirdparty: Direct3D 9Ex (core headers come from the Windows SDK), D3DX9 June 2010 (`d3dx9_43.dll`, **must ship with the client**), lua4, imgui, ogg/vorbis, flatbuffers, sqlite, zlib
 
 ## Conventions
 
