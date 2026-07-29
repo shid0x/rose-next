@@ -414,9 +414,29 @@ long-standing windowed-mode bugs fixed along the way.
   the device to match the client area (`CApplication::ApplyWindowedClientResize`, applied
   on `WM_EXITSIZEMOVE` so a drag does not pay a device teardown per message). Validated
   in game.
-- **Untested paths from the commit 2 matrix:** resolution change, MSAA on/off, lock screen,
-  and an extended spell minimised (the `S_PRESENT_OCCLUDED` throttle remains the
-  least-exercised new code). Fullscreen ↔ windowed toggling has since been well covered.
+- **Untested paths from the commit 2 matrix:** resolution change, MSAA on/off, and lock
+  screen. Fullscreen ↔ windowed toggling and the occlusion path have since been covered.
+
+### Occlusion (`S_PRESENT_OCCLUDED`) — validated
+
+While the window is minimised (or another app owns the monitor fullscreen)
+`zz_renderer_d3d::throttle_if_occluded()` makes `begin_scene()` return false, so the frame
+is skipped entirely rather than rendered and thrown away. Every `beginScene()` caller
+already treats a false return as "skip all rendering" — the same contract a lost device
+uses — so no client code was involved.
+
+**The trap, if this is ever touched:** skipping the frame stops `swap_buffers()` running,
+and `swap_buffers()` is the only thing that *sets* the occluded flag. `throttle_if_occluded()`
+therefore polls `CheckDeviceState()` itself to notice the window returning. Remove that
+poll and the renderer latches into "occluded" on the first minimise and never draws again.
+Rapid minimise/restore is the test that exposes it.
+
+`background_render` still works for its real use case: a visible-but-unfocused window is
+**not** occluded, so only the genuinely invisible case is skipped.
+
+Honest scope note: measured benefit on a desktop is small — this client is light enough
+that the wasted rendering was not hurting anything. The case it actually serves is laptops
+and long minimised stretches.
 
 ## Gotchas
 

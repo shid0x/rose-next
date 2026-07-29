@@ -260,6 +260,14 @@ bool zz_view_d3d::begin_scene ()
 		return false; // device lost
 	}
 
+	// Minimised or fully obscured: nothing we draw can be seen, so skip the frame the same
+	// way a lost device does. Every caller already treats a false return as "skip all
+	// rendering", so this needs no client-side change.
+	if (znzin->renderer->throttle_if_occluded()) {
+		scene_began = false;
+		return false;
+	}
+
 	znzin->renderer->init_render_state();
 
 	znzin->fonts->prepare_font();

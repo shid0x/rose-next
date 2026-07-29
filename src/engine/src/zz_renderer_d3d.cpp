@@ -3377,6 +3377,50 @@ zz_renderer_d3d::e_device_status zz_renderer_d3d::translate_present_result (HRES
 	}
 }
 
+// How long to yield per frame while the window is hidden. Matches the sleep the client
+// already uses on its own "not rendering this frame" path, so a minimised client settles
+// at a comparable loop rate and still services the network and window messages promptly.
+static const DWORD kOccludedFrameSleepMs = 30;
+
+// Returns true when the swapchain is occluded and this frame should be skipped entirely.
+//
+// The point of S_PRESENT_OCCLUDED is that rendering to a minimised or fully hidden window
+// is wasted work: without this the client happily runs a full scene render + present every
+// frame while minimised (background_render defaults to true), which is why a minimised
+// client used to keep a GPU busy indefinitely.
+//
+// Skipping the frame means swap_buffers() no longer runs, and swap_buffers() is the only
+// thing that *sets* _device_occluded -- so this has to poll CheckDeviceState() itself to
+// notice the window coming back. Miss that and the renderer latches into "occluded" on the
+// first minimise and never draws again.
+bool zz_renderer_d3d::throttle_if_occluded ()
+{
+	if (!d3d_device_ex) {
+		return false; // plain D3D9 has no occlusion status; behave exactly as before
+	}
+
+	if (!_device_occluded) {
+		return false; // not occluded -- PresentEx will say so if that changes
+	}
+
+	HWND hwnd = view ? (HWND)view->get_handle() : NULL;
+	const e_device_status status =
+		translate_present_result(d3d_device_ex->CheckDeviceState(hwnd));
+
+	if (status != ZZ_DEVICE_OCCLUDED) {
+		// Back on screen, or something worse happened (hung/removed/mode change). Either
+		// way stop skipping: rendering resumes and swap_buffers() classifies it properly.
+		_device_occluded = false;
+		ZZ_LOG("r_d3d: no longer occluded. resuming render.\n");
+		return false;
+	}
+
+	// Still hidden. Yield generously -- nothing is visible, and the game loop keeps
+	// servicing the network and window messages between these calls.
+	::Sleep(kOccludedFrameSleepMs);
+	return true;
+}
+
 void zz_renderer_d3d::swap_buffers (HWND hwnd)
 {
 	HRESULT hr;
@@ -3413,12 +3457,13 @@ void zz_renderer_d3d::swap_buffers (HWND hwnd)
 			break;
 
 		case ZZ_DEVICE_OCCLUDED:
-			// Throttle instead of spinning at full rate against a hidden window.
+			// Latch it. throttle_if_occluded() picks this up at the top of the next
+			// frame and skips the whole render until the window is back, so there is no
+			// need to sleep here -- this present has already happened.
 			if (!_device_occluded) {
-				ZZ_LOG("r_d3d: swap_buffers() occluded. throttling.\n");
+				ZZ_LOG("r_d3d: swap_buffers() occluded. skipping render until restored.\n");
 			}
 			_device_occluded = true;
-			::Sleep(16);
 			break;
 
 		case ZZ_DEVICE_MODE_CHANGED:

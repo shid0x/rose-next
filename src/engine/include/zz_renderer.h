@@ -669,6 +669,12 @@ public:
 	// returns device_lost
 	virtual bool reset_device () = 0;
 
+	// True when the swapchain is occluded (minimised or fully obscured) and there is no
+	// point rendering this frame. Implementations should also throttle, since the caller
+	// skips straight past the frame and would otherwise spin. Default: never occluded,
+	// which is correct for any renderer with no such concept.
+	virtual bool throttle_if_occluded () { return false; }
+
 #ifdef _DEBUG
 	// only for debugging
 	virtual void test() = 0;

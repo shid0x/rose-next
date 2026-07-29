@@ -397,6 +397,12 @@ public:
 
 	e_device_status translate_present_result (HRESULT hr) const;
 
+	// See zz_renderer::throttle_if_occluded. Skipping the frame means swap_buffers() --
+	// the only thing that *sets* the occluded flag -- stops running, so this polls
+	// CheckDeviceState() to notice when the window comes back. Without that poll the
+	// renderer would latch into "occluded" on the first minimise and never draw again.
+	virtual bool throttle_if_occluded ();
+
 	// gamma control section
 	bool set_gamma (const zz_gamma& gamma);
 	bool get_gamma (zz_gamma& gamma);
