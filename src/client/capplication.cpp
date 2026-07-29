@@ -165,6 +165,28 @@ CApplication::MessageProc(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
                 ::ClientToScreen(hWnd, (POINT*)&sRECT + 1);
             }
             break;
+
+        // The user grabbed the window frame. WM_SIZE then fires continuously, and each
+        // resize costs a full device teardown/recreate, so hold off until they let go.
+        case WM_ENTERSIZEMOVE:
+            m_bInSizeMove = true;
+            break;
+
+        case WM_EXITSIZEMOVE:
+            m_bInSizeMove = false;
+            ApplyWindowedClientResize();
+            break;
+
+        case WM_SIZE:
+            // SIZE_MINIMIZED has a zero client area -- nothing to resize to. During a
+            // frame drag the work is deferred to WM_EXITSIZEMOVE above. Everything else
+            // (maximise, restore, programmatic SetWindowPos) arrives here as a one-shot
+            // and is applied immediately; ApplyWindowedClientResize() is a no-op when the
+            // client area already matches, so the common case costs nothing.
+            if (wParam != SIZE_MINIMIZED && !m_bInSizeMove) {
+                ApplyWindowedClientResize();
+            }
+            break;
         case WM_COMMAND:
             this->wm_COMMAND(wParam);
             break;
@@ -180,6 +202,11 @@ CApplication::CApplication() {
 
     m_bViewWireMode = false;
     m_bFullScreenMode = true;
+
+    m_nScrDepth = 32;
+    m_bInSizeMove = false;
+    m_bResizingEngine = false;
+    m_bEngineReady = false;
 
     m_nScrWidth = 0;
     m_nScrHeight = 0;
@@ -322,10 +349,62 @@ CApplication::ParseArgument(char* pStr) {
 ///		- 현재 윈도우즈 해상도를 구해서 변경하고자하는 크기를 비교하자
 //-----------------------------------------------------------------------------------------------------------------
 void
+CApplication::ApplyWindowedClientResize() {
+    if (!m_bEngineReady)
+        return; // engine globals are null before Init_DEVICE and after Free_DEVICE
+    if (m_bFullScreenMode)
+        return; // fullscreen size is driven by the mode switch, not by the frame
+    if (m_bResizingEngine)
+        return; // our own MoveWindow posts WM_SIZE; do not recurse
+    if (!m_hWND)
+        return;
+
+    RECT client_rect = {0, 0, 0, 0};
+    if (!::GetClientRect(m_hWND, &client_rect))
+        return;
+
+    const int client_width = client_rect.right - client_rect.left;
+    const int client_height = client_rect.bottom - client_rect.top;
+
+    // Minimised or otherwise degenerate: a device reset with a zero-sized backbuffer
+    // fails, and there is nothing meaningful to render at anyway.
+    if (client_width <= 0 || client_height <= 0)
+        return;
+
+    if (client_width == (int)m_nScrWidth && client_height == (int)m_nScrHeight)
+        return; // already in sync -- nothing to do
+
+    m_bResizingEngine = true;
+
+    // Deliberately NOT ResizeWindowByClientSize(): that would MoveWindow the window the
+    // user just sized. Take the client area as given and rebuild the device to match it.
+    setScreen(client_width, client_height, m_nScrDepth, FALSE /* windowed */);
+    setBuffer(client_width, client_height, m_nScrDepth);
+    resetScreen();
+
+    SetWIDTH((short)client_width);
+    SetHEIGHT((short)client_height);
+
+    // resetScreen() recreates the device, which invalidates the D3D cursor surface.
+    // ChangeResolution/ChangeScreenMode do the same after their resets.
+    CCursor::GetInstance().ReloadCursor();
+
+    m_bResizingEngine = false;
+}
+
+//-----------------------------------------------------------------------------------------------------------------
+void
 CApplication::ResizeWindowByClientSize(int& iClientWidth,
     int& iClientHeight,
     int iDepth,
     bool update_engine) {
+    // Remembered so a later frame-drag resize can rebuild the device at the same depth.
+    m_nScrDepth = iDepth;
+
+    // MoveWindow below posts WM_SIZE synchronously; keep the WM_SIZE handler out of the
+    // way while this function is the one driving the resize.
+    m_bResizingEngine = true;
+
     if (m_bFullScreenMode) {
         if (update_engine) {
             setScreen(iClientWidth,
@@ -445,6 +524,8 @@ CApplication::ResizeWindowByClientSize(int& iClientWidth,
 
     ShowWindow(m_hWND, SW_SHOW);
     UpdateWindow(m_hWND);
+
+    m_bResizingEngine = false;
 
     //	// 윈도우 사이즈를 지정 해상도에 맞도록 재조정
     //    int iScreenWidth  = GetSystemMetrics (SM_CXSCREEN);
@@ -636,6 +717,13 @@ CApplication::SetFullscreenMode(bool bFullScreenMode) {
     if (m_bFullScreenMode == bFullScreenMode)
         return; // already fullscreen mode
 
+    // SWP_FRAMECHANGED below posts WM_SIZE while m_bFullScreenMode still holds the *old*
+    // value, so the resize handler would see a windowed-mode transition and rebuild the
+    // device for a size the caller is about to replace anyway. The caller
+    // (CGame::ChangeScreenMode) follows up with ResizeWindowByClientSize, which does the
+    // real work -- suppress the spurious reset in between.
+    m_bResizingEngine = true;
+
     if (bFullScreenMode) {
         SetWindowLongPtr(m_hWND, GWL_STYLE, DEFAULT_FULLSCREEN_STYLE);
         ::SetWindowPos(m_hWND,
@@ -657,6 +745,8 @@ CApplication::SetFullscreenMode(bool bFullScreenMode) {
             SWP_NOMOVE | SWP_NOSIZE /*| SWP_NOZORDER*/ | SWP_FRAMECHANGED);
     }
     m_bFullScreenMode = bFullScreenMode;
+
+    m_bResizingEngine = false;
 }
 
 std::set<ApplicationVideoMode>

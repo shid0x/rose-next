@@ -152,9 +152,15 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCmdLine, int nCmd
 #endif
 
     bool bDeviceInitialized = Init_DEVICE();
+
+    // Only now are the engine globals valid, so window-resize handling may touch them.
+    g_pCApp->SetEngineReady(bDeviceInitialized);
+
     if (bDeviceInitialized) {
         CGame::GetInstance().GameLoop();
     }
+
+    g_pCApp->SetEngineReady(false);
 
     Free_DEVICE();
 

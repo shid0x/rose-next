@@ -280,7 +280,11 @@ In windowed mode the backbuffer is created at the requested client size and D3D 
 
 `CApplication::ResizeWindowByClientSize` therefore clamps against the room actually left for the *client* area (`SM_C*MAXTRACK` minus the decoration size), not against the raw screen size, and re-syncs the renderer if the granted client rect still differs from the request. Windows refuses to size a `WS_THICKFRAME` window past `SM_C*MAXTRACK` unless the app handles `WM_GETMINMAXINFO`, which this client does not — so on a 1920×1080 desktop a requested 1080-tall client area came back as 1061 and everything below the top of the screen drifted.
 
-**Known gap:** there is no `WM_SIZE` handler, so dragging the window's resize frame reproduces exactly this stretch-and-drift. Fixing it needs a device reset per resize (or on `WM_EXITSIZEMOVE`).
+Frame drags are handled by `CApplication::ApplyWindowedClientResize`, driven from `WM_ENTERSIZEMOVE` / `WM_EXITSIZEMOVE` / `WM_SIZE`. It **accepts** the client area Windows gave us and rebuilds the device to match — deliberately *not* calling `ResizeWindowByClientSize`, which would `MoveWindow` the window the user is dragging. Three guards matter, and each closes a real failure rather than a theoretical one:
+
+- **Deferral.** `WM_SIZE` fires continuously during a drag and every resize is a full device teardown, so the work waits for `WM_EXITSIZEMOVE`. Maximise/restore/programmatic sizes arrive outside a drag and apply immediately; `SIZE_MINIMIZED` is skipped (zero client area, and a reset with a zero-sized backbuffer fails).
+- **Re-entrancy** (`m_bResizingEngine`). Our own `MoveWindow` posts `WM_SIZE` synchronously, so the handler would otherwise recurse into the resize. `ResizeWindowByClientSize` and `SetFullscreenMode` both hold this for their duration — the latter because `SWP_FRAMECHANGED` posts `WM_SIZE` while `m_bFullScreenMode` still holds the *old* value, which would rebuild the device for a size `ChangeScreenMode` is about to replace.
+- **Engine lifetime** (`m_bEngineReady`, set after `Init_DEVICE`, cleared before teardown). The window is created *before* `initZnzin()`, so `znzin`/`state` are null in between. Note `CHECK_INTERFACE` in `zz_interface.cpp` is only a **profiler hook** — it does not null-check anything, so `setScreen()` would happily dereference null.
 
 ## Build
 

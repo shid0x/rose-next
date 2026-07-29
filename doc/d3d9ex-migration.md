@@ -410,9 +410,10 @@ long-standing windowed-mode bugs fixed along the way.
 - **`D3DERR_DEVICEREMOVED` is logged and then throws.** Recovering means rebuilding the
   `IDirect3D9Ex` object and every device resource, which the renderer cannot do in place.
   Rare (driver upgrade, adapter change, some remoting transitions) but a real hole.
-- **No `WM_SIZE` handler.** Dragging the window's resize frame leaves the engine unaware of
-  the new client size, reproducing the same stretch-and-drift that `dff55520` fixed for
-  mode switches. Needs a device reset per resize (or on `WM_EXITSIZEMOVE`).
+- ~~**No `WM_SIZE` handler.**~~ **Fixed** — frame drags, maximise and restore now rebuild
+  the device to match the client area (`CApplication::ApplyWindowedClientResize`, applied
+  on `WM_EXITSIZEMOVE` so a drag does not pay a device teardown per message). Validated
+  in game.
 - **Untested paths from the commit 2 matrix:** resolution change, MSAA on/off, lock screen,
   and an extended spell minimised (the `S_PRESENT_OCCLUDED` throttle remains the
   least-exercised new code). Fullscreen ↔ windowed toggling has since been well covered.

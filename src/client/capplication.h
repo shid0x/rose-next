@@ -84,6 +84,20 @@ private:
     bool m_bViewWireMode;
     short m_nScrWidth;
     short m_nScrHeight;
+    int m_nScrDepth; ///< colour depth last handed to the engine
+
+    /// Inside a user drag of the window frame (WM_ENTERSIZEMOVE..WM_EXITSIZEMOVE).
+    /// WM_SIZE fires continuously during the drag and every resize costs a full device
+    /// teardown, so the work is deferred to the end of the drag.
+    bool m_bInSizeMove;
+    /// Re-entrancy guard. Our own resizing calls MoveWindow, which synchronously posts
+    /// WM_SIZE -- without this the handler would recurse back into the resize.
+    bool m_bResizingEngine;
+    /// The window is created before initZnzin(), and torn down before the process exits,
+    /// so there are windows either side of the game loop where the engine globals are
+    /// null. setScreen()/resetScreen() would dereference them, so resize handling is
+    /// gated on this rather than on reasoning about which messages can arrive when.
+    bool m_bEngineReady;
 
     CStrVAR m_Caption;
 
@@ -111,6 +125,17 @@ public:
     short GetHEIGHT() { return m_nScrHeight; }
     void SetWIDTH(short iWidth) { m_nScrWidth = iWidth; }
     void SetHEIGHT(short iHeight) { m_nScrHeight = iHeight; }
+
+    /// Set once the engine is up (after Init_DEVICE) and cleared before teardown.
+    /// Gates the WM_SIZE resize path, which would otherwise touch null engine globals.
+    void SetEngineReady(bool bReady) { m_bEngineReady = bReady; }
+
+    /// Reconfigure the renderer to whatever the window's client area currently is.
+    /// Windowed mode only. The backbuffer is stretched to the client rect while mouse
+    /// input stays in raw client pixels, so any mismatch silently desyncs hit-testing
+    /// from what is drawn. Unlike ResizeWindowByClientSize this never moves or resizes
+    /// the window -- it accepts the size the user chose and makes the engine match.
+    void ApplyWindowedClientResize();
 
     void Show() {
         ::ShowWindow(GetHWND(), SW_SHOWNORMAL);
