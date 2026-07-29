@@ -11,7 +11,7 @@ Three separate commits, deliberately ordered by risk:
 |---|---|---|
 | **1** | Remove `D3DPOOL_MANAGED`; run entirely on `D3DPOOL_DEFAULT` under **ordinary D3D9** | **done — builds clean, validated in-game** |
 | 2 | `Direct3DCreate9Ex` / `CreateDeviceEx` / `PresentEx` / `CheckDeviceState` / `ResetEx` | **done — builds clean, validated in-game** |
-| 3 | `D3DSWAPEFFECT_FLIPEX` — *investigate only, may be rejected* | not started |
+| 3 | `D3DSWAPEFFECT_FLIPEX` | **not pursued — see below** |
 
 > **Validated on 2026-07-28:** rendering correct, text correct (after the D3DX9 upgrade
 > below), clean log, and **alt-tab no longer triggers a device reset** — the headline
@@ -100,7 +100,26 @@ merely a stepping stone.
 - **Probably unavailable:** flip-model presentation. See "FLIPEX blockers" below.
 - **Not a thing:** raw FPS gains. 9Ex is not a performance patch.
 
-### FLIPEX blockers (found in our code, decides commit 3)
+### Commit 3 was rejected — do not re-open without a new reason
+
+**Decided 2026-07-29.** `FLIPEX` was only ever motivated by "windowed mode performs worse
+than fullscreen". That symptom had nothing to do with the presentation model: it was the
+vsync branch asymmetry (windowed hardcoded `D3DPRESENT_INTERVAL_IMMEDIATE`, so the frame
+rate ran unbounded) plus the window-sizing clamp that left the backbuffer stretched into a
+short client area. Both are fixed, and windowed performance was confirmed good in game.
+
+So the cost is concrete — drop MSAA, rework the destination-window override (blockers
+below, both still true) — and the benefit is now speculative against a problem that no
+longer exists. That is the wrong trade.
+
+The one thing that would justify revisiting: wanting **borderless fullscreen** as a
+feature. That is genuinely flip-model territory. Drive it from wanting the feature, not
+from the performance question, which is closed.
+
+Lesson worth keeping: the sophisticated architectural explanation was wrong and two
+mundane bugs accounted for everything. Measure the boring causes first.
+
+### FLIPEX blockers (still true, if it is ever revisited)
 
 `D3DSWAPEFFECT_FLIPEX` conflicts with two live features:
 
@@ -368,6 +387,34 @@ Run each twice — once normally, once with `ROSE_NO_D3D9EX=1` — and compare:
 - [ ] Load a new map immediately after alt-tab
 - [ ] Extended idle while minimised, then restore
 - [ ] Clean shutdown from both fullscreen and windowed
+
+## Outcome
+
+The migration is complete. Five commits on `d3d9ex-pool-migration`:
+
+| Commit | What |
+|---|---|
+| `cc87722a` | Commit 1 — retire `D3DPOOL_MANAGED` |
+| `23108aed` | Upgrade D3DX9 to the June 2010 redistributable (`d3dx9_43`) |
+| `4e9745f2` | Commit 2 — Ex device, present and reset semantics |
+| `699aab78` | Fix uncapped frame rate in windowed mode |
+| `dff55520` | Fix UI hit-testing drift in windowed mode |
+
+Delivered: no device loss on alt-tab (the goal), the driver's system-memory shadow copy of
+every managed resource gone from a 32-bit address space, a modern D3DX, and two
+long-standing windowed-mode bugs fixed along the way.
+
+### Still open, in rough priority order
+
+- **`D3DERR_DEVICEREMOVED` is logged and then throws.** Recovering means rebuilding the
+  `IDirect3D9Ex` object and every device resource, which the renderer cannot do in place.
+  Rare (driver upgrade, adapter change, some remoting transitions) but a real hole.
+- **No `WM_SIZE` handler.** Dragging the window's resize frame leaves the engine unaware of
+  the new client size, reproducing the same stretch-and-drift that `dff55520` fixed for
+  mode switches. Needs a device reset per resize (or on `WM_EXITSIZEMOVE`).
+- **Untested paths from the commit 2 matrix:** resolution change, MSAA on/off, lock screen,
+  and an extended spell minimised (the `S_PRESENT_OCCLUDED` throttle remains the
+  least-exercised new code). Fullscreen ↔ windowed toggling has since been well covered.
 
 ## Gotchas
 
