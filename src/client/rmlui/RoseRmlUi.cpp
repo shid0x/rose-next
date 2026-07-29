@@ -23,6 +23,11 @@ RoseRmlDamageMeter g_DamageMeter;
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
+/// True between a left-press on a panel and its release. Needed because a panel
+/// drag continues after the cursor leaves the panel: without it, the move and
+/// release events stop being forwarded mid-drag and the handle latches on.
+bool g_bDragging = false;
+
 /// Assets live loose under the launch dir. The VFS-vs-loose decision for
 /// shipping .rml/.rcss is Phase 1 work ( see doc/rmlui-evaluation.md ); the
 /// spike deliberately uses loose files so iteration needs no rebake.
@@ -54,28 +59,53 @@ ResolveEnabled() {
     return g_iEnabled != 0;
 }
 
-/// Whether the cursor is over actual UI content, i.e. whether an input event
+/// Whether the cursor is over an actual panel, i.e. whether an input event
 /// should be consumed instead of reaching the game world.
 ///
-/// The document's <body> spans the whole viewport on purpose -- ElementHandle
-/// clamps a panel drag to the move target's containing block, so a collapsed
-/// body makes panels almost immovable. That makes body a screen-wide hit
-/// target, so it must NOT count as "over the UI" or the overlay would swallow
-/// every click, attack and move order in the game.
+/// Deliberately NOT based on Context::GetHoverElement(). Each document's <body>
+/// spans the whole viewport on purpose -- ElementHandle clamps a panel drag to
+/// the move target's containing block, so a collapsed body makes panels nearly
+/// immovable -- which means the hover element is a screen-wide hit target
+/// whenever a document is open. Filtering that by tag name proved unreliable
+/// and cost a round of "the game accepts no input at all".
+///
+/// Instead this tests the cursor against the geometry of each visible panel.
+/// The contract is ours to keep: **a panel is a direct child of <body>**, so
+/// every top-level child of every visible document is treated as solid UI and
+/// everything else is transparent to the game. Nested content does not need
+/// checking because it is inside its panel's box by construction.
 bool
-IsPointerOverUi() {
+IsPointOverPanel(int x, int y) {
     if (g_pContext == NULL)
         return false;
 
-    Rml::Element* pHover = g_pContext->GetHoverElement();
-    if (pHover == NULL || pHover == g_pContext->GetRootElement())
-        return false;
+    const float fx = (float)x;
+    const float fy = (float)y;
 
-    /// Documents themselves and their bodies are layout scaffolding, not content.
-    if (pHover->GetTagName() == "body" || pHover->GetTagName() == "#document")
-        return false;
+    const int iDocs = g_pContext->GetNumDocuments();
+    for (int i = 0; i < iDocs; ++i) {
+        Rml::ElementDocument* pDoc = g_pContext->GetDocument(i);
+        if (pDoc == NULL || !pDoc->IsVisible())
+            continue;
 
-    return true;
+        const int iChildren = pDoc->GetNumChildren();
+        for (int c = 0; c < iChildren; ++c) {
+            Rml::Element* pPanel = pDoc->GetChild(c);
+            if (pPanel == NULL || !pPanel->IsVisible())
+                continue;
+
+            const Rml::Vector2f offset = pPanel->GetAbsoluteOffset(Rml::BoxArea::Border);
+            const Rml::Vector2f size = pPanel->GetBox().GetSize(Rml::BoxArea::Border);
+            if (size.x <= 0.0f || size.y <= 0.0f)
+                continue;
+
+            if (fx >= offset.x && fy >= offset.y && fx < offset.x + size.x
+                && fy < offset.y + size.y)
+                return true;
+        }
+    }
+
+    return false;
 }
 
 /// Maps a Win32 mouse message to RmlUi's button index, or -1.
@@ -316,15 +346,16 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
     if (!g_bInitialised || g_pContext == NULL)
         return false;
 
+    const int x = (short)LOWORD(lParam);
+    const int y = (short)HIWORD(lParam);
+
     switch (uiMsg) {
         case WM_MOUSEMOVE: {
-            const int x = (short)LOWORD(lParam);
-            const int y = (short)HIWORD(lParam);
             /// RmlUi always sees the move -- an in-progress panel drag has to
             /// keep tracking once the cursor leaves the panel. Only the consume
-            /// decision depends on what is under the cursor.
+            /// decision depends on where the cursor is.
             g_pContext->ProcessMouseMove(x, y, 0);
-            return IsPointerOverUi();
+            return g_bDragging || IsPointOverPanel(x, y);
         }
         case WM_LBUTTONDOWN:
         case WM_RBUTTONDOWN:
@@ -333,11 +364,12 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
             const int iButton = MouseButtonFromMsg(uiMsg);
             if (iButton < 0)
                 return false;
-            /// Sampled before dispatch: handling the press can move focus or
-            /// start a drag, which changes what counts as hovered.
-            const bool bOver = IsPointerOverUi();
+            if (!IsPointOverPanel(x, y))
+                return false; /// let the world have it; RmlUi gets no phantom press
+            if (iButton == 0)
+                g_bDragging = true;
             g_pContext->ProcessMouseButtonDown(iButton, 0);
-            return bOver;
+            return true;
         }
         case WM_LBUTTONUP:
         case WM_RBUTTONUP:
@@ -345,14 +377,23 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
             const int iButton = MouseButtonFromMsg(uiMsg);
             if (iButton < 0)
                 return false;
-            const bool bOver = IsPointerOverUi();
+            /// A release that ends a panel drag must reach RmlUi even if the
+            /// cursor has left the panel, or the handle keeps dragging forever.
+            const bool bConsume = g_bDragging || IsPointOverPanel(x, y);
+            if (iButton == 0)
+                g_bDragging = false;
+            if (!bConsume)
+                return false;
             g_pContext->ProcessMouseButtonUp(iButton, 0);
-            return bOver;
+            return true;
         }
         case WM_MOUSEWHEEL: {
-            /// Only consume the wheel when it is over UI content; otherwise the
-            /// camera zoom stops working whenever a panel is open.
-            if (!IsPointerOverUi())
+            /// Wheel coordinates are screen-space, unlike every other mouse
+            /// message here, so convert before hit-testing -- otherwise camera
+            /// zoom breaks in a way that depends on where the window sits.
+            POINT pt = {x, y};
+            ::ScreenToClient(hWnd, &pt);
+            if (!IsPointOverPanel(pt.x, pt.y))
                 return false;
             const float fDelta = -(float)GET_WHEEL_DELTA_WPARAM(wParam) / (float)WHEEL_DELTA;
             g_pContext->ProcessMouseWheel(fDelta, 0);
