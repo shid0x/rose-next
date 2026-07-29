@@ -39,6 +39,15 @@ public:
     void ReleaseDeviceObjects();
     bool CreateDeviceObjects();
 
+    /// resetScreen() destroys the D3D device and creates a NEW one, so the
+    /// cached pointer must be replaced, not reused. Call after a rebuild.
+    void SetDevice(IDirect3DDevice9* pDevice) {
+        m_pDevice = pDevice;
+    }
+    IDirect3DDevice9* GetDevice() const {
+        return m_pDevice;
+    }
+
     /// Screen size drives the orthographic projection.
     void SetViewportSize(int iWidth, int iHeight);
 

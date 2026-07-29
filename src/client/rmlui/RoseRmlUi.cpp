@@ -161,10 +161,53 @@ Shutdown() {
     g_bInitialised = false;
 }
 
+/// resetScreen() releases the D3D device and creates a brand new one
+/// ( zz_renderer_d3d::cleanup -> SAFE_RELEASE(d3d_device), then initialize() ).
+/// Any cached device pointer is therefore dead after a resolution change,
+/// fullscreen toggle or frame-drag resize.
+///
+/// Explicitly hooking every call site proved unreliable -- they are spread
+/// across CApplication (4) and the video options dialog (2), and it is easy to
+/// add a seventh. So the authoritative check is this one: compare the engine's
+/// current device against ours every frame and rebuild when it changes. The
+/// explicit hooks remain as an optimisation ( they release while the old device
+/// is still current, which is tidier ), but correctness does not depend on them.
+///
+/// Releasing our resources here is safe even though the engine already dropped
+/// its reference: our own outstanding references keep the old device object
+/// alive until we let go, so this is an orderly teardown rather than a
+/// use-after-free.
+static void
+SyncDeviceIfChanged() {
+    if (!g_bInitialised || g_pRenderer == NULL)
+        return;
+
+    IDirect3DDevice9* pCurrent = reinterpret_cast<IDirect3DDevice9*>(::getDevice());
+    if (pCurrent == g_pRenderer->GetDevice())
+        return;
+
+    LOG_INFO("[rmlui] device changed, rebuilding overlay resources");
+
+    Rml::ReleaseTextures();
+    g_pRenderer->ReleaseDeviceObjects();
+    g_pRenderer->SetDevice(pCurrent);
+
+    if (pCurrent != NULL) {
+        int iWidth = g_pCApp->GetWIDTH();
+        int iHeight = g_pCApp->GetHEIGHT();
+        g_pRenderer->SetViewportSize(iWidth, iHeight);
+        g_pRenderer->CreateDeviceObjects();
+        if (g_pContext != NULL)
+            g_pContext->SetDimensions(Rml::Vector2i(iWidth, iHeight));
+    }
+}
+
 void
 Update() {
     if (!g_bInitialised || g_pContext == NULL)
         return;
+
+    SyncDeviceIfChanged();
     g_pContext->Update();
 }
 
@@ -195,6 +238,8 @@ OnAfterDeviceRebuild(int iWidth, int iHeight) {
     if (!g_bInitialised || g_pRenderer == NULL)
         return;
 
+    /// The device object itself is new -- adopt it before touching anything.
+    g_pRenderer->SetDevice(reinterpret_cast<IDirect3DDevice9*>(::getDevice()));
     g_pRenderer->SetViewportSize(iWidth, iHeight);
     g_pRenderer->CreateDeviceObjects();
 
