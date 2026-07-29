@@ -186,7 +186,10 @@ SyncDeviceIfChanged() {
     if (pCurrent == g_pRenderer->GetDevice())
         return;
 
-    LOG_INFO("[rmlui] device changed, rebuilding overlay resources");
+    /// Reaching this means an unhooked resetScreen() ran -- e.g. the video
+    /// options apply path ( coptiondlg.cpp ). That is expected and handled; the
+    /// line is here so such paths stay visible rather than silently working.
+    LOG_INFO("[rmlui] device changed without a hook, rebuilding overlay resources");
 
     Rml::ReleaseTextures();
     g_pRenderer->ReleaseDeviceObjects();
@@ -245,6 +248,11 @@ OnAfterDeviceRebuild(int iWidth, int iHeight) {
 
     if (g_pContext != NULL)
         g_pContext->SetDimensions(Rml::Vector2i(iWidth, iHeight));
+
+    /// Logged so the hooked path is visible too. Without this the common case is
+    /// silent and only the fallback announces itself, which reads as "the
+    /// fallback never runs" when the truth is "the hook got there first".
+    LOG_INFO("[rmlui] device rebuilt via hook ({}x{})", iWidth, iHeight);
 }
 
 void
