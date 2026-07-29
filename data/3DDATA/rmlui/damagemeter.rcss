@@ -10,6 +10,14 @@
 body {
     font-family: Verdana;      /* matches the client's own UI font */
     font-size: 11px;
+
+    /* MUST span the viewport. ElementHandle clamps a drag to the move target's
+       containing block, which for an absolutely-positioned panel is <body>; if
+       body collapses to its content the panel can only be nudged a few pixels
+       near the origin. Note RoseRmlUi deliberately does not treat a hover on
+       <body> as "over the UI", or this would swallow every click in the game. */
+    width: 100%;
+    height: 100%;
 }
 
 #meter {
@@ -26,13 +34,18 @@ body {
     border: 1px #3c3c4aff;
 }
 
-/* --- header: drag handle; title stretches, buttons pin right -------------- */
+/* --- drag area: header + info line --------------------------------------- */
+.dragarea {
+    display: block;
+    cursor: move;
+}
+
+/* --- header: title stretches, buttons pin right -------------------------- */
 .header {
     display: flex;
     flex-direction: row;
     align-items: center;
     height: 22px;              /* kHeaderH */
-    cursor: move;
 }
 
 .title {

@@ -14,19 +14,26 @@
         CGameStateMain::ProcWndMsgInstant.
     -->
     <div id="meter">
-        <handle move_target="meter" class="header">
-            <span class="title">DPS - {{title}}</span>
-            <span class="btn" data-event-click="cycle_view()">&gt;</span>
-            <span class="btn" data-event-click="reset_data()">R</span>
-            <span class="btn" data-event-click="close_panel()">X</span>
-        </handle>
+        <!-- The drag area covers the header AND the info line so the panel can be
+             grabbed anywhere along its top, not just on the title text. The rows
+             list is excluded on purpose: it needs to scroll. Buttons still work
+             inside the handle - their click fires and the zero-distance drag is
+             harmless. -->
+        <handle move_target="meter" class="dragarea">
+            <div class="header">
+                <span class="title">DPS - {{title}}</span>
+                <span class="btn" data-event-click="cycle_view()">&gt;</span>
+                <span class="btn" data-event-click="reset_data()">R</span>
+                <span class="btn" data-event-click="close_panel()">X</span>
+            </div>
 
-        <div class="info">
-            <span class="fight">{{fight}}</span>
-            <span data-class-live="live" data-class-idle="!live">
-                {{ live ? 'LIVE' : 'ended' }}
-            </span>
-        </div>
+            <div class="info">
+                <span class="fight">{{fight}}</span>
+                <span data-class-live="live" data-class-idle="!live">
+                    {{ live ? 'LIVE' : 'ended' }}
+                </span>
+            </div>
+        </handle>
 
         <div class="rows">
             <div class="row" data-for="row : rows" data-class-self="row.self">

@@ -54,6 +54,30 @@ ResolveEnabled() {
     return g_iEnabled != 0;
 }
 
+/// Whether the cursor is over actual UI content, i.e. whether an input event
+/// should be consumed instead of reaching the game world.
+///
+/// The document's <body> spans the whole viewport on purpose -- ElementHandle
+/// clamps a panel drag to the move target's containing block, so a collapsed
+/// body makes panels almost immovable. That makes body a screen-wide hit
+/// target, so it must NOT count as "over the UI" or the overlay would swallow
+/// every click, attack and move order in the game.
+bool
+IsPointerOverUi() {
+    if (g_pContext == NULL)
+        return false;
+
+    Rml::Element* pHover = g_pContext->GetHoverElement();
+    if (pHover == NULL || pHover == g_pContext->GetRootElement())
+        return false;
+
+    /// Documents themselves and their bodies are layout scaffolding, not content.
+    if (pHover->GetTagName() == "body" || pHover->GetTagName() == "#document")
+        return false;
+
+    return true;
+}
+
 /// Maps a Win32 mouse message to RmlUi's button index, or -1.
 int
 MouseButtonFromMsg(UINT uiMsg) {
@@ -296,11 +320,11 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
         case WM_MOUSEMOVE: {
             const int x = (short)LOWORD(lParam);
             const int y = (short)HIWORD(lParam);
+            /// RmlUi always sees the move -- an in-progress panel drag has to
+            /// keep tracking once the cursor leaves the panel. Only the consume
+            /// decision depends on what is under the cursor.
             g_pContext->ProcessMouseMove(x, y, 0);
-            /// Consume only when the cursor is actually over a document element,
-            /// otherwise the world would stop receiving hover/camera input.
-            return g_pContext->GetHoverElement() != NULL
-                && g_pContext->GetHoverElement() != g_pContext->GetRootElement();
+            return IsPointerOverUi();
         }
         case WM_LBUTTONDOWN:
         case WM_RBUTTONDOWN:
@@ -309,8 +333,9 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
             const int iButton = MouseButtonFromMsg(uiMsg);
             if (iButton < 0)
                 return false;
-            const bool bOver = g_pContext->GetHoverElement() != NULL
-                && g_pContext->GetHoverElement() != g_pContext->GetRootElement();
+            /// Sampled before dispatch: handling the press can move focus or
+            /// start a drag, which changes what counts as hovered.
+            const bool bOver = IsPointerOverUi();
             g_pContext->ProcessMouseButtonDown(iButton, 0);
             return bOver;
         }
@@ -320,14 +345,18 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
             const int iButton = MouseButtonFromMsg(uiMsg);
             if (iButton < 0)
                 return false;
-            const bool bOver = g_pContext->GetHoverElement() != NULL
-                && g_pContext->GetHoverElement() != g_pContext->GetRootElement();
+            const bool bOver = IsPointerOverUi();
             g_pContext->ProcessMouseButtonUp(iButton, 0);
             return bOver;
         }
         case WM_MOUSEWHEEL: {
+            /// Only consume the wheel when it is over UI content; otherwise the
+            /// camera zoom stops working whenever a panel is open.
+            if (!IsPointerOverUi())
+                return false;
             const float fDelta = -(float)GET_WHEEL_DELTA_WPARAM(wParam) / (float)WHEEL_DELTA;
-            return g_pContext->ProcessMouseWheel(fDelta, 0) == false;
+            g_pContext->ProcessMouseWheel(fDelta, 0);
+            return true;
         }
         default:
             break;
