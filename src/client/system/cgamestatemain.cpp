@@ -7,6 +7,7 @@
 
 #include "bullet.h"
 #include "BoneEffectBudget.h"
+#include "rmlui/RoseRmlUi.h"
 #include "ccamera.h"
 #include "cclientstorage.h"
 #include "cskydome.h"
@@ -379,6 +380,19 @@ CGameStateMain::Render_GameMENU() {
             boneFx.tierCounts[PARTICLE_EFFECT_TIER_OFF],
             boneFx.topNpc);
         nRowY += kDebugRowStride;
+
+        /// Spike 1 exit criterion #4: the RmlUi pass must be measurable, not
+        /// assumed cheap. Only shown while the overlay is actually enabled.
+        if (RoseRmlUi::IsEnabled()) {
+            ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
+                false,
+                kDebugX,
+                nRowY,
+                g_dwYELLOW,
+                "RmlUi: draws=%d",
+                RoseRmlUi::GetDrawCallCount());
+            nRowY += kDebugRowStride;
+        }
 
         ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
             false,

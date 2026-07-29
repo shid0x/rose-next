@@ -47,6 +47,7 @@
 #include "../interface/cursor/ccursor.h"
 #include "../interface/ExternalUI/ExternalUILobby.h"
 #include "interface/dev/dev_ui.h"
+#include "rmlui/RoseRmlUi.h"
 
 #include "io_quest.h"
 #include "rose/io/stb.h"
@@ -207,6 +208,11 @@ CGame::GameLoop() {
 
     dev_ui_init(g_pCApp->GetHWND());
 
+    /// Spike 1 overlay. Inert unless [VIDEO] RMLUI=1 / ROSE_RMLUI=1; the log
+    /// always states which path is live.
+    RoseRmlUi::Initialise(g_pCApp->GetHWND(), reinterpret_cast<void*>(::getDevice()),
+        g_pCApp->GetWIDTH(), g_pCApp->GetHEIGHT());
+
     do {
         bool bLostFocus = g_pCApp->GetMessage();
 
@@ -223,6 +229,7 @@ CGame::GameLoop() {
 
     } while (!g_pCApp->IsExitGame());
 
+    RoseRmlUi::Shutdown();
     dev_ui_destroy();
     Exit();
 }

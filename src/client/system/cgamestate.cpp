@@ -3,6 +3,7 @@
 #include "cgamestate.h"
 #include "capplication.h"
 #include "interface/dev/dev_ui.h"
+#include "rmlui/RoseRmlUi.h"
 
 CGameState::CGameState(void):
     m_iStateID(0),
@@ -23,6 +24,13 @@ CGameState::ProcWndMsgInstant(unsigned uiMsg, WPARAM wParam, LPARAM lParam) {
             if (wParam == VK_OEM_3) { // '~' key
                 dev_ui_enabled = !dev_ui_enabled;
             }
+    }
+
+    /// RmlUi gets first refusal, and consumes only what it actually handled --
+    /// otherwise the world stops receiving hover and camera input. Derived
+    /// states call this base first, so this covers the whole legacy chain.
+    if (RoseRmlUi::ProcessWndMsg(g_pCApp->GetHWND(), uiMsg, wParam, lParam)) {
+        return 1;
     }
 
     if (this->dev_ui_enabled) {
@@ -73,4 +81,12 @@ CGameState::render_dev_ui(void) {
         dev_ui_frame();
         dev_ui_render();
     }
+
+    /// Shared overlay hook: every game state calls this inside its
+    /// beginScene()/endScene() pair, after the game UI has been drawn, which is
+    /// exactly where the RmlUi pass belongs. It must be OUTSIDE the engine's
+    /// beginSprite()/endSprite() block -- the renderer's state guard assumes it
+    /// owns the device for the duration of the pass.
+    RoseRmlUi::Update();
+    RoseRmlUi::Render();
 }

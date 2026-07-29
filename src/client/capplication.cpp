@@ -20,6 +20,8 @@
 #include "rose/common/game_config.h"
 #include "rose/common/game_types.h"
 
+#include "rmlui/RoseRmlUi.h"
+
 using namespace Rose::Common;
 
 CApplication* CApplication::m_pInstance = NULL;
@@ -376,6 +378,10 @@ CApplication::ApplyWindowedClientResize() {
 
     m_bResizingEngine = true;
 
+    // RmlUi holds D3DPOOL_DEFAULT vertex/index buffers and textures which do not
+    // survive the reset below. 9Ex removed the alt-tab reset but NOT this one.
+    RoseRmlUi::OnBeforeDeviceRebuild();
+
     // Deliberately NOT ResizeWindowByClientSize(): that would MoveWindow the window the
     // user just sized. Take the client area as given and rebuild the device to match it.
     setScreen(client_width, client_height, m_nScrDepth, FALSE /* windowed */);
@@ -388,6 +394,8 @@ CApplication::ApplyWindowedClientResize() {
     // resetScreen() recreates the device, which invalidates the D3D cursor surface.
     // ChangeResolution/ChangeScreenMode do the same after their resets.
     CCursor::GetInstance().ReloadCursor();
+
+    RoseRmlUi::OnAfterDeviceRebuild(client_width, client_height);
 
     m_bResizingEngine = false;
 }

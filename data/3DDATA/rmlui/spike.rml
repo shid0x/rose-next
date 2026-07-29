@@ -1,0 +1,52 @@
+<rml>
+<head>
+    <title>Damage Meter (RmlUi mockup)</title>
+    <link type="text/rcss" href="spike.rcss"/>
+</head>
+<body>
+    <!--
+        Spike 1: a static mockup of the existing CDamageMeterPanel, rebuilt in
+        markup + CSS. The numbers are fake - nothing is wired to CDamageMeter
+        yet. The point is to prove the rendering path works and that the panel
+        can be restyled by editing spike.rcss instead of recompiling.
+    -->
+    <div class="meter">
+        <div class="header">
+            <span class="title">DPS - Damage Done</span>
+            <span class="btn">&gt;</span>
+            <span class="btn">R</span>
+            <span class="btn">X</span>
+        </div>
+
+        <div class="info">
+            <span class="fight">Fight 1:24</span>
+            <span class="live">LIVE</span>
+        </div>
+
+        <div class="rows">
+            <div class="row self">
+                <div class="bar" style="width: 100%;"></div>
+                <span class="name">Thomas</span>
+                <span class="value">184,220 (2192/s, 46%)</span>
+            </div>
+            <div class="row">
+                <div class="bar" style="width: 71%;"></div>
+                <span class="name">Aldric</span>
+                <span class="value">130,880 (1557/s, 33%)</span>
+            </div>
+            <div class="row">
+                <div class="bar" style="width: 38%;"></div>
+                <span class="name">Mira</span>
+                <span class="value">70,105 (834/s, 17%)</span>
+            </div>
+            <div class="row">
+                <div class="bar" style="width: 9%;"></div>
+                <span class="name">Summon: Jelly</span>
+                <span class="value">16,940 (201/s, 4%)</span>
+            </div>
+        </div>
+
+        <div class="footer">Biggest hit: 8,412 (Cleave)</div>
+    </div>
+</body>
+</rml>

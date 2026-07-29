@@ -76,8 +76,8 @@
     <ClCompile>
       <Optimization>Disabled</Optimization>
       <OmitFramePointers>false</OmitFramePointers>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)interface;$(ProjectDir)thirdparty;$(SolutionDir)src\common;$(SolutionDir)src\common\include;$(SolutionDir)src\common\shared;$(SolutionDir)src\common-lib\include;$(SolutionDir)src\engine\include;$(SolutionDir)src\lib_util;$(SolutionDir)src\lib_util\include;$(SolutionDir)src\triggervfs\include;$(SolutionDir)src\tgamectrl\include;$(SolutionDir)src\triggerinfo\include;$(SolutionDir)thirdparty\expat-2.0.1\amiga\include\libraries;$(SolutionDir)thirdparty\libogg-1.1.3\include;$(SolutionDir)thirdparty\libvorbis-1.2.0\include;$(SolutionDir)thirdparty\directx9\include;$(SolutionDir)thirdparty\discord-2.5.6\c;$(SolutionDir)thirdparty\discord-2.5.6\cpp;$(SolutionDir)thirdparty\imgui-1.77;$(SolutionDir)thirdparty\imgui-1.77\examples;$(SolutionDir)thirdparty\json-3.7.3\include;$(SolutionDir)thirdparty\lua-4.0.1\include;$(SolutionDir)thirdparty\flatbuffers-1.11.0\include;$(SolutionDir)thirdparty\fmt-6.2.1\include;$(SolutionDir)thirdparty\zlib-1.2.3\;$(GeneratedDir);$(GeneratedDirCommon);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>CLIENT;WIN32;TGAMECTRL_STATIC;TRIGGERINFO_STATIC;XML_STATIC;_debug;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)interface;$(ProjectDir)thirdparty;$(SolutionDir)src\common;$(SolutionDir)src\common\include;$(SolutionDir)src\common\shared;$(SolutionDir)src\common-lib\include;$(SolutionDir)src\engine\include;$(SolutionDir)src\lib_util;$(SolutionDir)src\lib_util\include;$(SolutionDir)src\triggervfs\include;$(SolutionDir)src\tgamectrl\include;$(SolutionDir)src\triggerinfo\include;$(SolutionDir)thirdparty\expat-2.0.1\amiga\include\libraries;$(SolutionDir)thirdparty\libogg-1.1.3\include;$(SolutionDir)thirdparty\libvorbis-1.2.0\include;$(SolutionDir)thirdparty\directx9\include;$(SolutionDir)thirdparty\discord-2.5.6\c;$(SolutionDir)thirdparty\discord-2.5.6\cpp;$(SolutionDir)thirdparty\RmlUi-6.2\Include;$(SolutionDir)thirdparty\imgui-1.77;$(SolutionDir)thirdparty\imgui-1.77\examples;$(SolutionDir)thirdparty\json-3.7.3\include;$(SolutionDir)thirdparty\lua-4.0.1\include;$(SolutionDir)thirdparty\flatbuffers-1.11.0\include;$(SolutionDir)thirdparty\fmt-6.2.1\include;$(SolutionDir)thirdparty\zlib-1.2.3\;$(GeneratedDir);$(GeneratedDirCommon);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>CLIENT;WIN32;RMLUI_STATIC_LIB;RMLUI_CUSTOM_RTTI;TGAMECTRL_STATIC;TRIGGERINFO_STATIC;XML_STATIC;_debug;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadeddebug</RuntimeLibrary>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
@@ -102,7 +102,7 @@
     </ResourceCompile>
     <Link>
       <AdditionalOptions>/MACHINE:I386 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalDependencies>common.lib;lib_util.lib;tgamectrl.lib;triggervfs.lib;znzin.lib;d3d9.lib;d3dx9.lib;dsound.lib;dxguid.lib;dxerr9.lib;discord_game_sdk.dll.lib;expat.lib;lualib4.lib;ogg.lib;vorbisfile.lib;zlib.lib;legacy_stdio_definitions.lib;odbc32.lib;odbccp32.lib;urlmon.lib;unicows.lib;winmm.lib;Version.lib;ntdll.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>common.lib;lib_util.lib;tgamectrl.lib;rmlui.lib;freetype.lib;triggervfs.lib;znzin.lib;d3d9.lib;d3dx9.lib;dsound.lib;dxguid.lib;dxerr9.lib;discord_game_sdk.dll.lib;expat.lib;lualib4.lib;ogg.lib;vorbisfile.lib;zlib.lib;legacy_stdio_definitions.lib;odbc32.lib;odbccp32.lib;urlmon.lib;unicows.lib;winmm.lib;Version.lib;ntdll.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(TargetName).exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration);$(SolutionDir)bin\$(Configuration)\thirdparty;$(SolutionDir)thirdparty\directx9\lib;$(SolutionDir)thirdparty\discord-2.5.6\lib\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -129,8 +129,8 @@
     </Midl>
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)interface;$(ProjectDir)thirdparty;$(SolutionDir)src\common;$(SolutionDir)src\common\include;$(SolutionDir)src\common\shared;$(SolutionDir)src\common-lib\include;$(SolutionDir)src\engine\include;$(SolutionDir)src\lib_util;$(SolutionDir)src\lib_util\include;$(SolutionDir)src\triggervfs\include;$(SolutionDir)src\tgamectrl\include;$(SolutionDir)src\triggerinfo\include;$(SolutionDir)thirdparty\expat-2.0.1\amiga\include\libraries;$(SolutionDir)thirdparty\libogg-1.1.3\include;$(SolutionDir)thirdparty\libvorbis-1.2.0\include;$(SolutionDir)thirdparty\directx9\include;$(SolutionDir)thirdparty\discord-2.5.6\c;$(SolutionDir)thirdparty\discord-2.5.6\cpp;$(SolutionDir)thirdparty\imgui-1.77;$(SolutionDir)thirdparty\imgui-1.77\examples;$(SolutionDir)thirdparty\json-3.7.3\include;$(SolutionDir)thirdparty\lua-4.0.1\include;$(SolutionDir)thirdparty\flatbuffers-1.11.0\include;$(SolutionDir)thirdparty\fmt-6.2.1\include;$(SolutionDir)thirdparty\zlib-1.2.3\;$(GeneratedDir);$(GeneratedDirCommon);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>CLIENT;WIN32;TGAMECTRL_STATIC;TRIGGERINFO_STATIC;XML_STATIC;_WINDOWS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)interface;$(ProjectDir)thirdparty;$(SolutionDir)src\common;$(SolutionDir)src\common\include;$(SolutionDir)src\common\shared;$(SolutionDir)src\common-lib\include;$(SolutionDir)src\engine\include;$(SolutionDir)src\lib_util;$(SolutionDir)src\lib_util\include;$(SolutionDir)src\triggervfs\include;$(SolutionDir)src\tgamectrl\include;$(SolutionDir)src\triggerinfo\include;$(SolutionDir)thirdparty\expat-2.0.1\amiga\include\libraries;$(SolutionDir)thirdparty\libogg-1.1.3\include;$(SolutionDir)thirdparty\libvorbis-1.2.0\include;$(SolutionDir)thirdparty\directx9\include;$(SolutionDir)thirdparty\discord-2.5.6\c;$(SolutionDir)thirdparty\discord-2.5.6\cpp;$(SolutionDir)thirdparty\RmlUi-6.2\Include;$(SolutionDir)thirdparty\imgui-1.77;$(SolutionDir)thirdparty\imgui-1.77\examples;$(SolutionDir)thirdparty\json-3.7.3\include;$(SolutionDir)thirdparty\lua-4.0.1\include;$(SolutionDir)thirdparty\flatbuffers-1.11.0\include;$(SolutionDir)thirdparty\fmt-6.2.1\include;$(SolutionDir)thirdparty\zlib-1.2.3\;$(GeneratedDir);$(GeneratedDirCommon);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>CLIENT;WIN32;RMLUI_STATIC_LIB;RMLUI_CUSTOM_RTTI;TGAMECTRL_STATIC;TRIGGERINFO_STATIC;XML_STATIC;_WINDOWS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
@@ -150,7 +150,7 @@
       <Culture>0x0412</Culture>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>common.lib;lib_util.lib;tgamectrl.lib;triggervfs.lib;znzin.lib;d3d9.lib;d3dx9.lib;dsound.lib;dxguid.lib;dxerr9.lib;discord_game_sdk.dll.lib;expat.lib;lualib4.lib;ogg.lib;vorbisfile.lib;zlib.lib;legacy_stdio_definitions.lib;odbc32.lib;odbccp32.lib;urlmon.lib;unicows.lib;winmm.lib;Version.lib;ntdll.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>common.lib;lib_util.lib;tgamectrl.lib;rmlui.lib;freetype.lib;triggervfs.lib;znzin.lib;d3d9.lib;d3dx9.lib;dsound.lib;dxguid.lib;dxerr9.lib;discord_game_sdk.dll.lib;expat.lib;lualib4.lib;ogg.lib;vorbisfile.lib;zlib.lib;legacy_stdio_definitions.lib;odbc32.lib;odbccp32.lib;urlmon.lib;unicows.lib;winmm.lib;Version.lib;ntdll.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(TargetName).exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration);$(SolutionDir)bin\$(Configuration)\thirdparty;$(SolutionDir)thirdparty\directx9\lib;$(SolutionDir)thirdparty\discord-2.5.6\lib\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -432,6 +432,9 @@
     <ClCompile Include="Interface\CItemPreviewPanel.cpp" />
     <ClCompile Include="Interface\CMonsterInspectorPanel.cpp" />
     <ClCompile Include="Interface\OverlayPanelUtil.cpp" />
+    <ClCompile Include="rmlui\RoseRmlRenderer.cpp" />
+    <ClCompile Include="rmlui\RoseRmlSystem.cpp" />
+    <ClCompile Include="rmlui\RoseRmlUi.cpp" />
     <ClCompile Include="Interface\CNameBox.cpp" />
     <ClCompile Include="Interface\CDamageMeterPanel.cpp" />
     <ClCompile Include="Interface\CSummonInfoPanel.cpp" />

@@ -1,0 +1,100 @@
+/* Damage meter, styled entirely from this file.
+   Every value here is currently a hard-coded C++ constant in
+   src/client/interface/CDamageMeterPanel.cpp (kPanelW, kRowH, kColSelf, ...).
+   Change anything below, restart the client, see it change - no rebuild.
+
+   Do NOT add filter / backdrop-filter / blurred box-shadow / linear-gradient /
+   rotate: those need optional renderer features the DX9 backend does not
+   implement yet, and they will silently do nothing or draw wrong. */
+
+body {
+    font-family: LatoLatin;
+    font-size: 12px;
+}
+
+.meter {
+    position: absolute;
+    left: 16px;
+    top: 220px;
+    width: 252px;              /* kPanelW */
+
+    display: flex;
+    flex-direction: column;
+
+    padding: 8px;              /* kPad */
+    background-color: #0a0a12d7;
+    border: 1px #3c3c4aff;
+}
+
+/* --- header: title stretches, three buttons sit on the right -------------- */
+.header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 22px;              /* kHeaderH */
+}
+
+.title {
+    flex-grow: 1;              /* this one line replaces all the offset maths */
+    font-size: 13px;
+    font-weight: bold;
+    color: #ffffff;
+}
+
+.btn {
+    width: 18px;               /* kBtnW */
+    height: 16px;
+    text-align: center;
+    color: #c8c8c8;            /* kColBtn */
+}
+
+.btn:hover { color: #ffffff; }
+
+/* --- info line ------------------------------------------------------------ */
+.info {
+    display: flex;
+    flex-direction: row;
+    height: 16px;              /* kInfoH */
+    color: #b4b4b4;            /* kColInfo */
+    font-size: 11px;
+}
+
+.fight { flex-grow: 1; }
+.live  { color: #78ff6e; }     /* kColLive */
+
+/* --- rows ----------------------------------------------------------------- */
+/* Fixed height + overflow: the list clips instead of overflowing the panel.
+   This is also what exercises the scissor path in the renderer. */
+.rows {
+    height: 64px;              /* 4 rows * kRowH */
+    overflow-y: auto;
+}
+
+.row {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    height: 16px;              /* kRowH */
+    color: #ebebeb;            /* kColRow */
+}
+
+.row.self { color: #ffd250; }  /* kColSelf */
+
+/* Proportional bar behind the text */
+.bar {
+    position: absolute;
+    left: 0px;
+    top: 2px;
+    height: 12px;
+    background-color: #c83c3c5a;   /* kColBar */
+}
+
+.name  { flex-grow: 1; }
+.value { text-align: right; }
+
+/* --- footer --------------------------------------------------------------- */
+.footer {
+    height: 16px;              /* kFooterH */
+    font-size: 11px;
+    color: #b4b4b4;
+}
