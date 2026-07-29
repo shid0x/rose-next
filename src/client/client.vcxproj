@@ -432,6 +432,7 @@
     <ClCompile Include="Interface\CItemPreviewPanel.cpp" />
     <ClCompile Include="Interface\CMonsterInspectorPanel.cpp" />
     <ClCompile Include="Interface\OverlayPanelUtil.cpp" />
+    <ClCompile Include="rmlui\RoseRmlDamageMeter.cpp" />
     <ClCompile Include="rmlui\RoseRmlRenderer.cpp" />
     <ClCompile Include="rmlui\RoseRmlSystem.cpp" />
     <ClCompile Include="rmlui\RoseRmlUi.cpp" />

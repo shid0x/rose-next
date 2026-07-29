@@ -45,6 +45,13 @@ bool ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam);
 /// Draw-call count of the last rendered frame, for the debug HUD.
 int GetDrawCallCount();
 
+/// --- damage meter -------------------------------------------------------
+/// The RmlUi-drawn damage meter. When the overlay is enabled, "/dps" opens
+/// this instead of the legacy CDamageMeterPanel; both read the same
+/// CDamageMeter data core, so they are interchangeable views.
+void ToggleDamageMeter();
+bool IsDamageMeterVisible();
+
 } // namespace RoseRmlUi
 
 #endif /// _ROSE_RML_UI_H_

@@ -2,6 +2,7 @@
 
 #include "RoseRmlUi.h"
 
+#include "RoseRmlDamageMeter.h"
 #include "RoseRmlRenderer.h"
 #include "RoseRmlSystem.h"
 
@@ -18,7 +19,7 @@ namespace {
 RoseRmlRenderer* g_pRenderer = NULL;
 RoseRmlSystem* g_pSystem = NULL;
 Rml::Context* g_pContext = NULL;
-Rml::ElementDocument* g_pSpikeDocument = NULL;
+RoseRmlDamageMeter g_DamageMeter;
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -120,20 +121,28 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
 
     Rml::Debugger::Initialise(g_pContext);
 
-    /// Fonts: FreeType-backed. Falls back silently if the spike assets are not
-    /// deployed - the log line above is the signal to check.
-    const std::string strFont = std::string(kAssetDir) + "fonts/LatoLatin-Regular.ttf";
-    if (!Rml::LoadFontFace(strFont.c_str()))
-        LOG_WARN("[rmlui] could not load font face '{}'", strFont.c_str());
-
-    const std::string strDoc = std::string(kAssetDir) + "spike.rml";
-    g_pSpikeDocument = g_pContext->LoadDocument(strDoc.c_str());
-    if (g_pSpikeDocument != NULL) {
-        g_pSpikeDocument->Show();
-        LOG_INFO("[rmlui] loaded spike document '{}'", strDoc.c_str());
-    } else {
-        LOG_WARN("[rmlui] could not load document '{}'", strDoc.c_str());
+    /// Fonts: the client's own UI font is Verdana ( CStringManager::
+    /// GetFontNameByCharSet is hardcoded to it ), so load that from the system
+    /// font directory to match the rest of the HUD. The bundled Lato face is the
+    /// fallback for machines where it is missing.
+    bool bFont = false;
+    char szWinDir[MAX_PATH] = {0};
+    if (GetWindowsDirectoryA(szWinDir, MAX_PATH) > 0) {
+        const std::string strFonts = std::string(szWinDir) + "\\Fonts\\";
+        bFont = Rml::LoadFontFace((strFonts + "verdana.ttf").c_str());
+        /// Bold is a separate face; without it font-weight: bold silently
+        /// synthesises nothing and headers look identical to body text.
+        Rml::LoadFontFace((strFonts + "verdanab.ttf").c_str());
     }
+    if (!bFont) {
+        const std::string strFallback = std::string(kAssetDir) + "fonts/LatoLatin-Regular.ttf";
+        if (!Rml::LoadFontFace(strFallback.c_str()))
+            LOG_WARN("[rmlui] no font face could be loaded; text will not render");
+        else
+            LOG_WARN("[rmlui] Verdana unavailable, using bundled Lato fallback");
+    }
+
+    g_DamageMeter.Initialise(g_pContext, kAssetDir);
 
     g_bInitialised = true;
     return true;
@@ -144,7 +153,7 @@ Shutdown() {
     if (!g_bInitialised)
         return;
 
-    g_pSpikeDocument = NULL;
+    g_DamageMeter.Shutdown();
     g_pContext = NULL;
 
     Rml::Debugger::Shutdown();
@@ -211,7 +220,19 @@ Update() {
         return;
 
     SyncDeviceIfChanged();
+    g_DamageMeter.Update();
     g_pContext->Update();
+}
+
+void
+ToggleDamageMeter() {
+    if (g_bInitialised)
+        g_DamageMeter.Toggle();
+}
+
+bool
+IsDamageMeterVisible() {
+    return g_bInitialised && g_DamageMeter.IsVisible();
 }
 
 void

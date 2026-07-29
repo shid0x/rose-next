@@ -23,6 +23,8 @@
 #include "tgamectrl/actionevent.h"
 #include "tgamectrl/tcontrolmgr.h"
 
+#include "rmlui/RoseRmlUi.h"
+
 using namespace Rose;
 
 CChatDLG::CChatDLG() {
@@ -520,6 +522,10 @@ CChatDLG::SendChatMsg(char* szMsg) {
         if (stMsg == "/dps reset") {
             CDamageMeter::GetInstance().Reset();
             g_itMGR.AppendChatMsg("Damage meter reset.", IT_MGR::CHAT_TYPE_SYSTEM);
+        } else if (RoseRmlUi::IsEnabled()) {
+            /// Both views read the same CDamageMeter core; the INI toggle picks
+            /// which one /dps opens so the two can be A/B'd in place.
+            RoseRmlUi::ToggleDamageMeter();
         } else {
             g_UIMed.ToggleDamageMeter();
         }
