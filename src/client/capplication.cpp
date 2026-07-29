@@ -413,6 +413,13 @@ CApplication::ResizeWindowByClientSize(int& iClientWidth,
     // way while this function is the one driving the resize.
     m_bResizingEngine = true;
 
+    // This function owns three separate resetScreen() calls (fullscreen, windowed, and
+    // the re-sync when Windows grants a different client size). Bracketing the whole
+    // function is simpler than hooking each one, and cannot miss a path. Only meaningful
+    // when update_engine is set -- otherwise no device rebuild happens at all.
+    if (update_engine)
+        RoseRmlUi::OnBeforeDeviceRebuild();
+
     if (m_bFullScreenMode) {
         if (update_engine) {
             setScreen(iClientWidth,
@@ -532,6 +539,9 @@ CApplication::ResizeWindowByClientSize(int& iClientWidth,
 
     ShowWindow(m_hWND, SW_SHOW);
     UpdateWindow(m_hWND);
+
+    if (update_engine)
+        RoseRmlUi::OnAfterDeviceRebuild(iClientWidth, iClientHeight);
 
     m_bResizingEngine = false;
 
