@@ -64,6 +64,7 @@ body {
 .titlebtn {
     width: 18px;
     height: 18px;
+    line-height: 18px;
     text-align: center;
     font-weight: bold;
     color: #a01414ff;
@@ -137,7 +138,7 @@ body {
 
 .rank {
     width: 44px;
-    font-size: 20px;
+    font-size: 15px;           /* only slightly ahead of the name */
     font-weight: bold;
     color: #1e2864ff;
     text-align: center;
@@ -145,6 +146,7 @@ body {
 
 .name {
     width: 84px;
+    font-size: 12px;
     font-weight: bold;
     font-effect: outline(1px #00000060);
 }
@@ -224,6 +226,9 @@ body {
 .btn {
     width: 96px;
     height: 22px;
+    /* text-align centres horizontally; line-height matching the height is what
+       centres it vertically. */
+    line-height: 22px;
     margin-left: 4px;
     margin-right: 4px;
     text-align: center;

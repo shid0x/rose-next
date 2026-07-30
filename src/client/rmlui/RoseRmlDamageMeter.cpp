@@ -248,10 +248,6 @@ RoseRmlDamageMeter::RebuildRows() {
     /// Combined throughput of everyone in the view, not just the visible rows.
     m_strPartyDPS = FormatThousands((__int64)(iViewTotal / dDurSec));
 
-    __int64 iTopTotal = 1;
-    if (!pRows->empty() && (*pRows)[0].iTotal > 0)
-        iTopTotal = (*pRows)[0].iTotal;
-
     const char* pSelfName = g_pAVATAR->Get_NAME();
     const int iCount = min((int)pRows->size(), kMaxRows);
 
@@ -265,9 +261,13 @@ RoseRmlDamageMeter::RebuildRows() {
         vm.rank = FormatRank(i);
         vm.rank_id = i + 1;
         vm.name = src.strName.c_str();
-        vm.width = (float)((double)src.iTotal * 100.0 / (double)iTopTotal);
         vm.is_self = (m_iView == VIEW_DAMAGE_DONE && pSelfName != NULL
             && src.strName == pSelfName);
+
+        /// Bar width IS the contribution share, not a share of the top row.
+        /// Scaling to the leader makes first place always render full, which
+        /// contradicts the "% Contribution" figure printed next to it.
+        vm.width = (float)((double)src.iTotal * 100.0 / (double)iViewTotal);
 
         const int iPct = (int)(src.iTotal * 100 / iViewTotal);
         _snprintf(szBuf, sizeof(szBuf), "%d%%", iPct);
