@@ -91,10 +91,12 @@ body {
 .idle  { color: #a0a0a0; }     /* kColIdle */
 
 /* --- rows ----------------------------------------------------------------- */
-/* Fixed height + overflow so a long party list clips instead of growing the
-   panel off-screen. Also what exercises the renderer's scissor path. */
+/* Sizes to its content so one row does not leave a void, but caps out so a full
+   party list clips and scrolls instead of growing the panel off-screen. The cap
+   is also what exercises the renderer's scissor path. */
 .rows {
-    height: 160px;             /* 10 rows * kRowH */
+    height: auto;
+    max-height: 160px;         /* 10 rows * kRowH */
     overflow-y: auto;
 }
 
