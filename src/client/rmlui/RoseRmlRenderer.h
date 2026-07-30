@@ -68,6 +68,19 @@ public:
     virtual void EnableScissorRegion(bool enable);
     virtual void SetScissorRegion(Rml::Rectanglei region);
 
+    /// --- optional: gradients -----------------------------------------------
+    /// Implemented because CSS-authored skins should not need image files for
+    /// something as basic as a gradient. Only `linear-gradient` is supported;
+    /// radial and conic need a per-pixel function of position that the
+    /// fixed-function pipeline cannot express as a coordinate transform.
+    virtual Rml::CompiledShaderHandle CompileShader(const Rml::String& name,
+        const Rml::Dictionary& parameters);
+    virtual void RenderShader(Rml::CompiledShaderHandle shader,
+        Rml::CompiledGeometryHandle geometry,
+        Rml::Vector2f translation,
+        Rml::TextureHandle texture);
+    virtual void ReleaseShader(Rml::CompiledShaderHandle shader);
+
     /// --- pass framing -------------------------------------------------------
     /// BeginFrame captures the engine's device state and installs ours;
     /// EndFrame puts the engine's state back exactly as it was. The 3D pane
@@ -119,17 +132,33 @@ private:
         std::vector<unsigned char> Pixels;
     };
 
+    /// A compiled linear gradient: the colour ramp baked into a 1-D texture,
+    /// plus the axis it is projected along. Ramp pixels are retained so the
+    /// texture can be rebuilt after a device loss, exactly like Texture.
+    struct Shader {
+        IDirect3DTexture9* pRamp;
+        std::vector<unsigned char> RampPixels;
+        int iRampWidth;
+        Rml::Vector2f p0;
+        Rml::Vector2f p1;
+        bool bRepeating;
+    };
+
     bool ApplyRenderState();
     bool UploadTexture(Texture& tex, const unsigned char* pBGRA, int iWidth, int iHeight);
     bool ReloadTexture(Texture& tex);
+    bool UploadRamp(Shader& sh);
+    void DrawGeometryRaw(const Geometry& geom);
 
     IDirect3DDevice9* m_pDevice;
     IDirect3DStateBlock9* m_pSavedState; ///< engine state captured at BeginFrame
 
     std::map<Rml::CompiledGeometryHandle, Geometry*> m_Geometries;
     std::map<Rml::TextureHandle, Texture*> m_Textures;
+    std::map<Rml::CompiledShaderHandle, Shader*> m_Shaders;
     Rml::CompiledGeometryHandle m_NextGeometryHandle;
     Rml::TextureHandle m_NextTextureHandle;
+    Rml::CompiledShaderHandle m_NextShaderHandle;
 
     int m_iViewportWidth;
     int m_iViewportHeight;

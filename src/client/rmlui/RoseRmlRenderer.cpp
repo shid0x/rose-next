@@ -3,6 +3,9 @@
 #include "RoseRmlRenderer.h"
 
 #include <RmlUi/Core/Core.h>
+/// Core.h only forward-declares ColorStop; the gradient ramp needs the layout.
+#include <RmlUi/Core/DecorationTypes.h>
+#include <RmlUi/Core/Variant.h>
 
 #include "../Util/CFileSystem.h"
 #include "../Util/VFSManager.h"
@@ -80,6 +83,7 @@ RoseRmlRenderer::RoseRmlRenderer():
     m_pSavedState(NULL),
     m_NextGeometryHandle(1),
     m_NextTextureHandle(1),
+    m_NextShaderHandle(1),
     m_iViewportWidth(0),
     m_iViewportHeight(0),
     m_bScissorEnabled(false),
@@ -122,6 +126,12 @@ RoseRmlRenderer::Shutdown() {
     }
     m_Textures.clear();
 
+    for (std::map<Rml::CompiledShaderHandle, Shader*>::iterator it = m_Shaders.begin();
+        it != m_Shaders.end(); ++it) {
+        delete it->second;
+    }
+    m_Shaders.clear();
+
     m_pDevice = NULL;
 }
 
@@ -163,6 +173,17 @@ RoseRmlRenderer::ReleaseDeviceObjects() {
         if (pTex->pTexture != NULL) {
             pTex->pTexture->Release();
             pTex->pTexture = NULL;
+        }
+    }
+
+    /// Gradient ramps are DEFAULT-pool too, and RmlUi no more re-requests a
+    /// compiled shader after a reset than it does compiled geometry -- so the
+    /// retained ramp pixels are what bring them back.
+    for (std::map<Rml::CompiledShaderHandle, Shader*>::iterator it = m_Shaders.begin();
+        it != m_Shaders.end(); ++it) {
+        if (it->second->pRamp != NULL) {
+            it->second->pRamp->Release();
+            it->second->pRamp = NULL;
         }
     }
 
@@ -212,6 +233,11 @@ RoseRmlRenderer::CreateDeviceObjects() {
     for (std::map<Rml::TextureHandle, Texture*>::iterator it = m_Textures.begin();
         it != m_Textures.end(); ++it) {
         ReloadTexture(*it->second);
+    }
+
+    for (std::map<Rml::CompiledShaderHandle, Shader*>::iterator it = m_Shaders.begin();
+        it != m_Shaders.end(); ++it) {
+        UploadRamp(*it->second);
     }
 
     m_bDeviceObjectsValid = true;
@@ -327,11 +353,16 @@ RoseRmlRenderer::RenderGeometry(Rml::CompiledGeometryHandle geometry,
         m_pDevice->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
     }
 
-    m_pDevice->SetStreamSource(0, pGeom->pVB, 0, sizeof(Vertex));
-    m_pDevice->SetIndices(pGeom->pIB);
+    DrawGeometryRaw(*pGeom);
+}
+
+void
+RoseRmlRenderer::DrawGeometryRaw(const Geometry& geom) {
+    m_pDevice->SetStreamSource(0, geom.pVB, 0, sizeof(Vertex));
+    m_pDevice->SetIndices(geom.pIB);
     m_pDevice->SetFVF(kFVF);
-    m_pDevice->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, pGeom->iNumVerts, 0,
-        pGeom->iNumIndices / 3);
+    m_pDevice->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, geom.iNumVerts, 0,
+        geom.iNumIndices / 3);
 
     ++m_iDrawCalls;
 }
@@ -544,6 +575,216 @@ RoseRmlRenderer::ReleaseTexture(Rml::TextureHandle texture) {
         it->second->pTexture->Release();
     delete it->second;
     m_Textures.erase(it);
+}
+
+/// ---------------------------------------------------------------------------
+/// Gradients
+///
+/// RmlUi asks for gradients through CompileShader/RenderShader, which normally
+/// implies a programmable pipeline. It does not have to: the gradient decorator
+/// sets every vertex's tex_coord to its element-local pixel position
+/// ( DecoratorGradient.cpp, `vertex.tex_coord = vertex.position - render_offset` )
+/// and gives us p0/p1 in that same space. Projecting position onto that axis is
+/// an affine map, so a fixed-function texture-coordinate transform onto a 1-D
+/// colour ramp reproduces a linear gradient exactly, with no shader at all.
+/// ---------------------------------------------------------------------------
+
+bool
+RoseRmlRenderer::UploadRamp(Shader& sh) {
+    if (m_pDevice == NULL || sh.RampPixels.empty() || sh.iRampWidth <= 0)
+        return false;
+
+    IDirect3DTexture9* pStaging = NULL;
+    if (FAILED(m_pDevice->CreateTexture(sh.iRampWidth, 1, 1, 0, D3DFMT_A8R8G8B8,
+            D3DPOOL_SYSTEMMEM, &pStaging, NULL)))
+        return false;
+
+    D3DLOCKED_RECT lr;
+    if (FAILED(pStaging->LockRect(0, &lr, NULL, 0))) {
+        pStaging->Release();
+        return false;
+    }
+    memcpy(lr.pBits, &sh.RampPixels[0], (size_t)sh.iRampWidth * 4);
+    pStaging->UnlockRect(0);
+
+    IDirect3DTexture9* pDefault = NULL;
+    if (FAILED(m_pDevice->CreateTexture(sh.iRampWidth, 1, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT,
+            &pDefault, NULL))) {
+        pStaging->Release();
+        return false;
+    }
+
+    const HRESULT hr = m_pDevice->UpdateTexture(pStaging, pDefault);
+    pStaging->Release();
+    if (FAILED(hr)) {
+        pDefault->Release();
+        return false;
+    }
+
+    if (sh.pRamp != NULL)
+        sh.pRamp->Release();
+    sh.pRamp = pDefault;
+    return true;
+}
+
+Rml::CompiledShaderHandle
+RoseRmlRenderer::CompileShader(const Rml::String& name, const Rml::Dictionary& parameters) {
+    if (m_pDevice == NULL)
+        return 0;
+
+    if (name != "linear-gradient") {
+        /// Radial and conic gradients are a per-pixel function of distance or
+        /// angle, which no texture-coordinate transform can express. Say so
+        /// rather than drawing nothing silently.
+        Rml::Log::Message(Rml::Log::LT_WARNING,
+            "RoseRmlRenderer: '%s' is not supported by the D3D9 backend; only "
+            "linear-gradient is. The decorator will not draw.",
+            name.c_str());
+        return 0;
+    }
+
+    const Rml::Variant* pP0 = Rml::GetIf(parameters, "p0");
+    const Rml::Variant* pP1 = Rml::GetIf(parameters, "p1");
+    const Rml::Variant* pRepeating = Rml::GetIf(parameters, "repeating");
+    const Rml::Variant* pStops = Rml::GetIf(parameters, "color_stop_list");
+    if (pP0 == NULL || pP1 == NULL || pStops == NULL)
+        return 0;
+
+    Shader* pShader = new Shader();
+    pShader->pRamp = NULL;
+    pShader->iRampWidth = 256;
+    pShader->p0 = pP0->Get<Rml::Vector2f>();
+    pShader->p1 = pP1->Get<Rml::Vector2f>();
+    pShader->bRepeating = (pRepeating != NULL) ? pRepeating->Get<bool>() : false;
+
+    const Rml::ColorStopList stops = pStops->Get<Rml::ColorStopList>();
+    if (stops.empty()) {
+        delete pShader;
+        return 0;
+    }
+
+    /// Bake the ramp. Stop positions arrive already resolved to 0..1 along the
+    /// gradient line ( ResolveColorStops converts lengths and percentages ), so
+    /// this is a straight piecewise-linear walk. Colours are premultiplied
+    /// alpha, matching the blend state, so interpolating them directly is
+    /// correct -- interpolating straight alpha here would darken the midpoints.
+    pShader->RampPixels.resize((size_t)pShader->iRampWidth * 4);
+    for (int i = 0; i < pShader->iRampWidth; ++i) {
+        const float t = (float)i / (float)(pShader->iRampWidth - 1);
+
+        size_t iNext = 0;
+        while (iNext < stops.size() && stops[iNext].position.number < t)
+            ++iNext;
+
+        Rml::ColourbPremultiplied c;
+        if (iNext == 0) {
+            c = stops.front().color;
+        } else if (iNext >= stops.size()) {
+            c = stops.back().color;
+        } else {
+            const Rml::ColorStop& a = stops[iNext - 1];
+            const Rml::ColorStop& b = stops[iNext];
+            const float span = b.position.number - a.position.number;
+            const float f = (span > 0.0f) ? ((t - a.position.number) / span) : 0.0f;
+            c.red = (Rml::byte)(a.color.red + (b.color.red - a.color.red) * f);
+            c.green = (Rml::byte)(a.color.green + (b.color.green - a.color.green) * f);
+            c.blue = (Rml::byte)(a.color.blue + (b.color.blue - a.color.blue) * f);
+            c.alpha = (Rml::byte)(a.color.alpha + (b.color.alpha - a.color.alpha) * f);
+        }
+
+        /// BGRA byte order for D3DFMT_A8R8G8B8.
+        unsigned char* p = &pShader->RampPixels[(size_t)i * 4];
+        p[0] = c.blue;
+        p[1] = c.green;
+        p[2] = c.red;
+        p[3] = c.alpha;
+    }
+
+    if (!UploadRamp(*pShader)) {
+        delete pShader;
+        return 0;
+    }
+
+    const Rml::CompiledShaderHandle handle = m_NextShaderHandle++;
+    m_Shaders[handle] = pShader;
+    return handle;
+}
+
+void
+RoseRmlRenderer::RenderShader(Rml::CompiledShaderHandle shader,
+    Rml::CompiledGeometryHandle geometry,
+    Rml::Vector2f translation,
+    Rml::TextureHandle /*texture*/) {
+    if (m_pDevice == NULL)
+        return;
+
+    std::map<Rml::CompiledShaderHandle, Shader*>::iterator itShader = m_Shaders.find(shader);
+    std::map<Rml::CompiledGeometryHandle, Geometry*>::iterator itGeom = m_Geometries.find(geometry);
+    if (itShader == m_Shaders.end() || itGeom == m_Geometries.end())
+        return;
+
+    Shader* pShader = itShader->second;
+    Geometry* pGeom = itGeom->second;
+    if (pShader->pRamp == NULL || pGeom->pVB == NULL || pGeom->pIB == NULL)
+        return;
+
+    D3DXMATRIX matWorld;
+    D3DXMatrixTranslation(&matWorld, translation.x, translation.y, 0.0f);
+    m_pDevice->SetTransform(D3DTS_WORLD, &matWorld);
+
+    /// Project the element-local position carried in the texcoords onto the
+    /// gradient axis:  t = dot(uv - p0, d) / |d|^2,  v = 0.5 ( ramp is 1 texel
+    /// tall ). With D3DTTFF_COUNT2 the incoming coordinate is treated as
+    /// (u, v, 1), so the constant term belongs in row 3.
+    const Rml::Vector2f d = pShader->p1 - pShader->p0;
+    const float fLenSq = d.x * d.x + d.y * d.y;
+    if (fLenSq <= 0.0f)
+        return;
+
+    const float ax = d.x / fLenSq;
+    const float ay = d.y / fLenSq;
+    const float c = -(pShader->p0.x * d.x + pShader->p0.y * d.y) / fLenSq;
+
+    D3DXMATRIX matTex;
+    D3DXMatrixIdentity(&matTex);
+    matTex._11 = ax;
+    matTex._21 = ay;
+    matTex._31 = c;
+    matTex._12 = 0.0f;
+    matTex._22 = 0.0f;
+    matTex._32 = 0.5f;
+
+    m_pDevice->SetTransform(D3DTS_TEXTURE0, &matTex);
+    m_pDevice->SetTextureStageState(0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_COUNT2);
+
+    /// Repeating gradients tile the ramp; non-repeating clamp the end colours.
+    const DWORD dwAddress = pShader->bRepeating ? D3DTADDRESS_WRAP : D3DTADDRESS_CLAMP;
+    m_pDevice->SetSamplerState(0, D3DSAMP_ADDRESSU, dwAddress);
+    m_pDevice->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+
+    m_pDevice->SetTexture(0, pShader->pRamp);
+    m_pDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+    m_pDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE);
+    m_pDevice->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+    m_pDevice->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_MODULATE);
+
+    DrawGeometryRaw(*pGeom);
+
+    /// Leave the pipeline as the plain-geometry path expects to find it.
+    m_pDevice->SetTextureStageState(0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
+    m_pDevice->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+}
+
+void
+RoseRmlRenderer::ReleaseShader(Rml::CompiledShaderHandle shader) {
+    std::map<Rml::CompiledShaderHandle, Shader*>::iterator it = m_Shaders.find(shader);
+    if (it == m_Shaders.end())
+        return;
+
+    if (it->second->pRamp != NULL)
+        it->second->pRamp->Release();
+    delete it->second;
+    m_Shaders.erase(it);
 }
 
 /// ---------------------------------------------------------------------------

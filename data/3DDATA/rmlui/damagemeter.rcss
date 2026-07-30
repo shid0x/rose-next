@@ -30,8 +30,14 @@ body {
     flex-direction: column;
 
     padding: 8px;              /* kPad */
-    background-color: #0a0a12d7;
     border: 1px #3c3c4aff;
+    border-radius: 4px;        /* tessellated by RmlUi - needs no renderer support */
+
+    /* Gradients are implemented in the D3D9 backend by baking the colour stops
+       into a 1-D ramp and projecting position onto the gradient axis with a
+       texture-coordinate transform. Linear only: radial and conic are a
+       per-pixel function of distance/angle and will warn and draw nothing. */
+    decorator: linear-gradient(to bottom, #1e1e2ee8, #0a0a12e8);
 }
 
 /* --- drag area: header + info line --------------------------------------- */
@@ -41,11 +47,17 @@ body {
 }
 
 /* --- header: title stretches, buttons pin right -------------------------- */
+/* Gradient caption bar, in the spirit of the game's own dialogs but with no
+   sprite behind it -- edit the two colours and restart to reskin it. */
 .header {
     display: flex;
     flex-direction: row;
     align-items: center;
     height: 22px;              /* kHeaderH */
+    padding-left: 4px;
+    padding-right: 4px;
+    border-radius: 3px;
+    decorator: linear-gradient(to bottom, #6e5aa0ff, #3c2d64ff);
 }
 
 .title {
@@ -96,13 +108,15 @@ body {
 
 .row.self { color: #ffd250; }  /* kColSelf */
 
-/* Proportional bar behind the text; width comes from the data model */
+/* Proportional bar behind the text; width comes from the data model.
+   The vertical sheen that used to require a gauge sprite is now a gradient. */
 .bar {
     position: absolute;
     left: 0px;
     top: 2px;
     height: 12px;
-    background-color: #c83c3c5a;   /* kColBar */
+    border-radius: 2px;
+    decorator: linear-gradient(to bottom, #e65a5aa0, #a02828a0);
 }
 
 .name  { flex-grow: 1; }
