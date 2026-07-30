@@ -44,11 +44,6 @@
         </div>
 
         <div class="footer">{{footer}}</div>
-
-        <!-- TEMPORARY smoke test for VFS texture loading: UI00.DDS lives inside
-             data.idx/.vfs, so if this swatch shows game art then RCSS can reach
-             the game's atlases. Remove once real sprites are wired up. -->
-        <div id="vfs-test"></div>
     </div>
 </body>
 </rml>

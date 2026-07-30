@@ -414,27 +414,29 @@ RoseRmlRenderer::ReloadTexture(Texture& tex) {
     if (tex.strSource.empty())
         return false;
 
-    /// D3DX handles DDS / PNG / TGA / BMP, covering both RmlUi's own assets and
-    /// the game's DDS art. SYSTEMMEM so the result can be locked and cached.
+    /// D3DX handles DDS / PNG / TGA / BMP, covering both loose authoring art and
+    /// the game's DDS atlases. SYSTEMMEM so the result can be locked and cached.
     ///
-    /// VFS first, disk second: game sprites are only reachable through the VFS,
-    /// while loose files are what make authoring iteration possible. Trying the
-    /// VFS first means an RCSS path can name a game asset without any prefix or
-    /// scheme, and a loose file of the same name still overrides nothing.
+    /// **Loose files win.** A player who drops an image next to the .rcss must be
+    /// able to override whatever the skin shipped with -- that is the whole point
+    /// of authoring UI from editable files rather than baked atlases. The VFS is
+    /// only the fallback, for the occasional case where a skin deliberately
+    /// reuses existing game art ( class icons and the like ).
     IDirect3DTexture9* pSys = NULL;
-    std::vector<unsigned char> FileBytes;
-    const bool bFromVFS = ReadFromVFS(tex.strSource.c_str(), FileBytes);
+    bool bFromVFS = false;
 
-    if (bFromVFS) {
+    if (FAILED(D3DXCreateTextureFromFileExA(m_pDevice, tex.strSource.c_str(),
+            D3DX_DEFAULT_NONPOW2, D3DX_DEFAULT_NONPOW2, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM,
+            D3DX_FILTER_NONE, D3DX_FILTER_NONE, 0, NULL, NULL, &pSys))) {
+        std::vector<unsigned char> FileBytes;
+        if (!ReadFromVFS(tex.strSource.c_str(), FileBytes))
+            return false;
         if (FAILED(D3DXCreateTextureFromFileInMemoryEx(m_pDevice, &FileBytes[0],
                 (UINT)FileBytes.size(), D3DX_DEFAULT_NONPOW2, D3DX_DEFAULT_NONPOW2, 1, 0,
                 D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, D3DX_FILTER_NONE, D3DX_FILTER_NONE, 0, NULL,
                 NULL, &pSys)))
             return false;
-    } else if (FAILED(D3DXCreateTextureFromFileExA(m_pDevice, tex.strSource.c_str(),
-                   D3DX_DEFAULT_NONPOW2, D3DX_DEFAULT_NONPOW2, 1, 0, D3DFMT_A8R8G8B8,
-                   D3DPOOL_SYSTEMMEM, D3DX_FILTER_NONE, D3DX_FILTER_NONE, 0, NULL, NULL, &pSys))) {
-        return false;
+        bFromVFS = true;
     }
 
     D3DSURFACE_DESC desc;
