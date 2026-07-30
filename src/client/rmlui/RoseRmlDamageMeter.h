@@ -47,9 +47,13 @@ private:
     /// One display row, flattened for the data model. Mirrors what the RCSS
     /// needs and nothing more -- the view never sees CDamageMeter::Row.
     struct RowVM {
+        Rml::String rank; ///< "1st", "2nd", "3rd", "4" ...
         Rml::String name;
-        Rml::String value; ///< preformatted "184,220 (2192/s, 46%)"
-        float pct;         ///< bar width, 0..100 relative to the top row
+        Rml::String dps; ///< "6,100 DPS"
+        Rml::String dmg; ///< "1.2M DMG"  ( abbreviated )
+        Rml::String pct; ///< "39%"
+        float width;     ///< bar fill width 0..100, relative to the top row
+        int rank_id;     ///< 1-based; drives the per-place colour in RCSS
         bool is_self;
     };
 
@@ -58,6 +62,10 @@ private:
     void ResetData();
 
     static Rml::String FormatThousands(__int64 value);
+    /// "1.2M" / "740K" / "512" -- the compact form used for totals.
+    static Rml::String FormatAbbrev(__int64 value);
+    /// "1st", "2nd", "3rd", then plain numbers.
+    static Rml::String FormatRank(int index);
 
     Rml::Context* m_pContext;
     Rml::ElementDocument* m_pDocument;
@@ -65,7 +73,8 @@ private:
 
     /// --- bound data ---------------------------------------------------------
     Rml::String m_strTitle;
-    Rml::String m_strFight;
+    Rml::String m_strFight;    ///< "03:22"
+    Rml::String m_strPartyDPS; ///< "19,800"
     Rml::String m_strFooter;
     bool m_bLive;
     std::vector<RowVM> m_Rows;

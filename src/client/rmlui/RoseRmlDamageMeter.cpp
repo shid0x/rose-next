@@ -67,6 +67,37 @@ RoseRmlDamageMeter::FormatThousands(__int64 value) {
     return out;
 }
 
+Rml::String
+RoseRmlDamageMeter::FormatAbbrev(__int64 value) {
+    char szBuf[32];
+    if (value >= 1000000) {
+        _snprintf(szBuf, sizeof(szBuf), "%.1fM", (double)value / 1000000.0);
+    } else if (value >= 1000) {
+        _snprintf(szBuf, sizeof(szBuf), "%dK", (int)(value / 1000));
+    } else {
+        _snprintf(szBuf, sizeof(szBuf), "%I64d", value);
+    }
+    szBuf[sizeof(szBuf) - 1] = '\0';
+    return szBuf;
+}
+
+Rml::String
+RoseRmlDamageMeter::FormatRank(int index) {
+    char szBuf[16];
+    switch (index) {
+        case 0:
+            return "1st";
+        case 1:
+            return "2nd";
+        case 2:
+            return "3rd";
+        default:
+            _snprintf(szBuf, sizeof(szBuf), "%d", index + 1);
+            szBuf[sizeof(szBuf) - 1] = '\0';
+            return szBuf;
+    }
+}
+
 bool
 RoseRmlDamageMeter::Initialise(Rml::Context* pContext, const std::string& strAssetDir) {
     if (pContext == NULL)
@@ -79,15 +110,20 @@ RoseRmlDamageMeter::Initialise(Rml::Context* pContext, const std::string& strAss
         return false;
 
     if (auto row = constructor.RegisterStruct<RowVM>()) {
+        row.RegisterMember("rank", &RowVM::rank);
         row.RegisterMember("name", &RowVM::name);
-        row.RegisterMember("value", &RowVM::value);
+        row.RegisterMember("dps", &RowVM::dps);
+        row.RegisterMember("dmg", &RowVM::dmg);
         row.RegisterMember("pct", &RowVM::pct);
+        row.RegisterMember("width", &RowVM::width);
+        row.RegisterMember("place", &RowVM::rank_id);
         row.RegisterMember("self", &RowVM::is_self);
     }
     constructor.RegisterArray<std::vector<RowVM>>();
 
     constructor.Bind("title", &m_strTitle);
     constructor.Bind("fight", &m_strFight);
+    constructor.Bind("party_dps", &m_strPartyDPS);
     constructor.Bind("footer", &m_strFooter);
     constructor.Bind("live", &m_bLive);
     constructor.Bind("rows", &m_Rows);
@@ -198,7 +234,7 @@ RoseRmlDamageMeter::RebuildRows() {
     const double dDurSec = (dwDurMs > 0) ? (dwDurMs / 1000.0) : 1.0;
 
     char szBuf[160];
-    _snprintf(szBuf, sizeof(szBuf), "Fight %d:%02d", iDurSec / 60, iDurSec % 60);
+    _snprintf(szBuf, sizeof(szBuf), "%02d:%02d", iDurSec / 60, iDurSec % 60);
     szBuf[sizeof(szBuf) - 1] = '\0';
     m_strFight = szBuf;
     m_bLive = m_Snapshot.bActive;
@@ -208,6 +244,9 @@ RoseRmlDamageMeter::RebuildRows() {
         iViewTotal += (*pRows)[i].iTotal;
     if (iViewTotal < 1)
         iViewTotal = 1;
+
+    /// Combined throughput of everyone in the view, not just the visible rows.
+    m_strPartyDPS = FormatThousands((__int64)(iViewTotal / dDurSec));
 
     __int64 iTopTotal = 1;
     if (!pRows->empty() && (*pRows)[0].iTotal > 0)
@@ -223,22 +262,32 @@ RoseRmlDamageMeter::RebuildRows() {
         const CDamageMeter::Row& src = (*pRows)[i];
 
         RowVM vm;
+        vm.rank = FormatRank(i);
+        vm.rank_id = i + 1;
         vm.name = src.strName.c_str();
-        vm.pct = (float)((double)src.iTotal * 100.0 / (double)iTopTotal);
+        vm.width = (float)((double)src.iTotal * 100.0 / (double)iTopTotal);
         vm.is_self = (m_iView == VIEW_DAMAGE_DONE && pSelfName != NULL
             && src.strName == pSelfName);
 
         const int iPct = (int)(src.iTotal * 100 / iViewTotal);
+        _snprintf(szBuf, sizeof(szBuf), "%d%%", iPct);
+        szBuf[sizeof(szBuf) - 1] = '\0';
+        vm.pct = szBuf;
+
+        /// The left cell is a rate in Damage Done and a hit count elsewhere --
+        /// "DPS" is meaningless for a per-skill or incoming breakdown.
         if (m_iView == VIEW_DAMAGE_DONE) {
             const int iDps = (int)(src.iTotal / dDurSec);
-            _snprintf(szBuf, sizeof(szBuf), "%s (%d/s, %d%%)",
-                FormatThousands(src.iTotal).c_str(), iDps, iPct);
+            _snprintf(szBuf, sizeof(szBuf), "%s DPS", FormatThousands(iDps).c_str());
         } else {
-            _snprintf(szBuf, sizeof(szBuf), "%s (x%d, %d%%)",
-                FormatThousands(src.iTotal).c_str(), src.iHits, iPct);
+            _snprintf(szBuf, sizeof(szBuf), "x%d", src.iHits);
         }
         szBuf[sizeof(szBuf) - 1] = '\0';
-        vm.value = szBuf;
+        vm.dps = szBuf;
+
+        _snprintf(szBuf, sizeof(szBuf), "%s DMG", FormatAbbrev(src.iTotal).c_str());
+        szBuf[sizeof(szBuf) - 1] = '\0';
+        vm.dmg = szBuf;
 
         m_Rows.push_back(vm);
     }
@@ -272,6 +321,7 @@ RoseRmlDamageMeter::RebuildRows() {
 
     m_Model.DirtyVariable("rows");
     m_Model.DirtyVariable("fight");
+    m_Model.DirtyVariable("party_dps");
     m_Model.DirtyVariable("footer");
     m_Model.DirtyVariable("live");
 }
