@@ -453,9 +453,53 @@ needs `ScreenToClient` before hit-testing or camera zoom breaks depending on whe
 That argues for keeping the number of RmlUi panels small and their geometry simple, and is an
 independent reason not to migrate the retail dialogs.
 
-**Still on CSS colours, not game atlas art** — no `ID_BLACK_PANEL` background, no `UI00_GUAGE_RED`
-bars. Needs texture loading routed through the VFS (the Phase 1 item). Panel position is also not
-persisted, same as the legacy panel.
+#### Phase 2b — full ROSE-style skin, no images at all (2026-07-30)
+
+The meter was reskinned to a ROSE-dialog look — gradient caption bar, inset info bar, column
+headings, ranked rows with place-coloured bars, beveled footer — using **zero image files**. Bevels
+are a gradient plus a light/dark border pair; insets run the gradient the other way.
+
+Two capabilities made that possible, both added here:
+
+- **Linear gradients in the D3D9 backend, with no shader.** RmlUi routes gradients through
+  `CompileShader`/`RenderShader`, which normally implies a programmable pipeline. It does not have
+  to: the gradient decorator sets every vertex's `tex_coord` to its element-local *pixel position*
+  and passes `p0`/`p1` in that same space, so projecting position onto the gradient axis is affine.
+  `CompileShader` bakes the resolved stops into a 256×1 ramp; `RenderShader` sets a `D3DTTFF_COUNT2`
+  texture matrix mapping `(u,v) → (t, 0.5)`. Repeating gradients switch the address mode to `WRAP`.
+  Stops arrive pre-resolved to 0..1 and colours are premultiplied, so interpolating them directly is
+  correct — interpolating straight alpha would darken every midpoint. Ramps are DEFAULT-pool and are
+  rebuilt from retained pixels on device loss, like geometry and textures.
+  **Only linear**: radial and conic are per-pixel functions of distance/angle that no coordinate
+  transform can express; they log a warning instead of silently drawing nothing.
+- **`border-radius` needs no renderer support at all** — RmlUi tessellates rounded corners itself.
+
+**VFS texture loading exists but is deliberately secondary.** Game atlases are reachable
+(`3DDATA/CONTROL/RES/…`), and `RoseRmlSystem::JoinPath` passes game-root paths through untouched
+rather than resolving them against the document folder. But resolution is **disk first, VFS second**,
+because a player must be able to override a skin's art by dropping a file next to the `.rcss`.
+Reproducing the original TSI/atlas workflow is explicitly *not* the goal — the reason for RmlUi is
+quick, editable interfaces.
+
+**Authoring palette** (what a skin may rely on today): linear gradients, `border-radius`, borders,
+flexbox, `:hover`/`:active`, transitions, `font-effect` (outline/shadow/glow), overflow and
+scrolling, `<handle>` drag, and images from loose files.
+**Not available**: radial/conic gradients, blurred `box-shadow`, `filter`, `backdrop-filter`,
+`transform`, and clipping children to rounded corners.
+
+**Traps found while skinning**, both of which look like something else entirely:
+
+- `body` **must** keep `width/height: 100%`. `ElementHandle` clamps a drag to the move target's
+  containing block, so without it the panel is stuck near the top-left. The rule looks inert and was
+  dropped once during a stylesheet rewrite; it now carries a DO-NOT-REMOVE note.
+- RmlUi has **no plain `linear` tween** — only `linear-in`/`-out`/`-in-out`. `transition: … linear`
+  is a parse error and the whole declaration is discarded, which is indistinguishable from a
+  transition that completes instantly. The RmlUi debugger (already initialised) is what caught it;
+  keep it visible while authoring, because RCSS errors are otherwise silent.
+- An absolutely-positioned bar fill paints *above* plain in-flow siblings, hiding the labels over it.
+  The labels need `position: relative` + a higher `z-index`.
+
+Panel position is still not persisted, same as the legacy panel.
 
 ### Phase 3 — 3D-pane panels (~1–2 weeks)
 
