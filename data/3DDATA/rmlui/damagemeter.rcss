@@ -77,6 +77,7 @@ body {
     padding-right: 8px;
     margin-bottom: 5px;
 
+    font-size: 10px;           /* both labels have to share 430px */
     font-weight: bold;
     color: #28327cff;
     border: 1px #8290c8ff;
@@ -215,7 +216,9 @@ body {
     border: 1px #6a78b4ff;
     border-radius: 3px;
     decorator: linear-gradient(to bottom, #eaeafaff, #c2c8e8ff);
-    transition: color 0.1s linear;
+    /* RmlUi has no plain "linear" tween -- only linear-in / -out / -in-out.
+       Writing `linear` is a parse error and the whole declaration is dropped. */
+    transition: color 0.1s linear-in-out;
     cursor: pointer;
 }
 
