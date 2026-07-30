@@ -53,7 +53,6 @@
 
         <div class="footer">
             <span class="btn" data-event-click="reset_data()">[Reset]</span>
-            <span class="spacer"></span>
             <span class="btn" data-event-click="cycle_view()">[Details]</span>
             <span class="btn" data-event-click="close_panel()">[Close]</span>
         </div>
