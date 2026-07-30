@@ -113,3 +113,12 @@ body {
     height: 16px;              /* kFooterH */
     color: #b4b4b4;
 }
+
+/* TEMPORARY: proves RCSS can reach a texture inside the VFS. The path is passed
+   through untouched by RoseRmlSystem::JoinPath because it names the game data
+   root, instead of being resolved relative to this file's folder.
+   Delete this rule and the #vfs-test element once real sprites are in use. */
+#vfs-test {
+    height: 24px;
+    decorator: image("3DDATA/CONTROL/RES/UI00.DDS");
+}

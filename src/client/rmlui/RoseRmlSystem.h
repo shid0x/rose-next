@@ -19,6 +19,15 @@ public:
 
     virtual double GetElapsedTime();
     virtual bool LogMessage(Rml::Log::Type type, const Rml::String& message);
+
+    /// RmlUi resolves an RCSS `src:` against the referencing document's folder.
+    /// That is right for authoring files kept next to the document, but wrong for
+    /// game assets: "3DDATA/CONTROL/RES/UI.DDS" would become
+    /// "3ddata/rmlui/3DDATA/CONTROL/RES/UI.DDS". Paths that already name a game
+    /// data root are therefore passed through untouched.
+    virtual void JoinPath(Rml::String& translated_path,
+        const Rml::String& document_path,
+        const Rml::String& path);
     virtual void SetClipboardText(const Rml::String& text);
     virtual void GetClipboardText(Rml::String& text);
 

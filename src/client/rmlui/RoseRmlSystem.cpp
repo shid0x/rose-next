@@ -21,6 +21,49 @@ RoseRmlSystem::GetElapsedTime() {
     return (double)(now.QuadPart - m_llStart) / m_dFrequency;
 }
 
+namespace {
+
+/// True for a path that should be handed to the loader verbatim rather than
+/// resolved relative to the referencing document.
+bool
+IsGameAbsolutePath(const Rml::String& path) {
+    if (path.empty())
+        return false;
+
+    /// A real absolute path or a drive letter.
+    if (path[0] == '/' || path[0] == '\\')
+        return true;
+    if (path.size() > 1 && path[1] == ':')
+        return true;
+
+    /// The game data root, in whatever case the author used. The client itself
+    /// is inconsistent about this ("3DData\\Control\\Res\\Ui.TSI" vs
+    /// "3ddata/..."), and the VFS is case-insensitive, so accept any spelling.
+    const char* kRoot = "3ddata";
+    const size_t nRoot = 6;
+    if (path.size() < nRoot)
+        return false;
+    for (size_t i = 0; i < nRoot; ++i) {
+        if (tolower((unsigned char)path[i]) != kRoot[i])
+            return false;
+    }
+    return true;
+}
+
+} // namespace
+
+void
+RoseRmlSystem::JoinPath(Rml::String& translated_path,
+    const Rml::String& document_path,
+    const Rml::String& path) {
+    if (IsGameAbsolutePath(path)) {
+        translated_path = path;
+        return;
+    }
+
+    Rml::SystemInterface::JoinPath(translated_path, document_path, path);
+}
+
 bool
 RoseRmlSystem::LogMessage(Rml::Log::Type type, const Rml::String& message) {
     switch (type) {

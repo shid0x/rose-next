@@ -4,6 +4,9 @@
 
 #include <RmlUi/Core/Core.h>
 
+#include "../Util/CFileSystem.h"
+#include "../Util/VFSManager.h"
+
 #include <d3dx9.h>
 
 namespace {
@@ -15,6 +18,49 @@ namespace {
 inline DWORD
 RmlColourToD3D(const Rml::ColourbPremultiplied& c) {
     return D3DCOLOR_ARGB(c.alpha, c.red, c.green, c.blue);
+}
+
+/// Reads a file out of the game VFS. The game's own UI art ( Ui.TSI and the DDS
+/// files under 3DDATA/CONTROL/RES ) lives inside data.idx/.vfs, which RmlUi's
+/// default fopen-based loader cannot see -- so any RCSS that wants to reuse
+/// game sprites has to come through here.
+///
+/// Paths are normalised to backslashes to match the rest of the client
+/// ( io_imageres.cpp opens "3DData\\Control\\Res\\Ui.TSI" ). Returns false when
+/// the file is not in the VFS, letting the caller fall back to disk -- which is
+/// what keeps loose authoring files working during iteration.
+bool
+ReadFromVFS(const char* pPath, std::vector<unsigned char>& Out) {
+    if (pPath == NULL || *pPath == '\0')
+        return false;
+
+    std::string strPath(pPath);
+    for (size_t i = 0; i < strPath.size(); ++i) {
+        if (strPath[i] == '/')
+            strPath[i] = '\\';
+    }
+
+    CFileSystem* pFS = CVFSManager::GetSingleton().GetFileSystem();
+    if (pFS == NULL)
+        return false;
+
+    bool bOk = false;
+    if (pFS->IsExist(strPath.c_str()) && pFS->OpenFile(strPath.c_str(), OPEN_READ_BIN)) {
+        if (pFS->ReadToMemory()) {
+            const int iSize = pFS->GetSize();
+            unsigned char* pData = pFS->GetData();
+            if (iSize > 0 && pData != NULL) {
+                Out.assign(pData, pData + iSize);
+                bOk = true;
+            }
+            pFS->ReleaseData();
+        }
+        pFS->CloseFile();
+    }
+
+    /// The manager pools filesystems; failing to return one leaks a slot.
+    CVFSManager::GetSingleton().ReturnToManager(pFS);
+    return bOk;
 }
 
 /// In-place RGBA -> BGRA channel swap for a raw pixel buffer.
@@ -368,13 +414,28 @@ RoseRmlRenderer::ReloadTexture(Texture& tex) {
     if (tex.strSource.empty())
         return false;
 
-    /// D3DX handles DDS / PNG / TGA / BMP, covering both RmlUi's sample assets
-    /// and the game's DDS art. SYSTEMMEM so the result can be locked and cached.
+    /// D3DX handles DDS / PNG / TGA / BMP, covering both RmlUi's own assets and
+    /// the game's DDS art. SYSTEMMEM so the result can be locked and cached.
+    ///
+    /// VFS first, disk second: game sprites are only reachable through the VFS,
+    /// while loose files are what make authoring iteration possible. Trying the
+    /// VFS first means an RCSS path can name a game asset without any prefix or
+    /// scheme, and a loose file of the same name still overrides nothing.
     IDirect3DTexture9* pSys = NULL;
-    if (FAILED(D3DXCreateTextureFromFileExA(m_pDevice, tex.strSource.c_str(), D3DX_DEFAULT_NONPOW2,
-            D3DX_DEFAULT_NONPOW2, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, D3DX_FILTER_NONE,
-            D3DX_FILTER_NONE, 0, NULL, NULL, &pSys)))
+    std::vector<unsigned char> FileBytes;
+    const bool bFromVFS = ReadFromVFS(tex.strSource.c_str(), FileBytes);
+
+    if (bFromVFS) {
+        if (FAILED(D3DXCreateTextureFromFileInMemoryEx(m_pDevice, &FileBytes[0],
+                (UINT)FileBytes.size(), D3DX_DEFAULT_NONPOW2, D3DX_DEFAULT_NONPOW2, 1, 0,
+                D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, D3DX_FILTER_NONE, D3DX_FILTER_NONE, 0, NULL,
+                NULL, &pSys)))
+            return false;
+    } else if (FAILED(D3DXCreateTextureFromFileExA(m_pDevice, tex.strSource.c_str(),
+                   D3DX_DEFAULT_NONPOW2, D3DX_DEFAULT_NONPOW2, 1, 0, D3DFMT_A8R8G8B8,
+                   D3DPOOL_SYSTEMMEM, D3DX_FILTER_NONE, D3DX_FILTER_NONE, 0, NULL, NULL, &pSys))) {
         return false;
+    }
 
     D3DSURFACE_DESC desc;
     pSys->GetLevelDesc(0, &desc);
@@ -406,6 +467,13 @@ RoseRmlRenderer::ReloadTexture(Texture& tex) {
 
     tex.iWidth = w;
     tex.iHeight = h;
+
+    /// Say which source won. Game art and loose authoring files look identical
+    /// once loaded, so without this a silently-failing VFS path is impossible to
+    /// tell from a working one.
+    Rml::Log::Message(Rml::Log::LT_INFO, "RoseRmlRenderer: loaded %s from %s (%dx%d)",
+        tex.strSource.c_str(), bFromVFS ? "VFS" : "disk", w, h);
+
     return UploadTexture(tex, &tex.Pixels[0], w, h);
 }
 
