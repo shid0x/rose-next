@@ -46,6 +46,7 @@ MSBuild.exe rose-next.sln -p:Configuration=release;Platform=x86
 - Build assets: `just build-assets release` or `scripts/build-assets.ps1`
 - **D3D9 core headers come from the Windows 10 SDK**, not the vendored DX SDK — `d3d9.h`/`d3d9types.h`/`d3d9caps.h` were deleted from `thirdparty/directx9/include/` so the SDK copies (which have the 9Ex interfaces) win. MSVC searches every `/I` path before the system include dirs, so the vendored copies could not be beaten by ordering. The rest of the vendored SDK stays, because D3DX9 is not in the Windows SDK.
 - **`d3dx9_43.dll` must ship with the client** — D3DX9 is linked against the June 2010 redistributable rather than the old static lib. `scripts/post-build.ps1` copies it into `bin/<config>` and `scripts/dist.ps1` bundles it; a hand-rolled deploy that forgets it produces a client that will not start.
+- **RmlUi and FreeType are hand-written `.vcxproj` files in `thirdparty.sln`** (like every other dep here — the upstream projects are CMake-based and we do not use CMake). Both need `RMLUI_CUSTOM_RTTI` (client RTTI is off) and `RMLUI_FONT_ENGINE_FREETYPE` — without the latter RmlUi compiles its "no font engine" branch and `Rml::Initialise` fails at runtime. RmlUi also needs per-directory object output (`<ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>`): `Source/Core/Geometry.cpp` and `Source/Debugger/Geometry.cpp` share a basename and otherwise overwrite each other, failing the link with unresolved externals that look like missing sources.
 
 ## Project Structure
 
@@ -75,6 +76,7 @@ src/
 │   ├── vfs-browser/     # rose-vfs: TUI browser for data.idx / .vfs (ratatui + rfd)
 │   ├── npc-shop-editor/ # egui editor for LIST_NPC/LIST_SELL shop tabs (COW on shared rows)
 │   └── quest-editor/    # CLI + egui wizard: Hunt/Fetch quests + NPC dialog givers (see its PROGRESS.md)
+├── rmlui/               # (in client/) RmlUi integration: D3D9 backend, system iface, panels
 ├── lib_util/            # C++ utility library
 └── triggervfs/          # Virtual filesystem
 data/                    # Game data files (STB tables, scripts, shaders)
@@ -171,6 +173,28 @@ Shift+click an item icon in any `CSlot` (inventory, bank, equip, stores) inserts
 
 ### Item Preview Panel (Client-Only)
 Alt+left-click an equipment item (any inventory/bank/store `CSlot` icon, or a chat item link) opens `CItemPreviewPanel` — the player's character wearing that item in a rotating 3D pane, without equipping it or sending any packet. Previews are cumulative while the panel stays open (hat + chest + weapon together; closing resets). Ctrl+click was unavailable (already bound to wishlist registration on item icons). The puppet reuses `CJustModelAVT` (character-select model viewer), never inserted into the scene, rendered through the same avatar-selection viewport pipeline as the Monster Inspector. Shared pane helpers + the avatar-selection camera absolute-value mirror live in `src/client/interface/OverlayPanelUtil.*` (one mirror process-wide — both panels use it). See client `CLAUDE.md` "Item Preview Panel".
+
+### RmlUi UI Layer (Client)
+New/custom client panels can be authored in **HTML/CSS-like files** (`.rml` / `.rcss`) instead of
+hard-coded C++ draw calls, via **RmlUi 6.2 + FreeType 2.13.3** (`thirdparty/RmlUi-6.2`,
+`thirdparty/freetype-2.13.3`, built as x86 `/MT` static libs with `RMLUI_CUSTOM_RTTI`). The client
+side is `src/client/rmlui/`; assets live loose in `3ddata/rmlui/`.
+
+Off by default — enable with `[VIDEO] RMLUI=1` in `rose-next.ini` or `ROSE_RMLUI=1`. When enabled,
+`/dps` opens the RmlUi damage meter instead of the legacy `CDamageMeterPanel`; both read the same
+`CDamageMeter` core, so they A/B in place.
+
+**Scope is new/custom panels only.** `tgamectrl`, the 56 retail XML dialogs, chat input and **IME**
+are out — RmlUi has no IME composition handling, and the input boundary is the fiddliest part of the
+integration. The purpose is quick, player-editable interfaces, **not** reproducing the original
+TSI/atlas workflow: `.rml`/`.rcss` are loaded loose (never via the VFS) so players can edit them, and
+texture loading resolves **disk first, VFS second** so a player's file overrides shipped art.
+
+Linear gradients are implemented in the D3D9 backend without a shader, and `border-radius` needs no
+renderer support, so skins need no image files at all. Radial/conic gradients, blurred `box-shadow`,
+`filter` and `transform` are **not** implemented and will warn or do nothing. Full design notes,
+phase history, the authoring palette and the traps are in
+[doc/rmlui-evaluation.md](doc/rmlui-evaluation.md); client specifics are in the client `CLAUDE.md`.
 
 ### Shared Data Types
 `src/common/shared/` contains game data structures (items, quests, inventory, economy) used by both client and server. Changes here affect both sides.

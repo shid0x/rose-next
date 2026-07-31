@@ -27,6 +27,18 @@
 
 See [d3d9ex-migration.md](d3d9ex-migration.md) for why.
 
+## RmlUi / FreeType
+`thirdparty/rmlui.vcxproj` and `thirdparty/freetype.vcxproj` are hand-written (upstream is CMake;
+this repo does not use CMake) and are members of `thirdparty.sln`, so the normal build covers them.
+Three settings are load-bearing: `RMLUI_CUSTOM_RTTI` (the client builds with RTTI off),
+`RMLUI_FONT_ENGINE_FREETYPE` (without it RmlUi compiles its "no font engine" branch and
+`Rml::Initialise` fails at *runtime*, not build time), and per-directory object output
+(`<ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>`) because `Source/Core/Geometry.cpp` and
+`Source/Debugger/Geometry.cpp` share a basename and otherwise clobber each other, failing the link
+with unresolved externals that read as missing sources.
+
+See [rmlui-evaluation.md](rmlui-evaluation.md).
+
 ## Key Paths
 - Release output: `bin/release/`
 - Executables: rosenext.exe, sho_gameserver.exe, sho_loginserver.exe, sho_worldserver.exe, pipeline.exe

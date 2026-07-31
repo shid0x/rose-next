@@ -45,6 +45,10 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "expat", "thirdparty\expat.v
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "zlib", "thirdparty\zlib.vcxproj", "{AA30EC56-6D88-40ED-AD45-6E8495281E9C}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "freetype", "thirdparty\freetype.vcxproj", "{7B1D4F2C-3A88-4E15-9C6D-2F5A8B0E4D31}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rmlui", "thirdparty\rmlui.vcxproj", "{5C2E9A41-7D63-4B8F-A012-3E6D9C4F8B27}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "flatc", "thirdparty\flatc.vcxproj", "{24E884F0-7A32-3DC3-94B4-5DBC45DCA12F}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libpgport", "thirdparty\libpgport.vcxproj", "{AB1B1C1E-821A-437A-B177-1625ECD89C5B}"
@@ -116,6 +120,14 @@ Global
 		{AA30EC56-6D88-40ED-AD45-6E8495281E9C}.debug|x86.Build.0 = debug|Win32
 		{AA30EC56-6D88-40ED-AD45-6E8495281E9C}.release|x86.ActiveCfg = release|Win32
 		{AA30EC56-6D88-40ED-AD45-6E8495281E9C}.release|x86.Build.0 = release|Win32
+		{7B1D4F2C-3A88-4E15-9C6D-2F5A8B0E4D31}.debug|x86.ActiveCfg = debug|Win32
+		{7B1D4F2C-3A88-4E15-9C6D-2F5A8B0E4D31}.debug|x86.Build.0 = debug|Win32
+		{7B1D4F2C-3A88-4E15-9C6D-2F5A8B0E4D31}.release|x86.ActiveCfg = release|Win32
+		{7B1D4F2C-3A88-4E15-9C6D-2F5A8B0E4D31}.release|x86.Build.0 = release|Win32
+		{5C2E9A41-7D63-4B8F-A012-3E6D9C4F8B27}.debug|x86.ActiveCfg = debug|Win32
+		{5C2E9A41-7D63-4B8F-A012-3E6D9C4F8B27}.debug|x86.Build.0 = debug|Win32
+		{5C2E9A41-7D63-4B8F-A012-3E6D9C4F8B27}.release|x86.ActiveCfg = release|Win32
+		{5C2E9A41-7D63-4B8F-A012-3E6D9C4F8B27}.release|x86.Build.0 = release|Win32
 		{24E884F0-7A32-3DC3-94B4-5DBC45DCA12F}.debug|x86.ActiveCfg = Debug|Win32
 		{24E884F0-7A32-3DC3-94B4-5DBC45DCA12F}.debug|x86.Build.0 = Debug|Win32
 		{24E884F0-7A32-3DC3-94B4-5DBC45DCA12F}.release|x86.ActiveCfg = release|Win32

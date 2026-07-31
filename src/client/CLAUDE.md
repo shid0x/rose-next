@@ -246,7 +246,61 @@ Client-only DPS meter fed by the authoritative combat event stream. **Zero comba
 - **Segments:** a fight ends after 6 s without samples (`kIdleGapMs`); the panel keeps showing the last fight while idle. Aggregation is rebuilt on demand (`BuildSnapshot`, capped sample ring) — the view layer holds no state of its own.
 - **UI** (`interface/CDamageMeterPanel.cpp/h`, owned by `CUIMediator` as `m_DamageMeterPanel`): direct-draw overlay in the `CSummonInfoPanel`/`OverlayPanelUtil` style (no XML). Views: Damage Done (self + party ranking, self+pets folded into one row), My Skills, Damage Taken; header buttons `[>]` cycle / `[R]` reset / `[X]` close; footer shows the biggest hit. Toggled by the **local** `/dps` chat command (`CChatDLG::SendChatMsg` intercepts before any send; `/dps reset` clears data). Input routed in `CGameStateMain::ProcWndMsgInstant` between the Monster Inspector and the summon panel, matching draw order. Layout/style constants are grouped in an anonymous namespace at the top of the panel cpp for easy modding.
 - **Credit vs. attacker (`source_attacker_id`, phase 3):** the wire's `source_attacker_id` (server index → client index in `to_client_damage_event`) is who the meter *credits* when it differs from `attacker_id`: DoT casters (status ticks keep the victim in `attacker_id` for presentation; poison ticks pass the stored speller + skill) and summon owners (server auto-resolves in `Send_combat_swing`/`Send_combat_damage_event`). In the meter: source ≠ attacker on a non-StatusTick event ⇒ pet sample (own pets → self row + "Pets" skill label; party pets → fold into the party member's row); on a StatusTick it's caster attribution, not a pet. Incoming DoTs show the caster's name; "DoT / Status" remains only for unattributed self-ticks. The own-summon-list check stays as fallback for events without a wire source.
+- **Alternative RmlUi view:** with `[VIDEO] RMLUI=1` the `/dps` command opens a CSS-authored meter instead (see "RmlUi UI Layer"). It is a second consumer of `BuildSnapshot()` — `CDamageMeter` itself is unchanged, and the legacy panel remains the default.
 - **Known limits:** party summons' *legacy-path skill* damage (GSV_DAMAGE_OF_SKILL from a summon) still isn't owner-credited — only FlatBuffer swing/event paths carry `source_attacker_id`; party members are only metered while their fights are within your ~1-sector broadcast range (by design — the meter shows the fight around you); no healing meter (heals arrive as bare stat sync). Possible later: combat-log file export for external tools.
+
+## RmlUi UI Layer (`rmlui/`)
+
+CSS-authored panels, off by default (`[VIDEO] RMLUI=1` or `ROSE_RMLUI=1`). `/dps` then opens the
+RmlUi damage meter instead of `CDamageMeterPanel`; both consume the same `CDamageMeter` snapshot, so
+the data core is untouched and the two views A/B in place. Design notes and phase history:
+[doc/rmlui-evaluation.md](doc/rmlui-evaluation.md).
+
+| File | Role |
+|---|---|
+| `RoseRmlRenderer.*` | `Rml::RenderInterface` on D3D9(Ex) — synchronous, no batching |
+| `RoseRmlSystem.*` | clock, logging, clipboard, `JoinPath` |
+| `RoseRmlUi.*` | context ownership, device lifetime, input bridge |
+| `RoseRmlDamageMeter.*` | the meter view + data-model bindings |
+
+Hooks: `CGame::GameLoop` (init/shutdown), `CGameState::render_dev_ui` (the shared in-scene overlay
+point every state already calls — must be **outside** `beginSprite()/endSprite()`, the state guard
+assumes it owns the device), `CGameState::ProcWndMsgInstant` (input, first refusal),
+`CApplication::ApplyWindowedClientResize` + `ResizeWindowByClientSize` (device rebuild), and an
+`RmlUi: draws=` debug HUD line.
+
+**Device lifetime — the trap.** `resetScreen()` does **not** `Reset()` the device: `cleanup()` calls
+`SAFE_RELEASE(d3d_device)` and `initialize()` creates a *new* one, so a cached `IDirect3DDevice9*`
+goes stale. There are six `resetScreen()` call sites (four in `CApplication`, two in
+`coptiondlg.cpp`) and hooking them individually was got wrong twice. Correctness therefore rests on
+`Update()` comparing the engine's current device against ours each frame and rebuilding on change;
+the explicit hooks are only an optimisation. Both paths log. Note RmlUi does **not** re-request
+compiled geometry or shaders after a reset, so the renderer keeps CPU-side copies of vertex/index
+data and gradient ramps and refills them itself; `Rml::ReleaseTextures()` covers only textures.
+
+**Input arbitration — the other trap.** Consumption is decided by **panel geometry**, never by
+`Context::GetHoverElement()`. Each document's `<body>` must span the viewport (or `ElementHandle`
+cannot drag a panel — it clamps to the move target's containing block), which makes the hover element
+a screen-wide hit target. Every top-level child of every visible document counts as solid UI;
+everything else is transparent to the game. A left-press on a panel latches a dragging flag until
+release so a drag keeps tracking off-panel, and `WM_MOUSEWHEEL` carries **screen** coordinates unlike
+the other mouse messages, so it needs `ScreenToClient` before hit-testing.
+
+**Rendering notes.** RmlUi 6 vertices are **premultiplied alpha** (blend is `ONE`/`INVSRCALPHA`) and
+RGBA-ordered where D3D9 wants BGRA. `D3DPOOL_DEFAULT` textures cannot be locked, so both texture
+paths go via a `SYSTEMMEM` staging texture + `UpdateTexture`. Linear gradients are implemented
+without a shader: the gradient decorator sets each vertex's `tex_coord` to its element-local pixel
+position, so a `D3DTTFF_COUNT2` texture-coordinate transform onto a baked 256×1 ramp reproduces one
+exactly. Radial/conic gradients, blurred `box-shadow`, `filter` and `transform` are unimplemented and
+warn or no-op; `border-radius` needs no renderer support (RmlUi tessellates it).
+
+**Assets.** `.rml`/`.rcss` load loose via `fopen` relative to the launch dir — the VFS bake never
+covers them, same as `UI_strID.ID`. That is deliberate: players edit them. Texture loading resolves
+**disk first, VFS second** so a player's file beats shipped art; `RoseRmlSystem::JoinPath` passes
+game-root paths (`3DDATA/...`) through untouched instead of resolving them against the document
+folder. Keep the RmlUi debugger visible while authoring — RCSS errors are otherwise completely
+silent, and a discarded declaration (e.g. `transition: … linear`, which is invalid; RmlUi has only
+`linear-in`/`-out`/`-in-out`) looks exactly like one that works.
 
 ## Frame Timing & Timer Precision
 
@@ -295,7 +349,7 @@ Built as part of `rose-next.sln` (x86/Win32). Depends on:
 - `tgamectrl` — UI controls
 - `lib_util` — utilities
 - `common-lib` (Rust) — FFI staticlib
-- Thirdparty: Direct3D 9Ex (core headers come from the Windows SDK), D3DX9 June 2010 (`d3dx9_43.dll`, **must ship with the client**), lua4, imgui, ogg/vorbis, flatbuffers, sqlite, zlib
+- Thirdparty: Direct3D 9Ex (core headers come from the Windows SDK), D3DX9 June 2010 (`d3dx9_43.dll`, **must ship with the client**), lua4, imgui, **RmlUi 6.2 + FreeType 2.13.3**, ogg/vorbis, flatbuffers, sqlite, zlib
 
 ## Conventions
 
