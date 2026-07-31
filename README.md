@@ -15,6 +15,44 @@ available. Thanks to everyone who contributed to the original release.
 
 ---
 
+## What's been modernized
+
+Beyond the MSSQL → PostgreSQL port, the notable changes from the original code:
+
+**Rendering & platform**
+- **Direct3D 9Ex** device (with plain D3D9 fallback). Alt-tab, lock, UAC and RDP
+  no longer lose the device, so they no longer trigger a full reload of every
+  texture. Consequence for contributors: `D3DPOOL_MANAGED` is illegal and gone —
+  see [doc/d3d9ex-migration.md](doc/d3d9ex-migration.md) before touching
+  rendering.
+- **D3DX9 June 2010 redistributable** — `d3dx9_43.dll` must ship next to the
+  client. Without it, text silently fails to render.
+- Frame-pacing fix (`timeBeginPeriod(1)`); vsync is the only frame cap.
+- Terrain streaming and particle-budget work to cut hitches in busy zones.
+
+**Combat**
+- Combat damage is **server-authoritative**. The client presents what the server
+  sends and never recalculates live damage. If you touch combat display, read the
+  Combat Presentation section of [`src/client/CLAUDE.md`](src/client/CLAUDE.md)
+  first — the ordering rules there are subtle and were expensive to get right.
+
+**UI**
+- **RmlUi 6.2 + FreeType** — new panels can be authored in HTML/CSS-like files
+  (`.rml` / `.rcss`) instead of C++ draw calls. Off by default; see *Client
+  settings* below. Scope is deliberately limited to new/custom panels: the retail
+  dialogs, chat input and IME stay on the original `tgamectrl` framework.
+  Details in [doc/rmlui-evaluation.md](doc/rmlui-evaluation.md).
+- Client-side additions: damage meter (`/dps`), monster inspector, item preview
+  (alt+click), chat item links (shift+click), overhead NPC quest icons, summon
+  control (ctrl+click).
+
+**Tooling**
+- Quest editor, NPC shop editor and a VFS browser in [`src/tools/`](src/tools/).
+- Python asset scripts in [`scripts/`](scripts/) for importing weapons and adding
+  item/skill icons.
+
+---
+
 ## What's in here
 
 This is a full client + server stack. Everything is **32-bit (x86) Windows**.
@@ -34,9 +72,10 @@ Client (C++/D3D9Ex) ←→ LoginServer  ←→  WorldServer  ←→  GameServer
 | Shared C++       | `src/common/`, `src/common-server/` | items, quests, sockets |
 | Shared Rust      | `src/common-lib/`       | logger, config, FlatBuffers   |
 | 3D engine        | `src/engine/`           | Direct3D 9Ex rendering        |
-| UI framework     | `src/tgamectrl/`        | custom GUI controls           |
+| UI framework     | `src/tgamectrl/`        | custom GUI controls (retail dialogs) |
+| UI (new panels)  | `src/client/rmlui/`     | RmlUi — HTML/CSS-like authoring |
 | Asset pipeline   | `src/pipeline/`         | Rust asset baking tool        |
-| Dev tools        | `src/tools/`            | VFS browser, NPC shop editor  |
+| Dev tools        | `src/tools/`            | VFS browser, NPC shop editor, quest editor |
 
 > The build mixes **Rust** (i686-pc-windows-msvc) and **C++** (Visual Studio
 > 2019, x86). The Rust crates must be built before the C++ projects.
@@ -92,7 +131,10 @@ create-account email password access  # Create a game account (access defaults t
 
 - **Rust** with the `stable-i686-pc-windows-msvc` toolchain (the project is 32-bit)
 - **Visual Studio 2019** Community or better, with the
-  "Desktop development with C++" workload
+  "Desktop development with C++" workload (toolset **v142**)
+- **Windows 10 SDK** — the Direct3D 9 core headers come from here, not from the
+  vendored DirectX SDK. The vendored copies were deleted precisely so the SDK
+  ones (which declare the 9Ex interfaces) win.
 - **PostgreSQL 12+**
 - **Python 3+** (for scripts)
 - **PowerShell 7.0+** (Core)
@@ -198,6 +240,33 @@ The `client` project can also be launched and debugged directly from Visual
 Studio. (There is also a `just client` recipe wired to the original `dev/`
 asset-baking workflow, but for this setup running the built `rosenext.exe`
 alongside a packed VFS is the simpler path.)
+
+### Client settings (`rose-next.ini`)
+
+The client reads `rose-next.ini` from its **working directory** (not necessarily
+the exe's folder — if you launch via a shortcut, check its "Start in"). Most of
+it is written by the in-game options screen, but a few keys are only settable by
+hand and are useful when developing or diagnosing:
+
+| Key | Effect |
+| --- | --- |
+| `[VIDEO] D3D9EX=0` | Force the legacy D3D9 path instead of 9Ex. For A/B testing. |
+| `[VIDEO] VSYNC=0` | Uncap the framerate. Vsync is the **only** frame cap — there is no software limiter. |
+| `[VIDEO] RMLUI=1` | Enable the RmlUi UI layer. `/dps` then opens the RmlUi damage meter instead of the legacy one. |
+| `[VIDEO] FULLSCREEN=0` | Windowed mode. Note the window is only resizable in windowed mode. |
+| `[RESOLUTION] WIDTH` / `HEIGHT` | Client size. |
+
+Two environment variables override the INI, which is handy for one-off runs:
+
+```powershell
+$env:ROSE_NO_D3D9EX = "1"   # force plain D3D9
+$env:ROSE_RMLUI = "1"       # enable the RmlUi layer
+```
+
+> Whichever way you set these, **confirm the result in `client.log`** — both
+> paths log which one is live. A toggle that silently does nothing is
+> indistinguishable from one that works, and that has cost real debugging time
+> here more than once.
 
 ### Connecting to a server
 
@@ -326,6 +395,30 @@ base_attack_speed = 35
 base_hit = 80
 base_crit = 0
 ```
+
+---
+
+## Further reading
+
+Start with [`CLAUDE.md`](CLAUDE.md) — it is the architectural overview and the
+map of which subsystem lives where. Per-area notes are in
+[`src/client/CLAUDE.md`](src/client/CLAUDE.md) and
+[`src/sho_gameserver/CLAUDE.md`](src/sho_gameserver/CLAUDE.md).
+
+Design notes for the larger pieces of work:
+
+| Document | Covers |
+| --- | --- |
+| [doc/d3d9ex-migration.md](doc/d3d9ex-migration.md) | The 9Ex port, pool rules, present/reset behaviour, rejected approaches. **Read before touching rendering.** |
+| [doc/rmlui-evaluation.md](doc/rmlui-evaluation.md) | Why RmlUi, what the D3D9 backend does and does not implement, the authoring palette, and the traps. |
+| [doc/combat-display-fix.md](doc/combat-display-fix.md) | Server-authoritative damage presentation. |
+| [doc/rose-next-build.md](doc/rose-next-build.md) | Build sharp edges, including the hand-written thirdparty projects. |
+| [doc/monster-inspector-ui-spec.md](doc/monster-inspector-ui-spec.md) | The monster inspector panel. |
+| [doc/npc-weapon-models.md](doc/npc-weapon-models.md) | NPC weapon model data. |
+
+> These files carry a lot of "this looks wrong but is deliberate, here is why"
+> context. If something in the codebase seems arbitrary, it is usually explained
+> in one of them before it is worth changing.
 
 ---
 
