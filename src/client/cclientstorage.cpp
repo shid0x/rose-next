@@ -355,6 +355,28 @@ CClientStorage::ApplyCameraOption(short i) {
     }
 }
 
+//-----------------------------------------------------------------------------------------------------------------
+/// zz_view::set_width/set_height only write the render state's screen size -- no camera is
+/// touched, and zz_camera caches its projection matrix. ApplyCameraOption() is the only thing
+/// that ever refreshed it, and it runs on zone entry / planet move / camera-option change only,
+/// so a window resize or resolution change left the projection built for the *previous* viewport
+/// until the next zone change. That stale aspect skews three things at once: the projection
+/// (world stretched horizontally), the culling frustum width in zz_camera::update_frustum
+/// (geometry popping at the left/right screen edges), and mouse picking in zz_camera::get_ray
+/// (click-to-move and targeting drift from the cursor, worst near the edges).
+///
+/// Passing 0 makes the engine derive width/height itself; set_aspect_ratio only rewrites
+/// projection_matrix_._11, so fov / near / far survive untouched and there is no need to re-read
+/// the camera STB row here.
+void
+CClientStorage::RefreshCameraAspectRatio() {
+    HNODE camera = ::findNode("avatar_camera");
+    if (camera == NULL)
+        return; // no world camera yet (login / character select) -- nothing to refresh
+
+    ::setCameraAspectRatio(camera, 0.0f);
+}
+
 void
 CClientStorage::SetPlayOption(t_OptionPlay& option) {
     m_PlayOption = option;

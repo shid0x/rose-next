@@ -345,6 +345,9 @@ COptionDlg::ChangeResolution(t_OptionResolution Resolution) {
 
     CCursor::GetInstance().ReloadCursor();
 
+    // Resolution changed -> the camera's cached projection is now built for the old viewport.
+    g_ClientStorage.RefreshCameraAspectRatio();
+
     //	g_pCApp->SetWIDTH( g_GameDATA.m_nScrWidth );
     //	g_pCApp->SetHEIGHT( g_GameDATA.m_nScrHeight );
 

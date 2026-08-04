@@ -196,6 +196,11 @@ public:
     ///실제로 옵션을 적용시키는 Method : COptionDlg와 WinMain.cpp등에서 사용된다.
     void ApplyCameraOption(short i);
 
+    /// Re-derives the avatar camera's projection from the current viewport.
+    /// Must be called after any resolution / window-size / screen-mode change: the engine's
+    /// view only stores the new screen size, it does not touch cached camera projections.
+    void RefreshCameraAspectRatio();
+
     void SetSelectAvatarName(const char* pszName) { m_strAvatarName = pszName; }
 
     void GetInventoryData(const char* pszName, std::list<S_InventoryData>& list);

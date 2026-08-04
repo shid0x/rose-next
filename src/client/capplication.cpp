@@ -6,6 +6,7 @@
 
 #include "Resource.h"
 #include "CApplication.h"
+#include "CClientStorage.h"
 #include "Network\CNetwork.h"
 #include "Game.h"
 #include "tgamectrl/TGameCtrl.h"
@@ -397,6 +398,10 @@ CApplication::ApplyWindowedClientResize() {
 
     RoseRmlUi::OnAfterDeviceRebuild(client_width, client_height);
 
+    // The viewport changed shape; the camera's cached projection did not. Must run after
+    // setScreen() above, which is what publishes the new size to the engine's view.
+    g_ClientStorage.RefreshCameraAspectRatio();
+
     m_bResizingEngine = false;
 }
 
@@ -540,8 +545,14 @@ CApplication::ResizeWindowByClientSize(int& iClientWidth,
     ShowWindow(m_hWND, SW_SHOW);
     UpdateWindow(m_hWND);
 
-    if (update_engine)
+    if (update_engine) {
         RoseRmlUi::OnAfterDeviceRebuild(iClientWidth, iClientHeight);
+
+        // Bracketed at the tail for the same reason as OnBeforeDeviceRebuild above: this
+        // function owns three separate resetScreen() paths and hooking each one individually
+        // would eventually miss one.
+        g_ClientStorage.RefreshCameraAspectRatio();
+    }
 
     m_bResizingEngine = false;
 

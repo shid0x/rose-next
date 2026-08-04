@@ -215,8 +215,11 @@ SC_LoadCamera(ZSTRING pCameraName, ZSTRING pCameraPath, HNODE hCameraMotion) {
         LOG_ERROR("SC_LoadCamera failed(in system sript)[ {} ]", pCameraPath);
 
     ::controlAnimatable(hNode, 0);
-    ::setCameraAspectRatio(hNode, 1.3333);
-    ::setCameraPerspective(hNode, 50, 1.333, 100, 30000);
+    // 0 means "derive from the current viewport" in both engine setters. The old hardcoded
+    // 1.3333 baked a 4:3 projection into every script-loaded camera, so anything used before
+    // the first ApplyCameraOption() rendered stretched on a widescreen window.
+    ::setCameraAspectRatio(hNode, 0.0f);
+    ::setCameraPerspective(hNode, 50, 0.0f, 100, 30000);
 
     return hNode;
 }
