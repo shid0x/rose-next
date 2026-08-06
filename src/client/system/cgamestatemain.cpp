@@ -2,6 +2,7 @@
 
 #include "system/cgame.h"
 #include "system/cgamestatemain.h"
+#include "system/FrameProfiler.h"
 
 #include "util/clipboardutil.h"
 
@@ -81,6 +82,9 @@ CGameStateMain::~CGameStateMain(void) {}
 int
 CGameStateMain::Update(bool bLostFocus) {
 
+    FrameProfiler::BeginFrame();
+    FrameProfiler::Begin(FrameProfiler::SLOT_LOGIC);
+
     if (g_pCApp->IsActive()) {
         CD3DSOUND::UpdateListener(g_pCamera);
     }
@@ -88,12 +92,16 @@ CGameStateMain::Update(bool bLostFocus) {
 #ifdef __VIRTUAL_SERVER
     g_pTerrain->Proc_RegenAREA();
 #endif
+    FrameProfiler::Begin(FrameProfiler::SLOT_LOGIC_EFFECTS);
     g_pEffectLIST->Proc();
     g_pBltMGR->ProcBULLET();
+    FrameProfiler::End(FrameProfiler::SLOT_LOGIC_EFFECTS);
 
     g_pCamera->Update();
 
+    FrameProfiler::Begin(FrameProfiler::SLOT_LOGIC_UIUPD);
     g_UIMed.Update();
+    FrameProfiler::End(FrameProfiler::SLOT_LOGIC_UIUPD);
     g_DayNNightProc.Proc();
     g_UseItemDelay.Proc();
     g_UseSkillDelay.Proc();
@@ -105,7 +113,9 @@ CGameStateMain::Update(bool bLostFocus) {
     // processing  ...
 
     /// SFX
+    FrameProfiler::Begin(FrameProfiler::SLOT_LOGIC_EFFECTS);
     CSFXManager::GetSingleton().Update();
+    FrameProfiler::End(FrameProfiler::SLOT_LOGIC_EFFECTS);
 
     /// Tutorial event check..
     CTutorialEventManager::GetSingleton().Proc();
@@ -122,14 +132,28 @@ CGameStateMain::Update(bool bLostFocus) {
 
     CClanMarkManager::GetSingleton().UpdatePool();
 
+    FrameProfiler::End(FrameProfiler::SLOT_LOGIC);
+    FrameProfiler::Begin(FrameProfiler::SLOT_SCENE_UPDATE);
     ::updateSceneTransform(); // �̵� �ִϸ��̼� ó��...
     ::updateSceneEx(); // ���ϸ��̼� ó��...
+    FrameProfiler::End(FrameProfiler::SLOT_SCENE_UPDATE);
+    FrameProfiler::Begin(FrameProfiler::SLOT_LOGIC);
 
+    FrameProfiler::Begin(FrameProfiler::SLOT_LOGIC_OBJPROC);
     g_pObjMGR->ProcOBJECT();
-    D3DVECTOR vPos = g_pAVATAR->GetWorldPos();
-    g_pTerrain->SetCenterPosition(vPos.x, vPos.y);
+    FrameProfiler::End(FrameProfiler::SLOT_LOGIC_OBJPROC);
 
+    D3DVECTOR vPos = g_pAVATAR->GetWorldPos();
+
+    FrameProfiler::Begin(FrameProfiler::SLOT_LOGIC_TERRAIN);
+    g_pTerrain->SetCenterPosition(vPos.x, vPos.y);
+    FrameProfiler::End(FrameProfiler::SLOT_LOGIC_TERRAIN);
+
+    FrameProfiler::End(FrameProfiler::SLOT_LOGIC);
+    FrameProfiler::Begin(FrameProfiler::SLOT_SCENE_UPDATE);
     ::updateSceneExAfter();
+    FrameProfiler::End(FrameProfiler::SLOT_SCENE_UPDATE);
+    FrameProfiler::Begin(FrameProfiler::SLOT_LOGIC);
 
     CBoneEffectBudget::Instance().Update();
 
@@ -142,24 +166,41 @@ CGameStateMain::Update(bool bLostFocus) {
                 CTargetManager::GetSingleton().Proc();
                 CSkillCommandDelay::GetSingleton().Proc();   */
 
-        if (::beginScene()) {
+        FrameProfiler::End(FrameProfiler::SLOT_LOGIC);
+
+        /// beginScene() also runs the entire shadow map pass before returning.
+        FrameProfiler::Begin(FrameProfiler::SLOT_SHADOW);
+        const bool scene_began = ::beginScene();
+        FrameProfiler::End(FrameProfiler::SLOT_SHADOW);
+
+        if (scene_began) {
+            FrameProfiler::Begin(FrameProfiler::SLOT_RENDER);
             ::clearScreen();
             ::renderScene();
+            FrameProfiler::End(FrameProfiler::SLOT_RENDER);
 
+            FrameProfiler::Begin(FrameProfiler::SLOT_UI);
             if (!g_GameDATA.m_bNoUI) {
                 Render_GameMENU();
             }
 
             this->render_dev_ui();
+            FrameProfiler::End(FrameProfiler::SLOT_UI);
 
+            /// D3D9 buffers commands, so waiting for the GPU surfaces here.
+            FrameProfiler::Begin(FrameProfiler::SLOT_PRESENT);
             ::endScene();
             ::swapBuffers();
+            FrameProfiler::End(FrameProfiler::SLOT_PRESENT);
         }
     } else {
+        FrameProfiler::End(FrameProfiler::SLOT_LOGIC);
         Sleep(30);
     }
 
     g_pObjMGR->ClearViewObjectList();
+
+    FrameProfiler::EndFrame();
 
     return 0;
 }
@@ -405,6 +446,62 @@ CGameStateMain::Render_GameMENU() {
             ::getParticleBatchDrawCalls(),
             ::getParticleBatchFallback(),
             ::getParticleBatchSavedDrawCalls());
+        nRowY += kDebugRowStride;
+
+        /// Where the milliseconds actually go. Averaged over 30 frames; max is the worst
+        /// single frame in that window. See FrameProfiler.h for how to read it -- briefly:
+        /// render high = CPU-bound submitting draws; present high = GPU/vsync bound, so
+        /// fewer draw calls will not help; scnupd high = animation/culling, which no
+        /// rendering change can touch. `oth` is total minus the bracketed phases.
+        ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
+            false,
+            kDebugX,
+            nRowY,
+            g_dwYELLOW,
+            "Time: %.1fms (max %.1f) logic=%.1f scnupd=%.1f shadow=%.1f render=%.1f "
+            "ui=%.1f present=%.1f oth=%.1f",
+            FrameProfiler::GetTotalMs(),
+            FrameProfiler::GetMaxTotalMs(),
+            FrameProfiler::GetMs(FrameProfiler::SLOT_LOGIC),
+            FrameProfiler::GetMs(FrameProfiler::SLOT_SCENE_UPDATE),
+            FrameProfiler::GetMs(FrameProfiler::SLOT_SHADOW),
+            FrameProfiler::GetMs(FrameProfiler::SLOT_RENDER),
+            FrameProfiler::GetMs(FrameProfiler::SLOT_UI),
+            FrameProfiler::GetMs(FrameProfiler::SLOT_PRESENT),
+            FrameProfiler::GetTotalMs() - FrameProfiler::GetAccountedMs());
+        nRowY += kDebugRowStride;
+
+        /// Breakdown *inside* the logic phase above (these do not add to it). obj is
+        /// g_pObjMGR->ProcOBJECT(), which is the part that scales with object count.
+        {
+            const float fLogic = FrameProfiler::GetMs(FrameProfiler::SLOT_LOGIC);
+            const float fObj = FrameProfiler::GetMs(FrameProfiler::SLOT_LOGIC_OBJPROC);
+            const float fTerr = FrameProfiler::GetMs(FrameProfiler::SLOT_LOGIC_TERRAIN);
+            const float fFx = FrameProfiler::GetMs(FrameProfiler::SLOT_LOGIC_EFFECTS);
+            const float fUi = FrameProfiler::GetMs(FrameProfiler::SLOT_LOGIC_UIUPD);
+            ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
+                false,
+                kDebugX,
+                nRowY,
+                g_dwYELLOW,
+                "Logic: %.1fms = obj=%.1f terr=%.1f fx=%.1f uiupd=%.1f rest=%.1f",
+                fLogic,
+                fObj,
+                fTerr,
+                fFx,
+                fUi,
+                fLogic - (fObj + fTerr + fFx + fUi));
+            nRowY += kDebugRowStride;
+        }
+
+        /// Which build is running. The A/B pair is deployed side by side and swapped by
+        /// switch-build.ps1; without this line the two are indistinguishable on screen.
+        ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
+            false,
+            kDebugX,
+            nRowY,
+            g_dwYELLOW,
+            "Build: BASELINE (master + instrumentation)");
         nRowY += kDebugRowStride;
 
         ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
