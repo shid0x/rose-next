@@ -13,6 +13,7 @@
 #include "zz_mesh.h"
 #include "zz_bone.h"
 #include "zz_system.h"
+#include "zz_renderer.h" // ZZ_VSC_BONE_TM / ZZ_VSC_MAX_BATCHED_BONES for the batched bone upload
 #include "zz_channel_position.h"
 #include "zz_channel_rotation.h"
 #include "zz_profiler.h"
@@ -196,11 +197,34 @@ void zz_model::render (bool recursive)
 			mesh->flush_device(true); // immediate load. if the mesh was not loaded, bone_indices is not set.
 		
 		num_mesh_bones = mesh->bone_indices.size();
-		for (imeshbone = 0; imeshbone < num_mesh_bones; ++imeshbone) { // for all bones
-			iskel = mesh->bone_indices[imeshbone]; // Get the current bone index(=skeleton index).
-			assert(iskel < num_bones); // The skeleton index should not exceed the number of bones.
-			
-			bones[iskel]->set_boneTM_to_shader(imeshbone);
+
+		// Upload the mesh's whole bone block in ONE SetVertexShaderConstantF.
+		//
+		// Each bone writes 3 registers at ZZ_VSC_BONE_TM + index*3, so the block is
+		// contiguous by construction and can go in a single call. Doing it per bone cost
+		// one API call per bone -- measured at ~20 per skinned draw. Identical bytes reach
+		// the GPU either way; only the call count changes.
+		if ((num_mesh_bones > 0) && (num_mesh_bones <= ZZ_VSC_MAX_BATCHED_BONES)) {
+			float bone_block[ZZ_VSC_MAX_BATCHED_BONES * 12];
+
+			for (imeshbone = 0; imeshbone < num_mesh_bones; ++imeshbone) { // for all bones
+				iskel = mesh->bone_indices[imeshbone]; // Get the current bone index(=skeleton index).
+				assert(iskel < num_bones); // The skeleton index should not exceed the number of bones.
+
+				bones[iskel]->get_boneTM_for_shader(&bone_block[imeshbone * 12]);
+			}
+			znzin->renderer->set_vertex_shader_constant(
+				ZZ_VSC_BONE_TM, bone_block, num_mesh_bones * 3);
+		}
+		else {
+			// More bones than the shaders reserve: fall back to the original per-bone path
+			// so behaviour is unchanged rather than truncated or lost to a failed call.
+			for (imeshbone = 0; imeshbone < num_mesh_bones; ++imeshbone) {
+				iskel = mesh->bone_indices[imeshbone];
+				assert(iskel < num_bones);
+
+				bones[iskel]->set_boneTM_to_shader(imeshbone);
+			}
 		}
 		zz_visible::render_runit(imesh);
 	}

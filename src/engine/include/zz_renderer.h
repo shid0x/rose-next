@@ -59,6 +59,17 @@
 //29
 #define ZZ_VSC_BONE_TM										30       // upto 95th reg. 3 rows * 22 bones = 66 registers
 
+// Capacity of the scratch block zz_model::render uses to upload a mesh's bone matrices in
+// one SetVertexShaderConstantF instead of one call per bone.
+//
+// This MUST NOT exceed what the skin shaders actually reserve. They are vs.1.1 and declare
+// "c30-95 = bone matrix (max 22)" (shader/simple_skin.vsh, lit_skin.vsh): 30 + 22*3 = 96,
+// exactly the c0-c95 constant file vs_1_1 guarantees. A larger cap is not a harmless
+// over-allocation -- a batched upload running past c95 fails as a *single* call, losing
+// every bone for that mesh, where the per-bone path would at least have uploaded the valid
+// prefix. A mesh needing more bones than this falls back to the per-bone loop.
+#define ZZ_VSC_MAX_BATCHED_BONES							22
+
 typedef enum _ZZ_TEXTURESTAGESTATETYPE {
     ZZ_TSS_COLOROP = 1,
     ZZ_TSS_COLORARG1 = 2,

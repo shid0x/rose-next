@@ -173,6 +173,13 @@ public:
 	// boneTM = modelview * worldTM * bone_offsetTM
 	// new_vertex_in_modelview_world_space = boneTM * vertex_in_model_space
 	void set_boneTM_to_shader (int bone_index);
+
+	// Write this bone's shader matrix (transposed, first 3 rows = 12 floats) into a
+	// caller-supplied buffer instead of uploading it, so zz_model::render can push a
+	// mesh's whole bone block with one SetVertexShaderConstantF. The per-bone registers
+	// are contiguous by construction (ZZ_VSC_BONE_TM + index*3), so the block is one
+	// unbroken range.
+	void get_boneTM_for_shader (float * out_3x4);
 	void set_boneTM_to_modelviewTM (void);
 
 	// We did not defined zz_bone::link_child(zz_node *), because bone->link_child(non-bone) is always done

@@ -257,12 +257,28 @@ const mat4& zz_bone::get_boneTM ()
 	return boneTM;
 }
 
+void zz_bone::get_boneTM_for_shader (float * out_3x4)
+{
+	mat4 modelview_worldTM, bone_modelviewTM, transposed;
+
+	get_modelview_worldTM(modelview_worldTM);
+
+	// bone_offsetTM = (original)world_inverseTM
+	// new_Vertex_world = modelviewTM * new_bone_worldTM * bone_offsetTM * [old_vertex_world]
+	mult(bone_modelviewTM, modelview_worldTM, get_bone_offsetTM());
+
+	// Shader constants take the transpose, and only the first 3 rows are used -- the same
+	// data set_boneTM_to_shader() below hands to set_vertex_shader_constant_matrix(.., 3).
+	transpose(transposed, bone_modelviewTM);
+	memcpy(out_3x4, transposed.mat_array, 12*sizeof(float));
+}
+
 void zz_bone::set_boneTM_to_shader (int bone_index)
 {
 	mat4 modelview_worldTM, bone_modelviewTM;
-	
+
 	get_modelview_worldTM(modelview_worldTM);
-	
+
 	// bone_offsetTM = (original)world_inverseTM
 	// new_Vertex_world = modelviewTM * new_bone_worldTM * bone_offsetTM * [old_vertex_world]
 	znzin->renderer->set_vertex_shader_constant_matrix(

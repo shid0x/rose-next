@@ -494,16 +494,6 @@ CGameStateMain::Render_GameMENU() {
             nRowY += kDebugRowStride;
         }
 
-        /// Which build is running. The A/B pair is deployed side by side and swapped by
-        /// switch-build.ps1; without this line the two are indistinguishable on screen.
-        ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
-            false,
-            kDebugX,
-            nRowY,
-            g_dwYELLOW,
-            "Build: BASELINE (master + instrumentation)");
-        nRowY += kDebugRowStride;
-
         ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
             false,
             kDebugX,
