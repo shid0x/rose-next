@@ -2,6 +2,7 @@
 
 #include ".\cgame.h"
 
+#include "system/FrameProfiler.h"
 #include "CGameState.h"
 #include "CGameStateNull.h"
 #include "CGameStateTitle.h"
@@ -214,18 +215,28 @@ CGame::GameLoop() {
         g_pCApp->GetWIDTH(), g_pCApp->GetHEIGHT());
 
     do {
+        /// Frame timing is bracketed here rather than inside a state's Update(), so the
+        /// work below that is *not* Update() -- notably g_pNet->Proc() draining the whole
+        /// packet queue synchronously -- is inside the total and therefore visible as
+        /// `oth` on the HUD instead of vanishing from the measurement entirely.
+        FrameProfiler::BeginFrame();
+
+        FrameProfiler::Begin(FrameProfiler::SLOT_NETINPUT);
         bool bLostFocus = g_pCApp->GetMessage();
 
         g_GameDATA.Update();
 
         g_pNet->Proc();
         ProcInput();
+        FrameProfiler::End(FrameProfiler::SLOT_NETINPUT);
 
         this->active_state->Update(bLostFocus);
 
         m_MouseTargetEffect.Proc();
 
         ProcCommand();
+
+        FrameProfiler::EndFrame();
 
     } while (!g_pCApp->IsExitGame());
 

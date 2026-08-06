@@ -82,7 +82,8 @@ CGameStateMain::~CGameStateMain(void) {}
 int
 CGameStateMain::Update(bool bLostFocus) {
 
-    FrameProfiler::BeginFrame();
+    /// BeginFrame/EndFrame are in CGame::GameLoop -- see FrameProfiler.h. This state
+    /// only fills slots.
     FrameProfiler::Begin(FrameProfiler::SLOT_LOGIC);
 
     if (g_pCApp->IsActive()) {
@@ -199,8 +200,6 @@ CGameStateMain::Update(bool bLostFocus) {
     }
 
     g_pObjMGR->ClearViewObjectList();
-
-    FrameProfiler::EndFrame();
 
     return 0;
 }
@@ -458,10 +457,11 @@ CGameStateMain::Render_GameMENU() {
             kDebugX,
             nRowY,
             g_dwYELLOW,
-            "Time: %.1fms (max %.1f) logic=%.1f scnupd=%.1f shadow=%.1f render=%.1f "
-            "ui=%.1f present=%.1f oth=%.1f",
+            "Time: %.1fms (max %.1f) netin=%.1f logic=%.1f scnupd=%.1f shadow=%.1f "
+            "render=%.1f ui=%.1f present=%.1f oth=%.1f",
             FrameProfiler::GetTotalMs(),
             FrameProfiler::GetMaxTotalMs(),
+            FrameProfiler::GetMs(FrameProfiler::SLOT_NETINPUT),
             FrameProfiler::GetMs(FrameProfiler::SLOT_LOGIC),
             FrameProfiler::GetMs(FrameProfiler::SLOT_SCENE_UPDATE),
             FrameProfiler::GetMs(FrameProfiler::SLOT_SHADOW),

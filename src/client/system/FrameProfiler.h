@@ -8,14 +8,24 @@
 /// rounds of optimisation removed a lot of calls without moving the frame rate at all.
 /// Call counts are not time. This measures time.
 ///
+/// The frame is bracketed in CGame::GameLoop, NOT in a game state's Update(). The loop
+/// does real work either side of Update() -- window messages, g_pNet->Proc() draining the
+/// whole packet queue synchronously, input dispatch, ProcCommand -- and bracketing only
+/// Update() would leave that outside both the slots *and* the total, so `oth` could never
+/// reveal it. A zone-in or spawn burst would then be a silent false negative in exactly
+/// the `max` column that exists to catch hitches.
+///
 /// The split is chosen to answer one question: where do the milliseconds go?
 ///
-///   logic   - client game logic: object Proc, AI, network, UI update, terrain streaming
+///   netin   - window messages, packet queue drain, input dispatch
+///   logic   - client game logic: object Proc, AI, UI update, terrain streaming
 ///   scnupd  - engine scene update: transforms, frustum cull, skeletal animation
 ///   shadow  - beginScene(), which also runs the whole shadow map pass
 ///   render  - renderScene(), i.e. 3D draw submission
 ///   ui      - Render_GameMENU() + dev UI overlays
 ///   present - endScene() + swapBuffers()
+///
+/// Slots are only filled by CGameStateMain; in other states everything lands in `oth`.
 ///
 /// Reading it: a large `render` means CPU-bound on draw submission. A large `present`
 /// means the GPU (or vsync) is the limit and submitting fewer draws will not help --
@@ -29,7 +39,8 @@
 namespace FrameProfiler {
 
 enum Slot {
-    SLOT_LOGIC = 0,
+    SLOT_NETINPUT = 0,
+    SLOT_LOGIC,
     SLOT_SCENE_UPDATE,
     SLOT_SHADOW,
     SLOT_RENDER,

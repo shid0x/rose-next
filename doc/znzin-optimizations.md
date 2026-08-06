@@ -40,6 +40,11 @@ priority is stability and visual fidelity.
 
 All vsync-off (`[VIDEO] VSYNC=0`), Junon, ~400 spawned monsters for the crowd cases.
 
+These were captured while the profiler still bracketed only `CGameStateMain::Update()` rather than
+the whole loop (fixed since). They are corroborated rather than invalidated: 37 fps is 27.0 ms
+against a reported total of 26.7, and 163 fps is 6.13 ms against 6.1 — so the unbracketed remainder
+was ~0.3 ms and ~0.03 ms, and the shares below stand. The fix matters for hitches, not for these.
+
 ### Where the time goes
 
 | phase (ms) | empty town (163 fps) | 400 mobs, camera away (44 fps) | 400 mobs, viewed (37 fps) | Δ |
@@ -91,7 +96,8 @@ Logic: 0.4ms = obj=0.3 terr=0.0 fx=0.0 uiupd=0.0 rest=0.1
 
 | phase | covers |
 |---|---|
-| `logic` | client game logic: object Proc, AI, network, UI update, terrain streaming |
+| `netin` | window messages, packet queue drain (`g_pNet->Proc()`), input dispatch |
+| `logic` | client game logic: object Proc, AI, UI update, terrain streaming |
 | `scnupd` | engine scene update: transforms, frustum cull, skeletal animation |
 | `shadow` | `beginScene()` — which also runs the entire shadow map pass |
 | `render` | `renderScene()` — 3D draw submission |
@@ -102,6 +108,12 @@ Logic: 0.4ms = obj=0.3 terr=0.0 fx=0.0 uiupd=0.0 rest=0.1
 Averaged over 30 frames; `max` is the worst single frame in the window. `logic` and `scnupd` are
 mutually exclusive, so the phases sum. The `Logic:` line is a breakdown *inside* `logic`, not an
 addition to it.
+
+The frame is bracketed in `CGame::GameLoop`, not inside a state's `Update()`, so the loop work either
+side of `Update()` is inside the total and shows up as `oth` rather than vanishing. That matters most
+for `g_pNet->Proc()`, which drains the whole packet queue synchronously — a zone-in or spawn burst
+would otherwise be invisible in exactly the `max` column that exists to catch hitches. Slots are only
+filled by `CGameStateMain`; in other states everything lands in `oth`.
 
 **Interpretation.** `render` high ⇒ CPU-bound submitting draws. `present` high ⇒ GPU or vsync bound —
 D3D9 buffers commands, so waiting for the GPU surfaces at Present and fewer draws will not help.
