@@ -122,6 +122,22 @@ D3D9 buffers commands, so waiting for the GPU surfaces at Present and fewer draw
 **Measure with vsync off.** With it on, presentation quantizes to 60/30/20 and a steady "38 fps" is a
 mix of 60 Hz and 30 Hz frames, not a frame time. That hid the first three results.
 
+### A/B testing two builds
+
+`scripts/ab-build.ps1` stages several client builds side by side in the launch folder and flips
+between them without rebuilding (`stage <name>` / `use <name>` / `toggle` / `list` / `clean`).
+
+The constraint it exists for: **`rosenext.exe` imports `znzin.dll` by name**, so the two cannot be
+renamed and launched independently — they must be swapped as a matched pair, which is why builds live
+in subfolders and get copied over the canonical names. If one side adds engine exports the client
+calls, a mixed pair will not even start.
+
+Two things the script cannot do for you, both learned the hard way:
+- **Label the build on the debug HUD** (`"Build: BASELINE"` / `"Build: CANDIDATE"`). Two builds with
+  identical instrumentation are indistinguishable in a screenshot, and a mis-flip silently produces a
+  wrong measurement. Remove the line when the comparison ends.
+- **Turn vsync off**, per the paragraph above.
+
 ---
 
 ## Open findings (bugs, not optimizations)
