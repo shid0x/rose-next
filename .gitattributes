@@ -42,6 +42,9 @@
 *.[Pp][Ss][Oo] filter=lfs diff=lfs merge=lfs -text
 *.[Vv][Ss][Oo] filter=lfs diff=lfs merge=lfs -text
 
+# XNA compiled content (the xadet map editor's Content/*.xnb)
+*.[Xx][Nn][Bb] filter=lfs diff=lfs merge=lfs -text
+
 # Rose Data Files
 *.[Aa][Ii][Pp] filter=lfs diff=lfs merge=lfs -text
 *.[Cc][Hh][Rr] filter=lfs diff=lfs merge=lfs -text
