@@ -17,8 +17,13 @@ the ROSE *data* it reads/writes from `../../data`.
 - **Platform:** x86 only, `WinExe`, root namespace `Map_Editor`
 - **License:** Apache 2.0
 
-> `AGENTS.md` (same folder) mirrors the operational workflow. If you change build,
-> deploy, or debug steps, keep both files in sync.
+> **Vendored, not a submodule.** This tree is a copy of upstream
+> [jackwakefield/rose-online-map-editor](https://github.com/jackwakefield/rose-online-map-editor)
+> at commit `7f0462e`, committed straight into this repo (Apache 2.0, `LICENSE`
+> kept). There is no nested `.git` and no upstream remote — our changes can't go
+> back upstream, because they target this project's data layout rather than the
+> retail-era layout the editor was written for. `git log -- xadet/` splits into
+> exactly two commits: the pristine vendor, then everything we changed.
 
 ## Build, Deploy, Run
 
@@ -145,7 +150,15 @@ Clear-Content '..\..\data\Map Editor.log'
   the dispatcher.
 - **Don't touch game data** to fix editor code unless the user explicitly asks.
   Editing `../../data` is a separate concern from editing this source tree.
-- Keep `CLAUDE.md` and `AGENTS.md` consistent when you change workflow steps.
+- **A saved map reaches the two halves of the game differently.** The servers
+  read `data/` directly (`server.toml` `data_dir`), so a save applies on their
+  next restart; the client reads maps from `rose.vfs` (no loose `3ddata/maps` in
+  the launch folder), so the same save needs a VFS re-bake + deploy before it is
+  visible in game.
+- **Saving is all-or-nothing and has no undo.** `Save_Click` rewrites the ZON,
+  every IFO, every TIL, every HIM and all LITs of the loaded map, with no dirty
+  tracking and no backup — and `data/` is git-untracked by design. Back up the
+  zone folder before an editing session.
 
 ## Compatibility Fixes Already Made
 
