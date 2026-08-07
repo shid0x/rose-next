@@ -48,6 +48,7 @@ fn main() -> ExitCode {
         Some("ltb-check") => cmd_ltb_check(&args[1..]),
         Some("icons-check") => cmd_icons_check(args.get(1)),
         Some("switch-check") => cmd_switch_check(args.get(1)),
+        Some("warp-triggers") => cmd_warp_triggers(&args[1..]),
         _ => {
             eprintln!("usage:");
             eprintln!("  quest-editor verify <dir>   round-trip every .QSD, report drift");
@@ -74,6 +75,12 @@ fn main() -> ExitCode {
             eprintln!(
                 "  quest-editor con-triggers <root> <con-file | npc-id>\n\
                  \x20                            list the quests an NPC's dialog offers (accept/turn-in)"
+            );
+            eprintln!(
+                "  quest-editor warp-triggers <root> [--template <file>] [--map <file>] [--write]\n\
+                 \x20                            report map teleport triggers no .QSD defines;\n\
+                 \x20                            --template writes an editable destination map,\n\
+                 \x20                            --map generates the warp QSD (dry-run unless --write)"
             );
             return ExitCode::FAILURE;
         }
@@ -1152,4 +1159,100 @@ fn show_bytes(b: &[u8]) -> String {
     }
     s.push('"');
     s
+}
+
+/// `warp-triggers <root> [--template <file>] [--map <file>] [--write]`
+///
+/// With no flags: report every map event-object trigger that no loaded `.QSD`
+/// defines. `--template` writes an editable destination map for those triggers;
+/// `--map` reads one back and generates the warp QSD (dry-run unless `--write`).
+fn cmd_warp_triggers(args: &[String]) -> Result<bool> {
+    let write = args.iter().any(|a| a == "--write");
+    let flag_value = |name: &str| -> Option<PathBuf> {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .map(PathBuf::from)
+    };
+    let template_out = flag_value("--template");
+    let map_in = flag_value("--map");
+
+    let mut skip_next = false;
+    let pos: Vec<String> = args
+        .iter()
+        .filter(|a| {
+            if skip_next {
+                skip_next = false;
+                return false;
+            }
+            if *a == "--template" || *a == "--map" {
+                skip_next = true;
+                return false;
+            }
+            !a.starts_with("--")
+        })
+        .cloned()
+        .collect();
+    let root = PathBuf::from(
+        pos.first()
+            .context("usage: warp-triggers <root> [--template <file>] [--map <file>] [--write]")?,
+    );
+
+    let orphans = quest_editor::warp::find_orphans(&root)?;
+
+    if let Some(path) = template_out {
+        std::fs::write(&path, quest_editor::warp::template(&orphans))
+            .with_context(|| format!("writing {}", path.display()))?;
+        println!(
+            "wrote destination template for {} orphan trigger(s) -> {}",
+            orphans.len(),
+            path.display()
+        );
+        println!("fill in the blanks, then re-run with --map {}", path.display());
+        return Ok(true);
+    }
+
+    if let Some(path) = map_in {
+        let text = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        let dests = quest_editor::warp::parse_map(&text)?;
+        println!("{} destination(s) from {}", dests.len(), path.display());
+        let report = quest_editor::warp::apply(&root, &orphans, &dests, !write)?;
+        report.print();
+        if !write {
+            println!("(re-run with --write to apply)");
+        } else {
+            println!(
+                "restart the game servers to pick up {}",
+                report.qsd_path.display()
+            );
+        }
+        return Ok(true);
+    }
+
+    println!(
+        "{} map trigger name(s) referenced by event objects but defined by no loaded .QSD:",
+        orphans.len()
+    );
+    for site in &orphans {
+        println!(
+            "  {:<14} zone {:>3} ({}) at ({}, {})  x{} placement(s)",
+            site.name,
+            site.zone_no
+                .map(|z| z.to_string())
+                .unwrap_or_else(|| "?".into()),
+            if site.zone_name.is_empty() {
+                "unknown zone"
+            } else {
+                &site.zone_name
+            },
+            site.world_x,
+            site.world_y,
+            site.placements,
+        );
+    }
+    if !orphans.is_empty() {
+        println!("\nnext: --template <file> to write a destination map you can edit");
+    }
+    Ok(true)
 }

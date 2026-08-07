@@ -400,6 +400,23 @@ pub fn resolve_icon_dir(root: &Path) -> Result<PathBuf> {
     ))
 }
 
+/// Locate `3DDATA/MAPS` (the zone `.IFO`/`.ZON` tree).
+pub fn resolve_maps_dir(root: &Path) -> Result<PathBuf> {
+    for c in [
+        root.join("3DDATA").join("MAPS"),
+        root.join("3ddata").join("maps"),
+        root.join("MAPS"),
+    ] {
+        if c.exists() {
+            return Ok(c);
+        }
+    }
+    Err(anyhow!(
+        "could not find 3DDATA/MAPS under '{}'",
+        root.display()
+    ))
+}
+
 fn load_stb(dir: &Path, name: &str) -> Result<STB> {
     let path = file_ci(dir, name)?;
     STB::from_path(&path).map_err(|e| anyhow!("STB::from_path({}): {}", path.display(), e))

@@ -302,3 +302,125 @@ pub fn wire_npc_in_ifo(ifo: &Path, npc_id: i32, new_name: &str, dry_run: bool) -
     }
     Ok(true)
 }
+
+// ---------------------------------------------------------------------------
+// Event triggers (LUMP_TERRAIN_EVENT, type 12)
+// ---------------------------------------------------------------------------
+//
+// An event-object record is the same 60-byte base placement as a MOB record,
+// followed by two pascal strings: the QSD trigger name (fired by the client via
+// `QF_doQuestTrigger` when the player uses the object) and a LUA trigger name.
+// The server reads and discards both — event objects are keyed by location —
+// so the QSD name only ever has to resolve in the quest data both sides load.
+
+const LUMP_TERRAIN_EVENT: i32 = 12;
+
+/// Half a zone plus half a map block, in game units (cm). Every IFO position is
+/// stored relative to it; the client and server add it back on load
+/// (`io_terrain.cpp` `ReadObjINFO`, `zonefile.cpp` `ReadObjINFO`).
+pub const ZONE_ORIGIN_SHIFT: f32 = 520_000.0;
+
+#[derive(Debug, Clone)]
+pub struct EventTrigger {
+    pub qsd_trigger: String,
+    pub lua_trigger: String,
+    /// World position in game units (cm), origin shift already applied.
+    pub world_x: f32,
+    pub world_y: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct FoundEventTrigger {
+    pub ifo_path: PathBuf,
+    pub trigger: EventTrigger,
+}
+
+fn rd_f32(b: &[u8], o: usize) -> Result<f32> {
+    b.get(o..o + 4)
+        .map(|s| f32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+        .with_context(|| format!("f32 past EOF at {o}"))
+}
+
+fn rd_pascal(b: &[u8], p: &mut usize) -> Result<String> {
+    let len = *b.get(*p).context("pascal len past EOF")? as usize;
+    *p += 1;
+    let s = b
+        .get(*p..*p + len)
+        .map(|s| String::from_utf8_lossy(s).into_owned())
+        .with_context(|| format!("pascal body past EOF at {p}"))?;
+    *p += len;
+    Ok(s)
+}
+
+/// Parse one event-object record at `pos`, returning it and the offset past it.
+fn parse_event_record(b: &[u8], pos: usize) -> Result<(EventTrigger, usize)> {
+    let mut p = pos;
+    rd_pascal(b, &mut p)?; // object description
+    p += 12; // warp(2) + event(2) + type(4) + obj id(4)
+    p += 8; // map_x + map_y
+    p += 16; // rotation quaternion
+    let x = rd_f32(b, p)?;
+    let y = rd_f32(b, p + 4)?;
+    p += 12; // position
+    p += 12; // scale
+    let qsd_trigger = rd_pascal(b, &mut p)?;
+    let lua_trigger = rd_pascal(b, &mut p)?;
+    Ok((
+        EventTrigger {
+            qsd_trigger,
+            lua_trigger,
+            world_x: x + ZONE_ORIGIN_SHIFT,
+            world_y: y + ZONE_ORIGIN_SHIFT,
+        },
+        p,
+    ))
+}
+
+/// All event-object trigger records in an `.IFO`'s event lumps.
+pub fn parse_event_triggers(b: &[u8]) -> Result<Vec<EventTrigger>> {
+    let lump_count = rd_i32(b, 0)?;
+    if lump_count < 0 || lump_count > 4096 {
+        bail!("implausible lump count {lump_count}");
+    }
+    let mut offsets = Vec::new();
+    for i in 0..lump_count as usize {
+        let ty = rd_i32(b, 4 + i * 8)?;
+        let off = rd_i32(b, 4 + i * 8 + 4)? as usize;
+        if ty == LUMP_TERRAIN_EVENT {
+            offsets.push(off);
+        }
+    }
+    let mut out = Vec::new();
+    for off in offsets {
+        let obj_cnt = rd_i32(b, off)?;
+        let mut p = off + 4;
+        for _ in 0..obj_cnt.max(0) {
+            let (trigger, next) = parse_event_record(b, p)?;
+            out.push(trigger);
+            p = next;
+        }
+    }
+    Ok(out)
+}
+
+/// Every event-object trigger under `dir` (a maps root), with its `.IFO`.
+pub fn scan_event_triggers(dir: &Path) -> Result<Vec<FoundEventTrigger>> {
+    let mut out = Vec::new();
+    for path in collect_ifo_files(dir)? {
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        let triggers = match parse_event_triggers(&bytes) {
+            Ok(t) => t,
+            Err(_) => continue, // skip IFOs we can't parse
+        };
+        for trigger in triggers {
+            out.push(FoundEventTrigger {
+                ifo_path: path.clone(),
+                trigger,
+            });
+        }
+    }
+    Ok(out)
+}

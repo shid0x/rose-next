@@ -16,4 +16,5 @@ pub mod manifest;
 pub mod qsd;
 pub mod ui;
 pub mod verify;
+pub mod warp;
 pub mod write;

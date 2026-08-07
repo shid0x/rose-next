@@ -38,7 +38,7 @@ const QITEM_COL_ICON: usize = 10; // game col 9 = "Icon Number"
 const QITEM_COL_BELONGING_QUEST: usize = 32;
 const QITEM_COL_STL_LINK: usize = 33;
 
-const QDATA_COL_PATH: usize = 1; // col 0 is a label
+pub(crate) const QDATA_COL_PATH: usize = 1; // col 0 is a label
 
 const NPC_COL_DEAD_EVENT: usize = 42; // game col 41
 
@@ -1471,18 +1471,18 @@ pub fn next_free_switch(root: &Path) -> Result<i32> {
 
 // --- helpers ---------------------------------------------------------------
 
-fn cell(row: &[String], i: usize) -> &str {
+pub(crate) fn cell(row: &[String], i: usize) -> &str {
     row.get(i).map(String::as_str).unwrap_or("")
 }
 
-fn set_cell(row: &mut Vec<String>, i: usize, v: &str) {
+pub(crate) fn set_cell(row: &mut Vec<String>, i: usize, v: &str) {
     if row.len() <= i {
         row.resize(i + 1, String::new());
     }
     row[i] = v.to_string();
 }
 
-fn empty_row(cols: usize) -> Vec<String> {
+pub(crate) fn empty_row(cols: usize) -> Vec<String> {
     vec![String::new(); cols.max(1)]
 }
 
@@ -1636,7 +1636,7 @@ fn find_trigger_in(qsd: &crate::qsd::QsdFile, name: &[u8]) -> Option<(usize, usi
     None
 }
 
-fn file_ci(dir: &Path, name: &str) -> Result<PathBuf> {
+pub(crate) fn file_ci(dir: &Path, name: &str) -> Result<PathBuf> {
     let exact = dir.join(name);
     if exact.exists() {
         return Ok(exact);
@@ -1655,13 +1655,13 @@ fn file_ci(dir: &Path, name: &str) -> Result<PathBuf> {
     Err(anyhow!("file not found: {}/{}", dir.display(), name))
 }
 
-fn load_stb(path: &Path) -> Result<STB> {
+pub(crate) fn load_stb(path: &Path) -> Result<STB> {
     STB::from_path(path).map_err(|e| anyhow!("reading {}: {e}", path.display()))
 }
 fn load_stl(path: &Path) -> Result<STL> {
     STL::from_path(path).map_err(|e| anyhow!("reading {}: {e}", path.display()))
 }
-fn write_stb(stb: &mut STB, path: &Path) -> Result<()> {
+pub(crate) fn write_stb(stb: &mut STB, path: &Path) -> Result<()> {
     stb.write_to_path(path)
         .map_err(|e| anyhow!("writing {}: {e}", path.display()))
 }
@@ -1671,7 +1671,7 @@ fn write_stl(stl: &mut STL, path: &Path) -> Result<()> {
 }
 
 /// Copy `path` to `path.bak` once (never overwrites an existing backup).
-fn backup_once(path: &Path) -> Result<Option<PathBuf>> {
+pub(crate) fn backup_once(path: &Path) -> Result<Option<PathBuf>> {
     let mut ext = path
         .extension()
         .map(|e| e.to_string_lossy().to_string())

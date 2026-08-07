@@ -260,6 +260,58 @@ item `13:129`. (Validate the id exists in the item DB when generating.)
 
 ## Status log
 
+### 2026-08-07 — `warp-triggers`: define the map teleport triggers nothing defines
+
+A map-editor audit turned up 20 QSD trigger names that map event objects
+reference and **no loaded `.QSD` defines** — mostly zone-to-zone transitions
+(`FOWtoPRI`, `METoLuna`, `PriToSea`, the `SUM2-*` summer-event set). Using such an
+object does nothing: the client fires `QF_doQuestTrigger(name)`
+(`objectactionprocessor.cpp:161`) → `Send_cli_QUEST_REQ(TYPE_QUEST_REQ_DO_TRIGGER)`,
+and the server finds no trigger by that name. The event object itself carries no
+destination — `zonefile.cpp`'s `LUMP_TERRAIN_EVENT` branch reads both trigger
+strings and **discards** them, keying the object by location — so the only place a
+destination can live is the quest data.
+
+New subcommand:
+
+```powershell
+quest-editor warp-triggers <root>                       # report orphans (zone + world pos)
+quest-editor warp-triggers <root> --template dest.txt   # editable destination map
+quest-editor warp-triggers <root> --map dest.txt [--write]
+```
+
+- **`ifo.rs`**: `parse_event_triggers` / `scan_event_triggers` — lump 12 records
+  (same 60-byte base placement as a MOB record + two pascals: QSD then LUA
+  trigger). Positions get `ZONE_ORIGIN_SHIFT` (520000) added, matching the
+  client/server load path, so they're directly usable as warp coordinates.
+- **`warp.rs`**: orphan detection (referenced by a map, defined by no `.QSD`
+  *registered in `LIST_QUESTDATA.STB`* — an unregistered file defines nothing),
+  the destination-map format, and the writer.
+- Each trigger = **no conditions** + one **`REWD_007`** (`{i32 zone; i32 x; i32 y;
+  u8 party}`, padded to 16) → `F_QSTREWD007` → `classUSER::Reward_WARP` →
+  `Send_gsv_RELAY_REQ(RELAY_TYPE_RECALL, …)`. Coordinates are **world units (cm)**,
+  the same scale as the `.IFO` positions (confirmed against `Cheat_*`, which
+  passes `m_PosCUR` straight through).
+- Safety: writes exactly one new file (`QUESTDATA/WARP_TRIGGERS.QSD`) + one
+  `LIST_QUESTDATA` row; never edits an existing `.QSD`; `.bak` + dry-run by
+  default; re-runs merge into our own file (matching triggers are updated in
+  place, keeping their stored name casing — `StrToHashKey` uppercases, so the hash
+  is case-insensitive and rewriting the casing would be pure churn); a
+  round-trip guard re-parses the bytes before writing; a destination naming a
+  non-orphan trigger or a zone with no `.zon` is a hard error.
+
+**Destinations are not derivable from the data** (retail shipped the QSDs we don't
+have), so `--template` emits every orphan with its own zone + world position — and
+auto-fills exact inverse-named pairs (`XtoY` ↔ `YtoX`: `AniToDod`/`DodToAni`,
+`LunaToME`/`METoLuna`) with "warp to where the partner object stands". Everything
+else is left commented out for a human to fill in.
+
+Validated on an isolated copy of `data/` (STB + QUESTDATA + all 1190 `.IFO`s):
+generated 4 triggers, payloads decode to the intended zone/x/y, `verify` reports
+0 byte-drift across all 221 QSDs, a no-op re-run reports `0 added, 0 updated`, a
+changed destination reports `1 updated`, and the rewritten `LIST_QUESTDATA.STB`
+still parses with the game's own STB layout. **Not applied to real `data/`.**
+
 ### 2026-07-15 — Trigger classification (`classify.rs`): what a dialog offers + icon-compat verify
 
 Fallout from the client's new NPC overhead quest icons ("!" / "?"), which
