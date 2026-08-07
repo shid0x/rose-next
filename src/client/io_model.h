@@ -347,7 +347,15 @@ CModelDATA<CModelPart>::Load(char* szFileName, short nBoneIdx, short nDummyIdx) 
     short nEftFileCNT;
     pFileSystem->ReadInt16(&nEftFileCNT);
     if (nEftFileCNT > 0) {
-        pEftKEY = new t_HASHKEY[nEftFileCNT]; /// Modify : 2004/2/12 :nAvy
+        /// Value-initialised on purpose: the loop below only assigns entries whose
+        /// path starts with "3D"/"3d". The list also carries *light* entries (see the
+        /// @todo under this) -- e.g. LIST_DECO_EZ.ZSC holds "3LIGHT_EZ01_fire" and 5
+        /// more -- which fall through the filter. Without the (), those slots kept
+        /// indeterminate heap bytes and CMODEL::Load handed them to dummy points as
+        /// effect hash keys (6 dummy points read them in LIST_DECO_EZ.ZSC alone).
+        /// A garbage key survives only because classHASH::Search masks it down to a
+        /// bucket and misses; 0 is the real "no effect" sentinel every consumer tests.
+        pEftKEY = new t_HASHKEY[nEftFileCNT](); /// Modify : 2004/2/12 :nAvy
         //		pEftKEY = new t_HASHKEY[ nMatFileCNT ];
         for (nI = 0; nI < nEftFileCNT; nI++) {
             pStr = CGameStr::ReadString(pFileSystem);

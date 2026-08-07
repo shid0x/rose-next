@@ -260,7 +260,10 @@ bool zz_vfs_pkg_system::open_filesystem (const char * filesystem_name_in)
 	assert(fsystem_);
 
 	if (!fsystem_) {
-		ZZ_LOG("vfs_pkg_system: open_filesystem(%s) failed. cannot open.\n", filesystem_name);
+		// .get(): zz_slash_converter must never be passed to ZZ_LOG's varargs
+		// directly -- see the note on the get_size() call below.
+		ZZ_LOG("vfs_pkg_system: open_filesystem(%s) failed. cannot open.\n",
+			filesystem_name.get());
 		return false;
 	}
 	return true;
@@ -528,16 +531,24 @@ bool zz_vfs_pkg::open (const char * filename_in, const zz_vfs_mode mode)
 					}
 				}
 			}*/
+	// The !fp_ test used to live AFTER the vfseek() below, so a file that is not
+	// in the .vfs (VOpenFile returns NULL -- see CVFS_Manager::OpenFile, which
+	// correctly returns NULL when the name is neither in a package nor on disk)
+	// was seeked on as a null handle: triggervfs dereferences it at +0x24 and the
+	// client dies. zz_assertf() above only catches this in debug builds. Any
+	// missing asset therefore crashed the client; a monster weapon mesh absent
+	// from the VFS in map 65 was the repro.
+	if (!fp_) {
+		return false;
+	}
+
 			vfseek(fp_,0, VFSEEK_SET);
 //			break;
 //		case zz_vfs::ZZ_VFS_WRITE:
 			// not implemented yet!!!
 //			break;
 //	}
-	
-	if (!fp_) {
-		return false;
-	}
+
 	OpenCount++;
 	return true;
 }
@@ -683,7 +694,8 @@ bool zz_vfs_pkg::exist (const char * filename_in) const
 
 	zz_slash_converter filename(filename_in);
 	if (!pkg_system_) {
-		ZZ_LOG("vfs_pkg: exist(%s) failed. invalid pkg_system_.\n", filename);
+		// .get(): see the note on the get_size() call below.
+		ZZ_LOG("vfs_pkg: exist(%s) failed. invalid pkg_system_.\n", filename.get());
 		ret = false;
 	}
 
@@ -726,7 +738,8 @@ uint32 zz_vfs_pkg::get_size (const char * filename_in) const
 
 	assert(pkg_system_);
 	if (!pkg_system_) {
-		ZZ_LOG("vfs_pkg: get_size(%s) failed. invalid pkg_system_.\n", filename);
+		// .get(): see the note on the read_size branch below.
+		ZZ_LOG("vfs_pkg: get_size(%s) failed. invalid pkg_system_.\n", filename.get());
 		return 0;
 	}
 
@@ -736,8 +749,19 @@ uint32 zz_vfs_pkg::get_size (const char * filename_in) const
 	
 	assert(read_size < MAX_FILESIZE);
 	if (read_size >= MAX_FILESIZE) {
+		// .get() is REQUIRED here, and this one crashed the client.
+		// `filename` is a zz_slash_converter, whose first (and only) member is
+		// `char _str[ZZ_MAX_STRING]`. Its operator const char*() makes it look
+		// like a string at every normal call site (e.g. VGetFileLength above),
+		// but implicit conversions do NOT apply through varargs: the object is
+		// copied onto the stack verbatim, so %s consumes the first four
+		// *characters* of the path as a pointer and vsprintf's strnlen faults.
+		// Reached whenever a file is absent from the .vfs (VGetFileLength then
+		// returns a huge value), i.e. any missing asset turned into an instant
+		// crash inside the "missing asset" log itself. A monster mesh missing
+		// from the VFS in map 65 was the repro.
 		ZZ_LOG("vfs_pkg: get_size(%s) failed. read_size = %d.\n",
-			filename, read_size);
+			filename.get(), read_size);
 		read_size = 0;
 	}
 

@@ -345,8 +345,17 @@ void zz_manager::update (zz_time time_to_update)
 	t = ZZ_TIME_TO_MSEC(entrance_time_accumulated);
 	time_weight = (!node) ? t : static_cast<zz_time>(node->get_load_weight());
 
+	// Give every node currently queued at most one failed attempt per update.
+	// The re-insert branch below does NOT decrement entrance_time_accumulated,
+	// so t and time_weight are unchanged on failure: with a node that can never
+	// load (its file is missing from the .vfs) back() keeps returning it and the
+	// while condition stays true forever -- an infinite loop that allocates a
+	// list node on every push. That hung the client on the main thread while the
+	// sound thread kept playing.
+	size_t failed_attempts_left = entrance_line.size();
+
 	try {
-		while (node && (t > time_weight)) {
+		while (node && (t > time_weight) && (failed_attempts_left > 0)) {
 			//ZZ_LOG("manager: [%s]->update() entrance->flush(%s)\n", get_name(), node ? node->get_name() : "(null)");
 			if (entrance_line.flush_node(node)) {
 				entrance_time_accumulated -= ZZ_MSEC_TO_TIME(t);
@@ -355,6 +364,7 @@ void zz_manager::update (zz_time time_to_update)
 			else { // not loaded, so reinsert to front
 				entrance_line.pop();
 				entrance_line.push(node); // re-insert
+				--failed_attempts_left; // bound the retries; see above
 			}
 
 			node = entrance_line.back();

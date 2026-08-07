@@ -94,6 +94,14 @@ protected:
 	zz_revision revision; // For version control. updated by load().
 	zz_string path; // the mesh file name
 
+	// Set when load_mesh() fails because the file is simply not there. load()
+	// leaves the vertex buffer "not ready" on failure, so without this every
+	// later load() re-attempted the same missing file: one VFS lookup plus two
+	// synchronous error.txt writes per attempt. A single missing monster weapon
+	// mesh produced 2.26 million retries (4.5 million log lines) and froze the
+	// client. Cleared by set_path() so a recycled mesh node retries a new path.
+	bool load_permanently_failed;
+
 	//--------------------------------------------------------------------------------
 	// Mesh properties
 	//--------------------------------------------------------------------------------

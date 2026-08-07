@@ -32,9 +32,18 @@ struct tagFileDATA {
     CStrVAR m_FileName;
     short m_nIndex;
     bool m_bLoad;
+    /// Load_FILE() was tried and failed. Without this, a failed load leaves
+    /// m_bLoad false and every later Get_DATA() retries the same missing file:
+    /// one VFS lookup plus engine logging per call, forever. A single monster
+    /// weapon mesh absent from the .vfs produced 2.26 million retries and froze
+    /// the client. Cleared by Add_FILE() when the entry is given a new name.
+    bool m_bLoadFailed;
     short m_nTag;
     int m_iRefCnt;
-    tagFileDATA() { m_DATA = NULL, m_bLoad = false, m_nIndex = 0, m_nTag = 0, m_iRefCnt = 0; }
+    tagFileDATA() {
+        m_DATA = NULL, m_bLoad = false, m_bLoadFailed = false, m_nIndex = 0, m_nTag = 0,
+        m_iRefCnt = 0;
+    }
 };
 
 //-------------------------------------------------------------------------------------------------
@@ -245,6 +254,8 @@ CFileLIST<dType>::Add_FILE(char* szFileName,
         m_pDATAs[nIndex].m_FileName.Set(szFileName);
         m_pDATAs[nIndex].m_nIndex = nIndex;
         m_pDATAs[nIndex].m_DATA = DATA;
+        // Pre-allocated slots are reused, so a new name gets a fresh attempt.
+        m_pDATAs[nIndex].m_bLoadFailed = false;
 
         m_pDATAs[nIndex].m_nTag = m_nTotalFileCNT;
         m_HASH.Insert(uiHashKey, &m_pDATAs[nIndex]);
@@ -366,6 +377,11 @@ CFileLIST<dType>::Get_DATA(tagFileDATA<dType>* pDATA) {
             return NULL;
         }
 
+        // Do not hammer a file that is not there -- see m_bLoadFailed.
+        if (pDATA->m_bLoadFailed) {
+            return NULL;
+        }
+
         if (this->Load_FILE(pDATA)) {
             pDATA->m_bLoad = true;
             m_nLoadCNT++;
@@ -375,8 +391,13 @@ CFileLIST<dType>::Get_DATA(tagFileDATA<dType>* pDATA) {
                 pDATA->m_FileName.Get(),
                 Get_LoadCOUNT());
 #endif
-        } else
+        } else {
+            pDATA->m_bLoadFailed = true;
+            LOG_DEBUG(CStr::Printf("File [%s] failed to load in %s; not retrying.\n",
+                pDATA->m_FileName.Get(),
+                m_NameTAG.Get()));
             return NULL;
+        }
     }
     pDATA->m_iRefCnt++;
     this->Delete_LIST();

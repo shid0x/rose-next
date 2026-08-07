@@ -38,6 +38,7 @@ zz_mesh::zz_mesh(bool create_buffer_in) :
 	revision(0),
 	max_bone_index(-1),
 	delayed_rebind(false),
+	load_permanently_failed(false),
 	num_indices(0),
 	timestamp(0),
 	ibuf_res(NULL),
@@ -213,6 +214,12 @@ bool zz_mesh::invalidate_device_objects ()
 
 bool zz_mesh::set_path (const char * path_in)
 {
+	// Only a *different* path deserves a fresh attempt. loadMesh() calls
+	// set_path() on every load attempt, so resetting unconditionally would
+	// defeat the flag entirely.
+	if (!path.get() || !path_in || strcmp(path.get(), path_in) != 0) {
+		load_permanently_failed = false;
+	}
 	path.set(path_in);
 
 	// set load_weight
@@ -260,7 +267,13 @@ bool zz_mesh::load ()
 	}
 
 	if (!vbuf_res->get_ready()) { // data not ready
+		if (load_permanently_failed) {
+			// Already tried this path and the file was not there. Retrying only
+			// repeats the VFS miss and its logging -- see the flag's declaration.
+			return false;
+		}
 		if (!load_mesh()) { // read into mesh
+			load_permanently_failed = true;
 			zz_assertf(0, "mesh: load_mesh(%s) failed", get_path());
 			return false;
 		}

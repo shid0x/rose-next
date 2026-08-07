@@ -865,7 +865,16 @@ t_HASHKEY
 CEffectLIST::Add_EffectFILE(char* szEffectFile) {
     if ((CVFSManager::GetSingleton()).IsExistFile(szEffectFile) == false) {
         char* szMSG = CStr::Printf("ERROR Effect File [%s] not found ... \n", szEffectFile);
+        // Log only in release. Retail data ships dangling effect references --
+        // LIST_DECO_EZ.ZSC points at "3Ddata/JUNON/EHouse/sikugate01_01.eft", which
+        // exists in no known client -- so a modal box here interrupts zone entry for
+        // a decoration that simply has no effect. The one caller that resolves ZSC
+        // effect lists (CModelDATA::Load in IO_Model.h) already treats a 0 key as
+        // log-only, so this matches its intent; the box stays in debug builds as a
+        // signal for genuinely new missing assets.
+#ifdef _DEBUG
         g_pCApp->ErrorBOX(szMSG, "ERROR");
+#endif
         LogString(LOG_DEBUG_, szMSG);
         return 0;
     }
