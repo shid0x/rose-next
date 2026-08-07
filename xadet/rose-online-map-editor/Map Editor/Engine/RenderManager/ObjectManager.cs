@@ -322,8 +322,13 @@ namespace Map_Editor.Engine.RenderManager
 
             ZMO newAnimation = null;
 
-            if (animationPath != null)
-                newAnimation = new ZMO(animationPath, false, true);
+            if (animationPath != null && animationPath.Trim().Length > 0)
+            {
+                if (System.IO.File.Exists(animationPath))
+                    newAnimation = new ZMO(animationPath, false, true);
+                else
+                    Output.WriteLine(Output.MessageType.Error, string.Format("Missing Animation: {0}", animationPath));
+            }
 
             try
             {

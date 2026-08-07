@@ -555,6 +555,7 @@ namespace Map_Editor.Forms.Controls
             App.Form.PreviewPanel.OnSelect += new EventHandler(delegate
             {
                 int monsterID = App.Form.PreviewPanel.NPCList.SelectedIndex + 1;
+                int addedIndex = -1;
 
                 App.Form.PreviewPanel.Hide();
 
@@ -562,6 +563,7 @@ namespace Map_Editor.Forms.Controls
                 {
                     case MonsterType.Basic:
                         {
+                            addedIndex = MapManager.Monsters.WorldObjects[selectedObject].Entry.Basic.Count;
                             MapManager.Monsters.WorldObjects[selectedObject].Entry.Basic.Add(new IFO.MonsterSpawn.Monster()
                             {
                                 Description = "Untitled",
@@ -572,6 +574,7 @@ namespace Map_Editor.Forms.Controls
                         break;
                     case MonsterType.Tactical:
                         {
+                            addedIndex = MapManager.Monsters.WorldObjects[selectedObject].Entry.Tactic.Count;
                             MapManager.Monsters.WorldObjects[selectedObject].Entry.Tactic.Add(new IFO.MonsterSpawn.Monster()
                             {
                                 Description = "Untitled",
@@ -583,6 +586,14 @@ namespace Map_Editor.Forms.Controls
                 }
 
                 LoadMonsters();
+
+                if (addedIndex >= 0)
+                {
+                    if (monsterType == MonsterType.Basic)
+                        BasicList.SelectedIndex = addedIndex;
+                    else
+                        TacticalList.SelectedIndex = addedIndex;
+                }
 
                 ((ToggleButton)sender).IsChecked = false;
 
@@ -631,6 +642,10 @@ namespace Map_Editor.Forms.Controls
         private void RemoveMonster_Click(object sender, RoutedEventArgs e)
         {
             MonsterType monsterType = ((Button)sender).Name.EndsWith("Basic") ? MonsterType.Basic : MonsterType.Tactical;
+            int monsterID = (monsterType == MonsterType.Basic) ? BasicList.SelectedIndex : TacticalList.SelectedIndex;
+
+            if (monsterID < 0)
+                return;
 
             Engine.Commands.Monsters.ValueChanged.ObjectValue oldValue = new Engine.Commands.Monsters.ValueChanged.ObjectValue()
             {
@@ -698,8 +713,11 @@ namespace Map_Editor.Forms.Controls
             {
                 case MonsterType.Basic:
                     {
-                        MapManager.Monsters.WorldObjects[selectedObject].Entry.Basic.RemoveAt(BasicList.SelectedIndex);
-                        newValue.Basic.RemoveAt(BasicList.SelectedIndex);
+                        if (monsterID >= MapManager.Monsters.WorldObjects[selectedObject].Entry.Basic.Count)
+                            return;
+
+                        MapManager.Monsters.WorldObjects[selectedObject].Entry.Basic.RemoveAt(monsterID);
+                        newValue.Basic.RemoveAt(monsterID);
 
                         RemoveBasic.IsEnabled = false;
                         EditBasic.IsEnabled = false;
@@ -709,8 +727,11 @@ namespace Map_Editor.Forms.Controls
                     break;
                 case MonsterType.Tactical:
                     {
-                        MapManager.Monsters.WorldObjects[selectedObject].Entry.Tactic.RemoveAt(TacticalList.SelectedIndex);
-                        newValue.Tactic.RemoveAt(BasicList.SelectedIndex);
+                        if (monsterID >= MapManager.Monsters.WorldObjects[selectedObject].Entry.Tactic.Count)
+                            return;
+
+                        MapManager.Monsters.WorldObjects[selectedObject].Entry.Tactic.RemoveAt(monsterID);
+                        newValue.Tactic.RemoveAt(monsterID);
 
                         RemoveTactical.IsEnabled = false;
                         EditTactical.IsEnabled = false;
@@ -915,7 +936,29 @@ namespace Map_Editor.Forms.Controls
         /// <param name="e">The <see cref="System.Windows.Controls.SelectionChangedEventArgs"/> instance containing the event data.</param>
         private void MonsterList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            MonsterType monsterType = ((ListBox)sender).Name.StartsWith("Basic") ? MonsterType.Basic : MonsterType.Tactical;
+            ListBox monsterList = (ListBox)sender;
+            MonsterType monsterType = monsterList.Name.StartsWith("Basic") ? MonsterType.Basic : MonsterType.Tactical;
+
+            if (monsterList.SelectedIndex < 0)
+            {
+                switch (monsterType)
+                {
+                    case MonsterType.Basic:
+                        RemoveBasic.IsEnabled = false;
+                        EditBasic.IsEnabled = false;
+                        EditBasic.IsChecked = false;
+                        CloneBasic.IsEnabled = false;
+                        break;
+                    case MonsterType.Tactical:
+                        RemoveTactical.IsEnabled = false;
+                        EditTactical.IsEnabled = false;
+                        EditTactical.IsChecked = false;
+                        CloneTactical.IsEnabled = false;
+                        break;
+                }
+
+                return;
+            }
 
             switch (monsterType)
             {

@@ -237,6 +237,7 @@ namespace Map_Editor.Engine.Terrain
                 {
                     Output.WriteLine(Output.MessageType.Error, string.Format("Error Loading Texture: {0}", string.Format(@"{0}\{1}_{2}\{1}_{2}_PLANELIGHTINGMAP.DDS", mapFolder, mapOffset.Y, mapOffset.X)));
 
+                    ShadowMapRaw = new Color[IMAGE_DIMENSION * IMAGE_DIMENSION];
                     ShadowMap = new Texture2D(device, IMAGE_DIMENSION, IMAGE_DIMENSION);
 
                     for (int x = 0; x < IMAGE_DIMENSION; x++)

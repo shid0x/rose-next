@@ -253,10 +253,16 @@ namespace Map_Editor.Engine
 
             new Thread(new ThreadStart(delegate
             {
+                string loadStep = "Starting map load";
+
+                try
+                {
+                loadStep = "Resetting files";
                 FileManager.Reset(false);
 
                 #region Loading Zone Data
 
+                loadStep = "Loading Zone Data";
                 Output.WriteLine(Output.MessageType.Normal, "- Loading Zone Data");
                 FileManager.Add(FileManager.STBs["LIST_ZONE"].Cells[mapID][2], FileManager.FileType.ZON);
 
@@ -271,6 +277,7 @@ namespace Map_Editor.Engine
 
                 #region Loading Sky
 
+                loadStep = "Loading Sky";
                 Output.WriteLine(Output.MessageType.Normal, "- Loading Sky");
                 Sky.Load(FileManager.STBs["LIST_SKY"].Cells[Convert.ToInt32(FileManager.STBs["LIST_ZONE"].Cells[mapID][8])][1], FileManager.STBs["LIST_SKY"].Cells[Convert.ToInt32(FileManager.STBs["LIST_ZONE"].Cells[mapID][8])][2]);
 
@@ -278,6 +285,7 @@ namespace Map_Editor.Engine
 
                 #region Loading Heightmaps
 
+                loadStep = "Loading Heightmaps";
                 Output.WriteLine(Output.MessageType.Normal, "- Loading Heightmaps");
                 string[] himFiles = Directory.GetFiles(mapFolder, "*.HIM");
 
@@ -288,10 +296,23 @@ namespace Map_Editor.Engine
 
                 #endregion
                 
+                loadStep = "Loading Tile Set Data";
                 Output.WriteLine(Output.MessageType.Normal, "- Loading Tile Set Data");
 
-                FileManager.TileSet = new TileSet(Path.Combine("3Ddata\\ESTB", FileManager.STBs["ZONETYPEINFO"].Cells[FileManager.ZON.ZoneInfo.ZoneType][6]));
+                string tileSetFile = GetTileSetFile(mapFolder);
+                string tileSetPath = ResolveTileSetPath(tileSetFile);
 
+                if (tileSetPath == null)
+                {
+                    Output.WriteLine(Output.MessageType.Error, string.Format("Missing Tile Set Data: {0}", tileSetFile));
+                    FileManager.TileSet = new TileSet();
+                }
+                else
+                {
+                    FileManager.TileSet = new TileSet(tileSetPath);
+                }
+
+                loadStep = "Loading Map Data";
                 Output.WriteLine(Output.MessageType.Normal, "- Loading Map Data");
 
                 FileManager.AddFolder(mapFolder, FileManager.FileType.IFO);
@@ -312,11 +333,14 @@ namespace Map_Editor.Engine
 
                 Output.WriteLine(Output.MessageType.Normal, "- Loading Map Objects");
 
+                loadStep = "Loading Decoration ZSC";
                 FileManager.Add("Decoration", FileManager.STBs["LIST_ZONE"].Cells[mapID][12], FileManager.FileType.ZSC);
+                loadStep = "Loading Construction ZSC";
                 FileManager.Add("Construction", FileManager.STBs["LIST_ZONE"].Cells[mapID][13], FileManager.FileType.ZSC);
 
                 for(int i = 0; i < FileManager.IFOs.Count; i++)
                 {
+                    loadStep = string.Format("Loading IFO {0}", FileManager.IFOs[i].FileName);
                     string subFolder = FileManager.IFOs[i].FileName.Substring(0, 5);
 
                     #region Loading Lightmaps
@@ -449,12 +473,139 @@ namespace Map_Editor.Engine
                 }, null);
 
                 Output.WriteLine(Output.MessageType.Event, string.Format("Loading Completed in {0} Second(s)", (DateTime.Now - loadStart).TotalSeconds));
+                }
+                catch (Exception ex)
+                {
+                    Output.WriteException(string.Format("Map load failed during {0}", loadStep), ex);
+
+                    Sky.Loading = false;
+                    Heightmaps.Loading = false;
+                    Decoration.Loading = false;
+                    Construction.Loading = false;
+                    EventTriggers.Loading = false;
+                    NPCs.Loading = false;
+                    Monsters.Loading = false;
+                    SpawnPoints.Loading = false;
+                    WarpGates.Loading = false;
+                    Sounds.Loading = false;
+                    Effects.Loading = false;
+                    Collision.Loading = false;
+                    Water.Loading = false;
+                    Animation.Loading = false;
+
+                    App.Form.Dispatcher.BeginInvoke(DispatcherPriority.Normal, (DispatcherOperationCallback)delegate
+                    {
+                        App.Form.UnFreeze();
+                        System.Windows.MessageBox.Show(string.Format("Map load failed during {0}.\n\nDetails were written to Map Editor.log.\n\n{1}", loadStep, ex.Message), "Map Editor Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+
+                        return null;
+
+                    }, null);
+                }
                 
             }))
             {
                 IsBackground = true,
                 ApartmentState = ApartmentState.STA
             }.Start();
+        }
+
+        /// <summary>
+        /// Resolves editor tile set data across legacy and Rose Next data layouts.
+        /// </summary>
+        /// <param name="tileSetFile">The tile set file name from ZONETYPEINFO.STB.</param>
+        /// <returns>The first existing tile set path, or null if none exists.</returns>
+        private static string ResolveTileSetPath(string tileSetFile)
+        {
+            if (tileSetFile == null || tileSetFile.Trim().Length == 0)
+                return null;
+
+            string[] candidates = new string[]
+            {
+                Path.Combine("3Ddata\\ESTB", tileSetFile),
+                Path.Combine("ESTB", tileSetFile)
+            };
+
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                if (File.Exists(candidates[i]))
+                    return candidates[i];
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Gets the tile set helper file for the current map.
+        /// </summary>
+        /// <param name="mapFolder">The map folder path.</param>
+        /// <returns>The tile set file name.</returns>
+        private static string GetTileSetFile(string mapFolder)
+        {
+            int zoneType = FileManager.ZON.ZoneInfo.ZoneType;
+
+            if (zoneType >= 0 && zoneType < FileManager.STBs["ZONETYPEINFO"].Cells.Count)
+                return FileManager.STBs["ZONETYPEINFO"].Cells[zoneType][6];
+
+            string inferredTileSetFile = InferTileSetFile(mapFolder);
+
+            if (inferredTileSetFile != null)
+            {
+                Output.WriteLine(Output.MessageType.Error, string.Format("Unknown ZoneType {0}; using inferred tile set {1}", zoneType, inferredTileSetFile));
+                return inferredTileSetFile;
+            }
+
+            Output.WriteLine(Output.MessageType.Error, string.Format("Unknown ZoneType {0}; using empty tile set", zoneType));
+            return null;
+        }
+
+        /// <summary>
+        /// Infers a tile set file from the map folder for incomplete zones.
+        /// </summary>
+        /// <param name="mapFolder">The map folder path.</param>
+        /// <returns>The inferred tile set file name.</returns>
+        private static string InferTileSetFile(string mapFolder)
+        {
+            string folder = mapFolder.ToUpperInvariant();
+            string mapName = Path.GetFileName(mapFolder).ToUpperInvariant();
+
+            if (folder.Contains("\\ELDEON\\EZ") || mapName.StartsWith("EZ"))
+                return "Table_Tileset_EZ.STB";
+
+            if (folder.Contains("\\ELDEON\\EV") || mapName.StartsWith("EV"))
+                return "Table_Tileset_EV.STB";
+
+            if (folder.Contains("\\ELDEON\\EJ") || mapName.StartsWith("EJ"))
+                return "Table_Tileset_EJ.STB";
+
+            if (folder.Contains("\\LUNAR\\LZ") || mapName.StartsWith("LZ"))
+                return "Table_Tileset_LZ.STB";
+
+            if (folder.Contains("\\LUNAR\\LP") || mapName.StartsWith("LP"))
+                return "Table_Tileset_LP.STB";
+
+            if (folder.Contains("\\JUNON\\JDT") || mapName.StartsWith("JDT"))
+                return "Table_Tileset_JDT.STB";
+
+            if (folder.Contains("\\JUNON\\JPTBG") || mapName.StartsWith("JPTBG"))
+                return "Table_Tileset_JPTBG.STB";
+
+            if (folder.Contains("\\JUNON\\JPT") || mapName.StartsWith("JPT"))
+                return "Table_Tileset_JPT.STB";
+
+            if (folder.Contains("\\JUNON\\JZP") || mapName.StartsWith("JZP"))
+                return "Table_Tileset_JZP.STB";
+
+            if (folder.Contains("\\JUNON\\JZ") || mapName.StartsWith("JZ"))
+                return "Table_Tileset_JZ.STB";
+
+            if (folder.Contains("\\JUNON\\JD") || mapName.StartsWith("JD"))
+                return "Table_Tileset_JD.STB";
+
+            if (folder.Contains("\\JUNON\\JG") || mapName.StartsWith("JG"))
+                return "Table_Tileset_JG.STB";
+
+            return null;
         }
 
         /// <summary>

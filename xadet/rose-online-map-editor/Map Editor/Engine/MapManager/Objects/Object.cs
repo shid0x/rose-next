@@ -350,7 +350,7 @@ namespace Map_Editor.Engine.Objects
             {
                 int modelID = -1;
 
-                if (zscObject.Models[i].Motion != null)
+                if (zscObject.Models[i].Motion != null && zscObject.Models[i].Motion.Trim().Length > 0)
                     modelID = ObjectManager.Add(FileManager.ZSCs[Type.ToString()].Models[zscObject.Models[i].ModelID], zscObject.Models[i].Motion);
                 else
                     modelID = ObjectManager.Add(FileManager.ZSCs[Type.ToString()].Models[zscObject.Models[i].ModelID]);

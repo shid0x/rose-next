@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
@@ -58,6 +59,11 @@ namespace Map_Editor.Misc
         /// <param name="message">Message.</param>
         public static void WriteLine(MessageType messageType, string message)
         {
+            WriteToFile(string.Format("[{0:00}:{1:00}:{2:00}.{3:000}] {4}", DateTime.Now.Hour, DateTime.Now.Minute, DateTime.Now.Second, DateTime.Now.Millisecond, message));
+
+            if (target == null)
+                return;
+
             target.Dispatcher.Invoke(DispatcherPriority.Normal, new Action(delegate
             {
                 TextBlock textBlock = new TextBlock();
@@ -100,6 +106,32 @@ namespace Map_Editor.Misc
 
                 target.Items.Insert(0, textBlock);
             }));
+        }
+
+        /// <summary>
+        /// Writes an exception to the output log.
+        /// </summary>
+        /// <param name="message">Context message.</param>
+        /// <param name="exception">Exception to log.</param>
+        public static void WriteException(string message, Exception exception)
+        {
+            WriteLine(MessageType.Error, string.Format("{0}: {1}", message, exception.Message));
+            WriteToFile(exception.ToString());
+        }
+
+        /// <summary>
+        /// Writes a message to the editor log file.
+        /// </summary>
+        /// <param name="message">Message to write.</param>
+        private static void WriteToFile(string message)
+        {
+            try
+            {
+                File.AppendAllText("Map Editor.log", message + Environment.NewLine);
+            }
+            catch
+            {
+            }
         }
     }
 }
