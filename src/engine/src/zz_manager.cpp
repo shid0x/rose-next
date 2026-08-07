@@ -364,20 +364,28 @@ void zz_manager::update (zz_time time_to_update)
 				entrance_time_accumulated -= ZZ_MSEC_TO_TIME(t);
 				entrance_line.pop();
 			}
-			else if (node->is_load_terminally_failed()) {
-				// The file is missing; re-queueing would retry it on every
-				// update forever. push() also does a linear find(), so n such
-				// nodes cost O(n^2) per update. Drop it -- the line holds raw
+			else {
+				// Every failed attempt costs budget, terminal or not. Charging
+				// only the re-insert branch would let terminal removals shrink
+				// the line for free, so with n-1 missing files plus one
+				// genuinely retryable node (zz_mesh::load() ends in
+				// bind_device(), which can fail transiently without being
+				// terminal) that one node could be retried ~n times in a single
+				// update -- a frame hitch, and not the "one attempt per queued
+				// node per update" bound this is meant to give.
+				--failed_attempts_left;
+				entrance_line.pop();
+
+				if (!node->is_load_terminally_failed()) {
+					entrance_line.push(node); // re-insert to front and try again later
+				}
+				// else: the file is missing, so re-queueing would retry it every
+				// update forever; push() also does a linear find(), making n such
+				// nodes O(n^2) per update. Dropping is safe -- the line holds raw
 				// pointers and takes no reference, and kill() copes with a node
-				// that is not in the line (flush_entrance falls back to a direct
+				// that is not queued (flush_entrance falls back to a direct
 				// flush). A later loadMesh() spawns a fresh node, so a file that
 				// reappears is still picked up.
-				entrance_line.pop();
-			}
-			else { // not loaded, so reinsert to front
-				entrance_line.pop();
-				entrance_line.push(node); // re-insert
-				--failed_attempts_left; // bound the retries; see above
 			}
 
 			node = entrance_line.back();
