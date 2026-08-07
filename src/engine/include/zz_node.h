@@ -271,6 +271,12 @@ public:
 	
 	// Only zz_manager calls this.
 	virtual bool load (); // read file, allocate memory and upload to hardware
+
+	// True when load() has failed in a way that retrying cannot fix -- the file
+	// is simply not there. zz_manager drops such nodes from the entrance line
+	// instead of re-queueing them, which it otherwise does on every failure and
+	// therefore forever. Default false = "failure may be transient, keep trying".
+	virtual bool is_load_terminally_failed () const { return false; }
 	virtual bool unload (); // release from hardware and free memory (not to save into disk)
 	virtual bool unload_and_release () // if unload() was succeeded, then release() it. returns false if unload failed.
 	{

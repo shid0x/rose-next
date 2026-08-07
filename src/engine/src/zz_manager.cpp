@@ -166,6 +166,9 @@ void zz_manager::load (zz_node * node)
 		if (node->load()) {
 			return;
 		}
+		if (node->is_load_terminally_failed()) {
+			return; // missing file: queueing it would only retry forever
+		}
 	}
 	entrance_line.push(node);
 }
@@ -359,6 +362,16 @@ void zz_manager::update (zz_time time_to_update)
 			//ZZ_LOG("manager: [%s]->update() entrance->flush(%s)\n", get_name(), node ? node->get_name() : "(null)");
 			if (entrance_line.flush_node(node)) {
 				entrance_time_accumulated -= ZZ_MSEC_TO_TIME(t);
+				entrance_line.pop();
+			}
+			else if (node->is_load_terminally_failed()) {
+				// The file is missing; re-queueing would retry it on every
+				// update forever. push() also does a linear find(), so n such
+				// nodes cost O(n^2) per update. Drop it -- the line holds raw
+				// pointers and takes no reference, and kill() copes with a node
+				// that is not in the line (flush_entrance falls back to a direct
+				// flush). A later loadMesh() spawns a fresh node, so a file that
+				// reappears is still picked up.
 				entrance_line.pop();
 			}
 			else { // not loaded, so reinsert to front

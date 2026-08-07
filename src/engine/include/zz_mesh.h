@@ -233,6 +233,11 @@ public:
 	//--------------------------------------------------------------------------------
 	virtual bool load ();
 	virtual bool unload ();
+
+	// The mesh file is missing; load() will keep returning false. Lets
+	// zz_manager drop this node from the entrance line rather than re-queue it
+	// every update for the life of the process.
+	virtual bool is_load_terminally_failed () const { return load_permanently_failed; }
 	virtual void init_reuse ();
 	//--------------------------------------------------------------------------------
 
