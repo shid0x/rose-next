@@ -348,11 +348,15 @@ CEndurancePack::Update() {
         }
 
         /// 중독
-        if (m_CurrentStateValue[ING_POISONED]) {
-            if ((m_pObjCHAR->Get_HP() - m_CurrentStateValue[ING_POISONED]) > 0) {
-                m_pObjCHAR->Sub_HP(m_CurrentStateValue[ING_POISONED]);
-            }
-        }
+        // Poison damage is server-authored: StatusEffects::Proc ticks it once a
+        // second and sends an authoritative StatusTick DamageEvent carrying both the
+        // displayed digit and the hp_after checkpoint. The retail client-local
+        // subtraction that used to live here double-applied that same damage for a
+        // frame, and the checkpoint fold in ApplyPresentedCombatDamage then clamped
+        // the bar back up -- pure jitter on top of a value the client does not own.
+        // SetStateValue still records m_CurrentStateValue[ING_POISONED] from the
+        // skill packet and the status icon still comes from m_EntityList; only the
+        // HP mutation is gone.
 
         /// 소환수
         if (m_EntityList[ING_DEC_LIFE_TIME]) {

@@ -219,8 +219,10 @@ StatusEffects::Proc(CObjCHAR* pCharOBJ, DWORD dwPassTIME) {
         short nAdj;
         PotionEffect* pPOTION;
         BYTE btIngEND = 0;
+        BYTE btIngSYNC = 0;
         if (this->IsSET(FLAG_ING_HP)) {
             pPOTION = &m_POTION[ING_INC_HP];
+            const DWORD dwSyncSlotBefore = pPOTION->m_dwAccTIME / ONE_SECOND;
             nAdj = this->Proc_IngPOTION(pPOTION, dwPassTIME);
 
             // LogString( 0xfff, "HP: %d,  %d/%d,   %d  PassTIME:%d \n", nAdj, pPOTION->m_nAccVALUE,
@@ -232,6 +234,19 @@ StatusEffects::Proc(CObjCHAR* pCharOBJ, DWORD dwPassTIME) {
                 this->ClearStatusFLAG(FLAG_ING_HP);
                 dwChangedFLAG |= FLAG_ING_HP;
                 btIngEND = 0x01;
+            } else if (pPOTION->m_dwAccTIME / ONE_SECOND != dwSyncSlotBefore) {
+                // Potion HP is applied silently frame by frame and was historically
+                // only confirmed when the potion finished; the client mirrors the
+                // same math locally. That leaves the client's authoritative shadow
+                // HP (CObjCHAR::m_iAuthoritativeHP) stale for the whole duration,
+                // because Reconcile_HP is the only thing that raises it and a damage
+                // checkpoint can only ever lower it. Any damage landing mid-potion
+                // then folds the visible bar back down to the pre-potion value and
+                // the healing looks like it never happened -- worst while poisoned,
+                // since poison both ticks every second and suppresses the natural
+                // regen sync that used to keep the shadow HP current. One HP-only
+                // sync per second is enough without spamming a packet per frame.
+                btIngSYNC |= 0x01;
             }
         }
 
@@ -251,8 +266,11 @@ StatusEffects::Proc(CObjCHAR* pCharOBJ, DWORD dwPassTIME) {
             }
         }
 
-        if (btIngEND) {
-            pCharOBJ->Send_gsv_SET_HPnMP(btIngEND);
+        // btIngEND confirms a finished potion, btIngSYNC keeps a running one honest.
+        // Both ride the same packet; the byte is a per-field mask (0x01 HP, 0x02 MP).
+        const BYTE btSendFIELDS = btIngEND | btIngSYNC;
+        if (btSendFIELDS) {
+            pCharOBJ->Send_gsv_SET_HPnMP(btSendFIELDS);
         }
     }
 

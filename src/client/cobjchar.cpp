@@ -2139,8 +2139,20 @@ CObjCHAR::SetAuthoritativeHP(int hp) {
 }
 
 void
-CObjCHAR::SetAuthoritativeHPFromDamageEvent(const Rose::Combat::DamageEvent& event) {
-    if (!m_bHasAuthoritativeHP || event.hp_after <= m_iAuthoritativeHP) {
+CObjCHAR::SetAuthoritativeHPFromDamageEvent(const Rose::Combat::DamageEvent& event,
+    bool bAllowRaise) {
+    // Damage checkpoints normally only ever *lower* the shadow HP. hp_after is an
+    // absolute snapshot from the instant the server applied the hit, and a queued
+    // event's presentation is deferred to an animation/impact frame, so a stale
+    // checkpoint that was allowed to raise HP would undo real damage -- and the
+    // out-of-order drain-on-death path relies on lower-only to stay safe.
+    //
+    // The caller opts out of that rule only for a checkpoint it knows is fresh
+    // (presented synchronously at receive, no deferral window). Without an upward
+    // path the shadow HP cannot follow server-side healing that carries no sync of
+    // its own -- potions, most visibly -- and every subsequent tick folds the
+    // visible bar back down to the pre-heal value.
+    if (!m_bHasAuthoritativeHP || bAllowRaise || event.hp_after <= m_iAuthoritativeHP) {
         SetAuthoritativeHP(event.hp_after);
         m_dwLastAuthoritativeDamageSeq = event.defender_seq;
     }
@@ -2335,8 +2347,18 @@ CObjCHAR::ApplyPresentedCombatDamage(CObjCHAR* pAtkOBJ, Rose::Combat::DamageEven
         && m_dwLastAuthoritativeSyncSeq > event.arrival_seq
         && m_iAuthoritativeHP > event.hp_after;
 
+    // StatusTick is the one checkpoint that may raise the shadow HP. It is produced
+    // only by Give_STATUS_DAMAGE and presented synchronously in recv_damage_event,
+    // so it never waits on an animation frame and is fresh by construction. Letting
+    // it raise pins the bar to server truth in both directions during a DoT, which
+    // is what keeps potion healing visible while poisoned: the server applies potion
+    // HP between syncs, and poison also suppresses the natural-regen sync that used
+    // to be the only thing carrying that healing to the client.
+    const bool bFreshCheckpoint =
+        event.presentation_kind == Rose::Combat::DamagePresentationKind::StatusTick;
+
     if (!bStaleHealedCheckpoint) {
-        SetAuthoritativeHPFromDamageEvent(event);
+        SetAuthoritativeHPFromDamageEvent(event, bFreshCheckpoint);
     } else {
         LogString(LOG_DEBUG_,
             "Combat HP heal-in-flight guard: target %d event %u seq %u arrival %u last sync %u stale hp_after %d fresher authoritative hp %d visible hp %d\n",

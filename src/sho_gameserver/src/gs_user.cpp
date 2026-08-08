@@ -1112,8 +1112,21 @@ classUSER::Use_pITEM(tagITEM* pITEM) {
         }
     } else {
         // this->Use_ITEM( pITEM->m_nItemNo );
-        this->Add_AbilityValue(USEITEM_ADD_DATA_TYPE(pITEM->m_nItemNo),
-            USEITEM_ADD_DATA_VALUE(pITEM->m_nItemNo));
+        const WORD wAddTYPE = USEITEM_ADD_DATA_TYPE(pITEM->m_nItemNo);
+        this->Add_AbilityValue(wAddTYPE, USEITEM_ADD_DATA_VALUE(pITEM->m_nItemNo));
+
+        // Instant HP items restore silently: the client predicts the same amount
+        // locally off the broadcast GSV_USE_ITEM (CUserDATA::Use_ITEM), and nothing
+        // confirms the result. Prediction moves the visible bar only -- it never
+        // raises the client's authoritative shadow HP -- so the next damage
+        // checkpoint folds the bar straight back to the pre-item value. Confirm the
+        // new HP right after the broadcast (same socket, so the client applies its
+        // prediction first and this reconciles to the identical value). MP is left
+        // alone: it has no combat-checkpoint path, and snapping it can wipe client
+        // deltas still queued for an action frame.
+        if (AT_HP == wAddTYPE) {
+            this->Send_gsv_SET_HPnMP(0x01);
+        }
     }
 
     return true;

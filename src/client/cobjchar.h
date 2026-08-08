@@ -513,7 +513,11 @@ public:
         int damageValue,
         bool lethal);
     void SetAuthoritativeHP(int hp);
-    void SetAuthoritativeHPFromDamageEvent(const Rose::Combat::DamageEvent& event);
+    /// bAllowRaise is only ever true for a checkpoint that is presented
+    /// synchronously at packet receive, where hp_after cannot have been
+    /// superseded. Every deferred / discard path must leave it false.
+    void SetAuthoritativeHPFromDamageEvent(const Rose::Combat::DamageEvent& event,
+        bool bAllowRaise = false);
     void SetVisibleHPFromPresentation(int hp);
     void DeferCombatHPDriftIfIdle(const char* reason);
     bool HasPendingAuthoritativeDeath() const { return m_bPendingAuthoritativeDeath; }
