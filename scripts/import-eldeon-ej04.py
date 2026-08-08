@@ -64,8 +64,17 @@ DEFAULT_SOURCE = r"C:\Users\Thomas\Desktop\Testclients\ruff\extracted data"
 ZONE_STB = os.path.join("3DDATA", "STB", "LIST_ZONE.STB")
 NPC_STB = os.path.join("3DDATA", "STB", "LIST_NPC.STB")
 WARP_STB = os.path.join("3DDATA", "STB", "WARP.STB")
+AI_STB = os.path.join("3DDATA", "STB", "FILE_AI.STB")
 NPC_CHR = os.path.join("3DDATA", "NPC", "LIST_NPC.CHR")
 MAP_REL = os.path.join("3DDATA", "Maps", "ELDEON", "EJ04")
+
+# NPC_AI_TYPE (LIST_NPC col 16) indexes FILE_AI.STB, whose rows name a .aip.
+# The six EJ04 monsters use rows 242-248, which are blank in our table. That is
+# not benign: CAI_LIST::Load leaves m_ppAI[i] NULL for a blank row, and
+# CAI_LIST::AI_Created range-checks the index but not the pointer (the _ASSERT
+# is compiled out in release), so the gameserver null-derefs the moment the
+# first one spawns -- which is exactly what happened after the initial import.
+NPC_AI_COL = 16
 
 ZONE_ROW = 66
 ZONE_COLS = 36                       # ours; ruff has 37, col 36 is a zone-number copy
@@ -258,6 +267,27 @@ def main():
     actions.append(f"LIST_NPC: {len(npc_todo)} of {len(NPC_ROWS)} rows to update "
                    f"(cols 0-{NPC_SHARED_COLS-1}, our col {NPC_SHARED_COLS} kept)")
 
+    # --- AI rows + their .aip files (NPC col 16 -> FILE_AI.STB -> 3DDATA/AI/*.aip)
+    araw, aoff, arows, acols, adata = stb_read(os.path.join(root, AI_STB))
+    _, _, _, sacols, sadata = stb_read(os.path.join(src, AI_STB))
+    ai_needed, aip_needed = [], []
+    for i in NPC_ROWS:
+        v = sndata[i][NPC_AI_COL]
+        if not v.isdigit() or int(v) <= 0:
+            continue
+        idx = int(v)
+        if idx >= len(sadata) or not sadata[idx][0]:
+            raise SystemExit(f"source FILE_AI.STB row {idx} (NPC {i}) is empty")
+        want = sadata[idx][0]
+        if idx >= len(adata):
+            raise SystemExit(f"our FILE_AI.STB has no row {idx}")
+        if adata[idx][0] != want:
+            ai_needed.append((idx, want))
+        rel = want.decode("latin-1").replace(chr(92), os.sep)
+        if not os.path.exists(os.path.join(root, rel)):
+            aip_needed.append(rel)
+    actions.append(f"FILE_AI: {len(ai_needed)} row(s) to set, {len(aip_needed)} .aip file(s) to copy")
+
     # --- warp row
     wraw, woff, wrows, wcols, wdata = stb_read(os.path.join(root, WARP_STB))
     warp_needed = wdata[WARP_ROW][1] != WARP_DEST_ZONE or wdata[WARP_ROW][2] != WARP_DEST_POS
@@ -286,7 +316,8 @@ def main():
     for a in actions:
         print("   " + a)
 
-    if not (todo or zone_needed or npc_todo or warp_needed or chr_todo):
+    if not (todo or zone_needed or npc_todo or warp_needed or chr_todo
+            or ai_needed or aip_needed):
         print("\nnothing to do")
         return 0
     if args.dry_run:
@@ -297,7 +328,7 @@ def main():
     stamp = time.strftime("%Y%m%d-%H%M%S")
     backup = os.path.join(args.root, "build", f"ej04-import-backup-{stamp}")
     os.makedirs(backup, exist_ok=True)
-    for rel in (ZONE_STB, NPC_STB, WARP_STB, NPC_CHR):
+    for rel in (ZONE_STB, NPC_STB, WARP_STB, AI_STB, NPC_CHR):
         dst = os.path.join(backup, os.path.basename(rel))
         shutil.copy2(os.path.join(root, rel), dst)
     print(f"\nbacked up 4 tables -> {backup}")
@@ -325,6 +356,21 @@ def main():
                 ndata[i][c] = sndata[i][c]
         stb_write(os.path.join(root, NPC_STB), nraw, noff, nrows, ncols, ndata)
         print(f"updated LIST_NPC rows {npc_todo}")
+
+    # --- write AI rows + copy .aip files
+    for rel in aip_needed:
+        s_, d_ = os.path.join(src, rel), os.path.join(root, rel)
+        if not os.path.exists(s_):
+            raise SystemExit(f"source .aip missing: {s_}")
+        os.makedirs(os.path.dirname(d_), exist_ok=True)
+        shutil.copy2(s_, d_)
+    if aip_needed:
+        print(f"copied {len(aip_needed)} .aip file(s)")
+    if ai_needed:
+        for idx, want in ai_needed:
+            adata[idx][0] = want
+        stb_write(os.path.join(root, AI_STB), araw, aoff, arows, acols, adata)
+        print(f"set FILE_AI rows {[i for i, _ in ai_needed]}")
 
     # --- write warp row
     if warp_needed:
@@ -364,12 +410,24 @@ def main():
         for p in [vsk[c["skel"]]] + [vmo[a] for _, a in c["anims"]]:
             if not os.path.exists(os.path.join(root, p.decode("latin-1").replace("\\", "/"))):
                 raise SystemExit(f"VERIFY FAILED: NPC {i} references missing file {p}")
+    _, _, _, _, av = stb_read(os.path.join(root, AI_STB))
+    for i in NPC_ROWS:
+        v = nv[i][NPC_AI_COL]
+        if not v.isdigit() or int(v) <= 0:
+            continue
+        idx = int(v)
+        path = av[idx][0]
+        if not path:
+            raise SystemExit(f"VERIFY FAILED: FILE_AI row {idx} (NPC {i}) still empty")
+        full = os.path.join(root, path.decode("latin-1").replace(chr(92), os.sep))
+        if not os.path.exists(full):
+            raise SystemExit(f"VERIFY FAILED: .aip missing for NPC {i}: {path}")
     bad = [f for f in todo
            if not filecmp.cmp(os.path.join(dst_map, f), os.path.join(src_map, f), shallow=False)]
     if bad:
         raise SystemExit(f"VERIFY FAILED: {len(bad)} map file(s) differ after copy")
-    print("verified: zone row, 6 NPC rows, 6 CHR entries (all referenced files present), "
-          "warp row, map files")
+    print("verified: zone row, 6 NPC rows, 6 CHR entries, 6 AI rows + .aip files, "
+          "warp row, map files (all referenced files present)")
     print(f"\nbackup: {backup}")
     print("next: python scripts/add-zone-name.py --zone 66   (adds the LZON069 string)")
     return 0

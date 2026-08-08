@@ -101,7 +101,15 @@ CAI_LIST::AI_Created(int iAI_IDX, CObjCHAR* pSourCHAR) {
     if (iAI_IDX >= m_nAICNT)
         return;
 
-    _ASSERT(m_ppAI[iAI_IDX]);
+    // The other five dispatchers below already null-check this; AI_Created was
+    // the one that did not, and _ASSERT is compiled out in release. CAI_LIST::Load
+    // leaves m_ppAI[i] NULL whenever the FILE_AI.STB row is blank or its .aip is
+    // missing, so a single monster whose NPC_AI_TYPE points at such a row crashed
+    // the gameserver the instant it spawned -- taking the whole zone with it, with
+    // nothing in the log. A missing AI should mean "this monster just stands
+    // there", not a dead server.
+    if (!m_ppAI[iAI_IDX])
+        return;
 
     // 처음 생성시
     m_ppAI[iAI_IDX]->AI_WhenCREATED(pSourCHAR);
