@@ -328,7 +328,18 @@ namespace Map_Editor.Engine.Objects
         /// <param name="removePrevious">if set to <c>true</c> [remove previous].</param>
         public void Add(int id, IFO.BaseIFO ifoObject, int fileID, int entryID, bool removePrevious)
         {
-            ZSC.Object zscObject = FileManager.ZSCs[Type.ToString()].Objects[ifoObject.ObjectID];
+            ZSC zsc = FileManager.ZSCs[Type.ToString()];
+
+            // An IFO from a foreign data set can reference an object the zone's ZSC does not
+            // have. Skip that one object instead of aborting the whole map load.
+            if (ifoObject.ObjectID < 0 || ifoObject.ObjectID >= zsc.Objects.Count)
+            {
+                Output.WriteLine(Output.MessageType.Error, string.Format("{0} object {1} in block {2} entry {3} is out of range (ZSC has {4} objects); skipped", Type, ifoObject.ObjectID, fileID, entryID, zsc.Objects.Count));
+
+                return;
+            }
+
+            ZSC.Object zscObject = zsc.Objects[ifoObject.ObjectID];
 
             Matrix objectWorld = Matrix.CreateFromQuaternion(ifoObject.Rotation) *
                                  Matrix.CreateScale(ifoObject.Scale) *
@@ -350,10 +361,18 @@ namespace Map_Editor.Engine.Objects
             {
                 int modelID = -1;
 
+                if (zscObject.Models[i].ModelID < 0 || zscObject.Models[i].ModelID >= zsc.Models.Count ||
+                    zscObject.Models[i].TextureID < 0 || zscObject.Models[i].TextureID >= zsc.Textures.Count)
+                {
+                    Output.WriteLine(Output.MessageType.Error, string.Format("{0} object {1} part {2} references model {3} / texture {4} outside the ZSC ({5} models, {6} textures); skipped", Type, ifoObject.ObjectID, i, zscObject.Models[i].ModelID, zscObject.Models[i].TextureID, zsc.Models.Count, zsc.Textures.Count));
+
+                    return;
+                }
+
                 if (zscObject.Models[i].Motion != null && zscObject.Models[i].Motion.Trim().Length > 0)
-                    modelID = ObjectManager.Add(FileManager.ZSCs[Type.ToString()].Models[zscObject.Models[i].ModelID], zscObject.Models[i].Motion);
+                    modelID = ObjectManager.Add(zsc.Models[zscObject.Models[i].ModelID], zscObject.Models[i].Motion);
                 else
-                    modelID = ObjectManager.Add(FileManager.ZSCs[Type.ToString()].Models[zscObject.Models[i].ModelID]);
+                    modelID = ObjectManager.Add(zsc.Models[zscObject.Models[i].ModelID]);
 
                 if (modelID == -1)
                     return;

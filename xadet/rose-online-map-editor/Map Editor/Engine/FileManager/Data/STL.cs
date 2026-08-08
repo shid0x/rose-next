@@ -102,7 +102,8 @@ namespace Map_Editor.Engine.Data
         /// </summary>
         public STL()
         {
-
+            Entries = new List<Entry>();
+            Rows = new List<List<Row>>();
         }
 
         /// <summary>

@@ -232,9 +232,77 @@ namespace Map_Editor.Engine
         /// <param name="fileType">Type of the file.</param>
         public static void Add(string key, string filePath, FileType fileType)
         {
-            if (!File.Exists(filePath))
-                Main.Error(string.Format("Missing File:\n{0}", filePath));
+            bool keyedTable = fileType == FileType.STB || fileType == FileType.STL || fileType == FileType.ZSC || fileType == FileType.CHR;
 
+            if (!File.Exists(filePath))
+            {
+                // A keyed table is registered empty rather than fatal, so a data set that is
+                // simply missing an editor-only table still opens; everything else still aborts.
+                if (!keyedTable)
+                    Main.Error(string.Format("Missing File:\n{0}", filePath));
+
+                Output.WriteLine(Output.MessageType.Error, string.Format("Missing {0} [Key: {1}]; continuing with an empty table", filePath, key));
+
+                AddPlaceholder(key, fileType);
+
+                return;
+            }
+
+            if (keyedTable)
+            {
+                // One unreadable table must not take the whole editor down. Register it empty,
+                // log the reason, and let the consumers fall back (an unknown ZoneType, for
+                // instance, already infers its tile set from the map folder).
+                try
+                {
+                    AddKeyed(key, filePath, fileType);
+                }
+                catch (Exception ex)
+                {
+                    Output.WriteException(string.Format("Failed to load {0} [Key: {1}]; continuing with an empty table", filePath, key), ex);
+
+                    AddPlaceholder(key, fileType);
+                }
+
+                return;
+            }
+
+            switch (fileType)
+            {
+                case FileType.IFO:
+                    {
+                        IFO newFile = new IFO();
+                        newFile.Load(filePath);
+
+                        IFOs.Add(newFile);
+                    }
+                    break;
+                case FileType.ZON:
+                    {
+                        if (ZON != null)
+                        {
+                            ZON.Textures.ForEach(delegate(ZON.Texture texture)
+                            {
+                                if (texture.Tile != null)
+                                    texture.Tile.Dispose();
+                            });
+                        }
+
+                        ZON = new ZON();
+                        ZON.Load(filePath);
+                    }
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Loads a keyed global table into its dictionary.
+        /// </summary>
+        /// <param name="key">The key.</param>
+        /// <param name="filePath">The file path.</param>
+        /// <param name="fileType">Type of the file.</param>
+        private static void AddKeyed(string key, string filePath, FileType fileType)
+        {
             switch (fileType)
             {
                 case FileType.STB:
@@ -269,28 +337,34 @@ namespace Map_Editor.Engine
                         CHRs.Add(key, newFile);
                     }
                     break;
-                case FileType.IFO:
-                    {
-                        IFO newFile = new IFO();
-                        newFile.Load(filePath);
+            }
+        }
 
-                        IFOs.Add(newFile);
-                    }
+        /// <summary>
+        /// Registers an empty table under the specified key so keyed lookups keep working
+        /// after a missing or unreadable file.
+        /// </summary>
+        /// <param name="key">The key.</param>
+        /// <param name="fileType">Type of the file.</param>
+        private static void AddPlaceholder(string key, FileType fileType)
+        {
+            switch (fileType)
+            {
+                case FileType.STB:
+                    if (!STBs.ContainsKey(key))
+                        STBs.Add(key, new STB());
                     break;
-                case FileType.ZON:
-                    {
-                        if (ZON != null)
-                        {
-                            ZON.Textures.ForEach(delegate(ZON.Texture texture)
-                            {
-                                if (texture.Tile != null)
-                                    texture.Tile.Dispose();
-                            });
-                        }
-
-                        ZON = new ZON();
-                        ZON.Load(filePath);
-                    }
+                case FileType.STL:
+                    if (!STLs.ContainsKey(key))
+                        STLs.Add(key, new STL());
+                    break;
+                case FileType.ZSC:
+                    if (!ZSCs.ContainsKey(key))
+                        ZSCs.Add(key, new ZSC());
+                    break;
+                case FileType.CHR:
+                    if (!CHRs.ContainsKey(key))
+                        CHRs.Add(key, new CHR());
                     break;
             }
         }

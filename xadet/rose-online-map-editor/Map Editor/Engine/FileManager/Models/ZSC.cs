@@ -601,7 +601,10 @@ namespace Map_Editor.Engine.Models
         /// </summary>
         public ZSC()
         {
-
+            Textures = new List<Texture>();
+            Models = new List<string>();
+            Effects = new List<string>();
+            Objects = new List<Object>();
         }
 
         /// <summary>

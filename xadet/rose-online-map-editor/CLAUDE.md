@@ -163,6 +163,19 @@ Clear-Content '..\..\data\Map Editor.log'
 ## Compatibility Fixes Already Made
 
 - Tileset helper STBs resolve from both `3Ddata\ESTB` and `ESTB`.
+- **A bad global table no longer kills startup.** `FileManager.Add` registers an empty
+  placeholder for a missing or unreadable STB/STL/ZSC/CHR and continues, and `STB.Load`
+  checks the `STB` signature up front so the log names the file instead of dying with a
+  bare `EndOfStreamException`. This is what foreign data sets trip over — QQ-iROSE ships
+  an *encrypted* `3Ddata\TERRAIN\TILES\ZONETYPEINFO.STB` (editor-only data; the game
+  itself never reads that table), which used to abort `Initialize()` and leave every
+  later dictionary lookup throwing `KeyNotFoundException`. With no zone-type table,
+  `GetTileSetFile` falls through to `InferTileSetFile`, so maps still load and only the
+  tile brush palette is empty. The default constructors of STB/STL/ZSC/CHR allocate
+  their collections so a placeholder is safe to read.
+- Out-of-range object references in an IFO are skipped with a log line rather than
+  aborting the map load (`Object.Add` bounds-checks the IFO's object ID against the
+  zone ZSC, and each part's model/texture ID against the ZSC's lists).
 - Map loading wrapped in stage-specific exception logging with UI unfreeze on failure.
 - `Output` mirrors every line and full exceptions to `Map Editor.log`.
 - Heightmap fallback allocates `ShadowMapRaw` before filling a default shadow texture.

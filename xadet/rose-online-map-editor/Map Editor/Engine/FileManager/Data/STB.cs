@@ -52,7 +52,9 @@ namespace Map_Editor.Engine.Data
         /// </summary>
         public STB()
         {
-
+            ColumnSizes = new List<short>();
+            ColumnNames = new List<string>();
+            Cells = new List<List<string>>();
         }
 
         /// <summary>
@@ -65,11 +67,39 @@ namespace Map_Editor.Engine.Data
         }
 
         /// <summary>
+        /// Checks the file really is an STB before the reader walks off the end of it.
+        /// </summary>
+        /// <remarks>
+        /// Some private-server data sets ship scrambled or placeholder tables (QQ-iROSE
+        /// encrypts 3DDATA\TERRAIN\TILES\ZONETYPEINFO.STB, which is editor-only data).
+        /// Parsing one of those produces a junk row/column count and the reader dies with
+        /// a bare EndOfStreamException that names no file, so fail early and say which.
+        /// </remarks>
+        /// <param name="filePath">The file path.</param>
+        private static void VerifySignature(string filePath)
+        {
+            byte[] signature = new byte[4];
+
+            using (FileStream stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                if (stream.Read(signature, 0, 4) < 4)
+                    throw new InvalidDataException(string.Format("{0} is too small to be an STB file.", filePath));
+            }
+
+            if (signature[0] == 'S' && signature[1] == 'T' && signature[2] == 'B')
+                return;
+
+            throw new InvalidDataException(string.Format("{0} is not an STB file (signature {1:X2} {2:X2} {3:X2} {4:X2}); it is encrypted, compressed or corrupt.", filePath, signature[0], signature[1], signature[2], signature[3]));
+        }
+
+        /// <summary>
         /// Loads the specified file.
         /// </summary>
         /// <param name="filePath">The file path.</param>
         public void Load(string filePath)
         {
+            VerifySignature(filePath);
+
             FileHandler fh = new FileHandler(FilePath = filePath, FileHandler.FileOpenMode.Reading, Encoding.GetEncoding("EUC-KR"));
 
             fh.Read<BaseString>(4);

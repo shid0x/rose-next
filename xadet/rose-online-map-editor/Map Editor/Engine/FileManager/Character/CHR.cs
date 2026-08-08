@@ -149,7 +149,10 @@ namespace Map_Editor.Engine.Character
         /// </summary>
         public CHR()
         {
-
+            Bones = new List<string>();
+            Motions = new List<string>();
+            Effects = new List<string>();
+            Characters = new List<Character>();
         }
 
         /// <summary>
