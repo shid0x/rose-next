@@ -2152,25 +2152,36 @@ CObjCHAR::SetAuthoritativeHPFromDamageEvent(const Rose::Combat::DamageEvent& eve
     // path the shadow HP cannot follow server-side healing that carries no sync of
     // its own -- potions, most visibly -- and every subsequent tick folds the
     // visible bar back down to the pre-heal value.
-    const bool bRaises = m_bHasAuthoritativeHP && event.hp_after > m_iAuthoritativeHP;
-    if (bRaises && !bAllowRaise) {
+    if (!bAllowRaise && m_bHasAuthoritativeHP && event.hp_after > m_iAuthoritativeHP) {
         return;
     }
 
     SetAuthoritativeHP(event.hp_after);
     m_dwLastAuthoritativeDamageSeq = event.defender_seq;
 
-    if (!bRaises) {
+    if (!bAllowRaise) {
         return;
     }
 
-    // A checkpoint that actually *raised* HP proves the server healed us after
-    // everything that arrived before it, so it supersedes those older checkpoints
-    // exactly the way Reconcile_HP does -- otherwise an already-queued hit still
-    // waiting on its animation frame passes the staleness guard untouched and drags
-    // the bar back down to its own pre-heal hp_after. Stamp the event's own arrival
-    // order rather than a fresh counter so supersession stays exact regardless of
-    // when the raise is presented, and never move the stamp backwards.
+    // A checkpoint the caller vouched for is the newest authoritative HP the client
+    // holds, so everything that arrived before it is older and may have been
+    // superseded -- stamp the supersession clock the same way Reconcile_HP does.
+    //
+    // This is deliberately NOT conditional on the checkpoint having raised
+    // m_iAuthoritativeHP. Queued events do not touch the shadow until they present,
+    // so during a deferral window the shadow still holds the *pre-hit* HP and a
+    // fresher checkpoint routinely reads as "lowering" against it while still being
+    // above the queued hit's own checkpoint. Healing is detected checkpoint-against-
+    // checkpoint by the `m_iAuthoritativeHP > event.hp_after` clause of
+    // bStaleHealedCheckpoint at the older event's presentation, which is the only
+    // moment both values are known: a later checkpoint sitting above an earlier one
+    // can only mean the server healed in between. Gating the stamp on the shadow
+    // instead missed exactly that case (authority 600, queued hit 400, heal back to
+    // 600, tick 550 -> reads as lowering, never stamps, hit snaps the bar to 400).
+    //
+    // Stamp the event's own arrival order rather than a fresh counter so
+    // supersession stays exact regardless of when the checkpoint is presented, and
+    // never move the stamp backwards.
     if (event.arrival_seq > m_dwLastAuthoritativeSyncSeq) {
         m_dwLastAuthoritativeSyncSeq = event.arrival_seq;
     }

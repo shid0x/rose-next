@@ -120,12 +120,13 @@ struct HpHarness {
     CombatPresentationQueue queue;
 
     // Mirrors CObjCHAR::SetAuthoritativeHPFromDamageEvent. Lower-only unless the
-    // caller vouches for the checkpoint being fresh (allow_raise), and a checkpoint
-    // that actually raises HP also advances the supersession stamp so older queued
-    // checkpoints are marked stale -- same contract as reconcile().
+    // caller vouches for the checkpoint being fresh (allow_raise), and a vouched
+    // checkpoint advances the supersession stamp so older queued checkpoints can be
+    // detected as stale -- same contract as reconcile(). The stamp is NOT gated on
+    // the checkpoint raising the shadow: queued events leave the shadow holding
+    // pre-hit HP, so a fresher checkpoint often reads as "lowering" against it.
     void set_authoritative_from_event(const DamageEvent& e, bool allow_raise = false) {
-        const bool raises = has_authoritative_hp && e.hp_after > authoritative_hp;
-        if (raises && !allow_raise) {
+        if (!allow_raise && has_authoritative_hp && e.hp_after > authoritative_hp) {
             return;
         }
 
@@ -133,7 +134,7 @@ struct HpHarness {
         authoritative_seq = e.defender_seq;
         has_authoritative_hp = true;
 
-        if (raises && e.arrival_seq > last_sync_seq) {
+        if (allow_raise && e.arrival_seq > last_sync_seq) {
             last_sync_seq = e.arrival_seq;
         }
     }
@@ -653,45 +654,17 @@ main() {
     }
 
     {
-        // Poison tick raises authoritative HP past an already-queued melee swing.
-        // Repro: pot while poisoned. The server applied the melee hit (checkpoint
-        // 400) at swing start, the potion healed to 600 with no sync of its own, and
-        // the poison tick then reports 550 -- fresher than anything the client has.
-        // The tick's raise must also supersede the older queued checkpoint, or the
-        // melee hit reaches its frame, sees no later reconcile(), and drags the bar
-        // back to 400 for up to a second.
-        HpHarness h;
-        h.visible_hp = 600;
-        h.authoritative_hp = 450;
-
-        DamageEvent swing = event(1, 10, 200, 400);
-        swing.arrival_seq = next_hp_authority_seq();
-        h.queue.push(swing);
-
-        DamageEvent tick = event(2, 100, 50, 550);
-        tick.presentation_kind = DamagePresentationKind::StatusTick;
-        tick.arrival_seq = next_hp_authority_seq();
-        h.queue.push(tick);
-
-        expect(h.present_immediate() == PresentationResult::PresentedDamage,
-            "poison tick presents immediately at receive");
-        expect(h.authoritative_hp == 550,
-            "a fresh StatusTick checkpoint must be able to raise authoritative HP");
-        expect(h.last_sync_seq > swing.arrival_seq,
-            "a raising StatusTick must out-rank the older queued swing");
-        expect(h.visible_hp == 550, "poison tick lands the bar on server truth");
-
-        expect(h.hit(10) == PresentationResult::PresentedDamage, "queued swing still presents");
-        expect(h.displayed_damage == 200, "superseded checkpoint must not alter the swing digit");
-        expect(h.visible_hp == 550,
-            "swing superseded by the poison tick must not snap the bar back to its own checkpoint");
-        expect(h.authoritative_hp == 550, "superseded checkpoint must not lower authoritative HP");
-    }
-
-    {
-        // Control for the above: with no heal in play the poison tick lowers HP as
-        // usual and must NOT stamp supersession, so a later-presented swing still
-        // lands on its own checkpoint.
+        // Poison tick supersedes an already-queued melee swing. Repro: pot while
+        // poisoned. The server applied the melee hit (checkpoint 400) at swing start,
+        // the potion healed back to 600 with no sync of its own, then the poison tick
+        // reports 550.
+        //
+        // Note the shadow is still 600 here -- a queued event does not touch
+        // authoritative HP until it presents -- so the tick reads as *lowering*
+        // against the shadow even though it sits well above the queued swing's
+        // checkpoint. Supersession must therefore not be gated on the tick raising
+        // the shadow; the 400 -> 550 checkpoint sequence is itself the proof that the
+        // server healed in between.
         HpHarness h;
         h.visible_hp = 600;
         h.authoritative_hp = 600;
@@ -705,15 +678,48 @@ main() {
         tick.arrival_seq = next_hp_authority_seq();
         h.queue.push(tick);
 
-        const uint32_t sync_before = h.last_sync_seq;
         expect(h.present_immediate() == PresentationResult::PresentedDamage,
             "poison tick presents immediately at receive");
-        expect(h.authoritative_hp == 550, "lowering tick applies normally");
-        expect(h.last_sync_seq == sync_before,
-            "a tick that only lowers HP must not supersede older checkpoints");
+        expect(h.authoritative_hp == 550, "fresh tick checkpoint becomes authoritative HP");
+        expect(h.last_sync_seq > swing.arrival_seq,
+            "a fresh StatusTick must out-rank the older queued swing even when it lowers the shadow");
+        expect(h.visible_hp == 550, "poison tick lands the bar on server truth");
+
+        expect(h.hit(10) == PresentationResult::PresentedDamage, "queued swing still presents");
+        expect(h.displayed_damage == 200, "superseded checkpoint must not alter the swing digit");
+        expect(h.visible_hp == 550,
+            "swing superseded by the poison tick must not snap the bar back to its own checkpoint");
+        expect(h.authoritative_hp == 550, "superseded checkpoint must not lower authoritative HP");
+    }
+
+    {
+        // Control: monotonically falling checkpoints (400 then 380) prove no healing
+        // happened, so the queued swing is NOT superseded and must still land on the
+        // server's real HP. Stamping supersession on every fresh tick must not cause
+        // a genuinely valid lower checkpoint to be ignored -- the staleness guard's
+        // `authoritative_hp > e.hp_after` clause is what keeps them apart.
+        HpHarness h;
+        h.visible_hp = 600;
+        h.authoritative_hp = 600;
+
+        DamageEvent swing = event(1, 10, 200, 400);
+        swing.arrival_seq = next_hp_authority_seq();
+        h.queue.push(swing);
+
+        DamageEvent tick = event(2, 100, 20, 380);
+        tick.presentation_kind = DamagePresentationKind::StatusTick;
+        tick.arrival_seq = next_hp_authority_seq();
+        h.queue.push(tick);
+
+        expect(h.present_immediate() == PresentationResult::PresentedDamage,
+            "poison tick presents immediately at receive");
+        expect(h.authoritative_hp == 380, "falling tick checkpoint applies normally");
 
         expect(h.hit(10) == PresentationResult::PresentedDamage, "queued swing presents");
-        expect(h.visible_hp == 400, "without a heal the swing still lands on its own checkpoint");
+        expect(h.displayed_damage == 200, "swing digit is unchanged");
+        expect(h.visible_hp == 380,
+            "with no healing between checkpoints the swing must still fold to server HP");
+        expect(h.authoritative_hp == 380, "an older checkpoint must not raise authoritative HP");
     }
 
     {
