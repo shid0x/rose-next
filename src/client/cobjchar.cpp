@@ -2152,9 +2152,27 @@ CObjCHAR::SetAuthoritativeHPFromDamageEvent(const Rose::Combat::DamageEvent& eve
     // path the shadow HP cannot follow server-side healing that carries no sync of
     // its own -- potions, most visibly -- and every subsequent tick folds the
     // visible bar back down to the pre-heal value.
-    if (!m_bHasAuthoritativeHP || bAllowRaise || event.hp_after <= m_iAuthoritativeHP) {
-        SetAuthoritativeHP(event.hp_after);
-        m_dwLastAuthoritativeDamageSeq = event.defender_seq;
+    const bool bRaises = m_bHasAuthoritativeHP && event.hp_after > m_iAuthoritativeHP;
+    if (bRaises && !bAllowRaise) {
+        return;
+    }
+
+    SetAuthoritativeHP(event.hp_after);
+    m_dwLastAuthoritativeDamageSeq = event.defender_seq;
+
+    if (!bRaises) {
+        return;
+    }
+
+    // A checkpoint that actually *raised* HP proves the server healed us after
+    // everything that arrived before it, so it supersedes those older checkpoints
+    // exactly the way Reconcile_HP does -- otherwise an already-queued hit still
+    // waiting on its animation frame passes the staleness guard untouched and drags
+    // the bar back down to its own pre-heal hp_after. Stamp the event's own arrival
+    // order rather than a fresh counter so supersession stays exact regardless of
+    // when the raise is presented, and never move the stamp backwards.
+    if (event.arrival_seq > m_dwLastAuthoritativeSyncSeq) {
+        m_dwLastAuthoritativeSyncSeq = event.arrival_seq;
     }
 }
 
