@@ -370,11 +370,23 @@ CClientStorage::ApplyCameraOption(short i) {
 /// the camera STB row here.
 void
 CClientStorage::RefreshCameraAspectRatio() {
-    HNODE camera = ::findNode("avatar_camera");
-    if (camera == NULL)
-        return; // no world camera yet (login / character select) -- nothing to refresh
+    /// Rendering, culling and picking all go through the engine's *default* camera, and that is
+    /// avatar_camera only while the player is in the world. Login / server + character select /
+    /// create / re-login / exit-to-select run on motion_camera, the planet cutscene on
+    /// MovePlanet_camera, quest camerawork on a camera named after its .ZMO -- all installed via
+    /// CCamera::Init() -> setCameraDefault(). Resizing in those states must refresh the camera
+    /// that is actually rendering, not the one that will be rendering later.
+    HNODE camera = ::getCameraDefault();
+    if (camera != NULL)
+        ::setCameraAspectRatio(camera, 0.0f);
 
-    ::setCameraAspectRatio(camera, 0.0f);
+    /// Invariant: the world camera stays ready to become active later, without depending on
+    /// whoever activates it to fix its projection. CGameStatePrepareMain::Leave and
+    /// CGameStateMovePlanet::Leave do call ApplyCameraOption, but quest camerawork installs its
+    /// own camera and never restores this one at all.
+    HNODE avatar = ::findNode("avatar_camera");
+    if (avatar != NULL && avatar != camera)
+        ::setCameraAspectRatio(avatar, 0.0f);
 }
 
 void
