@@ -1341,12 +1341,13 @@ void zz_screen_sfx::refresh_widescreen_mode()
 
 	// An explicit rect belongs to the caller (PlayWideScreenEx). Converting it into a centred
 	// ratio-based layout would be an observable behaviour change for a ZZ_DLL export that may have
-	// out-of-tree consumers, and there is no obviously right way to rescale it -- so leave it as
-	// given. The restore state fixed above still applies.
-	if (wide_screen_explicit)
-		return;
+	// out-of-tree consumers, and there is no obviously right way to rescale it -- so only the
+	// *layout* is skipped for it. Everything below still has to run: the caller refreshed the
+	// camera to the full-viewport aspect on the way in here, and post_clear_wide() reinstalls the
+	// rect every frame, so returning early would leave the scene stretched inside it.
+	if (!wide_screen_explicit)
+		fit_wide_viewport(viewport, wide_screen_ratio, wide_viewport);
 
-	fit_wide_viewport(viewport, wide_screen_ratio, wide_viewport);
 	r->set_viewport(wide_viewport);
 	cam->set_aspect_ratio(1.0f/wide_screen_ratio);
 	cam->set_perspective(cam->get_fov(),cam->get_aspect_ratio(),cam->get_near_plane(),cam->get_far_plane());
