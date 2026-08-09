@@ -1010,10 +1010,19 @@ CUserDATA::Use_ITEM(WORD wUseItemNO) {
         Add_AbilityValue(USEITEM_ADD_DATA_TYPE(wUseItemNO), USEITEM_ADD_DATA_VALUE(wUseItemNO));
     }
 
-    short nCoolTimeType = USEITME_DELAYTIME_TYPE(wUseItemNO);
-    this->m_dwCoolItemStartTime[nCoolTimeType] = classTIME::GetCurrentAbsSecond();
-    this->m_dwCoolItemEndTime[nCoolTimeType] =
-        this->m_dwCoolItemStartTime[nCoolTimeType] + USEITME_DELAYTIME_TYPE(wUseItemNO);
+    /// DORMANT IN THIS BUILD - this is source symmetry, not a live fix. The whole function sits
+    /// inside #ifndef __SERVER and sho_gameserver.vcxproj defines __SERVER, so neither this code nor
+    /// CUserDATA::m_dwCoolItem{Start,End}Time (same guard in cuserdata.h) exists server-side. Kept
+    /// byte-for-byte in step with the client copy so the guard is already right if it ever compiles;
+    /// see that copy for the out-of-bounds write this prevents.
+    int32_t iCoolTimeType = USEITME_DELAYTIME_TYPE(wUseItemNO);
+    if (iCoolTimeType < 0 || iCoolTimeType >= MAX_USEITEM_COOLTIME_TYPE)
+        iCoolTimeType = 0;
+
+    /// The end time adds the delay TICK (col 26), not the group id.
+    this->m_dwCoolItemStartTime[iCoolTimeType] = classTIME::GetCurrentAbsSecond();
+    this->m_dwCoolItemEndTime[iCoolTimeType] =
+        this->m_dwCoolItemStartTime[iCoolTimeType] + USEITME_DELAYTIME_TICK(wUseItemNO);
 
     return true;
 }

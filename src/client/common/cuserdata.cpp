@@ -893,10 +893,25 @@ CUserDATA::Use_ITEM(WORD wUseItemNO) {
         Add_AbilityValue(USEITEM_ADD_DATA_TYPE(wUseItemNO), USEITEM_ADD_DATA_VALUE(wUseItemNO));
     }
 
-    short nCoolTimeType = USEITME_DELAYTIME_TYPE(wUseItemNO);
-    this->m_dwCoolItemStartTime[nCoolTimeType] = classTIME::GetCurrentAbsSecond();
-    this->m_dwCoolItemEndTime[nCoolTimeType] =
-        this->m_dwCoolItemStartTime[nCoolTimeType] + USEITME_DELAYTIME_TYPE(wUseItemNO);
+    /// LIST_USEITEM.STB col 25 is a cooldown *group*, used raw as an index into the two fixed-size
+    /// arrays below. Our data carries groups above MAX_USEITEM_COOLTIME_TYPE (potions 5, food and
+    /// fruit 6, some 7), and those arrays are the last members of CUserDATA - so an unclamped index
+    /// writes past the base subobject straight into CObjUSER's own members (m_SummonedMobList /
+    /// m_iSummonMobCapacity). Group 6 landed a timestamp in m_iSummonMobCapacity, which unhid the
+    /// summon-capacity gauge with a garbage value every time the player ate a fruit. Clamp exactly
+    /// like the gameserver's CheckSTB_UseITEM does at load. Validate the int32_t the table actually
+    /// returns: narrowing to short first would silently re-bucket a malformed value into a valid
+    /// group (65537 -> 1) instead of rejecting it to 0.
+    int32_t iCoolTimeType = USEITME_DELAYTIME_TYPE(wUseItemNO);
+    if (iCoolTimeType < 0 || iCoolTimeType >= MAX_USEITEM_COOLTIME_TYPE)
+        iCoolTimeType = 0;
+
+    /// Note: the end time adds the delay TICK (col 26), not the group id. Nothing in this client
+    /// reads these two arrays, so this is a typo fix with no observable effect - the real use-item
+    /// delay is CUseItemDelay / g_UseItemDelay.
+    this->m_dwCoolItemStartTime[iCoolTimeType] = classTIME::GetCurrentAbsSecond();
+    this->m_dwCoolItemEndTime[iCoolTimeType] =
+        this->m_dwCoolItemStartTime[iCoolTimeType] + USEITME_DELAYTIME_TICK(wUseItemNO);
 
     return true;
 }

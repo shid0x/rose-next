@@ -446,6 +446,29 @@ CGame::Load_NewVersionData() {
         }
     }
 }
+
+//-------------------------------------------------------------------------------------------------
+/// LIST_USEITEM.STB col 25 (cooldown group) is used raw as an array index into
+/// CUserDATA::m_dwCoolItemStartTime / m_dwCoolItemEndTime, which are DWORD[MAX_USEITEM_COOLTIME_TYPE]
+/// and the last members of CUserDATA - an out-of-range group writes past the base subobject into the
+/// derived CObjUSER. Our data carries groups 5/6/7 (potions, food/fruit), so this is not theoretical.
+///
+/// The gameserver already clamps the same column at load in CLIB_GameSRV::CheckSTB_UseITEM; the
+/// client never had an equivalent, so it consumed the raw value. Mirror the server's behaviour here.
+/// Nothing else on the client reads col 25/26, so rewriting the loaded table is safe.
+//-------------------------------------------------------------------------------------------------
+static void
+SanitizeUseItemCoolTimeTable() {
+    for (size_t nD = 0; nD < g_TblUSEITEM.row_count; ++nD) {
+        int32_t iCoolType = USEITEM_COOLTIME_TYPE(nD);
+        if (iCoolType < 0 || iCoolType >= MAX_USEITEM_COOLTIME_TYPE)
+            SET_USEITEM_COOLTIME_TYPE(nD, 0);
+
+        if (USEITEM_COOLTIME_DELAY(nD) < 0)
+            SET_USEITEM_COOLTIME_DELAY(nD, 0);
+    }
+}
+
 bool
 CGame::Load_BasicDATA2() {
     if (m_bLoadedBasicData2)
@@ -473,6 +496,7 @@ CGame::Load_BasicDATA2() {
     vfs.load_stb(g_TblWEAPON, WEAPON_STB);
     vfs.load_stb(g_TblSUBWPN, SUBWPN_STB);
     vfs.load_stb(g_TblUSEITEM, USE_ITEM_STB);
+    SanitizeUseItemCoolTimeTable();
     vfs.load_stb(g_TblGEMITEM, JEM_ITEM_STB);
     vfs.load_stb(g_TblNATUAL, NATURAL_STB);
     vfs.load_stb(g_TblQUESTITEM, QUEST_ITEM_STB);
