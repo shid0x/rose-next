@@ -3186,6 +3186,12 @@ void PlayWideScreenEx(int x,int y ,int width,int height);
 ZZ_DLL
 void StopWideScreen();
 
+/// Re-derive the widescreen layout after a viewport change (resize / resolution change), so the
+/// state StopWideScreen() restores is the current one and not the pre-resize snapshot.
+/// No-op when widescreen mode is not active; explicit rects (PlayWideScreenEx) are left as given.
+ZZ_DLL
+void RefreshWideScreen();
+
 ZZ_DLL
 void UserObserverCamera(int bUse);
 ///  스크린샷 저장 시작

@@ -9602,7 +9602,14 @@ ZZ_DLL
 void StopWideScreen()
 {
 	if(znzin->screen_sfx.get_widescreen_mode())
-	znzin->screen_sfx.stop_widescreen_mode();	
+	znzin->screen_sfx.stop_widescreen_mode();
+}
+
+ZZ_DLL
+void RefreshWideScreen()
+{
+	if(znzin->screen_sfx.get_widescreen_mode())
+	znzin->screen_sfx.refresh_widescreen_mode();
 }
 
 ZZ_DLL

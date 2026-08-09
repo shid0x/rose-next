@@ -375,6 +375,7 @@ zz_screen_sfx::zz_screen_sfx()
 	num_current_tile=0;
 	play_onoff=FALSE;
 	wide_screen_onoff = FALSE;
+	wide_screen_explicit = FALSE;
 	clear();
 
 }
@@ -1221,31 +1222,57 @@ void zz_screen_sfx::post_clear_wide()
 
 }
 
+// Fit `ratio` (height/width) inside `full`, centred. Letterbox when the viewport is narrower than
+// the target, pillarbox when it is wider. Fitting to the full width unconditionally -- as this did
+// before -- underflows the unsigned zz_viewport fields on anything wider than the target: at
+// 2560x1080 against 16:9 the fitted height is 1440, so (1080-1440)/2 wraps to a huge y and the
+// viewport lands far off-screen. Each branch only subtracts once the fitted extent is known to be
+// <= the full extent, so neither can wrap.
+static void fit_wide_viewport(const zz_viewport& full, float ratio, zz_viewport& out)
+{
+	out.minz = full.minz;
+	out.maxz = full.maxz;
+
+	const float fit_height = full.width*ratio;
+
+	if (fit_height <= (float)full.height) { // narrower than target -> letterbox
+		out.width = full.width;
+		out.height = (dword)fit_height;
+		out.x = full.x;
+		out.y = full.y + (full.height - out.height)/2;
+	}
+	else { // wider than target -> pillarbox
+		out.height = full.height;
+		out.width = (dword)(full.height/ratio);
+		out.y = full.y;
+		out.x = full.x + (full.width - out.width)/2;
+	}
+}
+
 void zz_screen_sfx::play_widescreen_mode(float ratio)
 {
 	wide_screen_ratio = ratio;
     wide_screen_onoff = true;
+	wide_screen_explicit = false;
 
     zz_camera * cam = znzin->get_camera();
 	zz_renderer_d3d *r =(zz_renderer_d3d*)(znzin->renderer) ;
 	r->get_viewport(viewport);
-    wide_viewport.height = (dword)(viewport.width*wide_screen_ratio);
-	wide_viewport.width = viewport.width;
-	wide_viewport.x = viewport.x;
-	wide_viewport.y = (viewport.height-wide_viewport.height)/2;
-	wide_viewport.maxz = viewport.maxz;
-	wide_viewport.minz = viewport.minz;
+	fit_wide_viewport(viewport, wide_screen_ratio, wide_viewport);
     r->set_viewport(wide_viewport);
     screen_ratio=cam->get_aspect_ratio();
 	cam->set_aspect_ratio(1.0f/wide_screen_ratio);
 	cam->set_perspective(cam->get_fov(),cam->get_aspect_ratio(),cam->get_near_plane(),cam->get_far_plane());
-   
+
 }
 
+// Explicit-rect widescreen. The caller owns the rectangle, so refresh_widescreen_mode() leaves it
+// alone on a resize rather than guessing a rescaling policy -- see there.
 void zz_screen_sfx::play_widescreen_mode(int x,int y, int width,int height)
 {
 	wide_screen_ratio = ((float)height)/width;
     wide_screen_onoff = true;
+	wide_screen_explicit = true;
 
     zz_camera * cam = znzin->get_camera();
 	zz_renderer_d3d *r =(zz_renderer_d3d*)(znzin->renderer) ;
@@ -1272,6 +1299,57 @@ void zz_screen_sfx::stop_widescreen_mode()
     cam->set_aspect_ratio(screen_ratio);
 	cam->set_perspective(cam->get_fov(),cam->get_aspect_ratio(),cam->get_near_plane(),cam->get_far_plane());
  
+}
+
+// Called after the viewport changed under a live widescreen effect (window resize / resolution
+// change). Without this, stop_widescreen_mode() above restores `screen_ratio` and `viewport` as
+// snapshotted at start -- i.e. the *pre-resize* values -- straight back onto the live camera. Since
+// the NPC dialog state starts and stops this effect around every conversation, resizing with a
+// dialog open silently undid the resize's aspect-ratio refresh as soon as the dialog closed.
+void zz_screen_sfx::refresh_widescreen_mode()
+{
+	if (!wide_screen_onoff)
+		return;
+
+	zz_camera * cam = znzin->get_camera();
+	zz_renderer_d3d *r =(zz_renderer_d3d*)(znzin->renderer) ;
+
+	if (!cam || !r || !znzin->view)
+		return;
+
+	// Derive the full viewport from the authoritative screen size rather than r->get_viewport():
+	// that is a plain GetViewport() and returns whatever is currently *installed*, which under a
+	// live widescreen effect is normally wide_viewport itself. Reading it back would letterbox an
+	// already-letterboxed rect on a second refresh, and would silently depend on a device reset
+	// having happened first. This is the same source setCameraAspectRatio(cam, 0.0f) uses.
+	const float full_width = (float)znzin->view->get_width();
+	const float full_height = (float)znzin->view->get_height();
+
+	if (full_width <= 0.0f || full_height <= 0.0f)
+		return;
+
+	viewport.x = 0;
+	viewport.y = 0;
+	viewport.width = (dword)full_width;
+	viewport.height = (dword)full_height;
+	viewport.minz = 0.0f;
+	viewport.maxz = 1.0f;
+
+	// What stop_widescreen_mode() will put back on the camera. Mode-independent, so it is worth
+	// fixing even when the layout below is left untouched.
+	screen_ratio = full_width/full_height;
+
+	// An explicit rect belongs to the caller (PlayWideScreenEx). Converting it into a centred
+	// ratio-based layout would be an observable behaviour change for a ZZ_DLL export that may have
+	// out-of-tree consumers, and there is no obviously right way to rescale it -- so leave it as
+	// given. The restore state fixed above still applies.
+	if (wide_screen_explicit)
+		return;
+
+	fit_wide_viewport(viewport, wide_screen_ratio, wide_viewport);
+	r->set_viewport(wide_viewport);
+	cam->set_aspect_ratio(1.0f/wide_screen_ratio);
+	cam->set_perspective(cam->get_fov(),cam->get_aspect_ratio(),cam->get_near_plane(),cam->get_far_plane());
 }
 
 bool zz_screen_sfx::get_widescreen_mode()

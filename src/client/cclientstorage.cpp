@@ -387,6 +387,13 @@ CClientStorage::RefreshCameraAspectRatio() {
     HNODE avatar = ::findNode("avatar_camera");
     if (avatar != NULL && avatar != camera)
         ::setCameraAspectRatio(avatar, 0.0f);
+
+    /// The widescreen effect (every NPC conversation, plus the planet cutscene) overrides the
+    /// default camera's aspect ratio and restores its start-time snapshot on stop -- which would
+    /// hand the pre-resize ratio straight back the moment the dialog closes. Must run *after* the
+    /// two refreshes above so the letterbox override lands on top of the derived ratio, not under
+    /// it. No-op when no widescreen effect is running.
+    ::RefreshWideScreen();
 }
 
 void

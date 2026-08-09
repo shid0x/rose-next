@@ -181,6 +181,10 @@ public:
     void play_widescreen_mode(float ratio);
 	void play_widescreen_mode(int x,int y, int width,int height);
 	void stop_widescreen_mode();
+	// Re-derive the widescreen layout after the viewport changed (window resize / resolution
+	// change). No-op unless widescreen mode is active. Explicit-rect mode (the int overload
+	// above) does not track resizes -- see the implementation.
+	void refresh_widescreen_mode();
 	bool get_widescreen_mode();
 	int get_widescreen_startx();
 	int get_widescreen_starty();
@@ -210,7 +214,8 @@ private:
     int screen_color[3];
     float fade_t1,fade_t2;    
     bool wide_screen_onoff;
-    float wide_screen_ratio;   
+    bool wide_screen_explicit; // true when the caller gave an explicit rect (PlayWideScreenEx)
+    float wide_screen_ratio;
     float screen_ratio;
 	zz_viewport wide_viewport;
 	zz_viewport viewport;
