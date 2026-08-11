@@ -426,3 +426,31 @@ int
 QF_getUserSwitch(int iSwitchNO) {
     return g_pAVATAR->m_Quests.Get_SWITCH(iSwitchNO);
 }
+//-------------------------------------------------------------------------------------------------
+/// Evolution-era dialog hooks. See the block comment in Quest_FUNC.h -- these exist
+/// so the Oro conversations' compiled Lua can call them without the chunk erroring
+/// out. There is no Arua/Hebarn fate system here, so the queries answer "none" and
+/// the dialogs take their neutral branch.
+int
+QF_hasFate() {
+    return 0;
+}
+
+int
+QF_hasAruaFate() {
+    return 0;
+}
+
+int
+QF_hasHebarnFate() {
+    return 0;
+}
+
+/// Quest-log toasts in the Evolution client; our quest UI announces itself already.
+void
+QF_showNewObjective() {
+}
+
+void
+QF_showStartQuestFailure() {
+}

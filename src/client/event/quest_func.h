@@ -69,6 +69,39 @@ int		QF_getUserSwitch ( int iSwitchNO );
 
 /*
 =================================================================================
+	Evolution-era dialog hooks.
+
+	The Oro conversations reference an "Arua / Hebarn fate" faction system and two
+	quest-UI toasts that this client never had. A .CON's Lua is compiled bytecode,
+	so the calls cannot be edited out; leaving the globals nil makes lua_dobuffer
+	return LUA_ERRRUN and the client pops "script : error while running the chunk"
+	on every click (Kaltet XIV and the Hebarn's Vassals were the repro).
+
+	Declared with no parameters on purpose: the generated wrapper then reads no
+	arguments at all, so it cannot mismatch whatever arity the bytecode calls with.
+	The fate queries answer "no fate chosen", which is the truth here -- the
+	dialogs take their neutral branch.
+=================================================================================
+*/
+
+QF_SCRIPT
+int		QF_hasFate ( void );
+
+QF_SCRIPT
+int		QF_hasAruaFate ( void );
+
+QF_SCRIPT
+int		QF_hasHebarnFate ( void );
+
+QF_SCRIPT
+void	QF_showNewObjective ( void );
+
+QF_SCRIPT
+void	QF_showStartQuestFailure ( void );
+
+
+/*
+=================================================================================
 	대화 관련...	Qf_CONVERSATION.cpp
 =================================================================================
 */

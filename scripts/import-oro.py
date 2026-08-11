@@ -1200,7 +1200,16 @@ def zon_events(path):
 
 # --------------------------------------------------------- stage 3: monsters
 LEVEL_PREFIX = re.compile(r"^\(\d+\)\s*")
-DEFAULT_PVP_STATE = b"3"           # PvpState::All -- what 731 of our 743 monsters use
+
+# NPC_PVP_STATE (col 43) is ours-only, so it is authored rather than copied -- and
+# it is not one value. The client picks the mouse cursor straight off it:
+# CGameStateMain, case OBJ_NPC, `is_pvp_enabled() ? CURSOR_ATTACK : CURSOR_NPC`.
+# Monsters want All (731 of our 743 use it); townspeople want NoPvp (163 of our
+# 167 type-999 rows use it), or every merchant in Muris shows the attack cursor.
+DEFAULT_PVP_STATE = b"3"           # PvpState::All      -- monsters
+NPC_PVP_STATE = b"0"               # PvpState::NoPvp    -- type-999 NPCs
+NPC_TYPE_COL = 27
+NPC_TYPE_NPC = b"999"
 
 
 def clean_npc_name(raw):
@@ -1648,7 +1657,7 @@ def stage4(ours, src, dry):
         for c in range(NPC_COPY_COLS):
             our_npc.set(i, c, src_npc.get(i, c))
         our_npc.set(i, 0, clean_npc_name(src_npc.get(i, 0)))
-        our_npc.set(i, NPC_PVP_COL, DEFAULT_PVP_STATE)
+        our_npc.set(i, NPC_PVP_COL, NPC_PVP_STATE)
         for c in NPC_SELL_TAB_COLS:
             v = our_npc.get(i, c).decode("latin-1").strip()
             if not v.isdigit() or not int(v):
@@ -1658,7 +1667,14 @@ def stage4(ours, src, dry):
                 dropped_tabs.append((i, t))
                 our_npc.set(i, c, b"")
         written += 1
-    print(f"    {'LIST_NPC.STB':26s} {written} rows written, {len(kept)} already ours")
+    repaired = 0
+    for i in npc_ids:
+        if (our_npc.get(i, NPC_TYPE_COL) == NPC_TYPE_NPC
+                and our_npc.get(i, NPC_PVP_COL) != NPC_PVP_STATE):
+            our_npc.set(i, NPC_PVP_COL, NPC_PVP_STATE)
+            repaired += 1
+    print(f"    {'LIST_NPC.STB':26s} {written} rows written, {len(kept)} already ours"
+          + (f", {repaired} pvp states corrected" if repaired else ""))
     print(f"    {'shop tabs dropped':26s} {len(dropped_tabs)} "
           f"(no stock in our LIST_SELL) {sorted({t for _, t in dropped_tabs})}")
 
