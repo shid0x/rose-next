@@ -17,6 +17,9 @@ revertible:
     --stage 2   the 24 internal warp gates (WARP.STB rows + IFO lump 10).
     --stage 3   monsters: LIST_NPC rows, AI rows + .aip files, character models,
                 and the spawn lump.
+    --stage 4   NPCs: LIST_NPC rows, models, .CON dialogs, the LIST_EVENT rows
+                that make them clickable, their ulngtb_con.ltb text, and the NPC
+                lump.
 
 Every stage is idempotent -- re-running detects what is already in place and does
 nothing. --dry-run previews. --selftest proves every writer round-trips
@@ -165,6 +168,10 @@ LUMP_WARP, LUMP_COLLISION, LUMP_EVENT_OBJECT = 10, 11, 12
 LUMPS_STAGE1_EMPTY = (LUMP_MOB, LUMP_REGEN, LUMP_WARP, LUMP_EVENT_OBJECT)
 
 NPC_AI_COL, NPC_STRID_COL, NPC_PVP_COL = 16, 40, 43
+NPC_SELL_TAB_COLS = (21, 22, 23, 24)
+EVENT_STB_REL = r"3DDATA\STB\LIST_EVENT.STB"
+EVENT_FILE_COL = 3                 # EVENT_FILENAME
+CON_LTB_REL = r"3DDATA\EVENT\ulngtb_con.ltb"
 NPC_R_WEAPON_COL, NPC_L_WEAPON_COL = 5, 6
 NPC_COPY_COLS = 43                 # 0..42 align; 43 is our own PVP-state column
 
@@ -815,6 +822,12 @@ def selftest(ours, src):
     p = rel_path(ours, PART_NPC_ZSC_REL)
     check("ZSC round-trip", p, Zsc(p).to_bytes())
 
+    p = rel_path(ours, CON_LTB_REL)
+    check("LTB round-trip", p, Ltb(p).to_bytes())
+
+    p = rel_path(ours, EVENT_STB_REL)
+    check("STB round-trip", p, Stb(p).to_bytes())
+
     # IFO: container rebuild and per-lump decode, over a real Oro map and one of ours
     probes = []
     src_maps = rel_path(src, MAPS_REL)
@@ -1239,6 +1252,84 @@ def regen_mob_ids(extra):
     return ids
 
 
+def import_characters(ids, ours, src, dry, what):
+    """Copy LIST_NPC.CHR entries for `ids`, remapping every index on the way in.
+
+    Nothing here can be copied by index: the source's PART_NPC.ZSC models,
+    skeletons and motions all overlap ours with different meanings. Meshes and
+    materials dedupe by path, models are appended, and the skeleton/motion/effect
+    pools intern lazily so the table never names a file the asset copy did not
+    bring.
+    """
+    src_chr = Chr(rel_path(src, NPC_CHR_REL))
+    our_chr = Chr(rel_path(ours, NPC_CHR_REL))
+    src_zsc = Zsc(rel_path(src, PART_NPC_ZSC_REL))
+    our_zsc = Zsc(rel_path(ours, PART_NPC_ZSC_REL))
+
+    skel_map = StringPool(our_chr.skeletons, src_chr.skeletons)
+    motion_map = StringPool(our_chr.motions, src_chr.motions)
+    effect_map = StringPool(our_chr.effects, src_chr.effects)
+
+    mesh_idx = {norm(m): i for i, m in enumerate(our_zsc.meshes)}
+    mat_idx = {norm(p): i for i, (p, _) in enumerate(our_zsc.materials)}
+    new_meshes, new_mats, new_objects = [], [], []
+    model_map, art = {}, set()
+
+    def map_model(sidx):
+        if sidx in model_map:
+            return model_map[sidx]
+        cyl, sparts, sdummies, sbb = src_zsc.objects[sidx]
+        parts = []
+        for mid, tid, props in sparts:
+            mk = norm(src_zsc.meshes[mid])
+            if mk not in mesh_idx:
+                mesh_idx[mk] = len(our_zsc.meshes) + len(new_meshes)
+                new_meshes.append(src_zsc.meshes[mid])
+            tk = norm(src_zsc.materials[tid][0])
+            if tk not in mat_idx:
+                mat_idx[tk] = len(our_zsc.materials) + len(new_mats)
+                new_mats.append(src_zsc.materials[tid])
+            art.add(src_zsc.meshes[mid].decode("latin-1"))
+            art.add(src_zsc.materials[tid][0].decode("latin-1"))
+            parts.append((mesh_idx[mk], mat_idx[tk], props))
+        model_map[sidx] = len(our_zsc.objects) + len(new_objects)
+        new_objects.append(our_zsc.object_bytes(cyl, parts, sdummies, sbb))
+        return model_map[sidx]
+
+    if max(ids) >= len(our_chr.chars):
+        our_chr.chars.extend([None] * (max(ids) + 1 - len(our_chr.chars)))
+    written = 0
+    for i in ids:
+        if our_chr.chars[i] is not None:
+            continue
+        c = src_chr.chars[i]
+        if c is None:
+            raise SystemExit(f"{what} {i} has no LIST_NPC.CHR entry in the source")
+        our_chr.chars[i] = dict(
+            skel=skel_map[c["skel"]],
+            name=c["name"],
+            models=[map_model(m) for m in c["models"]],
+            anims=[(t, motion_map[a]) for t, a in c["anims"]],
+            effects=[(t, effect_map[e]) for t, e in c["effects"]],
+        )
+        written += 1
+
+    art |= skel_map.used | motion_map.used
+    print(f"    {'LIST_NPC.CHR':26s} {written} entries (now {len(our_chr.chars)}), "
+          f"skel {len(our_chr.skeletons)} motion {len(our_chr.motions)}")
+    print(f"    {'PART_NPC.ZSC':26s} +{len(new_objects)} models, "
+          f"+{len(new_meshes)} meshes, +{len(new_mats)} materials")
+    copy_files({a for a in art if "\\" in a or "/" in a}, src, ours, dry,
+               f"{what} art")
+    our_chr.save(dry)
+    if new_objects and not dry:
+        p = rel_path(ours, PART_NPC_ZSC_REL)
+        backup(p)
+        with open(p, "wb") as fh:
+            fh.write(our_zsc.to_bytes(new_meshes, new_mats, new_objects))
+    return written
+
+
 def stage3(ours, src, dry):
     print("stage 3 -- monsters")
 
@@ -1324,66 +1415,7 @@ def stage3(ours, src, dry):
     copy_files(aips, src, ours, dry, ".aip files")
 
     # --- 3e. character models, appended with a full index remap
-    src_chr = Chr(rel_path(src, NPC_CHR_REL))
-    our_chr = Chr(rel_path(ours, NPC_CHR_REL))
-    src_zsc = Zsc(rel_path(src, PART_NPC_ZSC_REL))
-    our_zsc = Zsc(rel_path(ours, PART_NPC_ZSC_REL))
-
-    skel_map = StringPool(our_chr.skeletons, src_chr.skeletons)
-    motion_map = StringPool(our_chr.motions, src_chr.motions)
-    effect_map = StringPool(our_chr.effects, src_chr.effects)
-
-    mesh_idx = {norm(m): i for i, m in enumerate(our_zsc.meshes)}
-    mat_idx = {norm(p): i for i, (p, _) in enumerate(our_zsc.materials)}
-    new_meshes, new_mats, new_objects = [], [], []
-    model_map, art = {}, set()
-
-    def map_model(sidx):
-        if sidx in model_map:
-            return model_map[sidx]
-        cyl, sparts, sdummies, sbb = src_zsc.objects[sidx]
-        parts = []
-        for mid, tid, props in sparts:
-            mk = norm(src_zsc.meshes[mid])
-            if mk not in mesh_idx:
-                mesh_idx[mk] = len(our_zsc.meshes) + len(new_meshes)
-                new_meshes.append(src_zsc.meshes[mid])
-            tk = norm(src_zsc.materials[tid][0])
-            if tk not in mat_idx:
-                mat_idx[tk] = len(our_zsc.materials) + len(new_mats)
-                new_mats.append(src_zsc.materials[tid])
-            art.add(src_zsc.meshes[mid].decode("latin-1"))
-            art.add(src_zsc.materials[tid][0].decode("latin-1"))
-            parts.append((mesh_idx[mk], mat_idx[tk], props))
-        model_map[sidx] = len(our_zsc.objects) + len(new_objects)
-        new_objects.append(our_zsc.object_bytes(cyl, parts, sdummies, sbb))
-        return model_map[sidx]
-
-    if max(mob_ids) >= len(our_chr.chars):
-        our_chr.chars.extend([None] * (max(mob_ids) + 1 - len(our_chr.chars)))
-    chr_written = 0
-    for i in mob_ids:
-        if our_chr.chars[i] is not None:
-            continue
-        c = src_chr.chars[i]
-        if c is None:
-            raise SystemExit(f"monster {i} has no LIST_NPC.CHR entry in the source")
-        our_chr.chars[i] = dict(
-            skel=skel_map[c["skel"]],
-            name=c["name"],
-            models=[map_model(m) for m in c["models"]],
-            anims=[(t, motion_map[a]) for t, a in c["anims"]],
-            effects=[(t, effect_map[e]) for t, e in c["effects"]],
-        )
-        chr_written += 1
-
-    art |= skel_map.used | motion_map.used
-    print(f"    {'LIST_NPC.CHR':26s} {chr_written} entries (now {len(our_chr.chars)}), "
-          f"skel {len(our_chr.skeletons)} motion {len(our_chr.motions)}")
-    print(f"    {'PART_NPC.ZSC':26s} +{len(new_objects)} models, "
-          f"+{len(new_meshes)} meshes, +{len(new_mats)} materials")
-    art = {a for a in art if "\\" in a or "/" in a}
-    copy_files(art, src, ours, dry, "character art")
+    import_characters(mob_ids, ours, src, dry, "monster")
 
     # --- 3f. mob-weapon presentation rows
     src_wpn = Stb(rel_path(src, r"3DDATA\STB\LIST_WEAPON.STB"))
@@ -1421,12 +1453,6 @@ def stage3(ours, src, dry):
     our_ai.save(dry)
     if nnames:
         our_stl.save(dry)
-    our_chr.save(dry)
-    if new_objects and not dry:
-        p = rel_path(ours, PART_NPC_ZSC_REL)
-        backup(p)
-        with open(p, "wb") as fh:
-            fh.write(our_zsc.to_bytes(new_meshes, new_mats, new_objects))
 
     files, points = 0, 0
     for (folder, name), blob in sorted(regen_src.items()):
@@ -1453,11 +1479,317 @@ def stage3(ours, src, dry):
     print(f"    {'IFO regen lumps':26s} {points} spawn points into {files} files")
 
 
+# ------------------------------------------------------------------- LTB I/O
+# .LTB language string table (AStringTable, lib_util/classstb2.h):
+#     i32 col_cnt | i32 row_cnt
+#     index[row][col] row-major: i32 file_pos, i16 str_len   (6 bytes each)
+#     <string pool>  cell = str_len WIDE chars = str_len*2 bytes UTF-16LE, NUL-terminated
+# row = string id, col 0 = key, cols 1..N = per-language text
+# (GetEventString(id) = GetMbcsString(lang+1, id)). Cells are kept raw so existing
+# strings round-trip byte-for-byte. Ours has 6 columns and RoseZA 8, but their
+# first six are ours -- verified on shared rows -- so a merge copies cols 0..5.
+LTB_INDEX_ENTRY = 6
+
+
+class Ltb:
+    def __init__(self, path):
+        self.path = path
+        b = open(path, "rb").read()
+        self.cols, nrows = struct.unpack_from("<ii", b, 0)
+        if not (0 <= self.cols <= 64 and 0 <= nrows <= 1_000_000):
+            raise SystemExit(f"{path}: implausible LTB dims {self.cols}x{nrows}")
+        idx, o = [], 8
+        for _ in range(nrows * self.cols):
+            fp, ln = struct.unpack_from("<ih", b, o)
+            idx.append((fp, max(0, ln)))
+            o += LTB_INDEX_ENTRY
+        self.rows, k = [], 0
+        for _ in range(nrows):
+            r = []
+            for _ in range(self.cols):
+                fp, ln = idx[k]
+                k += 1
+                r.append(b[fp:fp + ln * 2] if fp and ln else b"")
+            self.rows.append(r)
+
+    def grow_to(self, n):
+        add = n - len(self.rows)
+        if add > 0:
+            self.rows.extend([[b""] * self.cols for _ in range(add)])
+        return max(0, add)
+
+    def to_bytes(self):
+        out = bytearray()
+        out += struct.pack("<ii", self.cols, len(self.rows))
+        index_at = len(out)
+        out += b"\0" * (LTB_INDEX_ENTRY * len(self.rows) * self.cols)
+        positions = []
+        for r in self.rows:
+            for cell in r:
+                if not cell:
+                    positions.append((0, 0))
+                    continue
+                positions.append((len(out), len(cell) // 2))
+                out += cell
+        o = index_at
+        for fp, ln in positions:
+            struct.pack_into("<ih", out, o, fp, ln)
+            o += LTB_INDEX_ENTRY
+        return bytes(out)
+
+    def save(self, dry):
+        blob = self.to_bytes()
+        if dry:
+            return
+        backup(self.path)
+        with open(self.path, "wb") as fh:
+            fh.write(blob)
+
+
+# ------------------------------------------------------ .CON string-id reader
+# A .CON message / menu item is an 80-byte node:
+#   i32 sn | i32 type | i32 value | char[32] check_func | char[32] click_func
+#   | i32 str_id        <- a row in ulngtb_con.ltb
+# The MMT offsets are relative to their own table base (not conv_off), and each
+# menu collection's body after its first 8 bytes is XOR-encoded with
+# xor_key(num_sub, length). Miss either and the ids read as noise.
+CON_HEADER_LEN = 524
+CON_NODE = 80
+CON_STR_ID_OFF = 76
+
+
+def con_xor_key(v1, v2):
+    return (v1 & 0xFF) if (v1 & 1) else (v2 & 0xFF)
+
+
+def con_str_ids(path):
+    b = open(path, "rb").read()
+    if len(b) < CON_HEADER_LEN + 16:
+        return []
+    conv_off, = struct.unpack_from("<I", b, 516)
+    msg_num, msg_start = struct.unpack_from("<iI", b, CON_HEADER_LEN)
+    menu_num, menu_start = struct.unpack_from("<iI", b, CON_HEADER_LEN + 8)
+    out = []
+
+    base = conv_off + msg_start
+    for i in range(max(0, msg_num)):
+        mmt, = struct.unpack_from("<I", b, base + 4 * i)
+        p = base + mmt
+        if p + CON_NODE <= len(b):
+            out.append(struct.unpack_from("<i", b, p + CON_STR_ID_OFF)[0])
+
+    base = conv_off + menu_start
+    for i in range(max(0, menu_num)):
+        mmt, = struct.unpack_from("<I", b, base + 4 * i)
+        coll_off = base + mmt
+        if coll_off + 8 > len(b):
+            continue
+        length, num_sub = struct.unpack_from("<ii", b, coll_off)
+        if length < 8 or coll_off + length > len(b):
+            continue
+        coll = bytearray(b[coll_off:coll_off + length])
+        k = con_xor_key(num_sub, length)
+        for j in range(8, len(coll)):
+            coll[j] ^= k
+        for j in range(max(0, num_sub)):
+            if 12 + 4 * j > len(coll):
+                break
+            sub, = struct.unpack_from("<I", coll, 8 + 4 * j)
+            if sub + CON_NODE <= len(coll):
+                out.append(struct.unpack_from("<i", coll, sub + CON_STR_ID_OFF)[0])
+    return [x for x in out if x > 0]
+
+
+# -------------------------------------------------------------- stage 4: NPCs
+def stage4(ours, src, dry):
+    print("stage 4 -- NPCs, dialogs and shops")
+
+    src_maps, dst_maps = rel_path(src, MAPS_REL), rel_path(ours, MAPS_REL)
+
+    # --- 4a. who does the NPC lump place, and with which dialog?
+    npc_ids, cons, mob_src = set(), {}, {}
+    for row, folder, _, _ in ZONES:
+        d = os.path.join(src_maps, folder)
+        for name in sorted(os.listdir(d)):
+            if not name.lower().endswith(".ifo"):
+                continue
+            buf, bounds = read_ifo(os.path.join(d, name))
+            off, end = lump_block(bounds, LUMP_MOB)
+            if off is None or buf[off:off + 4] == b"\0\0\0\0":
+                continue
+            mob_src[(folder, name)] = buf[off:end]
+            objs, _ = read_lump(buf, bounds, LUMP_MOB)
+            for o in objs or []:
+                npc_ids.add(o["obj_id"])
+                n = o["extra"][4]
+                c = o["extra"][5:5 + n].decode("latin-1")
+                if c and c.lower() != "empty":
+                    cons.setdefault(c.lower(), set()).add(o["obj_id"])
+    npc_ids = sorted(npc_ids)
+    print(f"    {'placed NPCs':26s} {len(npc_ids)} ids "
+          f"({npc_ids[0]}..{npc_ids[-1]}), {len(cons)} dialogs")
+
+    src_npc = Stb(rel_path(src, r"3DDATA\STB\LIST_NPC.STB"))
+    our_npc = Stb(rel_path(ours, r"3DDATA\STB\LIST_NPC.STB"))
+    if max(npc_ids) >= our_npc.rows:
+        raise SystemExit(f"NPC id {max(npc_ids)} beyond LIST_NPC.STB ({our_npc.rows})")
+
+    # --- 4b. LIST_NPC rows. Shop tabs are the exception to the straight copy:
+    # item ids mean different things in the two data sets (only 37% of the Oro
+    # stock name-matches anything we have), so a tab is kept only when our own
+    # LIST_SELL row is already populated. The rest are blanked -- an Oro merchant
+    # talks but sells nothing until the item work in a later stage.
+    our_sell = Stb(rel_path(ours, r"3DDATA\STB\LIST_SELL.STB"))
+    written, kept, dropped_tabs = 0, [], []
+    for i in npc_ids:
+        if our_npc.occupied(i):
+            kept.append(i)
+            continue
+        for c in range(NPC_COPY_COLS):
+            our_npc.set(i, c, src_npc.get(i, c))
+        our_npc.set(i, 0, clean_npc_name(src_npc.get(i, 0)))
+        our_npc.set(i, NPC_PVP_COL, DEFAULT_PVP_STATE)
+        for c in NPC_SELL_TAB_COLS:
+            v = our_npc.get(i, c).decode("latin-1").strip()
+            if not v.isdigit() or not int(v):
+                continue
+            t = int(v)
+            if t >= our_sell.rows or not any(x.strip() for x in our_sell.d[t]):
+                dropped_tabs.append((i, t))
+                our_npc.set(i, c, b"")
+        written += 1
+    print(f"    {'LIST_NPC.STB':26s} {written} rows written, {len(kept)} already ours")
+    print(f"    {'shop tabs dropped':26s} {len(dropped_tabs)} "
+          f"(no stock in our LIST_SELL) {sorted({t for _, t in dropped_tabs})}")
+
+    # --- 4c. names
+    src_stl = Stl(rel_path(src, r"3DDATA\STB\LIST_NPC_S.STL"))
+    src_names = {}
+    for i, (k, _) in enumerate(src_stl.keys):
+        txt = src_stl.langs[1][i][0] if len(src_stl.langs) > 1 else b""
+        src_names[k] = txt or src_stl.langs[0][i][0]
+    our_stl = Stl(rel_path(ours, r"3DDATA\STB\LIST_NPC_S.STL"))
+    nnames = 0
+    for i in npc_ids:
+        key = our_npc.get(i, NPC_STRID_COL).decode("latin-1").strip()
+        if not key or our_stl.has(key):
+            continue
+        name = src_names.get(key.encode("latin-1"), b"")
+        text = name.decode("latin-1") if name else our_npc.get(i, 0).decode("latin-1")
+        our_stl.append(key, i, text)
+        nnames += 1
+    print(f"    {'LIST_NPC_S.STL':26s} +{nnames} keys (now {len(our_stl.keys)})")
+
+    # --- 4d. models
+    import_characters(npc_ids, ours, src, dry, "NPC")
+
+    # --- 4e. dialogs, and the event-table rows that make them reachable.
+    # CMAP::ReadObjINFO resolves an NPC's .CON by scanning LIST_EVENT.STB for a
+    # matching *filename*; with no row the NPC gets quest index 0 and clicking it
+    # does nothing. None of the 44 Oro dialogs were registered here.
+    src_ev = Stb(rel_path(src, EVENT_STB_REL))
+    our_ev = Stb(rel_path(ours, EVENT_STB_REL))
+    src_by_file = {}
+    for i in range(src_ev.rows):
+        f = src_ev.get(i, EVENT_FILE_COL).decode("latin-1").strip()
+        if f:
+            src_by_file.setdefault(os.path.basename(f.replace("\\", "/")).lower(), i)
+    our_by_file = set()
+    for i in range(our_ev.rows):
+        f = our_ev.get(i, EVENT_FILE_COL).decode("latin-1").strip()
+        if f:
+            our_by_file.add(os.path.basename(f.replace("\\", "/")).lower())
+    free = [i for i in range(1, our_ev.rows)
+            if not any(our_ev.get(i, c).strip() for c in range(our_ev.cols))]
+
+    con_files, ev_written, unregistered = [], 0, []
+    for c in sorted(cons):
+        if c in our_by_file:
+            con_files.append(c)
+            continue
+        si = src_by_file.get(c)
+        if si is None:
+            unregistered.append(c)
+            continue
+        if not free:
+            raise SystemExit("no free LIST_EVENT.STB rows left")
+        di = free.pop(0)
+        for col in range(min(our_ev.cols, src_ev.cols)):
+            our_ev.set(di, col, src_ev.get(si, col))
+        con_files.append(c)
+        ev_written += 1
+    print(f"    {'LIST_EVENT.STB':26s} +{ev_written} rows "
+          f"({len(unregistered)} dialogs unregistered in the source too)")
+    for c in unregistered:
+        print(f"        no event row anywhere: {c}")
+
+    src_event_dir = rel_path(src, r"3DDATA\EVENT")
+    on_disk = {f.lower(): f for f in os.listdir(src_event_dir)}
+    copy_files([os.path.join("3DDATA", "EVENT", on_disk[c])
+                for c in con_files if c in on_disk], src, ours, dry, "dialog files")
+    absent = [c for c in con_files if c not in on_disk]
+    if absent:
+        print(f"        .CON file absent from the source: {absent}")
+
+    # --- 4f. dialog text
+    src_ltb = Ltb(rel_path(src, CON_LTB_REL))
+    our_ltb = Ltb(rel_path(ours, CON_LTB_REL))
+    need = set()
+    for c in con_files:
+        if c not in on_disk:
+            continue
+        need |= set(con_str_ids(os.path.join(src_event_dir, on_disk[c])))
+    need = sorted(i for i in need if i < len(src_ltb.rows))
+    grew = our_ltb.grow_to(max(need) + 1) if need else 0
+    filled = 0
+    for i in need:
+        if any(our_ltb.rows[i]):
+            continue                      # ours already has text for this id
+        for c in range(min(our_ltb.cols, src_ltb.cols)):
+            our_ltb.rows[i][c] = src_ltb.rows[i][c]
+        filled += 1
+    print(f"    {'ulngtb_con.ltb':26s} +{grew} rows (now {len(our_ltb.rows)}), "
+          f"{filled} of {len(need)} string ids filled")
+    if grew or filled:
+        our_ltb.save(dry)
+
+    our_npc.save(dry)
+    if nnames:
+        our_stl.save(dry)
+    if ev_written:
+        our_ev.save(dry)
+
+    # --- 4g. put the NPCs back into the maps
+    files, placed = 0, 0
+    for (folder, name), blob in sorted(mob_src.items()):
+        dp = os.path.join(dst_maps, folder, name)
+        if not os.path.isfile(dp):
+            raise SystemExit(f"{dp}: run --stage 1 first")
+        dbuf, dbounds = read_ifo(dp)
+        doff, dend = lump_block(dbounds, LUMP_MOB)
+        if doff is None:
+            raise SystemExit(f"{dp}: no MOB lump to fill")
+        if dbuf[doff:dend] == blob:
+            continue
+        n, = struct.unpack_from("<i", blob, 0)
+        out = build_ifo(dbounds, dbuf, {LUMP_MOB: blob})
+        files += 1
+        placed += n
+        if not dry:
+            with open(dp, "wb") as fh:
+                fh.write(out)
+            vbuf, vbounds = read_ifo(dp)
+            voff, vend = lump_block(vbounds, LUMP_MOB)
+            if vbuf[voff:vend] != blob:
+                raise SystemExit(f"VERIFY FAILED: {dp} MOB lump mismatch")
+    print(f"    {'IFO npc lumps':26s} {placed} NPCs into {files} files")
+
+
 # -------------------------------------------------------------------- driver
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--stage", type=int, choices=(1, 2, 3), action="append",
-                    help="stage to run (repeatable); omit to run 1, 2 and 3")
+    ap.add_argument("--stage", type=int, choices=(1, 2, 3, 4), action="append",
+                    help="stage to run (repeatable); omit to run them all")
     ap.add_argument("--dry-run", action="store_true", help="preview without writing")
     ap.add_argument("--selftest", action="store_true",
                     help="prove every writer is byte-faithful, then exit")
@@ -1478,10 +1810,10 @@ def main():
     if args.selftest:
         return 0
 
-    stages = sorted(set(args.stage or (1, 2, 3)))
+    stages = sorted(set(args.stage or (1, 2, 3, 4)))
     print()
     for s in stages:
-        {1: stage1, 2: stage2, 3: stage3}[s](ours, src, args.dry_run)
+        {1: stage1, 2: stage2, 3: stage3, 4: stage4}[s](ours, src, args.dry_run)
         print()
 
     if args.dry_run:
