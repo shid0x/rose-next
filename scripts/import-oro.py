@@ -56,6 +56,10 @@ File formats this script writes are documented at their reader/writer functions.
 """
 import argparse, io, os, re, shutil, struct, sys
 
+NUL = b"\x00"
+ABS_ASSET_RE = re.compile(rb"3DDATA[\\/][0-9A-Za-z_\\/. -]+?\.(?:ptl|dds|tga|zms)", re.I)
+BARE_TEXTURE_RE = re.compile(rb"[0-9A-Za-z_][0-9A-Za-z_-]*\.(?:dds|tga)", re.I)
+
 # --------------------------------------------------------------------- config
 DEFAULT_SRC = r"C:\Users\Thomas\Desktop\Testclients\RoseZA test client\data"
 
@@ -100,10 +104,28 @@ ZSC_TABLES = [
 ]
 
 MAPS_REL = r"3DDATA\MAPS\ORO"
+SKY_STB_REL = r"3DDATA\STB\LIST_SKY.STB"
+PARTICLE_TEXTURE_DIR = r"3DDATA\EFFECT\PARTICLES\TEXTURE"
+
+# ZONE_BG_IMAGE (col 7) is a LIST_SKY.STB row, and every Oro zone points at row 10,
+# which is blank in ours -- the map editor reports "Map load failed during loading
+# sky" and the client gets no sky mesh. The zone rows name three tables, not two:
+# object (11), cnst (12) and this one.
+ZONE_SKY_COL = 7
+ORO_SKY_ROW = 10
+
+# Zone join/kill/dead triggers. RoseZA hangs its own PvP hooks on Muris and the
+# Gates of Muris (PvP71-Enter, PvP82-Enter/Kill/Death) which live in QSDs we do not
+# have; 27 of our own zones use PvP1301-340, so the Oro rows take that and leave
+# kill/dead blank. An unresolved trigger is inert, but a name no QSD defines is a
+# landmine for whoever adds Oro quests later.
+ZONE_TRIGGER_COLS = (22, 23, 24)
+ZONE_TRIGGERS = (b"PvP1301-340", b"", b"")
 NPC_CHR_REL = r"3DDATA\NPC\LIST_NPC.CHR"
 PART_NPC_ZSC_REL = r"3DDATA\NPC\PART_NPC.ZSC"
 
 LUMP_OBJECT, LUMP_MOB, LUMP_REGEN = 1, 2, 8
+LUMP_SOUND, LUMP_EFFECT = 4, 5
 LUMP_WARP, LUMP_COLLISION, LUMP_EVENT_OBJECT = 10, 11, 12
 # lumps stage 1 empties; stages 2 and 3 refill WARP and REGEN/MOB
 LUMPS_STAGE1_EMPTY = (LUMP_MOB, LUMP_REGEN, LUMP_WARP, LUMP_EVENT_OBJECT)
@@ -386,6 +408,10 @@ def parse_object_lump(buf, start, end, lump_type, exact=True):
             r.bstr()                        # .CON file
         elif lump_type == LUMP_EVENT_OBJECT:
             r.vstr(); r.vstr()          # trigger name, .CON file
+        elif lump_type == LUMP_EFFECT:
+            r.bstr()                        # .eft file
+        elif lump_type == LUMP_SOUND:
+            r.bstr(); r.i32(); r.i32()      # .wav file, range (cm), interval (sec)
         elif lump_type == LUMP_REGEN:
             r.bstr()                        # regen point name
             for _ in range(2):              # basic list, then tactics list
@@ -535,6 +561,77 @@ class Zsc:
                 self.d[self.objcnt_pos + 2:self.obj_end]]
         out += list(extra_objects)
         return b"".join(out)
+
+
+# A ZSC part property is (u8 tag, u8 len, bytes) terminated by a zero tag. Tags
+# SWITCH_ANI..SWITCH_ANI+MAX_MESH_ANI_TYPE-1 (8..28) and SWITCH_CNST_ANI (30) hold
+# *file paths* -- .zmo motions for animated scenery such as the Muris carts. See
+# CFixedPART::Load and CCharPART::Load in src/client/io_model.cpp. Collecting only
+# meshes and materials leaves those behind, and the client pops a modal "open error"
+# box for each one during map load, then dies.
+SWITCH_ANI, MAX_MESH_ANI_TYPE = 8, 21
+SWITCH_CNST_ANI = SWITCH_ANI + MAX_MESH_ANI_TYPE + 1                # 30
+PROP_PATH_TAGS = set(range(SWITCH_ANI, SWITCH_ANI + MAX_MESH_ANI_TYPE)) | {SWITCH_CNST_ANI}
+
+
+def prop_paths(props):
+    out, o = [], 0
+    while o < len(props):
+        tag = props[o]
+        o += 1
+        if tag == 0:
+            break
+        ln = props[o]
+        o += 1
+        val, o = props[o:o + ln], o + ln
+        if tag in PROP_PATH_TAGS and ln:
+            out.append(val.rstrip(NUL).decode("latin-1"))
+    return out
+
+
+def zsc_asset_refs(z):
+    """Every file a ZSC table names: meshes, materials, effects, part motions.
+
+    The effect list doubles as a *light* list -- entries not starting with "3D" are
+    light names rather than files, and the client filters on exactly that prefix.
+    """
+    out = {m.decode("latin-1") for m in z.meshes}
+    out |= {p.decode("latin-1") for p, _ in z.materials}
+    out |= {e.decode("latin-1") for e in z.effects if e[:2].upper() == b"3D"}
+    for cyl, parts, dummies, bb in z.objects:
+        for _, _, props in parts:
+            out |= set(prop_paths(props))
+        for _, props in dummies:
+            out |= set(prop_paths(props))
+    return {x for x in out if "\\" in x or "/" in x}
+
+
+def effect_chain(efts, src):
+    """.eft -> .PTL -> particle texture, transitively.
+
+    Both are length-prefixed binary; the paths are recovered by pattern rather than
+    with a full parser because these two fields are all we need and the files are a
+    few hundred bytes each. A .PTL names its textures bare, so those resolve against
+    the shared particle texture directory.
+    """
+    out, queue, seen = set(), list(efts), set()
+    while queue:
+        rel = queue.pop()
+        if rel.lower() in seen:
+            continue
+        seen.add(rel.lower())
+        out.add(rel)
+        p = rel_path(src, rel)
+        if not os.path.isfile(p):
+            continue
+        blob = open(p, "rb").read()
+        for hit in ABS_ASSET_RE.finditer(blob):
+            queue.append(hit.group().decode("latin-1"))
+        if rel.lower().endswith(".ptl"):
+            for hit in BARE_TEXTURE_RE.finditer(blob):
+                queue.append(os.path.join(PARTICLE_TEXTURE_DIR,
+                                          hit.group().decode("latin-1")))
+    return out
 
 
 # -------------------------------------------------------------------- CHR I/O
@@ -700,8 +797,8 @@ def selftest(ours, src):
     for p in probes:
         buf, bounds = read_ifo(p)
         cont_ok = cont_ok and build_ifo(bounds, buf, {}) == buf
-        for lt in (LUMP_OBJECT, LUMP_MOB, LUMP_REGEN, LUMP_WARP,
-                   LUMP_COLLISION, LUMP_EVENT_OBJECT):
+        for lt in (LUMP_OBJECT, LUMP_MOB, LUMP_SOUND, LUMP_EFFECT, LUMP_REGEN,
+                   LUMP_WARP, LUMP_COLLISION, LUMP_EVENT_OBJECT):
             off, end = lump_block(bounds, lt)
             if off is None:
                 continue
@@ -772,20 +869,49 @@ def stage1(ours, src, dry):
     tiles = {t for t in tiles if "\\" in t or "/" in t}
     copy_files(tiles, src, ours, dry, "terrain tiles")
 
-    # --- 1c. object tables and every mesh/material they reference
+    # --- 1c. object tables and every file they reference
     art = set()
     for rel in ZSC_TABLES:
         p = rel_path(src, rel)
         if not os.path.isfile(p):
             raise SystemExit(f"source object table missing: {p}")
-        z = Zsc(p)
-        art |= {m.decode("latin-1") for m in z.meshes}
-        art |= {m.decode("latin-1") for m, _ in z.materials}
+        art |= zsc_asset_refs(Zsc(p))
+    # ...plus the files the .IFO records name inline. The EFFECT and SOUND lumps
+    # each carry a filename in the record itself rather than an index into a table,
+    # so they are invisible to any collection that only walks the ZSC tables.
+    for _, folder, _, _ in ZONES:
+        d = os.path.join(src_maps, folder)
+        for name in sorted(os.listdir(d)):
+            if not name.lower().endswith(".ifo"):
+                continue
+            buf, bounds = read_ifo(os.path.join(d, name))
+            for lt in (LUMP_EFFECT, LUMP_SOUND):
+                objs, _ = read_lump(buf, bounds, lt)
+                for o in objs or []:
+                    n = o["extra"][0]
+                    art.add(o["extra"][1:1 + n].decode("latin-1"))
     art = {a for a in art if "\\" in a or "/" in a}
+    efts = {a for a in art if a.lower().endswith(".eft")}
+    art |= effect_chain(efts, src)
     copy_files(ZSC_TABLES, src, ours, dry, "object tables")
     copy_files(art, src, ours, dry, "deco/cnst art")
 
-    # --- 1d. zone rows
+    # --- 1d. the sky
+    src_sky = Stb(rel_path(src, SKY_STB_REL))
+    our_sky = Stb(rel_path(ours, SKY_STB_REL))
+    our_sky.grow_to(ORO_SKY_ROW + 1)
+    if our_sky.d[ORO_SKY_ROW] != src_sky.d[ORO_SKY_ROW][:our_sky.cols]:
+        for c in range(min(our_sky.cols, src_sky.cols)):
+            our_sky.set(ORO_SKY_ROW, c, src_sky.get(ORO_SKY_ROW, c))
+        our_sky.save(dry)
+        print(f"    {'LIST_SKY.STB':26s} row {ORO_SKY_ROW} written "
+              f"({our_sky.get(ORO_SKY_ROW, 0).decode('latin-1')})")
+    else:
+        print(f"    {'LIST_SKY.STB':26s} row {ORO_SKY_ROW} already present")
+    sky = {our_sky.get(ORO_SKY_ROW, c).decode("latin-1") for c in range(5)}
+    copy_files({x for x in sky if "\\" in x or "/" in x}, src, ours, dry, "sky assets")
+
+    # --- 1e. zone rows
     zstb = Stb(rel_path(ours, r"3DDATA\STB\LIST_ZONE.STB"))
     added = zstb.grow_to(MAX_ZONE_ROW + 1,
                          labels={r: n for r, _, n, _ in ZONES})
@@ -796,13 +922,15 @@ def stage1(ours, src, dry):
             zstb.set(row, c, src_zone.get(row, c))
         zstb.set(row, 0, name)          # drop RoseZA's "(CODE) " prefix
         zstb.set(row, 3, revive)        # the event position that actually exists
+        for c, v in zip(ZONE_TRIGGER_COLS, ZONE_TRIGGERS):
+            zstb.set(row, c, v)         # RoseZA's PvP hooks are in QSDs we lack
         if zstb.d[row] != before:
             changed += 1
     print(f"    {'LIST_ZONE.STB':26s} +{added} rows (now {zstb.rows}), "
           f"{changed} Oro rows written")
     zstb.save(dry)
 
-    # --- 1e. zone names
+    # --- 1f. zone names
     zstl = Stl(rel_path(ours, r"3DDATA\STB\LIST_ZONE_S.STL"))
     n = 0
     for key in sorted(ZONE_STRING_NAMES):
