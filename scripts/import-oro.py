@@ -121,6 +121,40 @@ ORO_SKY_ROW = 10
 # landmine for whoever adds Oro quests later.
 ZONE_TRIGGER_COLS = (22, 23, 24)
 ZONE_TRIGGERS = (b"PvP1301-340", b"", b"")
+
+# --- map-editor tile palettes -------------------------------------------------
+# ZONETYPEINFO.STB maps a map's ZoneType -- an int in block 0 of its .ZON -- to
+# the editor's tileset helper tables. It is editor-only: the client
+# (CTERRAIN::ReadZoneINFO), the gameserver (CZoneFILE::ReadZoneINFO) and the
+# worldserver all fseek straight past that field. With no row the editor logs
+# "Unknown ZoneType N; using empty tile set" and the brush palette is blank.
+#
+# Our table stopped at 13. The Oro maps use 14 (OROIP), 15 (TOWN) and 16 (the ten
+# surface maps) -- but 15 is also what our own Eldeon prison EZ01 declares, so
+# RoseZA's "15 = Orlo Town" cannot be taken verbatim without giving EZ01 the wrong
+# palette. Type 15 therefore keeps its retail meaning (EZ, which fixes EZ01's
+# palette -- missing here since before Oro) and Muris moves to a new type 17.
+# Rewriting a .ZON's ZoneType is safe precisely because nothing but the editor
+# reads it.
+ZONETYPE_STB_REL = r"3DDATA\TERRAIN\TILES\ZONETYPEINFO.STB"
+ZONETYPE_ROWS = {
+    14: (b"4", b"LIST_CNST_JG.STB", b"LIST_TERRAIN_OBJECT_JZP.STB", b"Junon\\JZP.txt",
+         b"TileLookup_Type_JZP.STB", b"Table_Tileset_JZP.STB", b"Junon Pyramid Dungeon"),
+    15: (b"10", b"LIST_CNST_EJ.STB", b"LIST_TERRAIN_OBJECT_EZ.STB", b"Eldeon\\EZ.txt",
+         b"TileLookup_Type_EZ.STB", b"Table_Tileset_EZ.STB", b"Sikuku Underground Prison"),
+    16: (b"9", b"LIST_CNST_ODD.STB", b"LIST_TERRAIN_OBJECT_ODD.STB", b"ORO\\ORO.txt",
+         b"TileLookup_Type_ODG.STB", b"Table_Tileset_ODG.STB", b"Orlo Surface Maps"),
+    17: (b"9", b"LIST_CNST_ODT.STB", b"LIST_TERRAIN_OBJECT_ODT.STB", b"ORO\\ORO.txt",
+         b"TileLookup_Type_ODG.STB", b"Table_Tileset_ODG.STB", b"Orlo Town"),
+}
+ZONETYPE_RETARGET = {"TOWN": (15, 17)}       # folder -> (RoseZA type, ours)
+EDITOR_TABLES = [
+    r"3DDATA\STB\LIST_CNST_ODT.STB",
+    r"3DDATA\STB\LIST_TERRAIN_OBJECT_ODT.STB",
+    r"3DDATA\STB\LIST_CNST_ODD.STB",
+    r"3DDATA\STB\LIST_TERRAIN_OBJECT_ODD.STB",
+    r"3DDATA\STB\LIST_TERRAIN_OBJECT_JZP.STB",
+]
 NPC_CHR_REL = r"3DDATA\NPC\LIST_NPC.CHR"
 PART_NPC_ZSC_REL = r"3DDATA\NPC\PART_NPC.ZSC"
 
@@ -911,7 +945,39 @@ def stage1(ours, src, dry):
     sky = {our_sky.get(ORO_SKY_ROW, c).decode("latin-1") for c in range(5)}
     copy_files({x for x in sky if "\\" in x or "/" in x}, src, ours, dry, "sky assets")
 
-    # --- 1e. zone rows
+    # --- 1e. map-editor tile palettes
+    copy_files(EDITOR_TABLES, src, ours, dry, "editor object tables")
+    zt = Stb(rel_path(ours, ZONETYPE_STB_REL))
+    zt.grow_to(max(ZONETYPE_ROWS) + 1)
+    written = []
+    for row, cells in sorted(ZONETYPE_ROWS.items()):
+        if tuple(zt.d[row][:len(cells)]) == cells:
+            continue
+        for c, v in enumerate(cells):
+            zt.set(row, c, v)
+        written.append(row)
+    print(f"    {'ZONETYPEINFO.STB':26s} {len(written)} rows written {written} "
+          f"(now {zt.rows})")
+    if written:
+        zt.save(dry)
+    retargeted = []
+    for folder, (was, now) in ZONETYPE_RETARGET.items():
+        d = os.path.join(dst_maps, folder)
+        zon = [f for f in os.listdir(d) if f.lower().endswith(".zon")][0]
+        p = os.path.join(d, zon)
+        cur = zon_zone_type(p)
+        if cur == now:
+            continue
+        if cur != was:
+            raise SystemExit(f"{zon}: expected ZoneType {was}, found {cur}")
+        if not dry:
+            zon_zone_type(p, now)
+            if zon_zone_type(p) != now:
+                raise SystemExit(f"VERIFY FAILED: {zon} ZoneType")
+        retargeted.append(f"{folder} {was}->{now}")
+    print(f"    {'.ZON zone types':26s} {retargeted or 'already correct'}")
+
+    # --- 1f. zone rows
     zstb = Stb(rel_path(ours, r"3DDATA\STB\LIST_ZONE.STB"))
     added = zstb.grow_to(MAX_ZONE_ROW + 1,
                          labels={r: n for r, _, n, _ in ZONES})
@@ -930,7 +996,7 @@ def stage1(ours, src, dry):
           f"{changed} Oro rows written")
     zstb.save(dry)
 
-    # --- 1f. zone names
+    # --- 1g. zone names
     zstl = Stl(rel_path(ours, r"3DDATA\STB\LIST_ZONE_S.STL"))
     n = 0
     for key in sorted(ZONE_STRING_NAMES):
@@ -945,6 +1011,27 @@ def stage1(ours, src, dry):
     print("    NOTE: BGM lives outside data/ -- copy Sound/BGM/Orlo_Crash_Site.ogg,")
     print("          Orlo_Golden_Ring.ogg and Orlo_Portal.ogg into the deployed game")
     print("          dir if you want music (a missing track is silence, not an error).")
+
+
+def zon_zone_type(path, new_type=None):
+    """Read (and optionally rewrite) the ZoneType in LUMP_ZONE_INFO (block 0).
+
+    Editor-only metadata: every engine reader seeks past it. Rewriting is an
+    in-place i32 poke, so the container is untouched.
+    """
+    d = bytearray(open(path, "rb").read())
+    cnt, = struct.unpack_from("<i", d, 0)
+    for i in range(cnt):
+        t, off = struct.unpack_from("<ii", d, 4 + 8 * i)
+        if t != 0:
+            continue
+        cur, = struct.unpack_from("<i", d, off)
+        if new_type is not None and cur != new_type:
+            struct.pack_into("<i", d, off, new_type)
+            with open(path, "wb") as fh:
+                fh.write(d)
+        return cur
+    return None
 
 
 def zon_tiles(path):
