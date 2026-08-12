@@ -1,41 +1,58 @@
-"""Import a weapon from another ROSE data set into ours, appended as a new weapon ID.
+"""Import an equipment item from another ROSE data set into ours, as a new ID.
 
 Usage:
-    python scripts/import-weapon.py --source C:\\path\\to\\other\\data --source-row 873 --icon 1436
-    python scripts/import-weapon.py --source ... --source-row 873 --dry-run
+    python scripts/import-item.py --type back --source C:\\path\\to\\data --source-row 803 --icon 8451
+    python scripts/import-item.py --type weapon --source ... --source-row 873 --dry-run
 
 What it does (all appends -- existing rows/objects are never modified):
-    1. LIST_WEAPON.STB   append one row (new ID = current row count) with the source stats
-    2. LIST_WEAPON.ZSC   append the source's model object; meshes/materials already present
-                         in our ZSC are reused, missing ones are appended
-    3. LIST_WEAPON_S.STL append key LWEA<id> with name/desc taken from the source STL
+    1. <type>.STB   append one row (new ID = current row count) with the source stats
+    2. <type>.ZSC   append the source's model object; meshes/materials already present
+                    in our ZSC are reused, missing ones are appended
+    3. <type>_S.STL append key <PREFIX><id> with name/desc taken from the source STL
     4. copies any mesh/texture files referenced by the appended ZSC entries from the
        source data dir into ours (same relative paths)
 
+Supported types are the ones with a *single* model table. Helmet/armour/gauntlet/
+boots are deliberately absent: those are sex-split across LIST_M*.ZSC and LIST_W*.ZSC
+and would need two model appends kept in lockstep, which this does not do.
+
 Structure facts this relies on (verified against the live client/server loaders):
-    - Weapon visuals come from LIST_WEAPON.ZSC object[item_no]; the STB "model file"
+    - Item visuals come from the type's ZSC object[item_no]; the STB "model file"
       column 1 (.txt path) is vestigial and never read by the game.
-    - Our LIST_WEAPON.STB has 46 data columns, key in col 45. Evo-era sources have 49;
-      their 3 extra columns (45-47) are dropped. Columns 0-44 align 1:1.
+    - Item STB tables share a column prefix (ITEM_* macros in rose/io/stb.h):
+      col 5 price, 7 weight, 8 quality, 9 icon, 10 field model, 29 durability,
+      31 defence, 32 resistance. The STL key is always the LAST column, and evo-era
+      sources carry extra columns after ours which are dropped.
     - STBDATA::load (src/common/src/io/stb.cpp) reads (rows-1)x(cols-1) u16-length
       cells at `offset`; the header before `offset` holds col titles + row names that
       STB editors read, so the row-name list gets a matching new entry.
-    - Icon indices (STB col 9) point into OUR ITEM1.TSI atlas (50 sheets x 169 cells,
-      512x512 DXT5, 40x40 cells); source icon indices map to different art, so pass
-      --icon explicitly (defaults to keeping the source value, with a warning).
+    - Icon indices (STB col 9) point into OUR ITEM1.TSI. The atlases of different
+      data sets share geometry but NOT art -- the same index is different art in
+      each -- so always pass --icon with an index added by add-item-icon.py.
     - Field model (STB col 10) indexes our LIST_FieldITEM.ZSC (ground-drop mesh);
       pass --copy-field-model to port the source's drop model too (recommended), or
-      --field-model N to reuse one of ours (749 = dual sword drop).
+      --field-model N to reuse one of ours.
 
-After running: restart servers + client, spawn with /item 8:<new id> (GM level 2048).
+After running: restart servers + client, spawn with /item <type>:<new id> (GM 2048).
 """
 import argparse, io, os, shutil, struct, sys
 
 OURS = "data"
-STB_REL = r"3DDATA\STB\LIST_WEAPON.STB"
-ZSC_REL = r"3DDATA\WEAPON\LIST_WEAPON.ZSC"
-STL_REL = r"3DDATA\STB\LIST_WEAPON_S.STL"
 FIELD_ZSC_REL = r"3DDATA\ITEM\LIST_FieldITEM.ZSC"
+
+# name -> (item type number, STB, model ZSC, STL, STL key prefix, our data-col count)
+# The col count is a tripwire: if our table ever gains a column the row we build
+# would be the wrong width, and appending it would silently shift every field.
+TYPES = {
+    "weapon":   (8, r"3DDATA\STB\LIST_WEAPON.STB",   r"3DDATA\WEAPON\LIST_WEAPON.ZSC",
+                 r"3DDATA\STB\LIST_WEAPON_S.STL",   "LWEA", 46),
+    "subwpn":   (9, r"3DDATA\STB\LIST_SUBWPN.STB",   r"3DDATA\WEAPON\LIST_SUBWPN.ZSC",
+                 r"3DDATA\STB\LIST_SUBWPN_S.STL",   "LSUB", 36),
+    "back":     (6, r"3DDATA\STB\LIST_BACK.STB",     r"3DDATA\AVATAR\LIST_BACK.ZSC",
+                 r"3DDATA\STB\LIST_BACK_S.STL",     "LBAC", 35),
+    "faceitem": (1, r"3DDATA\STB\LIST_FACEITEM.STB", r"3DDATA\AVATAR\LIST_FACEIEM.ZSC",
+                 r"3DDATA\STB\LIST_FACEITEM_S.STL", "LFAC", 34),
+}
 
 # ---------------------------------------------------------------- STB
 def stb_read(path):
@@ -281,8 +298,11 @@ def copy_assets(files_needed, source, dry):
 # ---------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--type", default="weapon", choices=sorted(TYPES),
+                    help="item type to import (default: weapon)")
     ap.add_argument("--source", required=True, help="path to the source data directory")
-    ap.add_argument("--source-row", type=int, required=True, help="weapon row in the source LIST_WEAPON.STB")
+    ap.add_argument("--source-row", type=int, required=True,
+                    help="row in the source table for this type")
     ap.add_argument("--name", help="override item name (default: from source STL)")
     ap.add_argument("--desc", help="override item description (default: from source STL)")
     ap.add_argument("--icon", type=int, help="icon index in OUR ITEM1.TSI (default: keep source value, likely wrong art)")
@@ -295,6 +315,8 @@ def main():
     if not os.path.isdir(os.path.join(OURS, "3DDATA")):
         sys.exit("run from the repo root (data/3DDATA not found)")
 
+    ITEM_TYPE, STB_REL, ZSC_REL, STL_REL, KEY_PREFIX, EXPECT_COLS = TYPES[args.type]
+
     src_stb = os.path.join(args.source, STB_REL)
     _, _, srows, scols, sdata = stb_read(src_stb)
     if args.source_row >= len(sdata):
@@ -302,15 +324,20 @@ def main():
     src = sdata[args.source_row]
     if not src[0]:
         sys.exit("source row %d has an empty name (unused row?)" % args.source_row)
-    if scols - 1 not in (46, 49):
-        print("WARNING: source has %d data cols (expected 46 or 49); cols 0-44 assumed classic layout" % (scols - 1))
-
     _, _, orows, ocols, odata = stb_read(os.path.join(OURS, STB_REL))
-    assert ocols - 1 == 46, "our LIST_WEAPON.STB layout changed (cols=%d)" % (ocols - 1)
+    if ocols - 1 != EXPECT_COLS:
+        sys.exit("our %s has %d data cols, expected %d -- update TYPES before importing"
+                 % (os.path.basename(STB_REL), ocols - 1, EXPECT_COLS))
+    if scols - 1 < ocols - 1:
+        sys.exit("source table is narrower (%d) than ours (%d); columns would not line up"
+                 % (scols - 1, ocols - 1))
+    if scols != ocols:
+        print("note: source has %d data cols to our %d; the extra trailing columns are dropped"
+              % (scols - 1, ocols - 1))
     new_id = orows - 1
     if new_id > 2047:
         sys.exit("new ID %d exceeds the 11-bit item number limit (2047)" % new_id)
-    new_key = ("LWEA%d" % new_id).encode("ascii")
+    new_key = ("%s%d" % (KEY_PREFIX, new_id)).encode("ascii")
 
     # name/desc from source STL via the source row's key (last col)
     name = desc = b""
@@ -334,8 +361,8 @@ def main():
     if not name:
         name = src[0]
 
-    # build our 46-col row: source cols 0-44 + our key
-    row = list(src[0:45]) + [new_key]
+    # build our row: source cols 0..n-2 + our key in the last column
+    row = list(src[0:ocols - 2]) + [new_key]
     row[1] = b""  # vestigial model-path column; the game reads the ZSC instead
     if args.icon is not None:
         row[9] = str(args.icon).encode("ascii")
@@ -383,14 +410,14 @@ def main():
 
     # verify
     if not args.dry_run:
-        _, _, vrows, _, vdata = stb_read(os.path.join(OURS, STB_REL))
-        assert vrows - 1 == new_id + 1 and vdata[new_id][45] == new_key
+        _, _, vrows, vcols, vdata = stb_read(os.path.join(OURS, STB_REL))
+        assert vrows - 1 == new_id + 1 and vdata[new_id][vcols - 2] == new_key
         vz = Zsc(os.path.join(OURS, ZSC_REL))
         assert len(vz.objects) == new_id + 1 and vz.objects[new_id][1]
         vkeys, vlangs = stl_read(os.path.join(OURS, STL_REL))
         assert vkeys[-1][0] == new_key and vlangs[0][-1][0] == name
         print("verified: STB row, ZSC object and STL entry all present")
-        print("\nDONE - restart servers, then spawn with: /item 8:%d" % new_id)
+        print("\nDONE - restart servers, then spawn with: /item %d:%d" % (ITEM_TYPE, new_id))
     else:
         print("\nDRY RUN - no files written")
 
