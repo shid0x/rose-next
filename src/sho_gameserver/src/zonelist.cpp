@@ -138,6 +138,33 @@ void
 CZoneLIST::Add_LocalNPC(CObjNPC* pObjNPC) {
     if (pObjNPC->Get_CharNO() < 1 || pObjNPC->Get_CharNO() >= g_TblNPC.row_count)
         return;
+
+    // This used to validate and then return without storing anything, so
+    // m_ppNpcLIST stayed all-NULL for the life of the process and
+    // Get_LocalNPC/Get_NpcVAR always answered NULL. That silently failed every
+    // quest trigger carrying COND_013 (the NPC binder): F_QSTCOND013 is
+    // `return NULL != Get_NpcVAR(iNpcNo)` on the server, while the client
+    // compiles the `return true` branch. So the client offered the quest and
+    // sent cli_QUEST_REQ, and the server rejected it with no feedback -- the
+    // dialog simply did nothing. 59 of our own quest-accept triggers use
+    // COND_013 (mostly PvP10 and the job-change chains) plus 355 of Oro's.
+    if (!m_ppNpcLIST)
+        return;
+    m_ppNpcLIST[pObjNPC->Get_CharNO()] = pObjNPC;
+}
+
+//-------------------------------------------------------------------------------------------------
+/// Clears an NPC out of the lookup, so a destroyed NPC (GM `/npc add` spawns are
+/// the only ones that can go away) cannot leave a dangling pointer behind.
+void
+CZoneLIST::Del_LocalNPC(CObjNPC* pObjNPC) {
+    if (!m_ppNpcLIST || !pObjNPC)
+        return;
+    int iNpcNO = pObjNPC->Get_CharNO();
+    if (iNpcNO < 1 || iNpcNO >= g_TblNPC.row_count)
+        return;
+    if (m_ppNpcLIST[iNpcNO] == pObjNPC)
+        m_ppNpcLIST[iNpcNO] = NULL;
 }
 
 CObjNPC*

@@ -36,6 +36,7 @@ public:
     void Set_WorldVAR(short nVarIDX, short nValue);
 
     void Add_LocalNPC(CObjNPC* pObjNPC);
+    void Del_LocalNPC(CObjNPC* pObjNPC);
     CObjNPC* Get_LocalNPC(int iNpcNO);
     CObjVAR* Get_NpcVAR(int iNpcNO) { return this->Get_LocalNPC(iNpcNO); }
 

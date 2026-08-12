@@ -4,6 +4,7 @@
 #include "CObjNPC.h"
 #include "GS_ThreadZONE.h"
 #include "IO_Quest.h"
+#include "ZoneLIST.h"
 
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
@@ -761,6 +762,13 @@ CObjNPC::CObjNPC() {
 }
 CObjNPC::~CObjNPC() {
     // TODO:: Set npc data to db
+
+    // Drop ourselves from the quest-system NPC lookup; see
+    // CZoneLIST::Add_LocalNPC. Zone-file NPCs live for the whole process, but a
+    // GM `/npc add` spawn can be destroyed, and COND_013 would otherwise hand
+    // out a dangling pointer as the NPC variable record.
+    if (g_pZoneLIST)
+        g_pZoneLIST->Del_LocalNPC(this);
 }
 
 //-------------------------------------------------------------------------------------------------
