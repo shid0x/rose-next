@@ -175,6 +175,26 @@ CON_LTB_REL = r"3DDATA\EVENT\ulngtb_con.ltb"
 NPC_R_WEAPON_COL, NPC_L_WEAPON_COL = 5, 6
 NPC_COPY_COLS = 43                 # 0..42 align; 43 is our own PVP-state column
 
+# Item ids the Oro quests reward that collide with different items of ours. The
+# items were imported with scripts/import-item.py, which appends rather than
+# landing on the source row, so the quest reward payloads (REWD_001, and the
+# have-item conditions COND_001/002/003) must be rewritten when the QSDs land.
+# Packed as type*1000 + number, which is how a QSD stores them.
+#
+#   6803 Doctor's Back Arms  -> 6953      6805 Hecado's Grace  -> 6955
+#   6804 Snapper Shell       -> 6954      6806 Ardemia's Grace -> 6956
+#
+# 10947 "Net" is deliberately absent. It is use-item class 313
+# (USE_ITEM_SKILL_DOING) casting skill 2897 -- a capture skill, blank in our
+# LIST_SKILL -- so importing the item alone would give a quest reward that looks
+# right and silently does nothing. It needs the skill imported alongside it.
+QUEST_ITEM_REMAP = {
+    6803: 6953,
+    6804: 6954,
+    6805: 6955,
+    6806: 6956,
+}
+
 # LIST_WEAPON columns that decide how a monster's attack *presents*. A blank
 # WEAPON_BULLET_EFFECT on a ranged monster means the client's Get_BulletNO()
 # skips Add_BULLET and the server's projectile path picks MeleeHitFrame, which
