@@ -52,6 +52,13 @@ TYPES = {
                  r"3DDATA\STB\LIST_BACK_S.STL",     "LBAC", 35),
     "faceitem": (1, r"3DDATA\STB\LIST_FACEITEM.STB", r"3DDATA\AVATAR\LIST_FACEIEM.ZSC",
                  r"3DDATA\STB\LIST_FACEITEM_S.STL", "LFAC", 34),
+    # No avatar model -- ZSC is None and the model step is skipped entirely.
+    "useitem":  (10, r"3DDATA\STB\LIST_USEITEM.STB",  None,
+                 r"3DDATA\STB\LIST_USEITEM_S.STL",  "LUSE", 28),
+    "jewel":    (7, r"3DDATA\STB\LIST_JEWEL.STB",     None,
+                 r"3DDATA\STB\LIST_JEWEL_S.STL",    "LJEM", 34),
+    "natural":  (12, r"3DDATA\STB\LIST_NATURAL.STB",  None,
+                 r"3DDATA\STB\LIST_NATURAL_S.STL",  "LNAT", 30),
 }
 
 # ---------------------------------------------------------------- STB
@@ -347,7 +354,10 @@ def main():
             skeys, slangs = stl_read(os.path.join(args.source, STL_REL))
             ki = [i for i, (k, _) in enumerate(skeys) if k == src_key]
             if ki:
-                name, desc = slangs[0][ki[0]]
+                # Block 0 is Korean in every data set seen so far; block 1 is the
+                # English text. Reading block 0 silently imports Korean names.
+                lang = 1 if len(slangs) > 1 and slangs[1][ki[0]][0] else 0
+                name, desc = slangs[lang][ki[0]]
         except FileNotFoundError:
             pass
     stb_name = src[0].decode("euc-kr", "replace")
@@ -381,19 +391,20 @@ def main():
 
     # backups
     if not args.dry_run:
-        rels = [STB_REL, ZSC_REL, STL_REL] + ([FIELD_ZSC_REL] if args.copy_field_model else [])
+        rels = [STB_REL, STL_REL] + ([ZSC_REL] if ZSC_REL else [])             + ([FIELD_ZSC_REL] if args.copy_field_model else [])
         for rel in rels:
             p = os.path.join(OURS, rel)
             bak = p + ".import-%d.bak" % new_id
             if not os.path.exists(bak):
                 shutil.copy2(p, bak)
 
-    src_zsc = Zsc(os.path.join(args.source, ZSC_REL))
-    if args.source_row >= len(src_zsc.objects):
-        sys.exit("source ZSC has no object %d" % args.source_row)
-    obj_id, files_needed = zsc_append_object(os.path.join(OURS, ZSC_REL), src_zsc, args.source_row, args.dry_run)
-    assert obj_id == new_id, "STB/ZSC index drift: row %d vs object %d" % (new_id, obj_id)
-    copy_assets(files_needed, args.source, args.dry_run)
+    if ZSC_REL:
+        src_zsc = Zsc(os.path.join(args.source, ZSC_REL))
+        if args.source_row >= len(src_zsc.objects):
+            sys.exit("source ZSC has no object %d" % args.source_row)
+        obj_id, files_needed = zsc_append_object(os.path.join(OURS, ZSC_REL), src_zsc, args.source_row, args.dry_run)
+        assert obj_id == new_id, "STB/ZSC index drift: row %d vs object %d" % (new_id, obj_id)
+        copy_assets(files_needed, args.source, args.dry_run)
 
     if args.copy_field_model:
         src_fm = int(src[10] or b"0")
@@ -412,8 +423,9 @@ def main():
     if not args.dry_run:
         _, _, vrows, vcols, vdata = stb_read(os.path.join(OURS, STB_REL))
         assert vrows - 1 == new_id + 1 and vdata[new_id][vcols - 2] == new_key
-        vz = Zsc(os.path.join(OURS, ZSC_REL))
-        assert len(vz.objects) == new_id + 1 and vz.objects[new_id][1]
+        if ZSC_REL:
+            vz = Zsc(os.path.join(OURS, ZSC_REL))
+            assert len(vz.objects) == new_id + 1 and vz.objects[new_id][1]
         vkeys, vlangs = stl_read(os.path.join(OURS, STL_REL))
         assert vkeys[-1][0] == new_key and vlangs[0][-1][0] == name
         print("verified: STB row, ZSC object and STL entry all present")

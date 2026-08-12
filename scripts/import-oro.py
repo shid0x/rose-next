@@ -22,6 +22,9 @@ revertible:
                 lump.
     --stage 5   the items the Oro quests reference -- rows, names, icons and, for
                 equippable types, the model object at the same index.
+    --stage 6   the quests themselves: 32 QSD files with their item ids rewritten,
+                the LIST_QUESTDATA rows that make the server load them, quest rows
+                and titles, and the world objects they hook.
 
 Every stage is idempotent -- re-running detects what is already in place and does
 nothing. --dry-run previews. --selftest proves every writer round-trips
@@ -186,10 +189,16 @@ NPC_COPY_COLS = 43                 # 0..42 align; 43 is our own PVP-state column
 #   6803 Doctor's Back Arms  -> 6953      6805 Hecado's Grace  -> 6955
 #   6804 Snapper Shell       -> 6954      6806 Ardemia's Grace -> 6956
 #
-# 10947 "Net" is deliberately absent. It is use-item class 313
-# (USE_ITEM_SKILL_DOING) casting skill 2897 -- a capture skill, blank in our
-# LIST_SKILL -- so importing the item alone would give a quest reward that looks
-# right and silently does nothing. It needs the skill imported alongside it.
+# "Net" (10947 -> 101113) is imported as an item but is inert: it is use-item
+# class 313 (USE_ITEM_SKILL_DOING) casting skill 2897, a capture skill that is
+# blank in our LIST_SKILL. Importing it anyway is still right -- it is used as a
+# quest *condition* as well as a reward, so without it those quests would check
+# for an item the player can never hold; and leaving 10947 unmapped would have
+# handed out our own Sundae Shop Coupon under the name "Net". Using it does
+# nothing until skill 2897 is imported, and then it starts working with no
+# further data change (the server tolerates a blank skill row here: the
+# Is_SelfSKILL / Is_TargetSKILL / SKILL_TYPE switch in gs_user.cpp all fall
+# through to a no-op).
 # The Oro quest files: 29 one-per-mob-family kill-trigger files plus the three
 # that carry the dialog quests (qp401 142 triggers, qp402 202, qu02-001 166).
 ORO_QSD_FILES = [
@@ -207,6 +216,7 @@ QUEST_ITEM_REMAP = {
     6804: 6954,
     6805: 6955,
     6806: 6956,
+    10947: 101113,      # "Net" -- see below
 }
 
 # LIST_WEAPON columns that decide how a monster's attack *presents*. A blank
@@ -2135,10 +2145,201 @@ def stage5(ours, src, dry):
     print(f"    {'total':22s} {grand_rows} rows, {grand_icons} icons")
 
 
+# ------------------------------------------------------------ stage 6: quests
+QUEST_STB_REL = r"3DDATA\STB\LIST_QUEST.STB"
+QUEST_STL_REL = r"3DDATA\STB\LIST_QUEST_S.STL"
+QUESTDATA_STB_REL = r"3DDATA\STB\LIST_QUESTDATA.STB"
+QUEST_KEY_COL = 4
+QUESTDATA_DIR = r"3Ddata\QuestData"
+
+# LIST_JEWEL 235-249 -- the "Hiria Tear" class-reward branch of QP402 -- are
+# completely empty rows in RoseZA as well, so there is nothing to import and the
+# 16 reward entries would hand out an item with no name (the nullptr class of
+# crash). They are substituted with a real jewel of ours. This is a placeholder
+# chosen for being a genuine high-value necklace, not a considered balance call;
+# change the one constant to retune.
+DEAD_JEWEL_ITEMS = {7235, 7236, 7237, 7239, 7240, 7241, 7243, 7244, 7247, 7248, 7249}
+DEAD_JEWEL_SUBSTITUTE = 7110          # Full Moon Necklace
+
+
+def qsd_quest_refs(path_or_blob):
+    """Quest ids a .QSD touches: COND_000 (has quest) and REWD_000 (add/swap)."""
+    b = (path_or_blob if isinstance(path_or_blob, (bytes, bytearray))
+         else open(path_or_blob, "rb").read())
+    o = 0
+
+    def u32():
+        nonlocal o
+        v, = struct.unpack_from("<I", b, o); o += 4; return v
+
+    def i32():
+        nonlocal o
+        v, = struct.unpack_from("<i", b, o); o += 4; return v
+
+    def skip_str():
+        nonlocal o
+        n, = struct.unpack_from("<h", b, o); o += 2 + n
+
+    out = set()
+    u32()
+    npat = u32()
+    skip_str()
+    for _ in range(npat):
+        ntrig = u32()
+        skip_str()
+        for _ in range(ntrig):
+            o += 1
+            ncond, nrew = u32(), u32()
+            skip_str()
+            for _ in range(ncond + nrew):
+                ent = o
+                esz = u32()
+                etype = i32() & 0xFFFFFF
+                if etype == 0 and esz >= 12:
+                    q, = struct.unpack_from("<i", b, ent + 8)
+                    if 0 < q < 60000:
+                        out.add(q)
+                o = ent + esz
+    return out
+
+
+def stage6(ours, src, dry):
+    print("stage 6 -- quests")
+
+    remap = dict(QUEST_ITEM_REMAP)
+    for j in DEAD_JEWEL_ITEMS:
+        remap[j] = DEAD_JEWEL_SUBSTITUTE
+
+    # --- 6a. the QSD files, with item ids rewritten on the way in
+    dst_dir = rel_path(ours, os.path.join("3DDATA", "QUESTDATA"))
+    written, all_changes, quests = 0, {}, set()
+    names_on_disk = {}
+    for f in ORO_QSD_FILES:
+        p = find_qsd(src, f)
+        if not p:
+            print(f"    !! {f} not found in the source")
+            continue
+        blob = open(p, "rb").read()
+        fixed, changed = qsd_remap_items(blob, remap)
+        for k, v in changed.items():
+            all_changes[k] = all_changes.get(k, 0) + v
+        quests |= qsd_quest_refs(fixed)
+        real = os.path.basename(p)
+        names_on_disk[f] = real
+        dp = os.path.join(dst_dir, real)
+        if os.path.isfile(dp) and open(dp, "rb").read() == fixed:
+            continue
+        written += 1
+        if not dry:
+            with open(dp, "wb") as fh:
+                fh.write(fixed)
+            # verify by re-reading: no id we remapped may survive
+            back = open(dp, "rb").read()
+            left = [sn for _, sn, _ in qsd_item_refs(back) if sn in remap]
+            if left:
+                raise SystemExit(f"VERIFY FAILED: {real} still references {left[:4]}")
+    print(f"    {'QSD files':26s} {written} written of {len(ORO_QSD_FILES)}")
+    for sn in sorted(all_changes):
+        tag = "dead jewel" if sn in DEAD_JEWEL_ITEMS else "collision"
+        print(f"        {sn} -> {remap[sn]:6d}  {all_changes[sn]:3d} refs ({tag})")
+
+    # --- 6b. register them so the server loads them
+    qd = Stb(rel_path(ours, QUESTDATA_STB_REL))
+    have = {qd.get(i, 0).decode("latin-1").strip().lower().replace("/", "\\")
+            for i in range(qd.rows)}
+    free = [i for i in range(qd.rows) if not qd.get(i, 0).strip()]
+    added = 0
+    for f in ORO_QSD_FILES:
+        real = names_on_disk.get(f)
+        if not real:
+            continue
+        entry = os.path.join(QUESTDATA_DIR, real)
+        if entry.lower() in have:
+            continue
+        if not free:
+            raise SystemExit("no free LIST_QUESTDATA.STB rows")
+        qd.set(free.pop(0), 0, entry)
+        added += 1
+    print(f"    {'LIST_QUESTDATA.STB':26s} +{added} rows (now {qd.rows} rows)")
+    if added:
+        qd.save(dry)
+
+    # --- 6c. quest rows and titles
+    src_q = Stb(rel_path(src, QUEST_STB_REL))
+    our_q = Stb(rel_path(ours, QUEST_STB_REL))
+    src_stl = Stl(rel_path(src, QUEST_STL_REL))
+    our_stl = Stl(rel_path(ours, QUEST_STL_REL))
+    lang = 1 if len(src_stl.langs) > 1 else 0
+    by_key = {k.decode("latin-1"): i for i, (k, _) in enumerate(src_stl.keys)}
+
+    quests = sorted(q for q in quests if q < src_q.rows)
+    rows, titles, clash = 0, 0, []
+    for q in quests:
+        if not src_q.occupied(q):
+            continue
+        if our_q.occupied(q):
+            clash.append(q)
+            continue
+        for c in range(min(our_q.cols, src_q.cols) - 1):
+            our_q.set(q, c, src_q.get(q, c))
+        key = f"LQUE{q:04d}"
+        our_q.set(q, QUEST_KEY_COL, key)
+        rows += 1
+        if not our_stl.has(key):
+            si = by_key.get(src_q.get(q, QUEST_KEY_COL).decode("latin-1").strip())
+            fields = src_stl.langs[lang][si] if si is not None else None
+            our_stl.append(key, q, (fields[0] if fields else b"").decode("latin-1"))
+            if fields:                      # carry description + the two extras
+                for rowset in our_stl.langs:
+                    for fi in range(1, min(len(rowset[-1]), len(fields))):
+                        rowset[-1][fi] = fields[fi]
+            titles += 1
+    print(f"    {'LIST_QUEST.STB':26s} {rows} rows written"
+          + (f", {len(clash)} already ours {clash[:6]}" if clash else ""))
+    print(f"    {'LIST_QUEST_S.STL':26s} +{titles} titles (now {len(our_stl.keys)})")
+    if rows:
+        our_q.save(dry)
+    if titles:
+        our_stl.save(dry)
+
+    # --- 6d. the world objects the quests hook (IFO lump 12)
+    src_maps, dst_maps = rel_path(src, MAPS_REL), rel_path(ours, MAPS_REL)
+    files, objs = 0, 0
+    for row, folder, _, _ in ZONES:
+        sd, dd = os.path.join(src_maps, folder), os.path.join(dst_maps, folder)
+        for name in sorted(os.listdir(sd)):
+            if not name.lower().endswith(".ifo"):
+                continue
+            sbuf, sbounds = read_ifo(os.path.join(sd, name))
+            soff, send = lump_block(sbounds, LUMP_EVENT_OBJECT)
+            if soff is None or sbuf[soff:soff + 4] == b"\0\0\0\0":
+                continue
+            dp = os.path.join(dd, name)
+            dbuf, dbounds = read_ifo(dp)
+            doff, dend = lump_block(dbounds, LUMP_EVENT_OBJECT)
+            if doff is None:
+                raise SystemExit(f"{dp}: no EVENT_OBJECT lump to fill")
+            blob = sbuf[soff:send]
+            if dbuf[doff:dend] == blob:
+                continue
+            n, = struct.unpack_from("<i", blob, 0)
+            out = build_ifo(dbounds, dbuf, {LUMP_EVENT_OBJECT: blob})
+            files += 1
+            objs += n
+            if not dry:
+                with open(dp, "wb") as fh:
+                    fh.write(out)
+                vbuf, vbounds = read_ifo(dp)
+                voff, vend = lump_block(vbounds, LUMP_EVENT_OBJECT)
+                if vbuf[voff:vend] != blob:
+                    raise SystemExit(f"VERIFY FAILED: {dp} EVENT_OBJECT lump")
+    print(f"    {'IFO event objects':26s} {objs} objects into {files} files")
+
+
 # -------------------------------------------------------------------- driver
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--stage", type=int, choices=(1, 2, 3, 4, 5), action="append",
+    ap.add_argument("--stage", type=int, choices=(1, 2, 3, 4, 5, 6), action="append",
                     help="stage to run (repeatable); omit to run them all")
     ap.add_argument("--dry-run", action="store_true", help="preview without writing")
     ap.add_argument("--selftest", action="store_true",
@@ -2160,11 +2361,11 @@ def main():
     if args.selftest:
         return 0
 
-    stages = sorted(set(args.stage or (1, 2, 3, 4, 5)))
+    stages = sorted(set(args.stage or (1, 2, 3, 4, 5, 6)))
     print()
     for s in stages:
         {1: stage1, 2: stage2, 3: stage3, 4: stage4,
-         5: stage5}[s](ours, src, args.dry_run)
+         5: stage5, 6: stage6}[s](ours, src, args.dry_run)
         print()
 
     if args.dry_run:
