@@ -182,6 +182,23 @@ struct tagSkillAbility {
         short m_nSkillINDEX[MAX_LEARNED_SKILL_CNT];
         short m_nPageIndex[MAX_LEARNED_SKILL_PAGE][MAX_LEARNED_SKILL_PER_PAGE];
     };
+    /// Clamp a raw SKILL_TAB_TYPE into a real page index.
+    ///
+    /// SKILL_TAB_TYPE is an unsanitised STB value and the data carries plenty of
+    /// tab types outside the four pages this client has: LIST_SKILL.STB holds 36
+    /// rows at tab 41 and 35 at tab 51, plus singletons at 24/31/32 (evo-era
+    /// skill window layouts with more tabs). Indexing m_nPageIndex with one of
+    /// those reads ~2.4 KB past a 240-byte array, and worse, Skill_FindEmptySlot
+    /// returns tab * MAX_LEARNED_SKILL_PER_PAGE + i, so a tab-41 skill yields
+    /// slot 1230+ which Skill_LEARN then writes into a 120-entry array. Nothing
+    /// granted one of those rows until the Oro import, which learns skills 2880
+    /// and 2881 (tab 41) as fate markers.
+    static short PageOf(short nTabTYPE) {
+        if (nTabTYPE < 0 || nTabTYPE >= MAX_LEARNED_SKILL_PAGE)
+            return 0;
+        return nTabTYPE;
+    }
+
     void Init() {
         ::ZeroMemory(m_nSkillINDEX, sizeof(short) * MAX_LEARNED_SKILL_CNT);
 

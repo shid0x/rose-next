@@ -1083,7 +1083,7 @@ CUserDATA::Skill_GetAbilityValue(short nAbilityType) {
 short
 CUserDATA::Skill_FindEmptySlot(short nSkillIDX) {
     short nSlot = -1;
-    char cPageIDX = SKILL_TAB_TYPE(nSkillIDX);
+    char cPageIDX = (char)tagSkillAbility::PageOf(SKILL_TAB_TYPE(nSkillIDX));
 
     for (short nI = 0; nI < MAX_LEARNED_SKILL_PER_PAGE; nI++) {
         if (nSkillIDX == m_Skills.m_nPageIndex[cPageIDX][nI])
@@ -1112,7 +1112,7 @@ CUserDATA::Skill_FindLearnedLevel(short nSkillIDX) {
 
 short
 CUserDATA::Skill_FindLearnedSlot(short nSkillIDX) {
-    char cPageIDX = SKILL_TAB_TYPE(nSkillIDX);
+    char cPageIDX = (char)tagSkillAbility::PageOf(SKILL_TAB_TYPE(nSkillIDX));
     short nI, n1LevSkillIDX = SKILL_1LEV_INDEX(nSkillIDX);
 
     for (nI = 0; nI < MAX_LEARNED_SKILL_PER_PAGE; nI++) {

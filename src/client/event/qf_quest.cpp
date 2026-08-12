@@ -9,6 +9,14 @@
 #include "Network/CNetwork.h"
 #include "Util/LogWnd.h"
 
+/// Marker skills the Oro content uses to record which fate a player follows. They
+/// carry no stats or effect -- LIST_SKILL.STB gives them a name, an icon and nothing
+/// else. Granted by REWD_014 on the fate-choice triggers, read back by COND_009.
+enum {
+    SKILL_FATE_ARUA = 2880,
+    SKILL_FATE_HEBARN = 2881,
+};
+
 //-------------------------------------------------------------------------------------------------
 /// 퀘스트 트리거 조건을 체크한다... AddCODE: by icarus
 int
@@ -429,21 +437,26 @@ QF_getUserSwitch(int iSwitchNO) {
 //-------------------------------------------------------------------------------------------------
 /// Evolution-era dialog hooks. See the block comment in Quest_FUNC.h -- these exist
 /// so the Oro conversations' compiled Lua can call them without the chunk erroring
-/// out. There is no Arua/Hebarn fate system here, so the queries answer "none" and
-/// the dialogs take their neutral branch.
-int
-QF_hasFate() {
-    return 0;
-}
-
+/// out.
+///
+/// The Oro content asks "which fate does this player follow?" two different ways and
+/// both have to give the same answer, or a dialog offers a branch whose trigger the
+/// server then refuses. The QSD way is COND_009 ("has skill 2880 / 2881") behind the
+/// Arua_Skill / Hebarn_Skill triggers; these engine calls are the other way. So read
+/// the same learned skills rather than a separate flag.
 int
 QF_hasAruaFate() {
-    return 0;
+    return (g_pAVATAR && g_pAVATAR->Skill_FindLearnedSlot(SKILL_FATE_ARUA) >= 0) ? 1 : 0;
 }
 
 int
 QF_hasHebarnFate() {
-    return 0;
+    return (g_pAVATAR && g_pAVATAR->Skill_FindLearnedSlot(SKILL_FATE_HEBARN) >= 0) ? 1 : 0;
+}
+
+int
+QF_hasFate() {
+    return (QF_hasAruaFate() || QF_hasHebarnFate()) ? 1 : 0;
 }
 
 /// Quest-log toasts in the Evolution client; our quest UI announces itself already.

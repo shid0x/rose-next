@@ -622,8 +622,10 @@ F_QSTCOND009(uniQstENTITY* pCOND, tQST_PARAM* pPARAM) {
     */
     short nI, nT, nTab1, nTab2;
 
-    nTab1 = SKILL_TAB_TYPE(pCOND->m_Cond009.iSkillSN1);
-    nTab2 = SKILL_TAB_TYPE(pCOND->m_Cond009.iSkillSN2);
+    nTab1 = tagSkillAbility::PageOf(SKILL_TAB_TYPE(pCOND->m_Cond009.iSkillSN1));
+    nTab2 = tagSkillAbility::PageOf(SKILL_TAB_TYPE(pCOND->m_Cond009.iSkillSN2));
+    if (nTab2 < nTab1)
+        nTab2 = nTab1;
 
     if (0 == pCOND->m_Cond009.btOp) {
         // ������ üũ
@@ -631,7 +633,7 @@ F_QSTCOND009(uniQstENTITY* pCOND, tQST_PARAM* pPARAM) {
             for (nI = 0; nI < MAX_LEARNED_SKILL_PER_PAGE; nI++) {
                 if (pPARAM->m_pOWNER->m_Skills.m_nPageIndex[nT][nI] >= pCOND->m_Cond009.iSkillSN1
                     && pPARAM->m_pOWNER->m_Skills.m_nPageIndex[nT][nI]
-                        <= pCOND->m_Cond009.iSkillSN1) {
+                        <= pCOND->m_Cond009.iSkillSN2) {
 #ifndef __SERVER
                     //--------------------------------------------------------------------------------
                     LOGWAR(
@@ -650,7 +652,7 @@ F_QSTCOND009(uniQstENTITY* pCOND, tQST_PARAM* pPARAM) {
     for (nT = nTab1; nT <= nTab2; nT++) {
         for (nI = 0; nI < MAX_LEARNED_SKILL_PER_PAGE; nI++) {
             if (pPARAM->m_pOWNER->m_Skills.m_nPageIndex[nT][nI] >= pCOND->m_Cond009.iSkillSN1
-                && pPARAM->m_pOWNER->m_Skills.m_nPageIndex[nT][nI] <= pCOND->m_Cond009.iSkillSN1) {
+                && pPARAM->m_pOWNER->m_Skills.m_nPageIndex[nT][nI] <= pCOND->m_Cond009.iSkillSN2) {
                 return true;
             }
         }
