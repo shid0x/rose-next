@@ -128,7 +128,10 @@ ORO_SKY_ROW = 10
 # kill/dead blank. An unresolved trigger is inert, but a name no QSD defines is a
 # landmine for whoever adds Oro quests later.
 ZONE_TRIGGER_COLS = (22, 23, 24)
-ZONE_TRIGGERS = (b"PvP1301-340", b"", b"")
+# Our own join trigger (see ORO_ENTRY_TRIGGER below). It carries the same ability
+# reward the shared PvP1301-340 trigger applies, so nothing is lost by not using
+# that one, and additionally sets the switch the Oro quest chain gates on.
+ZONE_TRIGGERS = (b"Oro-EnterPlanet", b"", b"")
 
 # --- map-editor tile palettes -------------------------------------------------
 # ZONETYPEINFO.STB maps a map's ZoneType -- an int in block 0 of its .ZON -- to
@@ -2161,24 +2164,38 @@ QUESTDATA_DIR = r"3Ddata\QuestData"
 DEAD_JEWEL_ITEMS = {7235, 7236, 7237, 7239, 7240, 7241, 7243, 7244, 7247, 7248, 7249}
 DEAD_JEWEL_SUBSTITUTE = 7110          # Full Moon Necklace
 
-# Conditions to remove on import, as (trigger, condition type, first payload word).
+# The Oro chain opens on trigger 4410-01 ("The New World", offered by Nova), and
+# the gate is user switch 192. It is checked in TWO places: as COND_014 on the
+# trigger, and again inside the dialog's compiled Lua -- EM73-001's TA_4410_Start
+# calls QF_getUserSwitch(192) before it will show the menu item. Confirmed by
+# running that bytecode under thirdparty lua4.exe with instrumented stubs: with
+# the switch at 0 it returns 0 after three calls; at 1 it returns 1.
 #
-# The Oro chain opens on trigger 4410-01 ("The New World", offered by Nova), which
-# requires user switch 192 == 1. Nothing in Oro sets that switch: it is set by
-# trigger 4409-02 in QP101.QSD -- the Junon Pyramid chain, quest 4409 "The Royals
-# of Oblivion (9)". We have QP101.QSD but the older retail version without those
-# triggers, and we do not have the Pyramid maps at all, so the switch can never
-# become 1 and the entire planet's quest line is unreachable.
+# So removing the condition is not enough -- the "!" appears (that evaluator uses
+# the QSD path) while the dialog still offers nothing. The Lua is bytecode and
+# cannot be edited, so the switch has to genuinely be set.
 #
-# Removing that one condition decouples Oro from a prerequisite we cannot ship.
-# Everything downstream is untouched: switches 193-247 are Oro's own progression
-# state, set by its own quests as you advance.
+# Switch 192 is normally set by trigger 4409-02 in QP101.QSD, part of the Junon
+# Pyramid chain: we have the older QP101 without it and no Pyramid maps. Instead
+# a trigger is appended to QP401.QSD and hung off the Oro zone rows' join trigger
+# (ZONE_JOIN_TRIGGER, col 22), which classUSER runs on entering a zone
+# (gs_user.cpp, guarded only by FLAG_CHEAT_INVINCIBLE -- so a GM with
+# invincibility on will NOT fire it).
 #
-# If the Junon Pyramid is ever imported (phase 7), drop this entry so the chain
-# gates properly again.
-QSD_DROP_CONDITIONS = [
-    ("4410-01", 14, 192),             # COND_014 user switch 192 == 1
+# Entities are copied wholesale from real triggers rather than hand-encoded, so
+# the on-disk shapes are exactly what the server already parses.
+ORO_ENTRY_TRIGGER = "Oro-EnterPlanet"
+ORO_ENTRY_PATTERN = "OroEntry"
+ORO_ENTRY_QSD = "qp401.qsd"
+# (source trigger, entity type, [(field offset in payload, struct fmt, value)])
+ORO_ENTRY_ENTITIES = [
+    # the ability reward the shared PvP1301-340 join trigger applies, verbatim
+    ("PvP1301-340", 0x01000000 | 3, []),
+    # ...plus switch 192 = 1, templated off 4411-02's "set switch 193" reward
+    ("4411-02", 0x01000000 | 15, [(0, "<hB", (192, 1))]),
 ]
+
+QSD_DROP_CONDITIONS = []
 
 
 def qsd_drop_conditions(blob, drops):
@@ -2232,6 +2249,86 @@ def qsd_drop_conditions(blob, drops):
     return bytes(b), removed
 
 
+def qsd_find_entity(blob, trigger, etype):
+    """Raw bytes of the first entity of `etype` inside `trigger`, or None."""
+    b, o = blob, 4
+    npat, = struct.unpack_from("<I", b, o); o += 4
+    n, = struct.unpack_from("<h", b, o); o += 2 + n
+    for _ in range(npat):
+        ntrig, = struct.unpack_from("<I", b, o); o += 4
+        n, = struct.unpack_from("<h", b, o); o += 2 + n
+        for _ in range(ntrig):
+            o += 1
+            ncond, = struct.unpack_from("<I", b, o); o += 4
+            nrew, = struct.unpack_from("<I", b, o); o += 4
+            n, = struct.unpack_from("<h", b, o); o += 2
+            name = b[o:o + n].rstrip(b"\0").decode("latin-1"); o += n
+            for _ in range(ncond + nrew):
+                ent = o
+                esz, = struct.unpack_from("<I", b, o)
+                t, = struct.unpack_from("<i", b, o + 4)
+                if name == trigger and t == etype:
+                    return b[ent:ent + esz]
+                o = ent + esz
+    return None
+
+
+def qsd_has_trigger(blob, name):
+    b, o = blob, 4
+    npat, = struct.unpack_from("<I", b, o); o += 4
+    n, = struct.unpack_from("<h", b, o); o += 2 + n
+    for _ in range(npat):
+        ntrig, = struct.unpack_from("<I", b, o); o += 4
+        n, = struct.unpack_from("<h", b, o); o += 2 + n
+        for _ in range(ntrig):
+            o += 1
+            ncond, = struct.unpack_from("<I", b, o); o += 4
+            nrew, = struct.unpack_from("<I", b, o); o += 4
+            n, = struct.unpack_from("<h", b, o); o += 2
+            if b[o:o + n].rstrip(b"\0").decode("latin-1") == name:
+                return True
+            o += n
+            for _ in range(ncond + nrew):
+                esz, = struct.unpack_from("<I", b, o)
+                o += esz
+    return False
+
+
+def qsd_pstr(sv):
+    v = sv.encode("latin-1") + b"\0"
+    return struct.pack("<h", len(v)) + v
+
+
+def qsd_append_entry_trigger(blob, sources):
+    """Append a one-trigger pattern whose rewards are copied from real entities.
+
+    Appending is safe for the same reason removing is: the format has no internal
+    offsets, and the pattern count lives in a u32 at offset 4.
+    """
+    if qsd_has_trigger(blob, ORO_ENTRY_TRIGGER):
+        return blob, False
+    ents = []
+    for trig, etype, patches in ORO_ENTRY_ENTITIES:
+        tmpl = None
+        for src_blob in sources:
+            tmpl = qsd_find_entity(src_blob, trig, etype)
+            if tmpl:
+                break
+        if not tmpl:
+            raise SystemExit(f"no template entity: {trig} type 0x{etype:08x}")
+        e = bytearray(tmpl)
+        for off, fmt, vals in patches:
+            struct.pack_into(fmt, e, 8 + off, *vals)
+        ents.append(bytes(e))
+    trig = (bytes([0]) + struct.pack("<II", 0, len(ents))
+            + qsd_pstr(ORO_ENTRY_TRIGGER) + b"".join(ents))
+    out = bytearray(blob)
+    npat, = struct.unpack_from("<I", out, 4)
+    struct.pack_into("<I", out, 4, npat + 1)
+    out += struct.pack("<I", 1) + qsd_pstr(ORO_ENTRY_PATTERN) + trig
+    return bytes(out), True
+
+
 def qsd_quest_refs(path_or_blob):
     """Quest ids a .QSD touches: COND_000 (has quest) and REWD_000 (add/swap)."""
     b = (path_or_blob if isinstance(path_or_blob, (bytes, bytearray))
@@ -2283,6 +2380,7 @@ def stage6(ours, src, dry):
     # --- 6a. the QSD files, with item ids rewritten on the way in
     dst_dir = rel_path(ours, os.path.join("3DDATA", "QUESTDATA"))
     written, all_changes, quests, gates_dropped = 0, {}, set(), []
+    added_trigger = None
     names_on_disk = {}
     for f in ORO_QSD_FILES:
         p = find_qsd(src, f)
@@ -2293,6 +2391,12 @@ def stage6(ours, src, dry):
         blob, dropped = qsd_drop_conditions(blob, QSD_DROP_CONDITIONS)
         for d in dropped:
             gates_dropped.append((f, d))
+        if f == ORO_ENTRY_QSD:
+            others = [open(find_qsd(ours, x) or find_qsd(src, x), "rb").read()
+                      for x in ("PVP13-01.QSD",)]
+            blob, made = qsd_append_entry_trigger(blob, [blob] + others)
+            if made:
+                added_trigger = f"{ORO_ENTRY_TRIGGER} (sets switch 192) into {f}"
         fixed, changed = qsd_remap_items(blob, remap)
         for k, v in changed.items():
             all_changes[k] = all_changes.get(k, 0) + v
@@ -2314,6 +2418,8 @@ def stage6(ours, src, dry):
     print(f"    {'QSD files':26s} {written} written of {len(ORO_QSD_FILES)}")
     for f, (tname, ct, val) in gates_dropped:
         print(f"        dropped COND_{ct:03d} ({val}) from {tname} in {f}")
+    if added_trigger and written:
+        print(f"        added trigger {added_trigger}")
     for sn in sorted(all_changes):
         tag = "dead jewel" if sn in DEAD_JEWEL_ITEMS else "collision"
         print(f"        {sn} -> {remap[sn]:6d}  {all_changes[sn]:3d} refs ({tag})")
