@@ -15,7 +15,11 @@ struct tagSavedDAMAGE {
     DWORD m_dwInsertTIME;
     DWORD m_dwUpdateTIME;
     int m_iObjectIDX;
-    int m_iDamage;
+    // Accumulated damage while the mob is alive, then reused by Give_EXP to hold that
+    // attacker's EXP share and the party sum. __int64 for the EXP role: a single
+    // high-level Oro kill is worth ~182M at world EXP rate 100, so a party sum
+    // overflows int32 once the rate is raised.
+    __int64 m_iDamage;
 };
 
 //-------------------------------------------------------------------------------------------------

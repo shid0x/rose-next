@@ -348,7 +348,7 @@ CParty::SendPartyLEVnEXP(classUSER* pUSER, BYTE bitLevelUP) {
 #define PARTY_EXP_SHARED_RANGE 5000
 
 bool
-CParty::AddEXP(CObjMOB* pMobCHAR, int iTotalEXP, int iPartyExpA, int iPartyExpB) {
+CParty::AddEXP(CObjMOB* pMobCHAR, __int64 iTotalEXP, int iPartyExpA, int iPartyExpB) {
     classUSER* pNearUSER[MAX_PARTY_MEMBERS];
     int iD, iNearUSER = 0;
     bool bFindOwner = false;
@@ -373,13 +373,13 @@ CParty::AddEXP(CObjMOB* pMobCHAR, int iTotalEXP, int iPartyExpA, int iPartyExpB)
         x
 #endif
         if (iNearUSER > 1) { // 파티로 솔로링하는건 안돼~~
-            int iEXP;
+            __int64 iEXP;
             if (this->m_btPartyRULE & BIT_PARTY_RULE_EXP_PER_PLAYER) {
                 // 개인 레벨에 따라 분배...
                 for (iD = 0; iD < iNearUSER; iD++) {
-                    iEXP = (int)((iTotalEXP * (m_btPartyLEV + 101))
+                    iEXP = (iTotalEXP * (m_btPartyLEV + 101))
                         * (pNearUSER[iD]->Get_LEVEL() + 35 - m_iAverageLEV) / (iNearUSER * 4 + 1)
-                        / 700);
+                        / 700;
                     if (iEXP > 0) {
                         pNearUSER[iD]->Add_EXP(iEXP, true, pMobCHAR->Get_INDEX());
                     }
@@ -388,7 +388,7 @@ CParty::AddEXP(CObjMOB* pMobCHAR, int iTotalEXP, int iPartyExpA, int iPartyExpB)
                 }
             } else {
                 // 파티원에게 균등 분배...
-                iEXP = (int)((iTotalEXP * (this->m_btPartyLEV + 101)) / (iNearUSER * 4 + 1) / 20);
+                iEXP = (iTotalEXP * (this->m_btPartyLEV + 101)) / (iNearUSER * 4 + 1) / 20;
                 if (iEXP > 0) {
                     for (iD = 0; iD < iNearUSER; iD++) {
                         pNearUSER[iD]->Add_EXP(iEXP, true, pMobCHAR->Get_INDEX());

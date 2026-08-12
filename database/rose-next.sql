@@ -114,7 +114,7 @@ CREATE TABLE "public"."character" (
     "face_id" integer DEFAULT 1 NOT NULL,
     "hair_id" integer DEFAULT 1 NOT NULL,
     "level" smallint DEFAULT 1 NOT NULL,
-    "exp" integer DEFAULT 0 NOT NULL,
+    "exp" bigint DEFAULT 0 NOT NULL,
     "hp" integer DEFAULT 50 NOT NULL,
     "mp" integer DEFAULT 40 NOT NULL,
     "stamina" integer DEFAULT 5000 NOT NULL,

@@ -95,7 +95,9 @@ public:
 #endif
     }
 
-    bool AddEXP(CObjMOB* pMobCHAR, int iTotalEXP, int iPartyExpA, int iPartyExpB);
+    // iTotalEXP is __int64: the internal "* (m_btPartyLEV + 101)" scaling overflows int32
+    // above ~17.7M, and a high-level Oro kill is worth far more than that.
+    bool AddEXP(CObjMOB* pMobCHAR, __int64 iTotalEXP, int iPartyExpA, int iPartyExpB);
 
     bool Change_PartyOWNER(classUSER* pNewOWNER, BYTE btReply = PARTY_REPLY_CHANGE_OWNER);
     bool Change_ObjectIDX(classUSER* pUSER);

@@ -295,7 +295,7 @@ void
 CObjUSER::Add_EXP(short nExp) {
     m_GrowAbility.m_lEXP += nExp;
 
-    int iNeedEXP = this->Get_NeedEXP(this->Get_LEVEL());
+    __int64 iNeedEXP = this->Get_NeedEXP(this->Get_LEVEL());
     bool bLevelUp = false;
 
     while (m_GrowAbility.m_lEXP >= iNeedEXP) {

@@ -227,7 +227,8 @@ CObjMOB::Save_Damage(int iAttackerIDX, int iDamage) {
         if (this->m_SavedDAMAGED[nI].m_iObjectIDX == iAttackerIDX) {
             this->m_SavedDAMAGED[nI].m_dwUpdateTIME = dwCurTIME;
             this->m_SavedDAMAGED[nI].m_iDamage += iDamage;
-            return this->m_SavedDAMAGED[nI].m_iDamage;
+            // Narrowing is safe here: in the damage role the field is bounded by mob HP.
+            return static_cast<int>(this->m_SavedDAMAGED[nI].m_iDamage);
         }
 
         if (dwCurTIME - this->m_SavedDAMAGED[nI].m_dwUpdateTIME >= EXPIRED_DAMAGED_TIME) {
@@ -310,7 +311,7 @@ CObjMOB::Give_EXP() {
 
     DWORD dwCurTIME = (this->GetZONE())->GetCurrentTIME();
     short nI;
-    int iEXP;
+    __int64 iEXP;
     for (nI = 0; nI < this->m_nSavedDamageCNT; nI++) {
         if (this->m_SavedDAMAGED[nI].m_dwInsertTIME) {
             if (dwCurTIME - this->m_SavedDAMAGED[nI].m_dwUpdateTIME > IGNORE_DAMAGED_TIME) {

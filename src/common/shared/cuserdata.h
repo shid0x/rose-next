@@ -648,7 +648,8 @@ public:
     short m_nPassiveAttackSpeed;
 
 #ifndef __SERVER
-    int m_iAppliedPenaltyEXP;
+    // __int64 because Get_NeedRawEXP passes int32 at level 215 (see game_config.h MAX_LEVEL).
+    __int64 m_iAppliedPenaltyEXP;
 #endif
 
 #ifdef __SERVER
@@ -796,20 +797,22 @@ public:
     void Set_PenalEXP(BYTE btAddPercent) {
         if (this->GetCur_LEVEL() >= 10) {
             // 10렙 이상이면 페널티 적용..
-            int iNeedEXP = static_cast<int32_t>(CCal::Get_NeedRawEXP(m_GrowAbility.m_nLevel));
-            int iPenalEXP = (int)(iNeedEXP * btAddPercent / 100.f);
+            // Integer math, not float: above level ~200 the requirement exceeds a float's
+            // 24-bit mantissa and "/ 100.f" would quantise the penalty by thousands.
+            // Keep this in step with the server copy in sho_gameserver/src/cobjavt.h.
+            __int64 iNeedEXP = CCal::Get_NeedRawEXP(m_GrowAbility.m_nLevel);
+            __int64 iPenalEXP = iNeedEXP * btAddPercent / 100;
             m_iAppliedPenaltyEXP = iPenalEXP;
 
             if (m_GrowAbility.m_lEXP >= iPenalEXP) {
                 m_GrowAbility.m_lEXP -= iPenalEXP;
             } else {
-                iPenalEXP -= static_cast<int32_t>(m_GrowAbility.m_lEXP);
+                iPenalEXP -= m_GrowAbility.m_lEXP;
                 m_GrowAbility.m_lPenalEXP += iPenalEXP;
                 m_GrowAbility.m_lEXP = 0;
 
                 if (m_GrowAbility.m_lPenalEXP > DIV02(iNeedEXP)) {
-                    m_iAppliedPenaltyEXP -=
-                        (DIV02(iNeedEXP) - static_cast<int32_t>(m_GrowAbility.m_lPenalEXP));
+                    m_iAppliedPenaltyEXP -= (DIV02(iNeedEXP) - m_GrowAbility.m_lPenalEXP);
                     m_GrowAbility.m_lPenalEXP = DIV02(iNeedEXP);
                 }
             }

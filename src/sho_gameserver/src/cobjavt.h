@@ -330,7 +330,8 @@ public:
 
     bool Is_ClanMASTER(void) { return this->GetClanPOS() >= GPOS_MASTER; }
 
-    int m_iAppliedPenaltyEXP;
+    // __int64 because Get_NeedRawEXP passes int32 at level 215 (see game_config.h MAX_LEVEL).
+    __int64 m_iAppliedPenaltyEXP;
     BYTE m_btRideMODE;
     int m_iLinkedCartObjIDX; // 존이 동시에 바꿈
     int m_iLinkedCartUsrIDX; // 접속 종료시까지 바뀌지 않음
@@ -395,8 +396,10 @@ public:
     void Set_PenalEXP(BYTE btAddPercent) {
         if (this->GetCur_LEVEL() >= 10) {
             // 10렙 이상이면 페널티 적용..
-            int iNeedEXP = CCal::Get_NeedRawEXP(m_GrowAbility.m_nLevel);
-            int iPenalEXP = (int)(iNeedEXP * btAddPercent / 100.f);
+            // Integer math, not float: above level ~200 the requirement exceeds a float's
+            // 24-bit mantissa and "/ 100.f" would quantise the penalty by thousands.
+            __int64 iNeedEXP = CCal::Get_NeedRawEXP(m_GrowAbility.m_nLevel);
+            __int64 iPenalEXP = iNeedEXP * btAddPercent / 100;
 
             m_iAppliedPenaltyEXP = iPenalEXP;
             if (m_GrowAbility.m_lEXP >= iPenalEXP) {
@@ -415,7 +418,7 @@ public:
     void Cancel_PenalEXP(BYTE btPercent) {
         if (this->GetCur_LEVEL() >= 10 && m_iAppliedPenaltyEXP > 0) {
             // 10렙 이상이면 적용했던 페널티 해제...
-            m_iAppliedPenaltyEXP = (int)(m_iAppliedPenaltyEXP * btPercent / 100.f);
+            m_iAppliedPenaltyEXP = m_iAppliedPenaltyEXP * btPercent / 100;
             if (m_iAppliedPenaltyEXP) {
                 m_GrowAbility.m_lEXP += m_iAppliedPenaltyEXP;
             }

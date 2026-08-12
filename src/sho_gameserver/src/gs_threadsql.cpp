@@ -623,7 +623,7 @@ GS_CThreadSQL::Proc_cli_SELECT_CHAR(tagQueryDATA* pSqlPACKET) {
     tagGrowAbility grow_ability;
     grow_ability.Init();
     grow_ability.m_nLevel = char_res.get_int32(0, COL_LEVEL);
-    grow_ability.m_lEXP = char_res.get_int32(0, COL_EXP);
+    grow_ability.m_lEXP = char_res.get_int64(0, COL_EXP);
     grow_ability.m_nHP = char_res.get_int32(0, COL_HP);
     grow_ability.m_nMP = char_res.get_int32(0, COL_MP);
     grow_ability.m_nBonusPoint = char_res.get_int32(0, COL_STAT_POINTS);

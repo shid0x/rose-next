@@ -69,8 +69,12 @@ CCal::Get_NeedRawEXP(int iLevel) {
         return static_cast<int64_t>(((iLevel - 67) * (iLevel - 20) * (iLevel - 10) * 6.f));
     }
 
-    return static_cast<int64_t>(
-        (iLevel - 90) * (iLevel - 120) * (iLevel - 60) * (iLevel - 170) * (iLevel - 188));
+    // int64 arithmetic all the way through. Casting only the finished product (as this
+    // line did while the branch was unreachable dead code) overflows int32 from level
+    // 215 up: 16 of the levels between 215 and 240 came out negative, and a negative
+    // requirement satisfies the Add_EXP loop condition immediately.
+    const int64_t lLevel = iLevel;
+    return (lLevel - 90) * (lLevel - 120) * (lLevel - 60) * (lLevel - 170) * (lLevel - 188);
 }
 
 //-------------------------------------------------------------------------------------------------

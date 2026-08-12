@@ -5,7 +5,7 @@ namespace Rose {
 namespace GameStaticConfig {
 const char* const NAME = "ROSE Next";
 
-constexpr uint8_t MAX_LEVEL = 180;
+constexpr uint8_t MAX_LEVEL = 240;
 constexpr uint16_t MAX_STAT = 300;
 constexpr uint16_t MAX_STAMINA = 5000;
 constexpr uint32_t MAX_DAMAGE = 9999;
