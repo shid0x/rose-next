@@ -20,6 +20,8 @@ revertible:
     --stage 4   NPCs: LIST_NPC rows, models, .CON dialogs, the LIST_EVENT rows
                 that make them clickable, their ulngtb_con.ltb text, and the NPC
                 lump.
+    --stage 5   the items the Oro quests reference -- rows, names, icons and, for
+                equippable types, the model object at the same index.
 
 Every stage is idempotent -- re-running detects what is already in place and does
 nothing. --dry-run previews. --selftest proves every writer round-trips
@@ -57,7 +59,7 @@ After running: rebake the client VFS, and restart the servers for stages 1-3
 
 File formats this script writes are documented at their reader/writer functions.
 """
-import argparse, io, os, re, shutil, struct, sys
+import argparse, io, os, re, shutil, struct, subprocess, sys, tempfile
 
 NUL = b"\x00"
 ABS_ASSET_RE = re.compile(rb"3DDATA[\\/][0-9A-Za-z_\\/. -]+?\.(?:ptl|dds|tga|zms)", re.I)
@@ -188,6 +190,18 @@ NPC_COPY_COLS = 43                 # 0..42 align; 43 is our own PVP-state column
 # (USE_ITEM_SKILL_DOING) casting skill 2897 -- a capture skill, blank in our
 # LIST_SKILL -- so importing the item alone would give a quest reward that looks
 # right and silently does nothing. It needs the skill imported alongside it.
+# The Oro quest files: 29 one-per-mob-family kill-trigger files plus the three
+# that carry the dialog quests (qp401 142 triggers, qp402 202, qu02-001 166).
+ORO_QSD_FILES = [
+    "qp401.qsd", "qp402.qsd", "qu02-001.qsd",
+] + [f"qn-{x}.qsd" for x in (
+    "2177", "2197", "2198", "2199", "2200", "2201", "2202", "2203", "2204",
+    "2205", "2206", "2207", "2211", "2215", "2218", "2225",
+    "desertscavenger", "devourer", "devourerboss", "dryscorpion",
+    "fierysnapperboss", "goldenscorpion", "mastyx", "mastyxboss",
+    "mastyxleader", "stingerscorpion", "terrasaurus", "terrasaurusboss",
+    "terrasaurusleader")]
+
 QUEST_ITEM_REMAP = {
     6803: 6953,
     6804: 6954,
@@ -693,6 +707,92 @@ def effect_chain(efts, src):
                 queue.append(os.path.join(PARTICLE_TEXTURE_DIR,
                                           hit.group().decode("latin-1")))
     return out
+
+
+# -------------------------------------------------------------------- QSD I/O
+# .QSD layout (mirrors src/tools/quest-editor/src/qsd.rs):
+#     u32 size_field; u32 pattern_count; str desc
+#     per pattern: u32 trigger_count; str name
+#     per trigger: u8 check_next; u32 cond_count; u32 rew_count; str name
+#                  then (cond_count + rew_count) entities:
+#                      u32 size; i32 type; u8[size-8] payload
+# `str` is i16 length + bytes.
+#
+# Only three entity types carry an item id (io_quest.h): COND_004 holds a count
+# followed by STR_ITEM_DATA records, REWD_001 and REWD_032 hold one directly.
+# COND_001/002/003 are quest *variables* and abilities -- reading those as items
+# yields plausible-looking nonsense, which is how an earlier pass mis-counted the
+# dependencies. The STR_ITEM_DATA stride is derived from the entity size rather
+# than assumed, since on-disk layout need not match C struct padding.
+QSD_COND_ITEM, QSD_REWD_ITEM, QSD_REWD_ITEM2 = 4, 1, 32
+
+
+def find_qsd(base, name):
+    root = os.path.join(base, "3DDATA", "QUESTDATA")
+    for r, _, fs in os.walk(root):
+        for f in fs:
+            if f.lower() == name.lower():
+                return os.path.join(r, f)
+    return None
+
+
+def qsd_item_refs(path_or_blob):
+    """-> [(offset_of_the_u32_item_id, item_sn, 'condition'|'reward')]"""
+    b = (path_or_blob if isinstance(path_or_blob, (bytes, bytearray))
+         else open(path_or_blob, "rb").read())
+    o = 0
+
+    def u32():
+        nonlocal o
+        v, = struct.unpack_from("<I", b, o); o += 4; return v
+
+    def i32():
+        nonlocal o
+        v, = struct.unpack_from("<i", b, o); o += 4; return v
+
+    def skip_str():
+        nonlocal o
+        n, = struct.unpack_from("<h", b, o); o += 2 + n
+
+    out = []
+    u32()
+    npat = u32()
+    skip_str()
+    for _ in range(npat):
+        ntrig = u32()
+        skip_str()
+        for _ in range(ntrig):
+            o += 1                                   # check_next
+            ncond, nrew = u32(), u32()
+            skip_str()
+            for kind, cnt in (("condition", ncond), ("reward", nrew)):
+                for _ in range(cnt):
+                    ent = o
+                    esz = u32()
+                    etype = i32() & 0xFFFFFF
+                    body = ent + 8
+                    if kind == "condition" and etype == QSD_COND_ITEM:
+                        n, = struct.unpack_from("<i", b, body)
+                        stride = (esz - 12) // n if n > 0 else 0
+                        for i in range(max(0, n)):
+                            p = body + 4 + i * stride
+                            out.append((p, struct.unpack_from("<I", b, p)[0], kind))
+                    elif kind == "reward" and etype in (QSD_REWD_ITEM, QSD_REWD_ITEM2):
+                        out.append((body, struct.unpack_from("<I", b, body)[0], kind))
+                    o = ent + esz
+    return out
+
+
+def qsd_remap_items(blob, remap):
+    """Rewrite item ids in place. Fixed-size u32 pokes, so the file length and
+    every offset in it are unchanged -- no structural rewrite is involved."""
+    out = bytearray(blob)
+    changed = {}
+    for off, sn, _ in qsd_item_refs(blob):
+        if sn in remap:
+            struct.pack_into("<I", out, off, remap[sn])
+            changed[sn] = changed.get(sn, 0) + 1
+    return bytes(out), changed
 
 
 # -------------------------------------------------------------------- CHR I/O
@@ -1821,10 +1921,224 @@ def stage4(ours, src, dry):
     print(f"    {'IFO npc lumps':26s} {placed} NPCs into {files} files")
 
 
+# --------------------------------------------------------- stage 5: item deps
+# The Oro quests reference 68 distinct items. Most land on rows that are *blank*
+# here, so they import at their original ids and the quest payloads stay valid;
+# only the few whose rows we already use need remapping (QUEST_ITEM_REMAP).
+#
+# Item tables share a column prefix (the ITEM_* macros in rose/io/stb.h) and the
+# STL key is always the last column, so one routine covers every type. Equippable
+# types additionally need a model object placed at the *same index* in their ZSC.
+ITEM_TABLES = {
+    #  type: (STB,                  STL,                    key,    model ZSC or None)
+    1:  ("LIST_FACEITEM.STB",  "LIST_FACEITEM_S.STL",  "LFAC", r"3DDATA\AVATAR\LIST_FACEIEM.ZSC"),
+    5:  ("LIST_FOOT.STB",      "LIST_FOOT_S.STL",      "LFOO", None),
+    6:  ("LIST_BACK.STB",      "LIST_BACK_S.STL",      "LBAC", r"3DDATA\AVATAR\LIST_BACK.ZSC"),
+    7:  ("LIST_JEWEL.STB",     "LIST_JEWEL_S.STL",     "LJEM", None),
+    9:  ("LIST_SUBWPN.STB",    "LIST_SUBWPN_S.STL",    "LSUB", r"3DDATA\WEAPON\LIST_SUBWPN.ZSC"),
+    10: ("LIST_USEITEM.STB",   "LIST_USEITEM_S.STL",   "LUSE", None),
+    12: ("LIST_NATURAL.STB",   "LIST_NATURAL_S.STL",   "LNAT", None),
+    13: ("LIST_QUESTITEM.STB", "LIST_QUESTITEM_S.STL", "LQIT", None),
+}
+ITEM_ICON_COL = 9
+ADD_ICON_SCRIPT = os.path.join("scripts", "add-item-icon.py")
+
+
+def tsi_sprites(path):
+    """ITEM1.TSI -> (texture names, [(texid, x1, y1, x2, y2)] in global index order)."""
+    f = io.BytesIO(open(path, "rb").read())
+    ntex, = struct.unpack("<h", f.read(2))
+    tex = []
+    for _ in range(ntex):
+        n, = struct.unpack("<h", f.read(2))
+        tex.append(f.read(n).split(b"\0")[0].decode("ascii"))
+        f.read(4)
+    struct.unpack("<h", f.read(2))
+    sp = []
+    for _ in range(ntex):
+        c, = struct.unpack("<h", f.read(2))
+        raw = f.read(c * 54)
+        for i in range(c):
+            sp.append(struct.unpack_from("<h4i", raw, i * 54))
+    return tex, sp
+
+
+def find_asset(base, name):
+    want = os.path.basename(name).lower()
+    for r, _, fs in os.walk(os.path.join(base, "3DDATA")):
+        for f in fs:
+            if f.lower() == want:
+                return os.path.join(r, f)
+    return None
+
+
+def extract_icon(src, index, out_png):
+    """Pull one cell out of the source atlas.
+
+    Icon indices are never reused across data sets: the atlases share cell
+    geometry but the sheets were re-authored, so the same index is different art
+    (median per-pixel difference of 9 across shared indices, plenty far higher).
+    """
+    from PIL import Image
+    tsi = find_asset(src, "ITEM1.TSI")
+    tex, sp = tsi_sprites(tsi)
+    if index >= len(sp):
+        return None
+    t, x1, y1, x2, y2 = sp[index]
+    sheet = find_asset(src, os.path.basename(tex[t]))
+    if not sheet:
+        return None
+    Image.open(sheet).convert("RGBA").crop((x1, y1, x2, y2)).save(out_png)
+    return out_png
+
+
+def zsc_set_object(our_path, src_path, index, dry):
+    """Copy one model object into our ZSC at the same index, remapping its
+    mesh/material indices (they mean different things in the two tables)."""
+    ours, src = Zsc(our_path), Zsc(src_path)
+    if index >= len(src.objects) or not src.objects[index][1]:
+        return None                                  # nothing to copy
+    if index >= len(ours.objects):
+        return f"index {index} beyond our ZSC ({len(ours.objects)} objects)"
+    mesh_idx = {norm(m): i for i, m in enumerate(ours.meshes)}
+    mat_idx = {norm(p): i for i, (p, _) in enumerate(ours.materials)}
+    new_meshes, new_mats, art = [], [], set()
+    cyl, sparts, sdummies, sbb = src.objects[index]
+    parts = []
+    for mid, tid, props in sparts:
+        mk = norm(src.meshes[mid])
+        if mk not in mesh_idx:
+            mesh_idx[mk] = len(ours.meshes) + len(new_meshes)
+            new_meshes.append(src.meshes[mid])
+        tk = norm(src.materials[tid][0])
+        if tk not in mat_idx:
+            mat_idx[tk] = len(ours.materials) + len(new_mats)
+            new_mats.append(src.materials[tid])
+        art.add(src.meshes[mid].decode("latin-1"))
+        art.add(src.materials[tid][0].decode("latin-1"))
+        parts.append((mesh_idx[mk], mat_idx[tk], props))
+    body = ours.object_bytes(cyl, parts, sdummies, sbb)
+
+    # rebuild the object block with ours[index] replaced
+    objs = []
+    o = ours.objcnt_pos + 2
+    for i in range(len(ours.objects)):
+        start = o
+        c, p, d, bb = ours.objects[i]
+        o += len(ours.object_bytes(c, p, d, bb))
+        objs.append(body if i == index else ours.d[start:o])
+    blob = (struct.pack("<H", len(ours.meshes) + len(new_meshes))
+            + ours.d[2:ours.mesh_end]
+            + b"".join(m + b"\x00" for m in new_meshes)
+            + struct.pack("<H", len(ours.materials) + len(new_mats))
+            + ours.d[ours.mesh_end + 2:ours.mat_end]
+            + b"".join(p + b"\x00" + fl for p, fl in new_mats)
+            + ours.d[ours.mat_end:ours.objcnt_pos]
+            + struct.pack("<H", len(ours.objects))
+            + b"".join(objs))
+    if not dry:
+        backup(our_path)
+        with open(our_path, "wb") as fh:
+            fh.write(blob)
+    return sorted(a for a in art if "\\" in a or "/" in a)
+
+
+def stage5(ours, src, dry):
+    print("stage 5 -- items the Oro quests reference")
+
+    need = {}
+    for f in ORO_QSD_FILES:
+        p = find_qsd(src, f)
+        if p:
+            for _, sn, _ in qsd_item_refs(p):
+                if 1000 < sn < 15000:
+                    need.setdefault(sn // 1000, set()).add(sn % 1000)
+
+    scratch = os.path.join(tempfile.gettempdir(), "oro-icons")
+    os.makedirs(scratch, exist_ok=True)
+    grand_rows = grand_icons = 0
+    art_files = set()
+
+    for t in sorted(need):
+        if t not in ITEM_TABLES:
+            print(f"    !! item type {t} unmapped, skipped {sorted(need[t])}")
+            continue
+        stb_name, stl_name, prefix, zsc_rel = ITEM_TABLES[t]
+        our_stb = Stb(rel_path(ours, os.path.join("3DDATA", "STB", stb_name)))
+        src_stb = Stb(rel_path(src, os.path.join("3DDATA", "STB", stb_name)))
+        our_stl = Stl(rel_path(ours, os.path.join("3DDATA", "STB", stl_name)))
+        src_stl = Stl(rel_path(src, os.path.join("3DDATA", "STB", stl_name)))
+        lang = 1 if len(src_stl.langs) > 1 else 0
+        src_name = {k.decode("latin-1"): src_stl.langs[lang][i][0]
+                    for i, (k, _) in enumerate(src_stl.keys)}
+
+        wrote, mine, dead, models = 0, [], [], 0
+        for n in sorted(need[t]):
+            if n >= our_stb.rows:
+                print(f"    !! {stb_name} row {n} beyond our table ({our_stb.rows})")
+                continue
+            if our_stb.occupied(n):
+                mine.append(n)
+                continue
+            if not src_stb.occupied(n):
+                dead.append(n)
+                continue
+            key = src_stb.get(n, src_stb.cols - 1).decode("latin-1").strip()
+            name = src_name.get(key, b"") or src_stb.get(n, 0)
+
+            for c in range(our_stb.cols - 1):
+                our_stb.set(n, c, src_stb.get(n, c))
+            new_key = f"{prefix}{n:03d}"
+            our_stb.set(n, our_stb.cols - 1, new_key)
+
+            icon = src_stb.get(n, ITEM_ICON_COL).decode("latin-1").strip()
+            if icon.isdigit() and not dry:
+                png = extract_icon(src, int(icon), os.path.join(scratch, f"{prefix}{n}.png"))
+                idx = None
+                if png:
+                    r = subprocess.run([sys.executable, ADD_ICON_SCRIPT, png,
+                                        "--name", f"{prefix}{n}"],
+                                       capture_output=True, text=True)
+                    for line in r.stdout.splitlines():
+                        if "icon index" in line:
+                            idx = line.split()[-1]
+                if idx and idx.isdigit():
+                    our_stb.set(n, ITEM_ICON_COL, idx)
+                    grand_icons += 1
+                else:
+                    print(f"    !! icon add failed for {stb_name} {n}")
+
+            if zsc_rel and not dry:
+                got = zsc_set_object(rel_path(ours, zsc_rel), rel_path(src, zsc_rel),
+                                     n, dry)
+                if isinstance(got, str):
+                    print(f"    !! {stb_name} {n} model: {got}")
+                elif got:
+                    art_files |= set(got)
+                    models += 1
+
+            if not our_stl.has(new_key):
+                our_stl.append(new_key, n, name.decode("latin-1"))
+            wrote += 1
+
+        print(f"    {stb_name:22s} {wrote:3d} imported"
+              + (f", {models} models" if models else "")
+              + (f", {len(mine)} already ours {mine}" if mine else "")
+              + (f", {len(dead)} blank in the source too {dead}" if dead else ""))
+        grand_rows += wrote
+        if wrote and not dry:
+            our_stb.save(dry)
+            our_stl.save(dry)
+
+    if art_files:
+        copy_files(art_files, src, ours, dry, "item model art")
+    print(f"    {'total':22s} {grand_rows} rows, {grand_icons} icons")
+
+
 # -------------------------------------------------------------------- driver
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--stage", type=int, choices=(1, 2, 3, 4), action="append",
+    ap.add_argument("--stage", type=int, choices=(1, 2, 3, 4, 5), action="append",
                     help="stage to run (repeatable); omit to run them all")
     ap.add_argument("--dry-run", action="store_true", help="preview without writing")
     ap.add_argument("--selftest", action="store_true",
@@ -1846,10 +2160,11 @@ def main():
     if args.selftest:
         return 0
 
-    stages = sorted(set(args.stage or (1, 2, 3, 4)))
+    stages = sorted(set(args.stage or (1, 2, 3, 4, 5)))
     print()
     for s in stages:
-        {1: stage1, 2: stage2, 3: stage3, 4: stage4}[s](ours, src, args.dry_run)
+        {1: stage1, 2: stage2, 3: stage3, 4: stage4,
+         5: stage5}[s](ours, src, args.dry_run)
         print()
 
     if args.dry_run:
