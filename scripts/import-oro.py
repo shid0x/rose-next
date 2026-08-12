@@ -2161,6 +2161,76 @@ QUESTDATA_DIR = r"3Ddata\QuestData"
 DEAD_JEWEL_ITEMS = {7235, 7236, 7237, 7239, 7240, 7241, 7243, 7244, 7247, 7248, 7249}
 DEAD_JEWEL_SUBSTITUTE = 7110          # Full Moon Necklace
 
+# Conditions to remove on import, as (trigger, condition type, first payload word).
+#
+# The Oro chain opens on trigger 4410-01 ("The New World", offered by Nova), which
+# requires user switch 192 == 1. Nothing in Oro sets that switch: it is set by
+# trigger 4409-02 in QP101.QSD -- the Junon Pyramid chain, quest 4409 "The Royals
+# of Oblivion (9)". We have QP101.QSD but the older retail version without those
+# triggers, and we do not have the Pyramid maps at all, so the switch can never
+# become 1 and the entire planet's quest line is unreachable.
+#
+# Removing that one condition decouples Oro from a prerequisite we cannot ship.
+# Everything downstream is untouched: switches 193-247 are Oro's own progression
+# state, set by its own quests as you advance.
+#
+# If the Junon Pyramid is ever imported (phase 7), drop this entry so the chain
+# gates properly again.
+QSD_DROP_CONDITIONS = [
+    ("4410-01", 14, 192),             # COND_014 user switch 192 == 1
+]
+
+
+def qsd_drop_conditions(blob, drops):
+    """Remove named conditions from a .QSD.
+
+    Safe as a byte-level edit because the format carries no internal offsets --
+    everything is found by walking it in order -- and the u32 at offset 0 is a
+    constant header size (12), not the file length. So removing an entity means
+    only decrementing its trigger's condition count and deleting its bytes.
+    """
+    b = bytearray(blob)
+    wanted = {(t, ct, val) for t, ct, val in drops}
+    if not wanted:
+        return bytes(b), []
+
+    removed = []
+    # collect edits first, then apply back-to-front so earlier offsets stay valid
+    edits = []
+    o = 0
+
+    def u32(at):
+        return struct.unpack_from("<I", b, at)[0]
+
+    o = 4
+    npat = u32(o); o += 4
+    n, = struct.unpack_from("<h", b, o); o += 2 + n
+    for _ in range(npat):
+        ntrig = u32(o); o += 4
+        n, = struct.unpack_from("<h", b, o); o += 2 + n
+        for _ in range(ntrig):
+            o += 1
+            cond_at = o
+            ncond = u32(o); o += 4
+            nrew = u32(o); o += 4
+            n, = struct.unpack_from("<h", b, o); o += 2
+            tname = bytes(b[o:o + n]).rstrip(b"\0").decode("latin-1"); o += n
+            for idx in range(ncond + nrew):
+                ent = o
+                esz = u32(o)
+                etype = struct.unpack_from("<i", b, o + 4)[0] & 0xFFFFFF
+                if idx < ncond and esz >= 11:
+                    val, = struct.unpack_from("<h", b, ent + 8)
+                    if (tname, etype, val) in wanted:
+                        edits.append((ent, esz, cond_at))
+                        removed.append((tname, etype, val))
+                o = ent + esz
+
+    for ent, esz, cond_at in sorted(edits, reverse=True):
+        struct.pack_into("<I", b, cond_at, u32(cond_at) - 1)
+        del b[ent:ent + esz]
+    return bytes(b), removed
+
 
 def qsd_quest_refs(path_or_blob):
     """Quest ids a .QSD touches: COND_000 (has quest) and REWD_000 (add/swap)."""
@@ -2212,7 +2282,7 @@ def stage6(ours, src, dry):
 
     # --- 6a. the QSD files, with item ids rewritten on the way in
     dst_dir = rel_path(ours, os.path.join("3DDATA", "QUESTDATA"))
-    written, all_changes, quests = 0, {}, set()
+    written, all_changes, quests, gates_dropped = 0, {}, set(), []
     names_on_disk = {}
     for f in ORO_QSD_FILES:
         p = find_qsd(src, f)
@@ -2220,6 +2290,9 @@ def stage6(ours, src, dry):
             print(f"    !! {f} not found in the source")
             continue
         blob = open(p, "rb").read()
+        blob, dropped = qsd_drop_conditions(blob, QSD_DROP_CONDITIONS)
+        for d in dropped:
+            gates_dropped.append((f, d))
         fixed, changed = qsd_remap_items(blob, remap)
         for k, v in changed.items():
             all_changes[k] = all_changes.get(k, 0) + v
@@ -2239,6 +2312,8 @@ def stage6(ours, src, dry):
             if left:
                 raise SystemExit(f"VERIFY FAILED: {real} still references {left[:4]}")
     print(f"    {'QSD files':26s} {written} written of {len(ORO_QSD_FILES)}")
+    for f, (tname, ct, val) in gates_dropped:
+        print(f"        dropped COND_{ct:03d} ({val}) from {tname} in {f}")
     for sn in sorted(all_changes):
         tag = "dead jewel" if sn in DEAD_JEWEL_ITEMS else "collision"
         print(f"        {sn} -> {remap[sn]:6d}  {all_changes[sn]:3d} refs ({tag})")
