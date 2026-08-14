@@ -104,18 +104,19 @@ def dds_read_bgra(path):
     return Image.merge("RGBA", (c2, c1, c0, c3))
 
 # ---------------------------------------------------------------- main
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("png", help="source image (any size; downscaled to 40x40)")
-    ap.add_argument("--name", help="sprite label stored in the TSI (default: png filename)")
-    ap.add_argument("--weapon-row", type=int, help="also set LIST_WEAPON.STB icon col of this row")
-    ap.add_argument("--dry-run", action="store_true")
-    args = ap.parse_args()
+def add_icon(art, label, dry):
+    """Append one 40x40 icon to our atlas; returns its global sprite index.
 
+    Takes a PIL image rather than a path so callers that already hold the art
+    (e.g. import-item.py cropping it out of another data set's atlas) don't have
+    to round-trip through a temp file. Importantly this also means the caller
+    gets the index back as a value -- the earlier pattern of scraping it from
+    stdout breaks the moment the wording changes.
+    """
     if not os.path.exists(TSI):
         sys.exit("run from the repo root (%s not found)" % TSI)
 
-    art = Image.open(args.png).convert("RGBA")
+    art = art.convert("RGBA")
     if art.size != (CELL, CELL):
         print("resizing %dx%d -> %dx%d" % (*art.size, CELL, CELL))
         art = art.resize((CELL, CELL), Image.LANCZOS)
@@ -142,9 +143,8 @@ def main():
 
     x, y = (cell % GRID) * CELL, (cell // GRID) * CELL
     sheet.paste(art, (x, y))
-    dds_write(os.path.join(RES_DIR, sheet_name), sheet, args.dry_run)
+    dds_write(os.path.join(RES_DIR, sheet_name), sheet, dry)
 
-    label = args.name or os.path.splitext(os.path.basename(args.png))[0]
     if new_sheet:
         textures.append(texture_entry(sheet_name))
         blocks.append((1, sprite_entry(len(textures) - 1, cell, label)))
@@ -153,12 +153,25 @@ def main():
         blocks[-1] = (cnt + 1, raw + sprite_entry(len(textures) - 1, cell, label))
 
     bak = TSI + ".bak-icons"
-    if not args.dry_run and not os.path.exists(bak):
+    if not dry and not os.path.exists(bak):
         shutil.copy2(TSI, bak)
-    tsi_write(TSI, textures, blocks, args.dry_run)
+    tsi_write(TSI, textures, blocks, dry)
 
     new_index = total_before
     print("icon added: sheet=%s cell=%d (x=%d y=%d)  ->  icon index %d" % (sheet_name, cell, x, y, new_index))
+    return new_index
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("png", help="source image (any size; downscaled to 40x40)")
+    ap.add_argument("--name", help="sprite label stored in the TSI (default: png filename)")
+    ap.add_argument("--weapon-row", type=int, help="also set LIST_WEAPON.STB icon col of this row")
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args()
+
+    label = args.name or os.path.splitext(os.path.basename(args.png))[0]
+    new_index = add_icon(Image.open(args.png), label, args.dry_run)
 
     if args.weapon_row is not None:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

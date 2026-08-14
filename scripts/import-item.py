@@ -177,11 +177,29 @@ class Zsc:
 def norm(p):
     return p.decode("ascii", "replace").replace("\\", "/").lower()
 
-def zsc_append_object(ours_path, src_zsc, src_obj_idx, dry):
+def zsc_build_append(ours_path, src_zsc, src_obj_idx):
+    """Return (new_object_index, assets_needed, new_file_bytes) -- writes nothing.
+
+    Callers write only once *every* table for this item has been built, so a
+    failure part-way cannot leave the STB and the per-sex ZSCs at different
+    lengths. That is not hypothetical: importing the Crystal Soldier cap
+    appended the male model, then hit the empty female object and exited,
+    leaving LIST_MCAP.ZSC one object longer than LIST_CAP.STB.
+    """
     ours = Zsc(ours_path)
     cyl, sparts, sdummies, sbb = src_zsc.objects[src_obj_idx]
     if not sparts:
-        sys.exit("source ZSC object %d has no parts (no model)" % src_obj_idx)
+        # Legitimate and common in evo-era data -- 381 of RoseZA's 2415 named
+        # caps have no female model. Emit an empty object so the index still
+        # lines up; the item is simply invisible on that sex.
+        print("WARNING: source object %d in %s has no model -- appending an empty object "
+              "(the item will not show on this sex)"
+              % (src_obj_idx, os.path.basename(ours_path)))
+        out = [ours.d[:ours.objcnt_pos],
+               struct.pack("<H", len(ours.objects) + 1),
+               ours.d[ours.objcnt_pos + 2:ours.obj_end],
+               cyl, struct.pack("<H", 0)]
+        return len(ours.objects), [], b"".join(out)
 
     our_mesh_idx = {norm(m): i for i, m in enumerate(ours.meshes)}
     our_mat_idx = {norm(p): i for i, (p, _) in enumerate(ours.materials)}
@@ -222,11 +240,8 @@ def zsc_append_object(ours_path, src_zsc, src_obj_idx, dry):
             struct.pack("<H", len(ours.objects) + 1),
             ours.d[ours.objcnt_pos + 2:ours.obj_end],
             b"".join(obj)]
-    if not dry:
-        with open(ours_path, "wb") as fh:
-            fh.write(b"".join(out))
     files_needed = [m for m in new_meshes] + [p for p, _ in new_mats]
-    return len(ours.objects), files_needed
+    return len(ours.objects), files_needed, b"".join(out)
 
 # ---------------------------------------------------------------- STL
 def read_varint(f):
@@ -327,6 +342,54 @@ def copy_assets(files_needed, source, dry):
             shutil.copy2(srcf, dstf)
         print("%s: %s" % ("would copy" if dry else "copied", rel))
 
+# ---------------------------------------------------------------- icon
+def copy_source_icon(source, src_index, label, dry):
+    """Crop one sprite out of the source data set's ITEM1.TSI into ours.
+
+    Icon indices are NOT portable: both atlases have the same 40x40 cell
+    geometry but completely different art, so reusing the source's number gives
+    a plausible-looking wrong icon. This ports the actual pixels and returns the
+    index in *our* atlas.
+    """
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    spec = importlib.util.spec_from_file_location(
+        "add_item_icon", os.path.join(here, "add-item-icon.py"))
+    ico = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ico)
+    from PIL import Image
+
+    src_res = os.path.join(source, "3DDATA", "CONTROL", "RES")
+    src_tsi = os.path.join(src_res, "ITEM1.TSI")
+    if not os.path.exists(src_tsi):
+        sys.exit("source has no ITEM1.TSI at %s" % src_tsi)
+    textures, blocks = ico.tsi_read(src_tsi)
+    flat = []
+    for (sheet, _), (cnt, raw) in zip(textures, blocks):
+        for i in range(cnt):
+            flat.append((sheet, raw[i * 54:(i + 1) * 54]))
+    if not 0 <= src_index < len(flat):
+        sys.exit("source icon index %d out of range (source atlas has %d sprites)"
+                 % (src_index, len(flat)))
+    sheet, ent = flat[src_index]
+    _, x1, y1, x2, y2 = struct.unpack_from("<hiiii", ent, 0)
+
+    path = os.path.join(src_res, sheet)
+    if not os.path.exists(path):                       # source dirs vary in case
+        for alt in os.listdir(src_res):
+            if alt.lower() == sheet.lower():
+                path = os.path.join(src_res, alt)
+                break
+    # Crop a fixed cell rather than trusting x2/y2: the two rect conventions
+    # (x..x+40 and x..x+39) are mixed *within* RoseZA's own ITEM1.TSI -- exactly
+    # half its sprites use each -- so honouring the stored far edge silently
+    # shaves a pixel off half the icons.
+    cell = ico.CELL
+    art = Image.open(path).convert("RGBA").crop((x1, y1, x1 + cell, y1 + cell))
+    print("icon: source %d (%s %s) -> " % (src_index, sheet, (x1, y1)), end="")
+    return ico.add_icon(art, label, dry)
+
+
 # ---------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -338,6 +401,15 @@ def main():
     ap.add_argument("--name", help="override item name (default: from source STL)")
     ap.add_argument("--desc", help="override item description (default: from source STL)")
     ap.add_argument("--icon", type=int, help="icon index in OUR ITEM1.TSI (default: keep source value, likely wrong art)")
+    ap.add_argument("--copy-icon", action="store_true",
+                    help="port the source's inventory icon into our ITEM1.TSI and use it "
+                         "(recommended; the same index is different art in each atlas)")
+    ap.add_argument("--def", dest="defence", type=int,
+                    help="override DEFENCE (col 31). Evo-era gear is scaled ~4x ours -- "
+                         "importing source stats verbatim trivialises our existing content")
+    ap.add_argument("--res", type=int, help="override RESISTENCE (col 32)")
+    ap.add_argument("--req-level", type=int,
+                    help="override the required character level (NEED_DATA pair with type 31)")
     ap.add_argument("--field-model", type=int, help="ground-drop model index in OUR LIST_FieldITEM.ZSC")
     ap.add_argument("--copy-field-model", action="store_true",
                     help="port the source's ground-drop model object into our LIST_FieldITEM.ZSC")
@@ -413,10 +485,48 @@ def main():
     # build our row: source cols 0..n-2 + our key in the last column
     row = list(src[0:ocols - 2]) + [new_key]
     row[1] = b""  # vestigial model-path column; the game reads the ZSC instead
-    if args.icon is not None:
+    if args.copy_icon and args.icon is not None:
+        sys.exit("pass either --copy-icon or --icon, not both")
+    if args.copy_icon:
+        row[9] = str(copy_source_icon(args.source, int(src[9] or b"0"),
+                                      "%s%d" % (KEY_PREFIX.lower(), new_id),
+                                      args.dry_run)).encode("ascii")
+    elif args.icon is not None:
         row[9] = str(args.icon).encode("ascii")
     else:
-        print("WARNING: keeping source icon index %s -- points at different art in our atlas, pass --icon" % src[9].decode())
+        print("WARNING: keeping source icon index %s -- points at different art in our atlas, "
+              "pass --copy-icon or --icon" % src[9].decode())
+
+    # Stat overrides. Worth using on anything from an evo-era source: their gear
+    # is scaled roughly 4x ours (their entry lv200 plate set totals 1915 DEF to
+    # our Jabberwock's 491), so importing verbatim drops our existing monsters to
+    # the damage floor.
+    if args.defence is not None:
+        print("DEFENCE: source %s -> %d" % (row[31].decode() or "0", args.defence))
+        row[31] = str(args.defence).encode("ascii")
+    if args.res is not None:
+        print("RESISTENCE: source %s -> %d" % (row[32].decode() or "0", args.res))
+        row[32] = str(args.res).encode("ascii")
+    if args.req_level is not None:
+        # Requirements are (type, value) pairs at cols 19/20 and 21/22; type 31
+        # is character level. Retarget the existing pair if there is one so we
+        # don't leave two conflicting level requirements behind.
+        slot = None
+        for c in (19, 21):
+            if row[c].strip() == b"31":
+                slot = c
+                break
+        if slot is None:
+            for c in (19, 21):
+                if not row[c].strip():
+                    slot = c
+                    row[c] = b"31"
+                    break
+        if slot is None:
+            sys.exit("both NEED_DATA slots are used by non-level requirements; "
+                     "cannot set --req-level without dropping one")
+        print("required level: source %s -> %d" % (row[slot + 1].decode() or "0", args.req_level))
+        row[slot + 1] = str(args.req_level).encode("ascii")
     if not args.copy_field_model:
         field_count = len(Zsc(os.path.join(OURS, FIELD_ZSC_REL)).objects)
         if args.field_model is not None:
@@ -438,17 +548,23 @@ def main():
             if not os.path.exists(bak):
                 shutil.copy2(p, bak)
 
-    # Sex-split armour appends to both tables; they must stay index-aligned, so a
-    # mismatch here is fatal rather than a warning -- a half-applied import leaves
-    # every later item pointing at the wrong model.
+    # Sex-split armour appends to both tables and they must stay index-aligned.
+    # Build every table before writing any of them, so an error in the second
+    # cannot leave the first already extended.
+    pending = []
     for rel in ZSC_RELS:
         src_zsc = Zsc(os.path.join(args.source, rel))
-        obj_id, files_needed = zsc_append_object(
-            os.path.join(OURS, rel), src_zsc, args.source_row, args.dry_run)
+        obj_id, files_needed, blob = zsc_build_append(
+            os.path.join(OURS, rel), src_zsc, args.source_row)
         if obj_id != new_id:
             sys.exit("STB/ZSC index drift in %s: row %d vs object %d"
                      % (os.path.basename(rel), new_id, obj_id))
-        print("model: %s object %d -> our %d" % (os.path.basename(rel), args.source_row, obj_id))
+        pending.append((rel, files_needed, blob))
+    for rel, files_needed, blob in pending:
+        if not args.dry_run:
+            with open(os.path.join(OURS, rel), "wb") as fh:
+                fh.write(blob)
+        print("model: %s object %d -> our %d" % (os.path.basename(rel), args.source_row, new_id))
         copy_assets(files_needed, args.source, args.dry_run)
 
     if args.copy_field_model:
@@ -456,7 +572,11 @@ def main():
         src_field = Zsc(os.path.join(args.source, FIELD_ZSC_REL))
         if src_fm <= 0 or src_fm >= len(src_field.objects):
             sys.exit("source field model %d out of range (%d objects)" % (src_fm, len(src_field.objects)))
-        field_id, ffiles = zsc_append_object(os.path.join(OURS, FIELD_ZSC_REL), src_field, src_fm, args.dry_run)
+        field_path = os.path.join(OURS, FIELD_ZSC_REL)
+        field_id, ffiles, fblob = zsc_build_append(field_path, src_field, src_fm)
+        if not args.dry_run:
+            with open(field_path, "wb") as fh:
+                fh.write(fblob)
         copy_assets(ffiles, args.source, args.dry_run)
         row[10] = str(field_id).encode("ascii")
         print("field model: ported source object %d as our %d" % (src_fm, field_id))
