@@ -316,6 +316,12 @@ def stl_append(path, new_key, new_idx, name, desc, dry):
     keys.append((new_key, new_idx))
     for entries in langs:
         entries.append((name, desc))
+    stl_write(path, keys, langs, dry)
+
+def stl_write(path, keys, langs, dry):
+    """Serialise a whole ITST01 table. Every per-language entry is written at a
+    fresh offset, so this is also how entries get *removed* -- the offset table
+    is rebuilt rather than patched."""
     keycount, langcount = len(keys), len(langs)
 
     header = vstr_write(b"ITST01") + struct.pack("<I", keycount)
