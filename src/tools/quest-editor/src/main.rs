@@ -44,6 +44,7 @@ fn main() -> ExitCode {
         Some("ifo-scan") => cmd_ifo_scan(args.get(1)),
         Some("con-wire") => cmd_con_wire(&args[1..]),
         Some("con-append") => cmd_con_append(&args[1..]),
+        Some("con-warp") => cmd_con_warp(&args[1..]),
         Some("npc-find") => cmd_npc_find(&args[1..]),
         Some("ltb-check") => cmd_ltb_check(&args[1..]),
         Some("icons-check") => cmd_icons_check(args.get(1)),
@@ -720,6 +721,66 @@ fn cmd_con_append(args: &[String]) -> Result<bool> {
 
     let report =
         quest_editor::write::append_quest_to_npc_dialog(&root, npc_id, qid, trigger, None, !write)?;
+    report.print();
+    if report.dry_run {
+        println!("\n(re-run with --write to apply, then bake the VFS + restart)");
+    } else {
+        println!("\nnext: bake the VFS, restart servers + client, click npc {npc_id}.");
+    }
+    Ok(true)
+}
+
+fn cmd_con_warp(args: &[String]) -> Result<bool> {
+    let write = args.iter().any(|a| a == "--write");
+    let flag = |name: &str| -> Option<String> {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
+    let mut skip = false;
+    let pos: Vec<String> = args
+        .iter()
+        .filter(|a| {
+            if skip {
+                skip = false;
+                return false;
+            }
+            if a.starts_with("--") {
+                skip = matches!(a.as_str(), "--hook" | "--confirm" | "--accept" | "--decline");
+                return false;
+            }
+            true
+        })
+        .cloned()
+        .collect();
+    if pos.len() < 3 {
+        bail!(
+            "usage: con-warp <root> <npc_id> <key> <trigger> \
+             [--hook T] [--confirm T] [--accept T] [--decline T] [--write]\n\
+             \x20  appends a 'take me there' option that fires <trigger> (a QSD trigger\n\
+             \x20  whose reward is REWD_007). The trigger must already exist.\n\
+             \x20  e.g. con-warp ../data 1104 orlo Oro-TravelToOrlo --write"
+        );
+    }
+    let root = PathBuf::from(&pos[0]);
+    let npc_id: i32 = pos[1].parse().context("npc_id")?;
+    let key = &pos[2];
+    let trigger = pos
+        .get(3)
+        .context("missing <trigger> (the QSD trigger to fire)")?;
+
+    let text = quest_editor::write::WarpText {
+        hook: flag("--hook").unwrap_or_else(|| "Can you take me there?".into()),
+        confirm: flag("--confirm")
+            .unwrap_or_else(|| "Are you certain you want to go? Say the word.".into()),
+        accept: flag("--accept").unwrap_or_else(|| "Yes, send me now.".into()),
+        decline: flag("--decline").unwrap_or_else(|| "Not just yet.".into()),
+    };
+
+    let report = quest_editor::write::append_warp_to_npc_dialog(
+        &root, npc_id, key, trigger, &text, !write,
+    )?;
     report.print();
     if report.dry_run {
         println!("\n(re-run with --write to apply, then bake the VFS + restart)");

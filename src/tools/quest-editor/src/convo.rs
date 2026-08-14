@@ -648,35 +648,46 @@ pub fn build_quest_giver(qid: i32, complete_trig: &str, s: GiverStrings) -> Vec<
 // retail bytecode.
 // --------------------------------------------------------------------------
 
-fn appendix_begin_marker(qid: i32) -> String {
-    format!("-- QE:BEGIN {qid}\n")
+fn appendix_begin_marker_named(key: &str) -> String {
+    format!("-- QE:BEGIN {key}\n")
 }
-fn appendix_end_marker(qid: i32) -> String {
-    format!("-- QE:END {qid}\n")
+fn appendix_end_marker_named(key: &str) -> String {
+    format!("-- QE:END {key}\n")
 }
 
 /// Insert (or replace) quest `qid`'s section in the appendix source.
 pub fn appendix_upsert(appendix: &mut Vec<u8>, qid: i32, body: &str) {
-    appendix_remove(appendix, qid);
+    appendix_upsert_named(appendix, &qid.to_string(), body);
+}
+
+/// Insert (or replace) an arbitrarily-keyed section. Sections are independent,
+/// so several features can share one appendix — a warp option and a quest option
+/// on the same NPC do not disturb each other.
+pub fn appendix_upsert_named(appendix: &mut Vec<u8>, key: &str, body: &str) {
+    appendix_remove_named(appendix, key);
     let mut s = String::from_utf8_lossy(appendix).into_owned();
     if !s.is_empty() && !s.ends_with('\n') {
         s.push('\n');
     }
-    s.push_str(&appendix_begin_marker(qid));
+    s.push_str(&appendix_begin_marker_named(key));
     s.push_str(body);
     if !body.ends_with('\n') {
         s.push('\n');
     }
-    s.push_str(&appendix_end_marker(qid));
+    s.push_str(&appendix_end_marker_named(key));
     *appendix = s.into_bytes();
 }
 
 /// Remove quest `qid`'s section from the appendix source. Returns whether a
 /// section was found. An appendix left empty serializes to no appendix block.
 pub fn appendix_remove(appendix: &mut Vec<u8>, qid: i32) -> bool {
+    appendix_remove_named(appendix, &qid.to_string())
+}
+
+pub fn appendix_remove_named(appendix: &mut Vec<u8>, key: &str) -> bool {
     let s = String::from_utf8_lossy(appendix).into_owned();
-    let begin = appendix_begin_marker(qid);
-    let end = appendix_end_marker(qid);
+    let begin = appendix_begin_marker_named(key);
+    let end = appendix_end_marker_named(key);
     let Some(start) = s.find(&begin) else {
         return false;
     };
@@ -898,6 +909,175 @@ pub fn remove_quest_option(con: &mut ConFile, qid: i32) -> bool {
     true
 }
 
+// --------------------------------------------------------------------------
+// Warp options: a menu entry that teleports the player somewhere.
+//
+// Same append mechanism as `append_quest_option`, but the option fires a plain
+// QSD trigger (whose reward is REWD_007) instead of driving a quest. Used to
+// give planets an entrance when the canonical one is unreachable — Oro's is a
+// gate in a Junon Pyramid map we do not have.
+//
+// The confirm step is not decoration: the trigger warps immediately when
+// clicked, and a mis-click that drops the player on another planet is a long
+// walk back.
+// --------------------------------------------------------------------------
+
+/// Event-string ids for one appended warp option.
+pub struct WarpStrings {
+    /// The line added to the NPC's root menu ("Take me to ...").
+    pub hook_option: i32,
+    /// What the NPC says before the player confirms.
+    pub confirm: i32,
+    /// The player's "yes, go" choice.
+    pub accept_option: i32,
+    /// The player's "not now" choice.
+    pub decline_option: i32,
+}
+
+/// Namespace prefix for one warp option's Lua functions and appendix section.
+fn warp_prefix(key: &str) -> String {
+    format!("QW{key}_")
+}
+
+fn warp_option_lua(key: &str, trigger: &str) -> String {
+    let p = warp_prefix(key);
+    format!(
+        "function {p}CHK(E)\n\
+         \treturn 1\n\
+         end\n\
+         function {p}GO(E)\n\
+         \tQF_doQuestTrigger(\"{trigger}\")\n\
+         \treturn 1\n\
+         end\n"
+    )
+}
+
+/// Keys of every warp option currently appended to this conversation.
+pub fn warp_option_keys(con: &ConFile) -> Vec<String> {
+    let mut out = Vec::new();
+    for menu in &con.menus {
+        for it in &menu.items {
+            for f in [&it.check_func, &it.click_func] {
+                if let Some(rest) = f.strip_prefix("QW") {
+                    if let Some((key, _)) = rest.split_once('_') {
+                        let key = key.to_string();
+                        if !out.contains(&key) {
+                            out.push(key);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Append a warp option to the NPC's existing dialog. Replaces the option if
+/// `key` is already present, so re-running is a refresh rather than a duplicate.
+pub fn append_warp_option(
+    con: &mut ConFile,
+    key: &str,
+    trigger: &str,
+    s: &WarpStrings,
+) -> Result<()> {
+    if con.menus.is_empty() {
+        bail!(".CON has no menus — not an NPC conversation?");
+    }
+    remove_warp_option(con, key);
+
+    let p = warp_prefix(key);
+    let base = con.menus.len() as i32;
+    // [base] the NPC's "are you sure?" message -> [base+1] the yes/no choices.
+    con.menus.push(ConMenu {
+        items: vec![menu_item(SC_MSG_NPCSAY, base + 1, "", "", s.confirm)],
+    });
+    con.menus.push(ConMenu {
+        items: vec![
+            menu_item(
+                SC_MSG_CLOSE,
+                -1,
+                "",
+                &format!("{p}GO"),
+                s.accept_option,
+            ),
+            menu_item(SC_MSG_CLOSE, -1, "", "", s.decline_option),
+        ],
+    });
+
+    con.menus[0].items.push(menu_item(
+        SC_MSG_PLAYERSELECT,
+        base,
+        &format!("{p}CHK"),
+        "",
+        s.hook_option,
+    ));
+
+    appendix_upsert_named(&mut con.appendix, &p, &warp_option_lua(key, trigger));
+    Ok(())
+}
+
+/// Remove warp option `key`: its menu items, the menus only it referenced, and
+/// its appendix section. Mirrors `remove_quest_option`.
+pub fn remove_warp_option(con: &mut ConFile, key: &str) -> bool {
+    let p = warp_prefix(key);
+    let is_ours = |it: &ConMenuItem| it.check_func.starts_with(&p) || it.click_func.starts_with(&p);
+
+    let mut doomed: BTreeSet<usize> = BTreeSet::new();
+    let mut stack: Vec<usize> = Vec::new();
+    let mut found = false;
+    for menu in &con.menus {
+        for it in &menu.items {
+            if is_ours(it) {
+                found = true;
+                if it.child_menu >= 0 {
+                    stack.push(it.child_menu as usize);
+                }
+            }
+        }
+    }
+    if !found {
+        return appendix_remove_named(&mut con.appendix, &p);
+    }
+    while let Some(mi) = stack.pop() {
+        if mi >= con.menus.len() || !doomed.insert(mi) {
+            continue;
+        }
+        for it in &con.menus[mi].items {
+            if it.child_menu >= 0 {
+                stack.push(it.child_menu as usize);
+            }
+        }
+    }
+
+    for menu in con.menus.iter_mut() {
+        menu.items.retain(|it| !is_ours(it));
+    }
+    let referenced: BTreeSet<usize> = con
+        .menus
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !doomed.contains(i))
+        .flat_map(|(_, m)| m.items.iter())
+        .filter(|it| it.child_menu >= 0)
+        .map(|it| it.child_menu as usize)
+        .collect();
+    doomed.retain(|mi| !referenced.contains(mi));
+
+    for &mi in doomed.iter().rev() {
+        con.menus.remove(mi);
+        for menu in con.menus.iter_mut() {
+            for it in menu.items.iter_mut() {
+                if it.child_menu > mi as i32 {
+                    it.child_menu -= 1;
+                }
+            }
+        }
+    }
+
+    appendix_remove_named(&mut con.appendix, &p);
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1003,6 +1183,99 @@ mod tests {
         let mut re = ConFile::parse(&rebuilt).unwrap();
         assert_eq!(quest_option_qids(&re), vec![5503]);
         assert!(remove_quest_option(&mut re, 5503));
+        assert_eq!(re.menus.len(), 2);
+        assert_eq!(re.menus[0].items.len(), 1);
+        assert!(re.appendix.is_empty());
+    }
+
+    fn minimal_con() -> Vec<u8> {
+        let messages = vec![ConMsg {
+            sn: 0,
+            mtype: SC_MSG_NPCSAY,
+            value: 0,
+            check_func: String::new(),
+            click_func: String::new(),
+            str_id: 1,
+        }];
+        let menus = vec![
+            ConMenu {
+                items: vec![item(SC_MSG_NPCSAY, 1, "", "", 5)],
+            },
+            ConMenu {
+                items: vec![item(SC_MSG_CLOSE, -1, "", "", 8)],
+            },
+        ];
+        build_con(&[], &messages, &menus, b"-- retail\n")
+    }
+
+    #[test]
+    fn appended_warp_option_confirms_before_warping() {
+        let mut con = ConFile::parse(&minimal_con()).unwrap();
+        let s = WarpStrings {
+            hook_option: 40,
+            confirm: 41,
+            accept_option: 42,
+            decline_option: 43,
+        };
+        append_warp_option(&mut con, "orlo", "Oro-TravelToOrlo", &s).unwrap();
+
+        // Root gained the hook: visible via CHK, but with no click action, so a
+        // single mis-click cannot teleport the player.
+        let hook = &con.menus[0].items[1];
+        assert_eq!(hook.mtype, SC_MSG_PLAYERSELECT);
+        assert_eq!(hook.check_func, "QWorlo_CHK");
+        assert_eq!(hook.click_func, "");
+        assert_eq!(hook.str_id, 40);
+
+        // hook -> confirm message -> yes / no.
+        let confirm = &con.menus[hook.child_menu as usize];
+        assert_eq!(confirm.items[0].str_id, 41);
+        let choices = &con.menus[confirm.items[0].child_menu as usize];
+        assert_eq!(choices.items.len(), 2);
+        assert_eq!(choices.items[0].click_func, "QWorlo_GO");
+        assert_eq!(choices.items[0].str_id, 42);
+        assert_eq!(choices.items[1].click_func, "");
+        assert_eq!(choices.items[1].str_id, 43);
+
+        let src = String::from_utf8(con.appendix.clone()).unwrap();
+        assert!(src.contains("QF_doQuestTrigger(\"Oro-TravelToOrlo\")"));
+
+        // Round-trips, and removal restores the original layout exactly.
+        let rebuilt = con.rebuild();
+        let mut re = ConFile::parse(&rebuilt).unwrap();
+        assert_eq!(warp_option_keys(&re), vec!["orlo".to_string()]);
+        assert!(remove_warp_option(&mut re, "orlo"));
+        assert_eq!(re.menus.len(), 2);
+        assert_eq!(re.menus[0].items.len(), 1);
+        assert!(re.appendix.is_empty());
+    }
+
+    #[test]
+    fn warp_and_quest_options_coexist_on_one_npc() {
+        // The appendix is shared, so each feature must only ever remove its own
+        // marked section — a warp option and a quest option on the same NPC.
+        let mut con = ConFile::parse(&minimal_con()).unwrap();
+        let ws = WarpStrings {
+            hook_option: 40,
+            confirm: 41,
+            accept_option: 42,
+            decline_option: 43,
+        };
+        append_warp_option(&mut con, "orlo", "Oro-TravelToOrlo", &ws).unwrap();
+        append_quest_option(&mut con, 5503, "5503-3", &GiverStrings::default()).unwrap();
+
+        let mut re = ConFile::parse(&con.rebuild()).unwrap();
+        assert_eq!(warp_option_keys(&re), vec!["orlo".to_string()]);
+        assert_eq!(quest_option_qids(&re), vec![5503]);
+        let src = String::from_utf8(re.appendix.clone()).unwrap();
+        assert!(src.contains("QWorlo_GO") && src.contains("QE5503_ACT_accept"));
+
+        // Dropping the quest leaves the warp option intact, and vice versa.
+        assert!(remove_quest_option(&mut re, 5503));
+        let src = String::from_utf8(re.appendix.clone()).unwrap();
+        assert!(src.contains("QWorlo_GO"), "removing a quest ate the warp Lua");
+        assert_eq!(warp_option_keys(&re), vec!["orlo".to_string()]);
+        assert!(remove_warp_option(&mut re, "orlo"));
         assert_eq!(re.menus.len(), 2);
         assert_eq!(re.menus[0].items.len(), 1);
         assert!(re.appendix.is_empty());

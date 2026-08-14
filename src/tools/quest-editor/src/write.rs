@@ -1423,6 +1423,113 @@ pub fn append_quest_to_npc_dialog(
     })
 }
 
+/// The four lines a warp option needs.
+pub struct WarpText {
+    pub hook: String,
+    pub confirm: String,
+    pub accept: String,
+    pub decline: String,
+}
+
+/// Append a "take me there" option to an NPC's existing dialog. The option fires
+/// `trigger`, which is expected to carry a `REWD_007` warp; this writes no QSD,
+/// so the trigger must already exist.
+///
+/// `key` namespaces the Lua functions, the appendix section and the event
+/// strings, so one NPC can carry several destinations and re-running refreshes
+/// rather than duplicates.
+pub fn append_warp_to_npc_dialog(
+    root: &Path,
+    npc_id: i32,
+    key: &str,
+    trigger: &str,
+    text: &WarpText,
+    dry_run: bool,
+) -> Result<WriteReport> {
+    if !key.chars().all(|c| c.is_ascii_alphanumeric()) || key.is_empty() {
+        bail!("key must be non-empty and alphanumeric (it becomes a Lua identifier): {key:?}");
+    }
+    let stb_dir = resolve_stb_dir(root)?;
+    let event_dir = stb_dir
+        .parent()
+        .ok_or_else(|| anyhow!("STB dir has no parent"))?
+        .join("EVENT");
+
+    let placements = crate::ifo::find_npc(root, npc_id)?;
+    if placements.is_empty() {
+        bail!("npc {npc_id} isn't placed in any zone .IFO");
+    }
+    let mut con_names: Vec<String> = placements
+        .iter()
+        .map(|p| p.conversation.trim().to_string())
+        .filter(|c| !c.is_empty())
+        .collect();
+    con_names.sort_by_key(|c| c.to_ascii_lowercase());
+    con_names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    if con_names.is_empty() {
+        bail!("npc {npc_id} has no conversation to append to");
+    }
+
+    let ltb_path = file_ci(&event_dir, "ulngtb_con.ltb")?;
+    let mut ltb = crate::ltb::LtbTable::read_file(&ltb_path)?;
+    let strings = crate::convo::WarpStrings {
+        hook_option: ltb.set_or_append(&format!("QW{key}_hook"), &text.hook) as i32,
+        confirm: ltb.set_or_append(&format!("QW{key}_confirm"), &text.confirm) as i32,
+        accept_option: ltb.set_or_append(&format!("QW{key}_accept"), &text.accept) as i32,
+        decline_option: ltb.set_or_append(&format!("QW{key}_decline"), &text.decline) as i32,
+    };
+
+    let mut changes = Vec::new();
+    let mut outputs: Vec<(PathBuf, Vec<u8>)> = Vec::new();
+    for name in &con_names {
+        let path = file_ci(&event_dir, name)
+            .with_context(|| format!("npc {npc_id}'s conversation \"{name}\" not found"))?;
+        let mut con = crate::convo::ConFile::read_file(&path)?;
+        let refresh = crate::convo::warp_option_keys(&con).iter().any(|k| k == key);
+        crate::convo::append_warp_option(&mut con, key, trigger, &strings)?;
+        let bytes = con.rebuild();
+        crate::convo::ConFile::parse(&bytes).context("rebuilt .CON failed to self-parse")?;
+        changes.push(format!(
+            "{} warp option \"{key}\" in {} (confirm → QF_doQuestTrigger(\"{trigger}\"))",
+            if refresh { "REFRESH" } else { "APPEND" },
+            path.display()
+        ));
+        outputs.push((path, bytes));
+    }
+    changes.push(format!("UPSERT 4 dialog strings into {}", ltb_path.display()));
+    changes.push(
+        "NOTE: appended options need the appendix-aware client (QEX1) — deploy client + data together"
+            .to_string(),
+    );
+
+    if dry_run {
+        return Ok(WriteReport {
+            dry_run: true,
+            changes,
+            backups: Vec::new(),
+        });
+    }
+
+    let mut backups = Vec::new();
+    for (path, bytes) in &outputs {
+        if let Some(b) = backup_once(path)? {
+            backups.push(b);
+        }
+        fs::write(path, bytes).with_context(|| format!("writing {}", path.display()))?;
+    }
+    if let Some(b) = backup_once(&ltb_path)? {
+        backups.push(b);
+    }
+    fs::write(&ltb_path, ltb.to_bytes())
+        .with_context(|| format!("writing {}", ltb_path.display()))?;
+
+    Ok(WriteReport {
+        dry_run: false,
+        changes,
+        backups,
+    })
+}
+
 /// The set of persistent character quest-switch numbers already referenced by any
 /// `COND_014` / `REWD_015` across every `.QSD` (retail + ours).
 pub fn used_switches(root: &Path) -> Result<BTreeSet<i32>> {
