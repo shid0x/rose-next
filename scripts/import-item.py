@@ -457,8 +457,12 @@ def main():
     if args.source_row >= len(sdata):
         sys.exit("source row %d out of range (%d rows)" % (args.source_row, len(sdata)))
     src = sdata[args.source_row]
-    if not src[0]:
-        sys.exit("source row %d has an empty name (unused row?)" % args.source_row)
+    if not src[0] and not args.name:
+        # An empty STB name usually means an unused row -- but not always: QQ-iROSE
+        # leaves column 0 blank throughout and keeps names only in the STL, so
+        # requiring one there would reject its entire table. --name settles it.
+        sys.exit("source row %d has an empty name (unused row?) -- pass --name if the "
+                 "source keeps names only in its STL" % args.source_row)
     _, _, orows, ocols, odata = stb_read(os.path.join(OURS, STB_REL))
     if ocols - 1 != EXPECT_COLS:
         sys.exit("our %s has %d data cols, expected %d -- update TYPES before importing"
@@ -503,7 +507,7 @@ def main():
         except FileNotFoundError:
             pass
     stb_name = src[0].decode("euc-kr", "replace")
-    if name and stb_name.split()[:1] != name.decode("utf-8", "replace").split()[:1]:
+    if stb_name and name and stb_name.split()[:1] != name.decode("utf-8", "replace").split()[:1]:
         print("WARNING: source STL name %r differs from STB name %r -- source data may be "
               "inconsistent; pass --name/--desc to override" % (name.decode("utf-8", "replace"), stb_name))
     if args.name:
