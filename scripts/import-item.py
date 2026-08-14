@@ -115,6 +115,25 @@ def stb_append_row(path, row_cells, dry):
             fh.write(out)
     return new_id
 
+def stb_set_cell(path, row, col, value, dry):
+    """Overwrite one cell in place. Rebuilds the data section; the header (column
+    titles + row names) is preserved verbatim, so editors still read the file."""
+    d, offset, rows, cols, data = stb_read(path)
+    if not 0 <= row < rows - 1 or not 0 <= col < cols - 1:
+        sys.exit("stb_set_cell: row %d col %d out of range (%dx%d)"
+                 % (row, col, rows - 1, cols - 1))
+    if isinstance(value, str):
+        value = value.encode("euc-kr")
+    data[row][col] = value
+    body = b"".join(struct.pack("<H", len(c)) + c
+                    for r in data for c in r)
+    out = d[:offset] + body
+    if not dry:
+        with open(path, "wb") as fh:
+            fh.write(out)
+    return out
+
+
 # ---------------------------------------------------------------- ZSC
 class Zsc:
     def __init__(self, path):
@@ -485,6 +504,10 @@ def main():
     # build our row: source cols 0..n-2 + our key in the last column
     row = list(src[0:ocols - 2]) + [new_key]
     row[1] = b""  # vestigial model-path column; the game reads the ZSC instead
+    if args.name:
+        # Col 0 is what the *server* reports (ITEM_NAME is get_cstr(I, 0) there);
+        # the client reads the STL. Override both or they disagree.
+        row[0] = args.name.encode("euc-kr", "replace")
     if args.copy_icon and args.icon is not None:
         sys.exit("pass either --copy-icon or --icon, not both")
     if args.copy_icon:
@@ -552,8 +575,11 @@ def main():
     # Build every table before writing any of them, so an error in the second
     # cannot leave the first already extended.
     pending = []
+    empty_models = set()
     for rel in ZSC_RELS:
         src_zsc = Zsc(os.path.join(args.source, rel))
+        if not src_zsc.objects[args.source_row][1]:
+            empty_models.add(rel)
         obj_id, files_needed, blob = zsc_build_append(
             os.path.join(OURS, rel), src_zsc, args.source_row)
         if obj_id != new_id:
@@ -590,9 +616,13 @@ def main():
         assert vrows - 1 == new_id + 1 and vdata[new_id][vcols - 2] == new_key
         for rel in ZSC_RELS:
             vz = Zsc(os.path.join(OURS, rel))
+            # The object count is the invariant that actually matters; a model
+            # may legitimately be empty (the source has no art for that sex), in
+            # which case the placeholder we appended has no parts by design.
             assert len(vz.objects) == new_id + 1, (
                 "%s ended with %d objects, expected %d" % (rel, len(vz.objects), new_id + 1))
-            assert vz.objects[new_id][1], "%s object %d has no parts" % (rel, new_id)
+            if rel not in empty_models:
+                assert vz.objects[new_id][1], "%s object %d has no parts" % (rel, new_id)
         vkeys, vlangs = stl_read(os.path.join(OURS, STL_REL))
         assert vkeys[-1][0] == new_key and vlangs[0][-1][0] == name
         print("verified: STB row, ZSC object and STL entry all present")
