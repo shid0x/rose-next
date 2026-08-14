@@ -12,9 +12,17 @@ What it does (all appends -- existing rows/objects are never modified):
     4. copies any mesh/texture files referenced by the appended ZSC entries from the
        source data dir into ours (same relative paths)
 
-Supported types are the ones with a *single* model table. Helmet/armour/gauntlet/
-boots are deliberately absent: those are sex-split across LIST_M*.ZSC and LIST_W*.ZSC
-and would need two model appends kept in lockstep, which this does not do.
+Helmet/armour/gauntlet/boots are sex-split: the client loads a separate model
+table per sex (io_basic.cpp, m_pMD_CharPARTS[sex][part] -> LIST_mBODY.ZSC /
+LIST_wBODY.ZSC and friends) and indexes **both** by the same item number. So a
+new armour ID needs one object appended to each, and the invariant that must
+hold afterwards is:
+
+    STB rows == male ZSC objects == female ZSC objects
+
+It holds exactly in both our data and RoseZA's today. This script checks it
+before appending -- if a table is already out of step, something else corrupted
+it and adding another row would only bury the evidence.
 
 Structure facts this relies on (verified against the live client/server loaders):
     - Item visuals come from the type's ZSC object[item_no]; the STB "model file"
@@ -40,24 +48,41 @@ import argparse, io, os, shutil, struct, sys
 OURS = "data"
 FIELD_ZSC_REL = r"3DDATA\ITEM\LIST_FieldITEM.ZSC"
 
-# name -> (item type number, STB, model ZSC, STL, STL key prefix, our data-col count)
+# name -> (item type number, STB, model ZSCs, STL, STL key prefix, our data-col count)
+#
+# "model ZSCs" is a tuple because armour is sex-split; it is empty for types with
+# no avatar model at all. Every entry is appended in lockstep and must end up
+# holding the new item number as its object index.
 # The col count is a tripwire: if our table ever gains a column the row we build
 # would be the wrong width, and appending it would silently shift every field.
 TYPES = {
-    "weapon":   (8, r"3DDATA\STB\LIST_WEAPON.STB",   r"3DDATA\WEAPON\LIST_WEAPON.ZSC",
+    "weapon":   (8, r"3DDATA\STB\LIST_WEAPON.STB",   (r"3DDATA\WEAPON\LIST_WEAPON.ZSC",),
                  r"3DDATA\STB\LIST_WEAPON_S.STL",   "LWEA", 46),
-    "subwpn":   (9, r"3DDATA\STB\LIST_SUBWPN.STB",   r"3DDATA\WEAPON\LIST_SUBWPN.ZSC",
+    "subwpn":   (9, r"3DDATA\STB\LIST_SUBWPN.STB",   (r"3DDATA\WEAPON\LIST_SUBWPN.ZSC",),
                  r"3DDATA\STB\LIST_SUBWPN_S.STL",   "LSUB", 36),
-    "back":     (6, r"3DDATA\STB\LIST_BACK.STB",     r"3DDATA\AVATAR\LIST_BACK.ZSC",
+    "back":     (6, r"3DDATA\STB\LIST_BACK.STB",     (r"3DDATA\AVATAR\LIST_BACK.ZSC",),
                  r"3DDATA\STB\LIST_BACK_S.STL",     "LBAC", 35),
-    "faceitem": (1, r"3DDATA\STB\LIST_FACEITEM.STB", r"3DDATA\AVATAR\LIST_FACEIEM.ZSC",
+    "faceitem": (1, r"3DDATA\STB\LIST_FACEITEM.STB", (r"3DDATA\AVATAR\LIST_FACEIEM.ZSC",),
                  r"3DDATA\STB\LIST_FACEITEM_S.STL", "LFAC", 34),
-    # No avatar model -- ZSC is None and the model step is skipped entirely.
-    "useitem":  (10, r"3DDATA\STB\LIST_USEITEM.STB",  None,
+    # Armour: one model table per sex, both indexed by the item number.
+    "cap":      (2, r"3DDATA\STB\LIST_CAP.STB",      (r"3DDATA\AVATAR\LIST_MCAP.ZSC",
+                                                      r"3DDATA\AVATAR\LIST_WCAP.ZSC"),
+                 r"3DDATA\STB\LIST_CAP_S.STL",      "LCAP", 37),
+    "body":     (3, r"3DDATA\STB\LIST_BODY.STB",     (r"3DDATA\AVATAR\LIST_MBODY.ZSC",
+                                                      r"3DDATA\AVATAR\LIST_WBODY.ZSC"),
+                 r"3DDATA\STB\LIST_BODY_S.STL",     "LBOD", 36),
+    "arms":     (4, r"3DDATA\STB\LIST_ARMS.STB",     (r"3DDATA\AVATAR\LIST_MARMS.ZSC",
+                                                      r"3DDATA\AVATAR\LIST_WARMS.ZSC"),
+                 r"3DDATA\STB\LIST_ARMS_S.STL",     "LARM", 35),
+    "foot":     (5, r"3DDATA\STB\LIST_FOOT.STB",     (r"3DDATA\AVATAR\LIST_MFOOT.ZSC",
+                                                      r"3DDATA\AVATAR\LIST_WFOOT.ZSC"),
+                 r"3DDATA\STB\LIST_FOOT_S.STL",     "LFOO", 36),
+    # No avatar model -- the model step is skipped entirely.
+    "useitem":  (10, r"3DDATA\STB\LIST_USEITEM.STB",  (),
                  r"3DDATA\STB\LIST_USEITEM_S.STL",  "LUSE", 28),
-    "jewel":    (7, r"3DDATA\STB\LIST_JEWEL.STB",     None,
+    "jewel":    (7, r"3DDATA\STB\LIST_JEWEL.STB",     (),
                  r"3DDATA\STB\LIST_JEWEL_S.STL",    "LJEM", 34),
-    "natural":  (12, r"3DDATA\STB\LIST_NATURAL.STB",  None,
+    "natural":  (12, r"3DDATA\STB\LIST_NATURAL.STB",  (),
                  r"3DDATA\STB\LIST_NATURAL_S.STL",  "LNAT", 30),
 }
 
@@ -300,7 +325,7 @@ def copy_assets(files_needed, source, dry):
         if not dry:
             os.makedirs(os.path.dirname(dstf), exist_ok=True)
             shutil.copy2(srcf, dstf)
-        print("copied: %s" % rel)
+        print("%s: %s" % ("would copy" if dry else "copied", rel))
 
 # ---------------------------------------------------------------- main
 def main():
@@ -322,7 +347,7 @@ def main():
     if not os.path.isdir(os.path.join(OURS, "3DDATA")):
         sys.exit("run from the repo root (data/3DDATA not found)")
 
-    ITEM_TYPE, STB_REL, ZSC_REL, STL_REL, KEY_PREFIX, EXPECT_COLS = TYPES[args.type]
+    ITEM_TYPE, STB_REL, ZSC_RELS, STL_REL, KEY_PREFIX, EXPECT_COLS = TYPES[args.type]
 
     src_stb = os.path.join(args.source, STB_REL)
     _, _, srows, scols, sdata = stb_read(src_stb)
@@ -344,6 +369,20 @@ def main():
     new_id = orows - 1
     if new_id > 2047:
         sys.exit("new ID %d exceeds the 11-bit item number limit (2047)" % new_id)
+
+    # Every model table must already be in step with the STB, or the new object
+    # would not land on the new item number. Checked on both sides: a source
+    # table that is short means the row we are copying has no model there.
+    for rel in ZSC_RELS:
+        have = len(Zsc(os.path.join(OURS, rel)).objects)
+        if have != new_id:
+            sys.exit("our %s holds %d objects but %s has %d rows -- the tables are already "
+                     "out of step, fix that before importing"
+                     % (os.path.basename(rel), have, os.path.basename(STB_REL), new_id))
+        scount = len(Zsc(os.path.join(args.source, rel)).objects)
+        if args.source_row >= scount:
+            sys.exit("source %s has only %d objects, no object %d for this row"
+                     % (os.path.basename(rel), scount, args.source_row))
     new_key = ("%s%d" % (KEY_PREFIX, new_id)).encode("ascii")
 
     # name/desc from source STL via the source row's key (last col)
@@ -391,19 +430,25 @@ def main():
 
     # backups
     if not args.dry_run:
-        rels = [STB_REL, STL_REL] + ([ZSC_REL] if ZSC_REL else [])             + ([FIELD_ZSC_REL] if args.copy_field_model else [])
+        rels = ([STB_REL, STL_REL] + list(ZSC_RELS)
+                + ([FIELD_ZSC_REL] if args.copy_field_model else []))
         for rel in rels:
             p = os.path.join(OURS, rel)
             bak = p + ".import-%d.bak" % new_id
             if not os.path.exists(bak):
                 shutil.copy2(p, bak)
 
-    if ZSC_REL:
-        src_zsc = Zsc(os.path.join(args.source, ZSC_REL))
-        if args.source_row >= len(src_zsc.objects):
-            sys.exit("source ZSC has no object %d" % args.source_row)
-        obj_id, files_needed = zsc_append_object(os.path.join(OURS, ZSC_REL), src_zsc, args.source_row, args.dry_run)
-        assert obj_id == new_id, "STB/ZSC index drift: row %d vs object %d" % (new_id, obj_id)
+    # Sex-split armour appends to both tables; they must stay index-aligned, so a
+    # mismatch here is fatal rather than a warning -- a half-applied import leaves
+    # every later item pointing at the wrong model.
+    for rel in ZSC_RELS:
+        src_zsc = Zsc(os.path.join(args.source, rel))
+        obj_id, files_needed = zsc_append_object(
+            os.path.join(OURS, rel), src_zsc, args.source_row, args.dry_run)
+        if obj_id != new_id:
+            sys.exit("STB/ZSC index drift in %s: row %d vs object %d"
+                     % (os.path.basename(rel), new_id, obj_id))
+        print("model: %s object %d -> our %d" % (os.path.basename(rel), args.source_row, obj_id))
         copy_assets(files_needed, args.source, args.dry_run)
 
     if args.copy_field_model:
@@ -423,9 +468,11 @@ def main():
     if not args.dry_run:
         _, _, vrows, vcols, vdata = stb_read(os.path.join(OURS, STB_REL))
         assert vrows - 1 == new_id + 1 and vdata[new_id][vcols - 2] == new_key
-        if ZSC_REL:
-            vz = Zsc(os.path.join(OURS, ZSC_REL))
-            assert len(vz.objects) == new_id + 1 and vz.objects[new_id][1]
+        for rel in ZSC_RELS:
+            vz = Zsc(os.path.join(OURS, rel))
+            assert len(vz.objects) == new_id + 1, (
+                "%s ended with %d objects, expected %d" % (rel, len(vz.objects), new_id + 1))
+            assert vz.objects[new_id][1], "%s object %d has no parts" % (rel, new_id)
         vkeys, vlangs = stl_read(os.path.join(OURS, STL_REL))
         assert vkeys[-1][0] == new_key and vlangs[0][-1][0] == name
         print("verified: STB row, ZSC object and STL entry all present")
