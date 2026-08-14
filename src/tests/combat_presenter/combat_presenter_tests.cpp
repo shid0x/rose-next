@@ -151,6 +151,15 @@ struct HpHarness {
         last_sync_seq = next_hp_authority_seq();
         authoritative_hp = hp;
         has_authoritative_hp = true;
+        // Server-reported HP above DEAD_HP retires a death it announced earlier
+        // (revive). Must precede the hp >= visible_hp branch: a revive commonly
+        // lands *below* a stale visible bar, which would otherwise fall through to
+        // the drift path with the death still pending.
+        if (hp > 0 && pending_authoritative_death) {
+            queue.clear();
+            pending_correction = 0;
+            pending_authoritative_death = false;
+        }
         if (hp >= visible_hp) {
             visible_hp = hp;
             pending_correction = 0;
@@ -950,6 +959,45 @@ main() {
             "suppressed outgoing hit should be tracked");
         expect(player.pending_authoritative_death,
             "suppressed outgoing hit should keep player death pending");
+    }
+
+    {
+        // Revive. The server sets HP to 30% of max and teleports; it sends no
+        // packet that says "you are alive again", so the authoritative HP sync is
+        // the only signal. The revive value lands *below* the stale visible bar
+        // because the death was never presented -- that is the case the old code
+        // missed, leaving every subsequent attack suppressed.
+        HpHarness player;
+        HpHarness monster;
+        player.visible_hp = 2276;
+        player.reconcile(0);
+        expect(player.pending_authoritative_death, "server kill should mark death pending");
+        expect(player.visible_hp == 2276, "unpresented death must not move the bar");
+
+        player.reconcile(1013);
+        expect(!player.pending_authoritative_death,
+            "revive below the stale visible bar must still clear the pending death");
+
+        monster.queue.push(event(1, 10, 20, 80));
+        expect(monster.outgoing_hit_while_pending_dead(10, &player)
+                == PresentationResult::PresentedDamage,
+            "attacks after a revive must land instead of presenting as miss");
+        expect(monster.suppressed_outgoing_attacks == 0,
+            "no outgoing hit should be suppressed once the player has revived");
+    }
+
+    {
+        // The lethal event that killed us is still queued when the revive lands;
+        // left there it would present that same death again at the next hit frame.
+        HpHarness player;
+        player.visible_hp = 2276;
+        player.reconcile(0);
+        player.queue.push(event(7, 10, 2276, 0, true));
+        expect(player.queue.size() == 1, "queued lethal event should be present before revive");
+
+        player.reconcile(1013);
+        expect(player.queue.size() == 0, "revive must drop damage aimed at the character that died");
+        expect(!player.pending_authoritative_death, "revive must clear the pending death");
     }
 
     {

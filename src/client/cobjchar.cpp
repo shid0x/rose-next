@@ -4679,6 +4679,30 @@ CObjCHAR::Reconcile_HP(int hp) {
     // its hp_after checkpoint is treated as superseded in ApplyPresentedCombatDamage.
     m_dwLastAuthoritativeSyncSeq = NextHPAuthoritySeq();
     SetAuthoritativeHP(hp);
+
+    // The server reporting HP above DEAD_HP means it now considers this character
+    // alive, which retires any death it announced earlier. Revive is exactly that
+    // and nothing else signals it: Recv_cli_REVIVE_REQ sets HP to 30% of max and
+    // teleports, and our server never sends GSV_REVIVE_REPLY at all (the client
+    // handler for it only records a zone id).
+    //
+    // This has to run *before* the `hp >= Get_HP()` branch below. A revive
+    // routinely lands under the stale visible bar -- if the death was never
+    // presented the bar still shows pre-death HP, so a 30%-of-max revive compares
+    // as a decrease, fell through to the drift path, and left
+    // m_bPendingAuthoritativeDeath set. That flag makes
+    // ShouldSuppressOutgoingDamageForPendingDeath blank every hit the avatar (or
+    // its cart) lands, so the player revived and then missed everything until some
+    // incoming hit happened to clear it.
+    //
+    // Any queued damage goes too: it was aimed at the character that just died,
+    // and a queued lethal event would otherwise present that same death again at
+    // the next hit frame. ClearAllDamage covers the queue, the drift correction
+    // and the flag together.
+    if (hp > DEAD_HP && m_bPendingAuthoritativeDeath) {
+        ClearAllDamage();
+    }
+
     if (hp >= Get_HP()) {
         m_iPendingCombatHPCorrection = 0;
         ClearPendingAuthoritativeDeath();
