@@ -46,16 +46,44 @@ CLASSES = {51: "Soldier", 52: "Muse", 53: "Hawker", 54: "Dealer"}
 SLOTS = ("body", "cap", "arms", "foot")
 TABLE = {"body": "LIST_BODY", "cap": "LIST_CAP", "arms": "LIST_ARMS", "foot": "LIST_FOOT"}
 
-# The tier to import. Source rows happen to line up across the four tables for
-# this set; that is NOT generally true (row 732 is a plate mail in LIST_BODY but
-# a Merchant Hat in LIST_CAP), so any new tier needs its rows looked up per table.
-TIER_NAME = "Crystal"
-SOURCE_ROW = {51: 242, 52: 243, 53: 244, 54: 245}
-REQ_LEVEL = 220
-UPLIFT = 900 / 437                      # what the Crystal Soldier tier already used
+# LIST_CLASS.STB row -> the broad class it belongs to. Job-specific gear (rows
+# 11-18, one per second job) still draws its budget from the broad class's
+# ceiling, because that is what the wearer's alternatives are. Verified our
+# LIST_CLASS.STB matches the source's exactly, so these indices mean the same
+# thing in both data sets.
+JOB_TO_CLASS = {11: 51, 12: 51, 13: 52, 14: 52, 15: 53, 16: 53, 17: 54, 18: 54}
 
-# The source misspells "Crystal" on three of the four Hawker pieces.
-NAME_FIXES = {"Cyrstal": "Crystal"}
+# Tiers. `sets` maps the item's class-filter value to its source row -- which is
+# NOT generally the same row across the four tables (row 732 is a plate mail in
+# LIST_BODY but a Merchant Hat in LIST_CAP); it happens to line up for both of
+# these, and the script checks that the row it reads is really the set it wants.
+#
+# `budget` picks the DEF/RES total each class aims for:
+#   "uplift"   - multiply that class's own pre-tier ceiling
+#   "midpoint" - sit halfway between the pre-tier ceiling and an existing tier,
+#                which is what makes a level-210 set a real step rather than a
+#                sidegrade of the 200s or a near-copy of the 220s
+TIERS = {
+    "crystal": {
+        "name": "Crystal",
+        "req_level": 220,
+        "sets": {51: 242, 52: 243, 53: 244, 54: 245},
+        "budget": ("uplift", 900 / 437),
+        # The source misspells "Crystal" on three of the four Hawker pieces.
+        "name_fixes": {"Cyrstal": "Crystal"},
+        "ignore_above": 200,
+    },
+    "lv210": {
+        "name": "lv210 job sets",
+        "req_level": 210,
+        # one set per second job: Knight, Champion, Mage, Cleric, Raider,
+        # Scout, Bourgeois, Artisan
+        "sets": {11: 47, 12: 46, 13: 76, 14: 77, 15: 106, 16: 107, 17: 136, 18: 137},
+        "budget": ("midpoint", 220),
+        "name_fixes": {},
+        "ignore_above": 200,
+    },
+}
 
 
 def load_importer():
@@ -72,38 +100,41 @@ def load_importer():
     return mod
 
 
-def scan(imp, base, skip_rows=()):
-    """{(class, slot): (best_def, best_res)} and {(class, slot): {names}}."""
-    best, names = {}, {}
+def fix_name(nm, tier):
+    for bad, good in tier["name_fixes"].items():
+        nm = nm.replace(bad, good)
+    return nm
+
+
+def read_rows(imp, base, slot):
+    _, _, rows, cols, d = imp.stb_read(
+        os.path.join(base, "3DDATA", "STB", TABLE[slot] + ".STB"))
+    return rows, d
+
+
+def req_level(row):
+    for c in (19, 21):
+        if row[c].strip() == b"31":
+            v = row[c + 1].strip()
+            return int(v) if v.isdigit() else 0
+    return 0
+
+
+def tier_names(imp, source, tier):
+    """{(set_key, slot): source item name} for every piece of this tier."""
+    out = {}
     for slot in SLOTS:
-        _, _, rows, _, d = imp.stb_read(os.path.join(base, "3DDATA", "STB", TABLE[slot] + ".STB"))
-        for i in range(1, rows - 1):
-            nm = d[i][0].decode("euc-kr", "replace").strip()
-            if not nm:
-                continue
-            try:
-                cls = int(d[i][16] or 0)
-            except ValueError:
-                continue
-            if cls not in CLASSES:
-                continue
-            names.setdefault((cls, slot), set()).add(nm)
-            if (cls, slot) in skip_rows and i in skip_rows[(cls, slot)]:
-                continue
-            try:
-                dfn, res = int(d[i][31] or 0), int(d[i][32] or 0)
-            except ValueError:
-                continue
-            if dfn > best.get((cls, slot), (0, 0))[0]:
-                best[(cls, slot)] = (dfn, res)
-    return best, names
+        _, d = read_rows(imp, source, slot)
+        for key, row in tier["sets"].items():
+            out[(key, slot)] = fix_name(d[row][0].decode("euc-kr", "replace").strip(), tier)
+    return out
 
 
 def our_names(imp):
-    """{(class, slot): {names already in our table}} -- used to skip re-imports."""
+    """{slot: {names already in our table}} -- used to skip re-imports."""
     out = {}
     for slot in SLOTS:
-        _, _, rows, _, d = imp.stb_read(os.path.join(OURS, "3DDATA", "STB", TABLE[slot] + ".STB"))
+        rows, d = read_rows(imp, OURS, slot)
         for i in range(1, rows - 1):
             nm = d[i][0].decode("euc-kr", "replace").strip()
             if nm:
@@ -111,37 +142,18 @@ def our_names(imp):
     return out
 
 
-def fix_name(nm):
-    for bad, good in NAME_FIXES.items():
-        nm = nm.replace(bad, good)
-    return nm
+def measure(imp, tier, names):
+    """Per broad class: the pre-tier ceiling, and any existing higher tier.
 
-
-def tier_names(imp, source):
-    """{(class, slot): source item name} for every piece of this tier."""
-    out = {}
-    for slot in SLOTS:
-        _, _, _, _, d = imp.stb_read(
-            os.path.join(source, "3DDATA", "STB", TABLE[slot] + ".STB"))
-        for cls, row in SOURCE_ROW.items():
-            out[(cls, slot)] = fix_name(d[row][0].decode("euc-kr", "replace").strip())
-    return out
-
-
-def build_plan(imp, source):
-    """Per-class DEF/RES targets from our own ceiling, split by our own shares.
-
-    The ceiling deliberately ignores this tier's own pieces. Without that, a
-    second run measures the gear the first run added and targets 2x *that*, so
-    every re-run silently inflates the tier -- and the skip-by-name guard hides
-    it, because the numbers still print.
+    Both deliberately ignore this tier's own pieces. Without that, a second run
+    measures what the first run added and targets a multiple of *that*, and the
+    skip-by-name guard hides the inflation because the numbers still print.
     """
-    names = tier_names(imp, source)
     exclude = {n.lower() for n in names.values()}
-    ceiling = {}
+    ceiling, higher = {}, {}
+    ref = tier["budget"][1] if tier["budget"][0] == "midpoint" else None
     for slot in SLOTS:
-        _, _, rows, _, d = imp.stb_read(
-            os.path.join(OURS, "3DDATA", "STB", TABLE[slot] + ".STB"))
+        rows, d = read_rows(imp, OURS, slot)
         for i in range(1, rows - 1):
             nm = d[i][0].decode("euc-kr", "replace").strip()
             if not nm or nm.lower() in exclude:
@@ -151,68 +163,100 @@ def build_plan(imp, source):
                 dfn, res = int(d[i][31] or 0), int(d[i][32] or 0)
             except ValueError:
                 continue
+            cls = JOB_TO_CLASS.get(cls, cls)
             if cls not in CLASSES:
                 continue
-            if dfn > ceiling.get((cls, slot), (0, 0))[0]:
+            lv = req_level(d[i])
+            if lv <= tier["ignore_above"] and dfn > ceiling.get((cls, slot), (0, 0))[0]:
                 ceiling[(cls, slot)] = (dfn, res)
+            if ref is not None and lv == ref and dfn > higher.get((cls, slot), (0, 0))[0]:
+                higher[(cls, slot)] = (dfn, res)
+    return ceiling, higher
 
-    plan = {}
+
+def build_plan(imp, source, tier):
+    """DEF/RES per (set, slot), budgeted per broad class, split by OUR slot shares."""
+    names = tier_names(imp, source, tier)
+    ceiling, higher = measure(imp, tier, names)
+    mode, arg = tier["budget"]
+
+    targets = {}
     for cls in CLASSES:
         dtot = sum(ceiling[(cls, s)][0] for s in SLOTS)
         rtot = sum(ceiling[(cls, s)][1] for s in SLOTS)
-        dT, rT = round(dtot * UPLIFT), round(rtot * UPLIFT)
+        if mode == "uplift":
+            targets[cls] = (round(dtot * arg), round(rtot * arg))
+        else:
+            hd = sum(higher.get((cls, s), (0, 0))[0] for s in SLOTS)
+            hr = sum(higher.get((cls, s), (0, 0))[1] for s in SLOTS)
+            if not hd:
+                sys.exit(f"no level-{arg} gear found for {CLASSES[cls]} to sit below")
+            targets[cls] = (round((dtot + hd) / 2), round((rtot + hr) / 2))
+
+    plan = {}
+    for key in tier["sets"]:
+        cls = JOB_TO_CLASS.get(key, key)
+        dT, rT = targets[cls]
+        dtot = sum(ceiling[(cls, s)][0] for s in SLOTS)
+        rtot = sum(ceiling[(cls, s)][1] for s in SLOTS)
         for s in SLOTS:
-            plan[(cls, s)] = (round(dT * ceiling[(cls, s)][0] / dtot),
+            plan[(key, s)] = (round(dT * ceiling[(cls, s)][0] / dtot),
                               round(rT * ceiling[(cls, s)][1] / rtot))
-    return plan, our_names(imp), names
+    return plan, our_names(imp), names, targets
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--tier", default="crystal", choices=sorted(TIERS))
     ap.add_argument("--source", required=True, help="path to the source data directory")
-    ap.add_argument("--only", help="comma-separated class ids to import (default: all)")
+    ap.add_argument("--only", help="comma-separated set keys to import (default: all)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     if not os.path.isdir(os.path.join(OURS, "3DDATA")):
         sys.exit("data/3DDATA not found")
+    tier = TIERS[args.tier]
     imp = load_importer()
-    plan, have, names = build_plan(imp, args.source)
-    want = ([int(x) for x in args.only.split(",")] if args.only else sorted(CLASSES))
+    plan, have, names, targets = build_plan(imp, args.source, tier)
+    want = ([int(x) for x in args.only.split(",")] if args.only else sorted(tier["sets"]))
 
-    print(f"== {TIER_NAME} tier, required level {REQ_LEVEL}, uplift {UPLIFT:.3f}x\n")
-    print(f"{'class':<9}{'slot':<6}{'source name':<26}{'DEF':>6}{'RES':>6}   action")
+    print(f"== {tier['name']}, required level {tier['req_level']}, "
+          f"budget {tier['budget'][0]} {tier['budget'][1]}\n")
+    for cls in sorted(CLASSES):
+        print(f"   {CLASSES[cls]:<8} target DEF {targets[cls][0]:>5}   RES {targets[cls][1]:>5}")
+    print()
+    print(f"{'set':<5}{'slot':<6}{'source name':<28}{'DEF':>6}{'RES':>6}   action")
     jobs = []
-    for cls in want:
-        row = SOURCE_ROW[cls]
+    for key in want:
+        row = tier["sets"][key]
         for slot in SLOTS:
-            src_name = names[(cls, slot)]
-            dfn, res = plan[(cls, slot)]
-            done = src_name.lower() in have.get(slot, set())
-            print(f"  {CLASSES[cls]:<8}{slot:<6}{src_name:<26}{dfn:>6}{res:>6}   "
+            nm = names[(key, slot)]
+            dfn, res = plan[(key, slot)]
+            done = nm.lower() in have.get(slot, set())
+            print(f"  {key:<3}{slot:<6}{nm:<28}{dfn:>6}{res:>6}   "
                   f"{'SKIP (already imported)' if done else 'import'}")
             if not done:
-                jobs.append((cls, slot, row, src_name, dfn, res))
+                jobs.append((key, slot, row, nm, dfn, res))
     if not jobs:
         print("\nnothing to do.")
         return
 
     print(f"\n{len(jobs)} piece(s) to import\n")
-    for cls, slot, row, src_name, dfn, res in jobs:
+    for key, slot, row, nm, dfn, res in jobs:
         cmd = [sys.executable, os.path.join(HERE, "import-item.py"),
                "--type", slot, "--source", args.source, "--source-row", str(row),
-               "--def", str(dfn), "--res", str(res), "--req-level", str(REQ_LEVEL),
-               "--copy-icon", "--name", src_name]
+               "--def", str(dfn), "--res", str(res),
+               "--req-level", str(tier["req_level"]), "--copy-icon", "--name", nm]
         if args.dry_run:
             cmd.append("--dry-run")
-        print(f"--- {CLASSES[cls]} {slot}: {src_name}")
+        print(f"--- set {key} {slot}: {nm}")
         r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
         for line in (r.stdout + r.stderr).splitlines():
             if any(k in line for k in ("WARNING", "importing", "model:", "icon:",
-                                       "verified", "DONE", "Error", "error")):
+                                       "verified", "DONE", "rror")):
                 print("    " + line)
         if r.returncode != 0:
-            sys.exit(f"import failed for {CLASSES[cls]} {slot} (exit {r.returncode}):\n"
+            sys.exit(f"import failed for set {key} {slot} (exit {r.returncode}):\n"
                      f"{r.stdout}{r.stderr}")
 
     print("\ndone." + ("  (dry run)" if args.dry_run else

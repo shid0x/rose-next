@@ -429,6 +429,12 @@ def main():
     ap.add_argument("--res", type=int, help="override RESISTENCE (col 32)")
     ap.add_argument("--req-level", type=int,
                     help="override the required character level (NEED_DATA pair with type 31)")
+    ap.add_argument("--atk", type=int,
+                    help="weapon only: override ATTACK_POWER (col 35)")
+    ap.add_argument("--atk-speed", type=int,
+                    help="weapon only: override ATTACK_SPEED (col 36). Lower is FASTER "
+                         "(attack_speed = 1500/(value+5)), and evo-era values run ~6 higher "
+                         "than ours, so copying them makes a weapon noticeably slower")
     ap.add_argument("--field-model", type=int, help="ground-drop model index in OUR LIST_FieldITEM.ZSC")
     ap.add_argument("--copy-field-model", action="store_true",
                     help="port the source's ground-drop model object into our LIST_FieldITEM.ZSC")
@@ -530,6 +536,17 @@ def main():
     if args.res is not None:
         print("RESISTENCE: source %s -> %d" % (row[32].decode() or "0", args.res))
         row[32] = str(args.res).encode("ascii")
+    if args.atk is not None or args.atk_speed is not None:
+        if args.type != "weapon":
+            sys.exit("--atk/--atk-speed only apply to --type weapon")
+        if args.atk is not None:
+            print("ATTACK_POWER: source %s -> %d" % (row[35].decode() or "0", args.atk))
+            row[35] = str(args.atk).encode("ascii")
+        if args.atk_speed is not None:
+            print("ATTACK_SPEED: source %s -> %d (attack_speed %d -> %d)"
+                  % (row[36].decode() or "0", args.atk_speed,
+                     1500 // (int(row[36] or b"0") + 5), 1500 // (args.atk_speed + 5)))
+            row[36] = str(args.atk_speed).encode("ascii")
     if args.req_level is not None:
         # Requirements are (type, value) pairs at cols 19/20 and 21/22; type 31
         # is character level. Retarget the existing pair if there is one so we
