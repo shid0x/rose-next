@@ -32,9 +32,20 @@ Rules:
     alone, which is why the level-200 quest NPCs sitting at DEF 300 (Tiger, the
     Ghost, the Town Girl and friends) are untouched without needing a list.
   * Bosses get BOSS_MULTIPLIER x the trend so they stay clearly the tankiest
-    thing around. "Boss" is read from the data, not a name list: the NPC_HP
+    thing around -- see the constant for why that is 1.2 and not the 1.6 the
+    first pass used. "Boss" is read from the data, not a name list: the NPC_HP
     column has a clean gap -- ordinary monsters sit at 1-290, the seven Oro
     named monsters at 1133-1272.
+
+Worth knowing before tuning boss numbers at all: for the top bosses the binding
+constraint is *level*, not DEF. Get_SuccessRATE discards an attack outright when
+`(player_lv + 10) - boss_lv * 1.1 + rand(1..50)` is non-positive, so against a
+level-240 boss a level-240 player clears that gate 72% of the time, a 230 clears
+it 52%, and a 216 only 24% -- and what survives then faces the `iSuc < 20` cliff.
+Simulated solo swing counts for the Terrasaurus King run ~3,100 at level 240 and
+~626,000 at level 216 with DEF held constant. The level-240 bosses are therefore
+cap-level content by construction and no DEF number makes them otherwise; that is
+a design choice to make deliberately rather than to discover.
   * The trend is refitted at runtime from monsters BELOW level 200, so it
     re-derives if our data changes and cannot feed on its own output.
 
@@ -69,7 +80,20 @@ NPC_STB = os.path.join(ROOT, "data", "3DDATA", "STB", "LIST_NPC.STB")
 COL_LEVEL, COL_HP = 7, 8
 FROM_LEVEL = 200            # where the curve breaks
 BOSS_HP_COLUMN = 1000       # clean gap: ordinary monsters top out at 290
-BOSS_MULTIPLIER = 1.6
+
+# Bosses get more than the trend so they stay the tankiest thing around, but the
+# first pass used 1.6 and that put their DEF (1329 at level 240) essentially on top
+# of an endgame character's attack power. Damage is proportional to
+# `(ATK - DEF + 250)`, so a boss sitting at the player's own ATK leaves a numerator
+# of ~255 out of ~1580 -- every hit lands near the damage floor, the fight is long
+# *and* reads as though the attacks are doing nothing, and the whole thing is
+# hypersensitive to small gear changes because the two terms nearly cancel.
+#
+# 1.2 keeps bosses clearly above ordinary monsters while moving DEF back off that
+# wall. Simulated against a level-240 character, solo swing counts drop from
+# 1257-3126 to 496-1008 -- roughly 80-170 swings each for a six-player group, which
+# is a real fight rather than a slog, and per-hit damage goes from ~20-38 to ~100.
+BOSS_MULTIPLIER = 1.2
 
 # rebalance-oro-bosses.py caps boss HP, which lowers the very column this script
 # reads to recognise a boss -- run in that order and the bosses silently get the
