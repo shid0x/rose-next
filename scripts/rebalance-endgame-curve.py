@@ -71,6 +71,19 @@ FROM_LEVEL = 200            # where the curve breaks
 BOSS_HP_COLUMN = 1000       # clean gap: ordinary monsters top out at 290
 BOSS_MULTIPLIER = 1.6
 
+# rebalance-oro-bosses.py caps boss HP, which lowers the very column this script
+# reads to recognise a boss -- run in that order and the bosses silently get the
+# ordinary 1.0x budget instead of BOSS_MULTIPLIER. Its sidecar lists exactly which
+# rows are bosses, so consult it when present and fall back to the column when not.
+BOSS_SIDECAR = os.path.join(ROOT, "data", "3DDATA", "STB", "LIST_NPC.oro-bosses.json")
+
+
+def boss_rows():
+    if not os.path.exists(BOSS_SIDECAR):
+        return set()
+    with open(BOSS_SIDECAR, encoding="utf-8") as fh:
+        return {int(k) for k in json.load(fh)}
+
 # Which stat to correct. Both break at the same level and for the same reason,
 # but they are separate knobs because they reach different players: DEF is the
 # physical denominator (and both numerators), RES is the magic denominator only,
@@ -136,6 +149,7 @@ def main():
     args = ap.parse_args()
 
     col, sidecar = STATS[args.stat]
+    known_bosses = boss_rows()
     oro = load_oro()
     stb = oro.Stb(NPC_STB)
     saved = {}
@@ -163,7 +177,7 @@ def main():
         bad = []
         for row in saved:
             lv = gi(stb, row, COL_LEVEL)
-            mult = BOSS_MULTIPLIER if gi(stb, row, COL_HP) >= BOSS_HP_COLUMN else 1.0
+            mult = BOSS_MULTIPLIER if (row in known_bosses or gi(stb, row, COL_HP) >= BOSS_HP_COLUMN) else 1.0
             if gi(stb, row, col) != min(saved[row], round(trend(lv) * mult)):
                 bad.append(row)
         print(f"{len(saved)} rows recorded; {len(bad)} do not match"
@@ -183,7 +197,7 @@ def main():
     changed, record, untouched = [], {}, []
     for i in rows:
         lv, cur = gi(stb, i, COL_LEVEL), gi(stb, i, col)
-        boss = gi(stb, i, COL_HP) >= BOSS_HP_COLUMN
+        boss = i in known_bosses or gi(stb, i, COL_HP) >= BOSS_HP_COLUMN
         cap = round(trend(lv) * (BOSS_MULTIPLIER if boss else 1.0))
         if cur <= cap:
             untouched.append((i, cur, cap))
