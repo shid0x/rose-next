@@ -110,6 +110,20 @@ def fit_hp_trend(stb, bosses):
 ORO_MAP_DIRS = {"TOWN", "OROIP", "ODP01", "ODC01", "ODD01", "ODD02", "ODD03",
                 "ODD04", "ODD05", "ODOS01", "ODRP01", "ODE01"}
 
+# Named monsters outside Oro that share the same problem, opted in one at a time
+# rather than by widening the rule -- Luna's other big-HP monsters are deliberate
+# and must not be swept up:
+#   Astarot King (row 396, 94,395 HP) is a clan-field monster; being unbalanced is
+#     the point of it.
+#   The four Gems (rows 326-329, 54k-63k HP at levels 80-89) pair huge HP with low
+#     DEF and very low AVOID -- you hit them constantly for full damage. They are
+#     farming piñatas by design, and they spawn ten at a time.
+# Behemoth King is the odd one out: Luna's planet boss, but at 168,412 HP it was
+# nearly twice our level-240 Oro boss while sitting a hundred levels below it.
+EXTRA_BOSS_ROWS = {
+    382,  # Behemoth King, level 142, Freezing Plateau (LP04)
+}
+
 
 def regen_mobs(extra):
     """Mob ids named by one REGEN point: a name, then two (name, mob, count) lists."""
@@ -147,7 +161,8 @@ def find_bosses(oro, stb):
     Capping those to a boss budget would quietly rewrite quest encounters.
 
     Scope therefore comes from the map REGEN lumps -- monsters that spawn in Oro
-    zones and nowhere else -- exactly as rebalance-oro-accuracy.py does.
+    zones and nowhere else -- exactly as rebalance-oro-accuracy.py does, plus the
+    hand-picked EXTRA_BOSS_ROWS.
     """
     import collections
     import glob
@@ -167,11 +182,16 @@ def find_bosses(oro, stb):
                         where[mob].add(zone)
             except Exception:
                 pass
-    return {i for i, zones in where.items()
-            if zones and zones <= ORO_MAP_DIRS
-            and i < stb.rows and stb.get(i, 0).strip()
-            and gi(stb, i, COL_HP) >= BOSS_HP_COLUMN
-            and gi(stb, i, COL_LEVEL) >= 200}
+    found = {i for i, zones in where.items()
+             if zones and zones <= ORO_MAP_DIRS
+             and i < stb.rows and stb.get(i, 0).strip()
+             and gi(stb, i, COL_HP) >= BOSS_HP_COLUMN
+             and gi(stb, i, COL_LEVEL) >= 200}
+    for i in EXTRA_BOSS_ROWS:
+        if i >= stb.rows or not stb.get(i, 0).strip():
+            sys.exit(f"EXTRA_BOSS_ROWS lists row {i}, which is not a named monster")
+        found.add(i)
+    return found
 
 
 def main():
