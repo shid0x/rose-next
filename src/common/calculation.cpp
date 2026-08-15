@@ -287,7 +287,24 @@ CCal::Get_SuccessRATE(CObjCHAR* pATK, CObjCHAR* pDEF) // , int &iCriticalSUC )
     // made riders (low dodge while mounted) miss ~93% of normal attacks.
     iRAND1 = 1 + RANDOM(50); // 1+RANDOM(100) * 0.6f;
     iRAND2 = 1 + RANDOM(60); // 1+RANDOM(100) * 0.7f;
-    iSuccess = (int)((pATK->Get_LEVEL() + 10) - pDEF->Get_LEVEL() * 1.1f + (iRAND1 /* *0.6f */));
+
+    // The level term is *proportional*, so the penalty for being under-levelled grows
+    // with absolute level: the gate only opens reliably at
+    // `player_lv >= kLevelGateScale * monster_lv - 10`, which at 1.1 quietly demands a
+    // ~10% level surplus -- 2-3 levels in Luna, but 6-10 across Eldeon and 20+ in Oro.
+    // At the top it exceeded our own character cap: the Gates of Muris wanted level 243
+    // and the level-240 bosses wanted 254, so no character could ever reach the neutral
+    // point and normal attacks were permanently gated there. Retail leaned on buffs we
+    // are not balanced around, so 1.05 keeps out-levelling worth doing while stopping
+    // the requirement from compounding past the cap.
+    //
+    // Note this is the *normal attack* gate only. Skills deliberately have a gentler,
+    // non-proportional one (weapon `lv + 20 - mlv`, magic `lv + 30 - mlv`, both in
+    // Get_SkillDAMAGE), which is why a caster stays effective at a level deficit where
+    // auto-attacks stop connecting entirely. Keep that asymmetry.
+    constexpr float kLevelGateScale = 1.05f;
+    iSuccess = (int)(
+        (pATK->Get_LEVEL() + 10) - pDEF->Get_LEVEL() * kLevelGateScale + (iRAND1 /* *0.6f */));
     if (iSuccess <= 0)
         return 0;
 
