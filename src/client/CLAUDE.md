@@ -132,7 +132,11 @@ Zone changes (`CGameStateWarp` → `CTERRAIN::LoadZONE` / `FreeZONE`) and per-fr
 **Buffered VFS reads (`CFileSystemTriggerVFS`)**
 - `Read()` keeps a 32 KB sequential read-ahead buffer, and **`m_lLogicalPos` — not the underlying `VFileHandle` — is the authoritative file position.** `Tell()` must return it (after a refill the handle sits up to 32 KB ahead), `Seek()` moves it and deliberately does *not* invalidate the buffer (so the `.IFO` lump walk's Tell→Seek→read→Seek-back stays free), and `IsEOF()` compares it against `vfgetsize`. `Seek` mirrors `vfseek`'s clamping to `[0, size]`-and-succeed. `OpenFile`/`CloseFile` must reset both — these objects are **pooled and reused** by `CVFSManager`, so stale buffer state would be served as the next file's content.
 - Why: every typed reader (`ReadFloat`, `ReadInt32`, `ReadByte`, …) funnels into `Read()`, which previously issued one `::vfread` — a `memset` plus an `fseek`+`fread` CRT round trip — per call, for as little as one byte. Terrain parses scalar-by-scalar, so a 19 KB `.HIM` was ~4,900 such calls. Measured against the shipped `rose.vfs`, warm cache: `.HIM` **2.88 ms → 0.057 ms (51×)**, `.TIL` 0.26 → 0.011 (24×), a 22 KB `.lit` **3.22 ms → 0.068 ms (47×)**. That was the bulk of the `him=3.2` and `lit=4.0` phases on the `MapIO:` row.
-- If you touch this, re-run the differential test: it compiles the real translation unit and checks it against raw `VOpenFile`/`vfread` ground truth over sequential scalar reads, 4,000 random seek/read ops per file, all three seek origins, over-seek clamping, EOF short reads with zero-fill, and pooled re-open. A `Tell`/`Seek` off-by-one here corrupts every map, but it fails loudly rather than subtly.
+- **If you touch this, re-run `vfs_buffer_tests`** (`src/tests/vfs_buffer/`). It compiles the real `cfilesystemtriggervfs.cpp` translation unit — not a copy — and checks it against raw `VOpenFile`/`vfread` ground truth over 6 real files: full sequential scalar passes, 4,000 random seek/read ops each, all three seek origins, over-seek clamping, EOF short reads with zero-fill, and pooled re-open (~917k assertions). It needs real game data, so run it from a deployed game dir or pass one:
+  ```
+  bin\release\vfs_buffer_tests.exe C:\path\to\game
+  ```
+  With no `data.idx` present it prints `SKIP` and returns 0, so it is safe to run unconditionally after a build. Verified to fail loudly: reintroducing the old `Tell()` (returning `vftell` instead of `m_lLogicalPos`) trips 147k assertions immediately.
 
 **Chunk-display hitch — the resolved picture**
 

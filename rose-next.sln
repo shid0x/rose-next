@@ -55,6 +55,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "sho_worldserver", "src\sho_
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "combat_presenter_tests", "src\tests\combat_presenter\combat_presenter_tests.vcxproj", "{B9F625C5-FC41-479A-9858-45C5B5A78599}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "vfs_buffer_tests", "src\tests\vfs_buffer\vfs_buffer_tests.vcxproj", "{404D6D17-06A0-4B6F-88FE-E1F9985D7DB3}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "common-shared", "common-shared", "{3B7AC165-5D32-4DA0-B266-9AF7A1AEFDE2}"
 	ProjectSection(SolutionItems) = preProject
 		src\common\shared\cai_file.cpp = src\common\shared\cai_file.cpp
@@ -145,6 +147,10 @@ Global
 		{B9F625C5-FC41-479A-9858-45C5B5A78599}.debug|x86.Build.0 = debug|Win32
 		{B9F625C5-FC41-479A-9858-45C5B5A78599}.release|x86.ActiveCfg = release|Win32
 		{B9F625C5-FC41-479A-9858-45C5B5A78599}.release|x86.Build.0 = release|Win32
+		{404D6D17-06A0-4B6F-88FE-E1F9985D7DB3}.debug|x86.ActiveCfg = debug|Win32
+		{404D6D17-06A0-4B6F-88FE-E1F9985D7DB3}.debug|x86.Build.0 = debug|Win32
+		{404D6D17-06A0-4B6F-88FE-E1F9985D7DB3}.release|x86.ActiveCfg = release|Win32
+		{404D6D17-06A0-4B6F-88FE-E1F9985D7DB3}.release|x86.Build.0 = release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
