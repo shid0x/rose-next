@@ -17,10 +17,11 @@ Three separate commits, deliberately ordered by risk:
 > below), clean log, and **alt-tab no longer triggers a device reset** — the headline
 > benefit of the whole exercise.
 >
-> **Not yet exercised**, and worth covering before trusting this in anger: resolution
-> change, fullscreen ↔ windowed toggle, MSAA on/off, lock screen, and an extended spell
-> minimised (the `S_PRESENT_OCCLUDED` throttle is the newest and least-tested code path).
-> `D3DERR_DEVICEREMOVED` remains untested and unhandled beyond a clean abort.
+> **Superseded — see "Still open" and "Black flashes in exclusive fullscreen" below for the
+> current state.** This paragraph was written on 2026-07-28 and left stale. Fullscreen ↔
+> windowed toggling and the occlusion path have since been covered; resolution change, MSAA
+> on/off and lock screen are still untested; `D3DERR_DEVICEREMOVED` remains unhandled beyond
+> a clean abort.
 >
 > To force the legacy D3D9 path for A/B testing, use **either**:
 > - `rose-next.ini` → `[VIDEO]` → `D3D9EX=0`
@@ -416,8 +417,133 @@ long-standing windowed-mode bugs fixed along the way.
   in game.
 - **Untested paths from the commit 2 matrix:** resolution change, MSAA on/off, and lock
   screen. Fullscreen ↔ windowed toggling and the occlusion path have since been covered.
+- **Exclusive fullscreen still black-flashes, and the trigger is unidentified.** Mitigated
+  by making borderless the default rather than fixed. See the section below for the evidence
+  and the experiment that would settle it.
 
-### Occlusion (`S_PRESENT_OCCLUDED`) — validated
+## Black flashes in exclusive fullscreen — mitigated 2026-08-16 (root cause not proven)
+
+**Symptom.** Brief full-screen black flashes (1–3 frames, "barely see it") during ordinary
+play, with `D3D9EX=1` and exclusive fullscreen. `[VIDEO] D3D9EX=0` fullscreen was reported
+clean, and that steered the whole first round of analysis toward a 9Ex-only difference —
+treat it with some caution in hindsight: legacy D3D9 exclusive fullscreen auto-minimises on
+deactivation just the same, it simply reports `D3DERR_DEVICELOST` rather than
+`S_PRESENT_OCCLUDED`, and the legacy comparison ran for far less time. `error.txt` showed
+matching pairs:
+
+```
+r_d3d: swap_buffers() occluded. skipping render until restored.
+r_d3d: no longer occluded. resuming render.
+```
+
+**The occlusion log is a symptom, not the cause.** No device reset was happening
+(`resetScreenIfNeeded(prepare-main)` logged **skipped**, `cLeAnUpDoNe` only at exit), and a
+skipped present cannot render black anyway — it leaves the previous front buffer on screen,
+so the throttle costs a dropped frame and nothing more. Something else was blanking the
+display.
+
+**Leading explanation (evidence below, not yet proven): Windows minimises an
+exclusive-fullscreen window when the app is deactivated, and each minimise→restore round
+trip is two display mode switches.** That is what a black flash is. It is exclusive-only by
+construction: a borderless or windowed device neither auto-minimises nor owns a mode.
+
+The `iconic=`/`foreground=`/`elapsed=` fields added to the occlusion log are what surfaced
+this. Every occlusion event observed in exclusive fullscreen since — three across two
+sessions — began with `iconic=1, foreground=0`, i.e. a genuinely minimised window:
+
+```
+r_d3d: occlusion began.   elapsed=0 ms, presents=0, frames_skipped=0, iconic=1, foreground=0
+r_d3d: occlusion cleared. elapsed=1984 ms, presents=2, frames_skipped=62, iconic=0, foreground=1
+```
+
+Durations were 23,235 ms / 1,984 ms / 19,875 ms. The long ones are plausibly deliberate
+alt-tabs; **the 2-second one is not**, and that is the interesting sample.
+
+This also reframes the original report. The old build logged one
+`occluded`/`no longer occluded` pair per occlusion *run*, not per frame — so the bursts that
+started this investigation
+
+```
+occluded / no longer occluded
+occluded / no longer occluded
+occluded / no longer occluded
+```
+
+were three separate minimise→restore cycles back to back, not three one-frame compositor
+blips. Reading them as blips is what produced the wrong turn recorded below. A fast enough
+cycle reads exactly as reported: a very quick black flash that does not interrupt play.
+
+**Still open.** Whether the app is being deactivated by something external or minimising
+itself is unresolved; the discriminator is an exclusive session with no alt-tabbing at all,
+where any `iconic=1` event proves the latter. If it is confirmed,
+`D3DCREATE_NOWINDOWCHANGES` is the flag that stops D3D managing the window on deactivation.
+Suggestive but not established: the first occlusion in every exclusive session so far lands
+immediately after `resetScreenIfNeeded(prepare-main)` (4 for 4) — though `prepare-main` is
+one of the few things logged at all, so the base rate is high. Zone load is a heavy
+synchronous stall, which is a plausible way to lose activation.
+
+**What borderless has shown so far:** a 6.5-minute session with zero occlusion events and no
+flashes, versus every exclusive session producing at least one. Encouraging, not yet a large
+sample.
+
+### Wrong turn worth recording: the `D3DDISPLAYMODEEX` is not a display-mode request
+
+The first hypothesis was that `_fill_fullscreen_mode_ex()` described a mode no adapter
+enumerates. It is passed *only* to `CreateDeviceEx`/`ResetEx` — the legacy path has no
+equivalent — which fits "9Ex-only" perfectly, and two of its fields look plainly wrong:
+
+| Field | Value | Why it looks wrong |
+|---|---|---|
+| `Format` | `pp.BackBufferFormat` = `D3DFMT_A8R8G8B8` | the *adapter* format is `ADAPTER_FORMAT32` = `X8R8G8B8`, and `find_adapter_ordinal()` enumerates with that. No adapter enumerates an `A8R8G8B8` display mode. |
+| `RefreshRate` | `pp.FullScreen_RefreshRateInHz` = `0` | reads as a literal 0 Hz. |
+
+**Both objections are void.** `CreateDeviceEx`/`ResetEx` require `Width`/`Height`/`Format`/
+`RefreshRate` to *match* `BackBufferWidth`/`BackBufferHeight`/`BackBufferFormat`/
+`FullScreen_RefreshRateInHz` exactly and return `D3DERR_INVALIDCALL` otherwise. The struct
+is a restatement the runtime cross-checks, not an independent mode request. Substituting the
+adapter format and the real desktop rate made creation fail and silently fall back to plain
+`CreateDevice`:
+
+```
+r_d3d: fullscreen mode ex = (1920x1080)-(fmt 22)-(60Hz).
+r_d3d: CreateDeviceEx() failed. [D3DERR_INVALIDCALL] trying plain CreateDevice.
+r_d3d: CreateDevice() returned an Ex-capable device.
+```
+
+Reverted; the warning now lives in the function's comment. The `fullscreen mode ex = …` log
+line was kept, because a `CreateDeviceEx` failure immediately after it is the signal that
+someone has broken the match again.
+
+Lesson, and it is the same one as the FLIPEX section: the sophisticated explanation was
+wrong. Note also how the failure presented — `CreateDeviceEx` failing is *not* fatal here,
+the fallback ladder quietly produces a working Ex-capable device via `QueryInterface`. Only
+the log says anything. Read it after any device-creation change.
+
+### Mitigation: borderless is now the default fullscreen
+
+An exclusive device owns the display mode, and every handover of that ownership costs a
+blank. A borderless window is a *windowed* D3D device covering the monitor, so the handover
+does not exist and neither does the auto-minimise. `[VIDEO] EXCLUSIVE_FULLSCREEN=1` (or
+`ROSE_EXCLUSIVE_FULLSCREEN=1`) opts back into the legacy path, which keeps the A/B available
+while the question above is still open. Client details are in the client `CLAUDE.md`; the
+one rule that matters is that a borderless backbuffer is **always** the monitor size —
+anything else is stretched by D3D and drifts UI hit-testing.
+
+This is deliberately a *mitigation* rather than a fix: it removes the mechanism rather than
+identifying the trigger. Exclusive fullscreen is unchanged and still carries whatever the
+underlying cause is.
+
+Note it also closes the "resolution change" gap indirectly for most players: in borderless
+the resolution list is a no-op, because the render target follows the monitor.
+
+`error.txt` names the live mode, since the engine alone cannot tell borderless from windowed
+(both are `WiNmOdE(WxH)` to it):
+
+```
+screen: mode=borderless size=1920x1080 (ini FULLSCREEN=1, EXCLUSIVE_FULLSCREEN=0)
+```
+
+### Occlusion (`S_PRESENT_OCCLUDED`)
 
 While the window is minimised (or another app owns the monitor fullscreen)
 `zz_renderer_d3d::throttle_if_occluded()` makes `begin_scene()` return false, so the frame
@@ -437,6 +563,32 @@ Rapid minimise/restore is the test that exposes it.
 Honest scope note: measured benefit on a desktop is small — this client is light enough
 that the wasted rendering was not hurting anything. The case it actually serves is laptops
 and long minimised stretches.
+
+Three defects found here while chasing the black flashes above, all fixed:
+
+- **Non-occluded statuses were swallowed.** `throttle_if_occluded()` treated *anything* that
+  was not `S_PRESENT_OCCLUDED` as "back on screen": it cleared the occluded flag, logged
+  "resuming render", and returned false — so on `D3DERR_DEVICELOST` / `DEVICEHUNG` /
+  `DEVICENOTRESET` / `S_PRESENT_MODE_CHANGED` the frame rendered into a device that needed a
+  reset (every draw silently no-ops) and `reset_device()` did nothing on the next frame
+  either, because nothing had set `_device_lost`. Only `ZZ_DEVICE_OK` resumes now; the rest
+  hand over to the lost-device path and keep skipping.
+- **No hysteresis.** One occluded present dropped a whole frame. The compositor reports
+  single-frame occlusion blips during normal play, and skipping for one of those is a pure
+  visible hitch for no saving. Skipping now waits for `kOccludedSkipAfterPresents` (2)
+  consecutive occluded presents; a genuine minimise lasts seconds and is unaffected.
+- **`CheckDeviceState(NULL)`.** The client calls `swapBuffers()` → `swap_buffers(NULL)`, and
+  `_parameters.hDeviceWindow` was never assigned, so the confirmation query inside
+  `swap_buffers()` got NULL while `throttle_if_occluded()` and `reset_device()` passed the
+  real handle. NULL is not a documented input. `hDeviceWindow` is now set in `initialize()`
+  and all three sites use `view->get_handle()`.
+
+The two log lines also could not distinguish a 16 ms blip from a 30 s minimise. Occlusion
+now logs elapsed ms, occluded presents, frames actually skipped, `IsIconic()` and whether we
+are the foreground window, at both the begin and clear transitions.
+
+`_device_removed` used to be written and never read; `reset_device()` now consults it so a
+later, milder `CheckDeviceState()` cannot talk us into resetting a removed adapter.
 
 ## Gotchas
 

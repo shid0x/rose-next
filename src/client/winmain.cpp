@@ -55,6 +55,10 @@ Init_DEVICE(void) {
     g_ClientStorage.GetVideoOption(Video);
     setFullSceneAntiAliasing(Video.iAntiAlising);
 
+    // Borderless takes this branch too, and correctly: it is a windowed device, and
+    // CreateWND already snapped the window to the monitor, so the client rect *is* the
+    // monitor size. Do not "fix" this to use Resolution.iWidth/iHeight -- a backbuffer that
+    // differs from the client area is stretched by D3D and drifts every UI hit-test.
     if (!g_pCApp->IsFullScreenMode()) {
         RECT ClientRt;
         GetClientRect(g_pCApp->GetHWND(), &ClientRt);
@@ -67,6 +71,20 @@ Init_DEVICE(void) {
             g_pCApp->GetHEIGHT(),
             Resolution.iDepth,
             g_pCApp->IsFullScreenMode());
+
+    // Into error.txt (not client-*.log) on purpose: this is the line that tells you which
+    // mode is *live*, right next to the r_d3d device lines you would be comparing it
+    // against. The engine alone cannot say -- borderless and windowed are both
+    // "WiNmOdE(WxH)" to it, since borderless is a windowed device by design. Note this is
+    // the active mode, whereas the client log's "Fullscreen resolves to ..." only says what
+    // FULLSCREEN=1 *would* select.
+    ::doLogf("screen: mode=%s size=%dx%d (ini FULLSCREEN=%d, EXCLUSIVE_FULLSCREEN=%d)\n",
+        g_pCApp->IsFullScreenMode() ? "exclusive"
+                                    : (g_pCApp->IsBorderless() ? "borderless" : "windowed"),
+        (int)g_pCApp->GetWIDTH(),
+        (int)g_pCApp->GetHEIGHT(),
+        (int)g_ClientStorage.GetVideoFullScreen(),
+        (CApplication::PreferredFullscreenMode() == SCREEN_MODE_EXCLUSIVE) ? 1 : 0);
 
     bRet = ::attachWindow((const void*)g_pCApp->GetHWND());
 

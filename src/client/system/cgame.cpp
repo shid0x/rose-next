@@ -1168,11 +1168,16 @@ CGame::ChangeScreenMode() {
     int iHeight = Resolution.iHeight;
     int iDepth = Resolution.iDepth;
 
-    if (g_pCApp->IsFullScreenMode())
-        g_pCApp->SetFullscreenMode(false);
-    else
+    // Test the *window* shape, not IsFullScreenMode(): that one is true only for the
+    // exclusive device, so in borderless it reads as windowed and Alt+Enter would ask for
+    // fullscreen again, land on the mode it is already in, and rebuild the device for
+    // nothing. Toggle is windowed <-> whichever fullscreen flavour is configured.
+    if (g_pCApp->IsWindowedFrame())
         g_pCApp->SetFullscreenMode(true);
+    else
+        g_pCApp->SetFullscreenMode(false);
 
+    // Borderless overrides these with the monitor size; the other two modes use them.
     g_pCApp->ResizeWindowByClientSize(iWidth, iHeight, iDepth, true);
 
     CCursor::GetInstance().ReloadCursor();

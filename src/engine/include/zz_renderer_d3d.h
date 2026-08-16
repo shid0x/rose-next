@@ -51,7 +51,14 @@ private:
 	// D3D9Ex only: window minimised/obscured (S_PRESENT_OCCLUDED). Not a lost device --
 	// tracked separately so the occluded case throttles instead of triggering a reset.
 	bool _device_occluded;
+	// Consecutive occluded presents, and when the run started. A genuine minimise lasts
+	// seconds; a driver/compositor blip lasts one frame. Frames are only skipped once the
+	// run passes the hysteresis threshold, so a blip costs nothing at all.
+	DWORD _device_occluded_run;
+	DWORD _device_occluded_start_tick;
+	DWORD _device_occluded_frames_skipped;
 	// D3DERR_DEVICEREMOVED: no Reset can recover this, the D3D object must be recreated.
+	// Read by reset_device() to distinguish "rebuild the swapchain" from "hopeless".
 	bool _device_removed;
 
 	// --- D3DPOOL_MANAGED -> D3DPOOL_DEFAULT migration instrumentation ---
@@ -77,10 +84,12 @@ private:
 	char _sprite_name[ZZ_MAX_STRING]; // current sprite name in begin/end block
 
 	// CreateDeviceEx/ResetEx want a D3DDISPLAYMODEEX for fullscreen and NULL for windowed.
-	// Fills "storage" from the present parameters and returns it, or NULL when windowed.
-	static D3DDISPLAYMODEEX * _fill_fullscreen_mode_ex (
+	// Fills "storage" and returns it, or NULL when windowed. NOT a straight copy of the
+	// present parameters: this struct describes the *display mode*, not the swapchain, so
+	// it needs the adapter format and a literal refresh rate -- see the definition.
+	D3DDISPLAYMODEEX * _fill_fullscreen_mode_ex (
 		D3DDISPLAYMODEEX & storage,
-		const D3DPRESENT_PARAMETERS & pp);
+		const D3DPRESENT_PARAMETERS & pp) const;
 
 	// wrapper for CreateDevice
 	HRESULT _create_device (

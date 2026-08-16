@@ -491,15 +491,18 @@ COptionDlg::ChangeVideoOption() {
             CTRadioBox* pRadioBox = (CTRadioBox*)pCtrl;
             UINT uiPressedBtn = pRadioBox->GetPressedButtonID();
             switch (uiPressedBtn) {
+                // IsWindowedFrame(), not !IsFullScreenMode(): the latter is true for
+                // borderless too (it is a windowed device), which would make this dialog
+                // think it still had to switch.
                 case IID_RADIOBUTTON_FULLSCREEN: {
-                    if (m_VideoOption.iFullScreen == 0 && !g_pCApp->IsFullScreenMode()) {
+                    if (m_VideoOption.iFullScreen == 0 && g_pCApp->IsWindowedFrame()) {
                         CGame::GetInstance().ChangeScreenMode();
                         m_VideoOption.iFullScreen = 1;
                     }
                     break;
                 }
                 case IID_RADIOBUTTON_WINDOWMODE: {
-                    if (m_VideoOption.iFullScreen == 1 && g_pCApp->IsFullScreenMode()) {
+                    if (m_VideoOption.iFullScreen == 1 && !g_pCApp->IsWindowedFrame()) {
                         CGame::GetInstance().ChangeScreenMode();
                         m_VideoOption.iFullScreen = 0;
                     }
@@ -965,7 +968,10 @@ COptionDlg::ChangeScreenModeByHotKey() {
         assert(pCtrl);
         if (pCtrl && pCtrl->GetControlType() == CTRL_RADIOBOX) {
             CTRadioBox* pRadioBox = (CTRadioBox*)pCtrl;
-            if (g_pCApp->IsFullScreenMode()) {
+            // Borderless is a fullscreen *presentation* even though it is a windowed
+            // device, so it must light up the fullscreen radio and persist FULLSCREEN=1.
+            // Which flavour of fullscreen that is comes from [VIDEO] EXCLUSIVE_FULLSCREEN.
+            if (!g_pCApp->IsWindowedFrame()) {
                 pRadioBox->SetPressedButton(IID_RADIOBUTTON_FULLSCREEN);
                 m_VideoOption.iFullScreen = 1;
                 g_ClientStorage.SetVideoFullScreen(1);

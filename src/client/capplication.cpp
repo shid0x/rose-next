@@ -55,6 +55,73 @@ log_level_from(discord::LogLevel level) {
 
 #define DEFAULT_FULLSCREEN_STYLE (/* WS_SYSMENU |*/ WS_VISIBLE | WS_POPUP /*| WS_MAXIMIZE */)
 
+//---------------------------------------------------------------------------------------------------------
+/// Which mode the "fullscreen" option resolves to.
+///
+/// Borderless by default. The exclusive device owns the display mode, and on the D3D9Ex path
+/// every handover of that ownership back to the compositor blanked the monitor for a frame or
+/// two mid-game (with matching "swap_buffers() occluded" spam in error.txt) -- a borderless
+/// window is a windowed device and simply has no such handover. Legacy D3D9 never showed the
+/// flash, so the escape hatch below is also the A/B switch for that comparison.
+///
+///   rose-next.ini  ->  [VIDEO]  EXCLUSIVE_FULLSCREEN=1
+///   environment    ->  ROSE_EXCLUSIVE_FULLSCREEN=1
+//---------------------------------------------------------------------------------------------------------
+e_ScreenMode
+CApplication::PreferredFullscreenMode() {
+    static bool s_resolved = false;
+    static e_ScreenMode s_mode = SCREEN_MODE_BORDERLESS;
+
+    if (s_resolved) {
+        return s_mode;
+    }
+
+    bool exclusive = (::GetPrivateProfileIntA("VIDEO", "EXCLUSIVE_FULLSCREEN", 0, "./rose-next.ini") != 0);
+
+    if (::GetEnvironmentVariableA("ROSE_EXCLUSIVE_FULLSCREEN", NULL, 0) != 0) {
+        exclusive = true;
+    }
+
+    s_mode = exclusive ? SCREEN_MODE_EXCLUSIVE : SCREEN_MODE_BORDERLESS;
+    s_resolved = true;
+
+    // error.txt also records which one won, via the engine's own "fullscreen-mode(WxH)
+    // enabled." vs "WiNmOdE(WxH)." line -- borderless is a windowed device, so it logs the
+    // latter while covering the screen.
+    LOG_INFO("Fullscreen resolves to {} mode.", exclusive ? "exclusive" : "borderless");
+
+    return s_mode;
+}
+
+//---------------------------------------------------------------------------------------------------------
+void
+CApplication::GetMonitorRect(HWND hWnd, RECT& out) {
+    // Before the window exists there is nothing to pick a monitor from, and the exclusive
+    // path has always used the primary monitor metrics, so fall back to those.
+    out.left = 0;
+    out.top = 0;
+    out.right = ::GetSystemMetrics(SM_CXSCREEN);
+    out.bottom = ::GetSystemMetrics(SM_CYSCREEN);
+
+    if (!hWnd) {
+        return;
+    }
+
+    HMONITOR hMonitor = ::MonitorFromWindow(hWnd, MONITOR_DEFAULTTOPRIMARY);
+    if (!hMonitor) {
+        return;
+    }
+
+    MONITORINFO info;
+    ::ZeroMemory(&info, sizeof(info));
+    info.cbSize = sizeof(info);
+
+    // rcMonitor, not rcWork: borderless covers the taskbar like fullscreen does.
+    if (::GetMonitorInfo(hMonitor, &info)) {
+        out = info.rcMonitor;
+    }
+}
+
 //-----------------------------------------------------------------------------
 // Name: WndProc()
 // Desc: Static msg handler which passes messages to the application class.
@@ -204,7 +271,10 @@ CApplication::CApplication() {
     m_bExitGame = false;
 
     m_bViewWireMode = false;
-    m_bFullScreenMode = true;
+    // Must match what SetFullscreenMode(true) resolves to, or WinMain's pre-CreateWND
+    // SetFullscreenMode(FULLSCREEN) call stops being the intended no-op for FULLSCREEN=1
+    // and runs its window-style branch against a NULL HWND.
+    m_ScreenMode = PreferredFullscreenMode();
 
     m_nScrDepth = 32;
     m_bInSizeMove = false;
@@ -273,7 +343,7 @@ CApplication::DisplayFrameRate(void) {
         l_dwFrameCount = 0;
     }
 
-    if (!m_bFullScreenMode) {
+    if (IsWindowedFrame()) { // borderless has no caption to write to
         char* pStr = CStr::Printf("[ %s ] FPS: %d", m_Caption.Get(), l_dwFrames);
         ::SetWindowText(m_hWND, pStr);
     }
@@ -355,8 +425,10 @@ void
 CApplication::ApplyWindowedClientResize() {
     if (!m_bEngineReady)
         return; // engine globals are null before Init_DEVICE and after Free_DEVICE
-    if (m_bFullScreenMode)
-        return; // fullscreen size is driven by the mode switch, not by the frame
+    if (!IsWindowedFrame())
+        return; // exclusive size comes from the mode switch; borderless from the monitor.
+                // Neither can be frame-dragged, and letting WM_SIZE act on borderless would
+                // pay a full device teardown for e.g. a monitor hotplug reflow.
     if (m_bResizingEngine)
         return; // our own MoveWindow posts WM_SIZE; do not recurse
     if (!m_hWND)
@@ -425,7 +497,32 @@ CApplication::ResizeWindowByClientSize(int& iClientWidth,
     if (update_engine)
         RoseRmlUi::OnBeforeDeviceRebuild();
 
-    if (m_bFullScreenMode) {
+    if (IsBorderless()) {
+        // The monitor size is not negotiable here. A WS_POPUP window always gets exactly the
+        // client area it asks for, so if the backbuffer were the requested resolution
+        // instead, D3D would stretch it across the monitor and every UI hit-test would drift
+        // the further from the origin you clicked -- the same failure the windowed branch
+        // below goes to such lengths to avoid. Requested resolutions are therefore ignored
+        // in borderless; the render target is always native.
+        RECT monitor;
+        GetMonitorRect(m_hWND, monitor);
+
+        const int monitor_width = monitor.right - monitor.left;
+        const int monitor_height = monitor.bottom - monitor.top;
+
+        iClientWidth = monitor_width;
+        iClientHeight = monitor_height;
+
+        if (update_engine) {
+            setScreen(iClientWidth, iClientHeight, iDepth, FALSE /* windowed device */);
+            setBuffer(iClientWidth, iClientHeight, iDepth);
+            resetScreen();
+        }
+
+        MoveWindow(m_hWND, monitor.left, monitor.top, monitor_width, monitor_height, FALSE);
+        SetWIDTH((short)iClientWidth);
+        SetHEIGHT((short)iClientHeight);
+    } else if (IsFullScreenMode()) {
         if (update_engine) {
             setScreen(iClientWidth,
                 iClientHeight,
@@ -630,7 +727,7 @@ CApplication::CreateWND(char* szClassName,
     wcex.hIcon = LoadIcon(hInstance, (LPCTSTR)IDI_CLIENT);
     wcex.hCursor = LoadCursor(NULL, IDC_ARROW);
     wcex.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-    wcex.lpszMenuName = (m_bFullScreenMode) ? NULL : (LPCTSTR)IDC_CLIENT;
+    wcex.lpszMenuName = IsWindowedFrame() ? (LPCTSTR)IDC_CLIENT : NULL;
     wcex.lpszClassName = szClassName;
     wcex.hIconSm = LoadIcon(wcex.hInstance, (LPCTSTR)IDI_SMALL);
 
@@ -638,7 +735,7 @@ CApplication::CreateWND(char* szClassName,
 
     m_Caption.Set(szWindowName);
 
-    if (!m_bFullScreenMode) {
+    if (IsWindowedFrame()) {
         m_hWND = ::CreateWindowEx(0, // extended window style
             szClassName, // pointer to registered class name
             szWindowName, // pointer to window name
@@ -656,6 +753,33 @@ CApplication::CreateWND(char* szClassName,
 
         int client_width = m_nScrWidth;
         int client_height = m_nScrHeight;
+        ResizeWindowByClientSize(client_width, client_height, iDepth, false);
+
+    } else if (IsBorderless()) {
+        RECT monitor;
+        GetMonitorRect(NULL, monitor); // no window yet -- primary monitor
+
+        // Deliberately NOT WS_EX_TOPMOST. The exclusive path uses it because an exclusive
+        // device owns the display anyway; on a plain window it only makes the game fight
+        // every other window for the top of the z-order, which is exactly the kind of
+        // foreground churn we are trying to stop provoking.
+        m_hWND = ::CreateWindowEx(0, // extended window style
+            szClassName, // pointer to registered class name
+            szWindowName, // pointer to window name
+            DEFAULT_FULLSCREEN_STYLE, // WS_VISIBLE | WS_POPUP -- no frame, no caption
+            monitor.left, // horizontal position of window
+            monitor.top, // vertical position of window
+            monitor.right - monitor.left, // window width
+            monitor.bottom - monitor.top, // window height
+            NULL, // handle to parent or owner window
+            NULL, // handle to menu, or child-window identifier
+            hInstance, // handdle to application instance
+            NULL); // pointer to window-creation data
+
+        // The backbuffer must match the monitor, not the requested resolution; this is what
+        // publishes that to m_nScrWidth/Height before Init_DEVICE reads them.
+        int client_width = 0;
+        int client_height = 0;
         ResizeWindowByClientSize(client_width, client_height, iDepth, false);
 
     } else {
@@ -743,37 +867,59 @@ CApplication::ResetExitGame() {
 
 void
 CApplication::SetFullscreenMode(bool bFullScreenMode) {
-    if (m_bFullScreenMode == bFullScreenMode)
-        return; // already fullscreen mode
+    SetScreenMode(bFullScreenMode ? PreferredFullscreenMode() : SCREEN_MODE_WINDOWED);
+}
 
-    // SWP_FRAMECHANGED below posts WM_SIZE while m_bFullScreenMode still holds the *old*
-    // value, so the resize handler would see a windowed-mode transition and rebuild the
-    // device for a size the caller is about to replace anyway. The caller
-    // (CGame::ChangeScreenMode) follows up with ResizeWindowByClientSize, which does the
-    // real work -- suppress the spurious reset in between.
+void
+CApplication::SetScreenMode(e_ScreenMode mode) {
+    if (m_ScreenMode == mode)
+        return; // already in this mode
+
+    // SWP_FRAMECHANGED below posts WM_SIZE while m_ScreenMode still holds the *old* value,
+    // so the resize handler would see a windowed-mode transition and rebuild the device for
+    // a size the caller is about to replace anyway. The caller (CGame::ChangeScreenMode)
+    // follows up with ResizeWindowByClientSize, which does the real work -- suppress the
+    // spurious reset in between.
     m_bResizingEngine = true;
 
-    if (bFullScreenMode) {
-        SetWindowLongPtr(m_hWND, GWL_STYLE, DEFAULT_FULLSCREEN_STYLE);
-        ::SetWindowPos(m_hWND,
-            HWND_TOP,
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE /*| SWP_NOZORDER*/ | SWP_FRAMECHANGED);
+    switch (mode) {
+        case SCREEN_MODE_EXCLUSIVE:
+            SetWindowLongPtr(m_hWND, GWL_STYLE, DEFAULT_FULLSCREEN_STYLE);
+            ::SetWindowPos(m_hWND,
+                HWND_TOP,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE /*| SWP_NOZORDER*/ | SWP_FRAMECHANGED);
+            break;
 
-    } else {
-        SetWindowLongPtr(m_hWND, GWL_STYLE, DEFAULT_WINDOWED_STYLE);
-        ::SetWindowPos(m_hWND,
-            HWND_NOTOPMOST,
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE /*| SWP_NOZORDER*/ | SWP_FRAMECHANGED);
+        case SCREEN_MODE_BORDERLESS:
+            // Same frameless style as exclusive, but NOTOPMOST -- see CreateWND. Position
+            // and size are left to ResizeWindowByClientSize, which snaps to the monitor.
+            SetWindowLongPtr(m_hWND, GWL_STYLE, DEFAULT_FULLSCREEN_STYLE);
+            ::SetWindowPos(m_hWND,
+                HWND_NOTOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE /*| SWP_NOZORDER*/ | SWP_FRAMECHANGED);
+            break;
+
+        case SCREEN_MODE_WINDOWED:
+        default:
+            SetWindowLongPtr(m_hWND, GWL_STYLE, DEFAULT_WINDOWED_STYLE);
+            ::SetWindowPos(m_hWND,
+                HWND_NOTOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE /*| SWP_NOZORDER*/ | SWP_FRAMECHANGED);
+            break;
     }
-    m_bFullScreenMode = bFullScreenMode;
+    m_ScreenMode = mode;
 
     m_bResizingEngine = false;
 }

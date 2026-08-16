@@ -115,6 +115,9 @@ zz_renderer_d3d::zz_renderer_d3d () : zz_renderer()
 	_scene_began = false;
 	normalization_cubemap = NULL;
 	adapter_format = ADAPTER_FORMAT32;
+	// Was left uninitialized until initialize() assigned it. Every reader happens to run
+	// after that, so this is defensive rather than a fix for a live bug.
+	adapter_ordinal = D3DADAPTER_DEFAULT;
 	rendertarget_format = RENDERTARGET_FORMAT32;
 	depthstencil_format = DEPTH_STENCIL_FORMAT;
 	backbuffer_format = BACKBUFFER_FORMAT32;
@@ -165,6 +168,9 @@ zz_renderer_d3d::zz_renderer_d3d () : zz_renderer()
 	_stat_buffer_restore_failures = 0;
 
 	_device_occluded = false;
+	_device_occluded_run = 0;
+	_device_occluded_start_tick = 0;
+	_device_occluded_frames_skipped = 0;
 	_device_removed = false;
 
 	// d3d must be released in cleanup()
@@ -534,9 +540,29 @@ bool zz_renderer_d3d::check_glowable ()
 }
 
 
+// Every field here MUST mirror the present parameters exactly. CreateDeviceEx/ResetEx
+// cross-check them and return D3DERR_INVALIDCALL on any mismatch: Width/Height/Format/
+// RefreshRate against BackBufferWidth/BackBufferHeight/BackBufferFormat/
+// FullScreen_RefreshRateInHz. This struct is not a free-standing mode request, it is a
+// restatement the runtime validates.
+//
+// TRIED AND REVERTED (2026-08-16). It is tempting to read this as "the display mode", in
+// which case two fields look wrong and inviting to fix:
+//
+//   Format      is BACKBUFFER_FORMAT32 == D3DFMT_A8R8G8B8, whereas the *adapter* format is
+//               ADAPTER_FORMAT32 == D3DFMT_X8R8G8B8, and find_adapter_ordinal() a few
+//               hundred lines above walks EnumAdapterModes with the X8 one. No adapter
+//               enumerates an A8R8G8B8 display mode.
+//   RefreshRate is 0, which is D3DPRESENT_RATE_DEFAULT ("adapter default") for the present
+//               parameters but reads like a literal 0 Hz here.
+//
+// Substituting the adapter format and the real desktop refresh rate makes CreateDeviceEx
+// fail outright with D3DERR_INVALIDCALL, and the renderer silently falls back to plain
+// CreateDevice (log: "CreateDeviceEx() failed ... trying plain CreateDevice"). The match
+// requirement wins over both objections. Leave it alone.
 D3DDISPLAYMODEEX * zz_renderer_d3d::_fill_fullscreen_mode_ex (
 	D3DDISPLAYMODEEX & storage,
-	const D3DPRESENT_PARAMETERS & pp)
+	const D3DPRESENT_PARAMETERS & pp) const
 {
 	if (pp.Windowed) {
 		return NULL; // must be NULL for windowed devices
@@ -549,6 +575,12 @@ D3DDISPLAYMODEEX * zz_renderer_d3d::_fill_fullscreen_mode_ex (
 	storage.Format           = pp.BackBufferFormat;
 	storage.RefreshRate      = pp.FullScreen_RefreshRateInHz;
 	storage.ScanLineOrdering = D3DSCANLINEORDERING_PROGRESSIVE;
+
+	// Kept from the reverted experiment: this is the only place the exclusive mode request
+	// is visible, and a CreateDeviceEx failure right after it is the signal that something
+	// here stopped matching the present parameters.
+	ZZ_LOG("r_d3d: fullscreen mode ex = (%dx%d)-(fmt %d)-(%dHz).\n",
+		storage.Width, storage.Height, storage.Format, storage.RefreshRate);
 
 	return &storage;
 }
@@ -806,6 +838,14 @@ bool zz_renderer_d3d::initialize ()
 		_parameters.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
 		ZZ_LOG("r_d3d: vsync off.\n");
 	}
+
+	// Left NULL by the ZeroMemory above for the whole life of this renderer, which made the
+	// runtime fall back to the focus window. That worked, but it also meant the *only*
+	// window D3D knew about came in through CreateDeviceEx's hFocusWindow, and
+	// CheckDeviceState()/PresentEx() were being handed a NULL destination window from
+	// swap_buffers(). Name it explicitly so every device-state query in this file is asking
+	// about the same window.
+	_parameters.hDeviceWindow = (HWND)view->get_handle();
 
 	// d3d_device must be released in cleanup()
 	DWORD behavior_flags;
@@ -3238,9 +3278,13 @@ bool zz_renderer_d3d::reset_device ()
 				_device_lost_last_log_tick = now;
 			}
 		}
-		else if (status == ZZ_DEVICE_LOST_HARD) {
+		else if (status == ZZ_DEVICE_LOST_HARD || _device_removed) {
 			// D3DERR_DEVICEREMOVED. No Reset can recover this: the IDirect3D9Ex object
-			// itself has to be rebuilt, which this renderer cannot do in place.
+			// itself has to be rebuilt, which this renderer cannot do in place. The
+			// _device_removed latch matters because CheckDeviceState() can report something
+			// milder on a later poll than the present that first saw DEVICEREMOVED -- and
+			// resetting a removed adapter fails in ways that are much harder to read than
+			// this message.
 			ZZ_LOG("r_d3d: d3d_device removed. cannot recover by reset.\n");
 			throw "d3d device removed";
 		}
@@ -3334,6 +3378,9 @@ bool zz_renderer_d3d::reset_device ()
 		log_resource_stats("after-reset");
 		_device_lost = false; // device returned
 		_device_occluded = false;
+		_device_occluded_run = 0;
+		_device_occluded_start_tick = 0;
+		_device_occluded_frames_skipped = 0;
 		_device_removed = false;
 		_device_lost_start_tick = 0;
 		_device_lost_last_log_tick = 0;
@@ -3382,6 +3429,25 @@ zz_renderer_d3d::e_device_status zz_renderer_d3d::translate_present_result (HRES
 // at a comparable loop rate and still services the network and window messages promptly.
 static const DWORD kOccludedFrameSleepMs = 30;
 
+// Hysteresis before the occlusion throttle actually starts dropping frames. A genuine
+// minimise or a fullscreen-app switch lasts seconds, so waiting a couple of presents costs
+// nothing there -- but the compositor also reports single-frame occlusion blips during
+// normal play, and skipping a frame for one of those is a pure visible hitch for no saving.
+// Frames are still classified as occluded immediately; only the *skip* waits.
+static const DWORD kOccludedSkipAfterPresents = 2;
+
+// Log-only helper: distinguishes "user minimised us" from "the compositor blinked", which
+// the old two-line log could not do at all.
+static void log_occlusion_context (const char * what, HWND hwnd, DWORD elapsed_ms,
+	DWORD presents, DWORD frames_skipped)
+{
+	ZZ_LOG("r_d3d: occlusion %s. elapsed=%lu ms, presents=%lu, frames_skipped=%lu, "
+		"iconic=%d, foreground=%d\n",
+		what, elapsed_ms, presents, frames_skipped,
+		hwnd ? (::IsIconic(hwnd) ? 1 : 0) : -1,
+		hwnd ? ((::GetForegroundWindow() == hwnd) ? 1 : 0) : -1);
+}
+
 // Returns true when the swapchain is occluded and this frame should be skipped entirely.
 //
 // The point of S_PRESENT_OCCLUDED is that rendering to a minimised or fully hidden window
@@ -3406,17 +3472,52 @@ bool zz_renderer_d3d::throttle_if_occluded ()
 	HWND hwnd = view ? (HWND)view->get_handle() : NULL;
 	const e_device_status status =
 		translate_present_result(d3d_device_ex->CheckDeviceState(hwnd));
+	const DWORD elapsed = ::GetTickCount() - _device_occluded_start_tick;
 
-	if (status != ZZ_DEVICE_OCCLUDED) {
-		// Back on screen, or something worse happened (hung/removed/mode change). Either
-		// way stop skipping: rendering resumes and swap_buffers() classifies it properly.
+	if (status == ZZ_DEVICE_OK) {
+		// Back on screen. Resume rendering; swap_buffers() re-latches if it recurs.
+		log_occlusion_context("cleared", hwnd, elapsed,
+			_device_occluded_run, _device_occluded_frames_skipped);
 		_device_occluded = false;
-		ZZ_LOG("r_d3d: no longer occluded. resuming render.\n");
+		_device_occluded_run = 0;
+		_device_occluded_frames_skipped = 0;
 		return false;
 	}
 
-	// Still hidden. Yield generously -- nothing is visible, and the game loop keeps
-	// servicing the network and window messages between these calls.
+	if (status != ZZ_DEVICE_OCCLUDED) {
+		// Something worse happened underneath the occlusion: hung, removed, or the display
+		// mode changed. This used to fall into the "resuming render" path above, which
+		// cleared the occluded flag WITHOUT setting _device_lost -- so the frame rendered
+		// into a device that needed a reset (every draw silently no-ops), and reset_device()
+		// at the top of the next begin_scene() did nothing either because nothing had told
+		// it the device was lost. Hand it over properly and keep skipping this frame.
+		log_occlusion_context("escalated to device loss", hwnd, elapsed,
+			_device_occluded_run, _device_occluded_frames_skipped);
+
+		_device_occluded = false;
+		_device_occluded_run = 0;
+		_device_occluded_frames_skipped = 0;
+
+		if (!_device_lost) {
+			_device_lost_start_tick = ::GetTickCount();
+			_device_lost_last_log_tick = _device_lost_start_tick;
+			_device_lost_poll_count = 0;
+		}
+		_device_lost = true;
+		_device_removed = (status == ZZ_DEVICE_LOST_HARD);
+		return true; // reset_device() owns recovery from the next frame
+	}
+
+	// Genuinely still hidden, but hold off on skipping until the run proves it is not a
+	// one-frame compositor blip. Rendering a frame nobody sees is far cheaper than dropping
+	// one that would have been visible.
+	if (_device_occluded_run < kOccludedSkipAfterPresents) {
+		return false;
+	}
+
+	// Yield generously -- nothing is visible, and the game loop keeps servicing the network
+	// and window messages between these calls.
+	++_device_occluded_frames_skipped;
 	::Sleep(kOccludedFrameSleepMs);
 	return true;
 }
@@ -3438,14 +3539,21 @@ void zz_renderer_d3d::swap_buffers (HWND hwnd)
 
 	if (status == ZZ_DEVICE_OK) {
 		_device_occluded = false;
+		_device_occluded_run = 0;
 		return;
 	}
+
+	// The client calls swapBuffers() -> swap_buffers(NULL), and _parameters.hDeviceWindow is
+	// never assigned either, so "hwnd" here is routinely NULL. NULL is not a documented
+	// input to CheckDeviceState(), and throttle_if_occluded()/reset_device() both pass the
+	// real handle -- use the same one here so all three agree.
+	HWND state_hwnd = view ? (HWND)view->get_handle() : hwnd;
 
 	// Microsoft's guidance is to consult CheckDeviceState() only after a present returns
 	// something unusual, rather than polling it every frame.
 	if (d3d_device_ex && status != ZZ_DEVICE_LOST_HARD) {
 		e_device_status confirmed =
-			translate_present_result(d3d_device_ex->CheckDeviceState(hwnd));
+			translate_present_result(d3d_device_ex->CheckDeviceState(state_hwnd));
 		if (confirmed != ZZ_DEVICE_OK) {
 			status = confirmed;
 		}
@@ -3454,28 +3562,35 @@ void zz_renderer_d3d::swap_buffers (HWND hwnd)
 	switch (status) {
 		case ZZ_DEVICE_OK:
 			_device_occluded = false;
+			_device_occluded_run = 0;
 			break;
 
 		case ZZ_DEVICE_OCCLUDED:
-			// Latch it. throttle_if_occluded() picks this up at the top of the next
-			// frame and skips the whole render until the window is back, so there is no
-			// need to sleep here -- this present has already happened.
+			// Latch it. throttle_if_occluded() picks this up at the top of the next frame,
+			// and once the run passes the hysteresis threshold it skips the whole render
+			// until the window is back. No sleep here -- this present already happened.
 			if (!_device_occluded) {
-				ZZ_LOG("r_d3d: swap_buffers() occluded. skipping render until restored.\n");
+				_device_occluded_start_tick = ::GetTickCount();
+				_device_occluded_run = 0;
+				_device_occluded_frames_skipped = 0;
+				log_occlusion_context("began", state_hwnd, 0, 0, 0);
 			}
 			_device_occluded = true;
+			++_device_occluded_run;
 			break;
 
 		case ZZ_DEVICE_MODE_CHANGED:
 			// A 9Ex device survives this; the swapchain just needs rebuilding to match.
 			ZZ_LOG("r_d3d: swap_buffers() display mode changed.\n");
 			_device_occluded = false;
+			_device_occluded_run = 0;
 			_device_lost = true;
 			break;
 
 		case ZZ_DEVICE_NEEDS_RESET:
 		case ZZ_DEVICE_LOST_HARD:
 			_device_occluded = false;
+			_device_occluded_run = 0;
 			if (!_device_lost) {
 				_device_lost_start_tick = ::GetTickCount();
 				_device_lost_last_log_tick = _device_lost_start_tick;

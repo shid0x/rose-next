@@ -67,6 +67,20 @@ public:
 };
 
 ///
+/// How the game window relates to the screen.
+///
+/// Borderless is a *windowed* D3D device that happens to cover the monitor. That
+/// distinction is the whole point: an exclusive device owns the display mode, and every
+/// handover of that ownership back to the compositor blanks the monitor for a frame or two.
+/// See doc/d3d9ex-migration.md -> "Black flashes in exclusive fullscreen".
+///
+enum e_ScreenMode {
+    SCREEN_MODE_WINDOWED = 0, ///< resizable frame, caption, user-chosen client size
+    SCREEN_MODE_BORDERLESS, ///< WS_POPUP over the whole monitor, windowed D3D device
+    SCREEN_MODE_EXCLUSIVE, ///< legacy Windowed=FALSE device that owns the display mode
+};
+
+///
 /// Application Class
 ///
 class CApplication {
@@ -80,7 +94,7 @@ private:
     bool m_bExitGame;
     //	WORD		m_wStatus;
     WORD m_wActive;
-    bool m_bFullScreenMode;
+    e_ScreenMode m_ScreenMode;
     bool m_bViewWireMode;
     short m_nScrWidth;
     short m_nScrHeight;
@@ -111,7 +125,18 @@ public:
 
     HWND GetHWND() { return m_hWND; }
     HINSTANCE GetHINS() { return m_hINS; }
-    bool IsFullScreenMode() { return m_bFullScreenMode; }
+
+    /// True only for the *exclusive* device. Every caller of this drives
+    /// setScreen(..., use_fullscreen) and therefore D3DPRESENT_PARAMETERS::Windowed, so
+    /// borderless must report false here -- it is a windowed device by construction.
+    bool IsFullScreenMode() { return m_ScreenMode == SCREEN_MODE_EXCLUSIVE; }
+    /// True when the window covers the monitor with no frame (windowed device).
+    bool IsBorderless() { return m_ScreenMode == SCREEN_MODE_BORDERLESS; }
+    /// True only for the ordinary resizable window -- the one case where the user can
+    /// change the client area by dragging, and the only one WM_SIZE should act on.
+    bool IsWindowedFrame() { return m_ScreenMode == SCREEN_MODE_WINDOWED; }
+    e_ScreenMode GetScreenMode() { return m_ScreenMode; }
+
     WORD IsActive() { return m_wActive; }
 
     bool IsExitGame() { return m_bExitGame; }
@@ -162,7 +187,21 @@ public:
     void
     ResizeWindowByClientSize(int& iClientWidth, int& iClientHeight, int iDepth, bool update_engine);
 
+    /// Compatibility shim for the existing call sites (winmain, the options dialog,
+    /// Alt+Enter). "true" means whichever fullscreen flavour is configured -- see
+    /// PreferredFullscreenMode().
     void SetFullscreenMode(bool bFullScreenMode);
+    void SetScreenMode(e_ScreenMode mode);
+
+    /// Which mode "fullscreen" resolves to. Borderless unless the player opts back into
+    /// the legacy exclusive device with [VIDEO] EXCLUSIVE_FULLSCREEN=1 in rose-next.ini
+    /// (or ROSE_EXCLUSIVE_FULLSCREEN=1 in the environment). Read once, then cached.
+    static e_ScreenMode PreferredFullscreenMode();
+
+    /// Full pixel rect of the monitor this window is on (primary monitor before the window
+    /// exists). This is the only correct size for a borderless backbuffer: anything else
+    /// is stretched by D3D and silently desyncs mouse hit-testing from what is drawn.
+    static void GetMonitorRect(HWND hWnd, RECT& out);
 
     std::set<ApplicationVideoMode> get_video_modes();
 

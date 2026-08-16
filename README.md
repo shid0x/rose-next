@@ -27,6 +27,9 @@ Beyond the MSSQL → PostgreSQL port, the notable changes from the original code
   rendering.
 - **D3DX9 June 2010 redistributable** — `d3dx9_43.dll` must ship next to the
   client. Without it, text silently fails to render.
+- **Borderless fullscreen** is now the default, so nothing takes ownership of the
+  display mode. The classic exclusive device is still there behind
+  `[VIDEO] EXCLUSIVE_FULLSCREEN=1` — see *Client settings* below.
 - Frame-pacing fix (`timeBeginPeriod(1)`); vsync is the only frame cap.
 - Terrain streaming and particle-budget work to cut hitches in busy zones.
 
@@ -253,20 +256,49 @@ hand and are useful when developing or diagnosing:
 | `[VIDEO] D3D9EX=0` | Force the legacy D3D9 path instead of 9Ex. For A/B testing. |
 | `[VIDEO] VSYNC=0` | Uncap the framerate. Vsync is the **only** frame cap — there is no software limiter. |
 | `[VIDEO] RMLUI=1` | Enable the RmlUi UI layer. `/dps` then opens the RmlUi damage meter instead of the legacy one. |
-| `[VIDEO] FULLSCREEN=0` | Windowed mode. Note the window is only resizable in windowed mode. |
-| `[RESOLUTION] WIDTH` / `HEIGHT` | Client size. |
+| `[VIDEO] FULLSCREEN` | `1` = fullscreen, `0` = windowed. Written by the in-game options screen. Windowed is the only resizable mode. |
+| `[VIDEO] EXCLUSIVE_FULLSCREEN` | *Which kind* of fullscreen `FULLSCREEN=1` gives you: `0` (default) = **borderless**, `1` = legacy exclusive. See below. |
+| `[RESOLUTION] WIDTH` / `HEIGHT` | Client size. Ignored in borderless, which always renders at the monitor's native size. |
 
-Two environment variables override the INI, which is handy for one-off runs:
+Three environment variables override the INI, which is handy for one-off runs:
 
 ```powershell
-$env:ROSE_NO_D3D9EX = "1"   # force plain D3D9
-$env:ROSE_RMLUI = "1"       # enable the RmlUi layer
+$env:ROSE_NO_D3D9EX = "1"            # force plain D3D9
+$env:ROSE_RMLUI = "1"                # enable the RmlUi layer
+$env:ROSE_EXCLUSIVE_FULLSCREEN = "1" # legacy exclusive fullscreen instead of borderless
 ```
 
-> Whichever way you set these, **confirm the result in `client.log`** — both
-> paths log which one is live. A toggle that silently does nothing is
-> indistinguishable from one that works, and that has cost real debugging time
-> here more than once.
+> Whichever way you set these, **confirm the result in the logs** — every one of
+> these paths logs which branch is live (`error.txt` for the renderer and screen
+> mode, `client.log` for the client-side ones). A toggle that silently does
+> nothing is indistinguishable from one that works, and that has cost real
+> debugging time here more than once.
+
+#### Fullscreen: borderless vs exclusive
+
+`FULLSCREEN=1` gives you a **borderless** window by default — a normal windowed
+Direct3D device sized to fill the monitor. Nothing ever takes ownership of the
+display mode, so alt-tabbing is instant and there is no mode switch to blank the
+screen. Two consequences worth knowing:
+
+- `[RESOLUTION] WIDTH`/`HEIGHT` are ignored; the render target always matches the
+  monitor. A mismatched backbuffer would be stretched by D3D and would drift the
+  UI hit-testing away from what is drawn.
+- The window is not topmost, so overlays and other windows behave normally.
+
+`EXCLUSIVE_FULLSCREEN=1` restores the classic exclusive device, which does own
+the display mode and does honour `[RESOLUTION]`. It is kept mainly as an A/B
+switch: exclusive fullscreen has been observed producing brief full-screen black
+flashes mid-session (Windows minimises an exclusive-fullscreen window when the
+app is deactivated, and each minimise/restore round trip is a display mode
+switch). Borderless has no such mechanism. Details and the current state of that
+investigation are in [doc/d3d9ex-migration.md](doc/d3d9ex-migration.md).
+
+Confirm which one you actually got from `error.txt`:
+
+```
+screen: mode=borderless size=1920x1080 (ini FULLSCREEN=1, EXCLUSIVE_FULLSCREEN=0)
+```
 
 ### Connecting to a server
 
