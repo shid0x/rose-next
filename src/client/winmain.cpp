@@ -49,6 +49,16 @@ Init_DEVICE(void) {
     ::setShadowmapSizeOverride(
         ShadowQualityToShadowmapSize(g_ClientStorage.GetShadowQuality()));
 
+    // Applied after doScript so it wins over INIT.LUA's setLazyBufferSize sizing.
+    // This is what lets the lazy entrance line actually load ahead instead of
+    // one node per update; 0 restores the old behaviour for A/B.
+    ::setLoadBudgetPerFrameUsec((int)g_ClientStorage.GetLoadBudgetUs());
+    // Logged to client.log, not just error.txt: without it there is no way to
+    // tell from a user's log whether a streaming experiment was actually active,
+    // which already cost one inconclusive test round.
+    LOG_INFO("Engine load budget: {} us/frame ([VIDEO] LOAD_BUDGET_US, 0 = legacy pacing)",
+        ::getLoadBudgetPerFrameUsec());
+
     t_OptionResolution Resolution = g_ClientStorage.GetResolution();
     ::setDisplayQualityLevel(c_iPeformances[g_ClientStorage.GetVideoPerformance()]);
     t_OptionVideo Video;
@@ -119,7 +129,15 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCmdLine, int nCmd
     // silently dropped by the log crate's default LevelFilter::Off.
     // Raise to LogLevel::Debug when investigating combat/skill issues
     // (LogString(LOG_DEBUG_, ...) lines, CombatTrace, etc.).
-    Rose::Common::logger_init("client.log", Rose::Common::LogLevel::Info);
+    //
+    // Log::set_max_level must mirror whatever is passed to logger_init: it is the
+    // C++-side copy that lets Log::legacy_printf drop a filtered record *before*
+    // formatting it. Miss it and the only cost is the old behaviour (format, then
+    // discard in Rust) -- but that is thousands of wasted fmt::sprintf calls per
+    // terrain chunk load. See rose/common/log.h.
+    const Rose::Common::LogLevel log_level = Rose::Common::LogLevel::Info;
+    Rose::Common::logger_init("client.log", log_level);
+    Log::set_max_level(log_level);
 
     VHANDLE hVFS = OpenVFS("data.idx", "r");
 

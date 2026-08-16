@@ -57,8 +57,10 @@ main(int argc, char** argv) {
     Rose::Common::ServerConfig config;
     bool config_loaded = config.load(config_path, "ROSE");
 
-    // Initialize the logger
+    // Initialize the logger. Log::set_max_level mirrors the level C++-side so a
+    // filtered record is dropped before it is formatted (see rose/common/log.h).
     Rose::Common::logger_init(config.gameserver.log_path.c_str(), config.gameserver.log_level);
+    Log::set_max_level(config.gameserver.log_level);
 
     if (!config_loaded) {
         LOG_WARN("Could not load config file, using default settings");

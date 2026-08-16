@@ -14,6 +14,33 @@ private:
 
     int m_iSize;
 
+    /// Sequential read-ahead buffer.
+    ///
+    /// Every typed reader on this class (ReadFloat, ReadInt32, ReadByte, ...)
+    /// funnels into Read(), and Read() used to issue one ::vfread per call --
+    /// which is a memset plus an fseek+fread round trip through the CRT, lock
+    /// included, for as little as one byte. The terrain loader reads scalar by
+    /// scalar: a 19 KB .HIM heightfield is ~4,900 of those calls, measured at
+    /// ~650 ns each, i.e. 3.2 ms of pure call overhead per map chunk. .TIL and
+    /// the lightmap .lit files have the same shape.
+    ///
+    /// Buffering here rather than at each call site fixes every reader at once
+    /// and needs no change to any parser. m_lLogicalPos -- not the underlying
+    /// handle -- is the authoritative file position; Read/Seek/Tell/IsEOF all go
+    /// through it, and the underlying handle is only repositioned on a refill.
+    /// 32 KB covers every map file in a single refill.
+    enum { kReadBufSize = 32 * 1024 };
+    unsigned char* m_pReadBuf; ///< lazily allocated on first buffered read
+    long m_lBufStart; ///< file offset of m_pReadBuf[0]; -1 when invalid
+    int m_iBufValid; ///< valid bytes in m_pReadBuf
+    long m_lLogicalPos; ///< authoritative position, what Tell() reports
+
+    void InvalidateReadBuffer();
+    bool RefillReadBuffer();
+    /// vfseek clamps to [0, size] and reports success; mirror that so Tell()
+    /// after an over-seek keeps matching the old behaviour.
+    long ClampToFile(long lPos);
+
 public:
     void SetVFS(VHANDLE hVFile) { m_hVFile = hVFile; };
 

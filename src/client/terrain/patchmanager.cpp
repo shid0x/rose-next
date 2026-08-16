@@ -321,6 +321,36 @@ CPatchManager::AddVisiblePatch(CQuadPatchManager* pQuadPatch) {
 /// @param
 /// @brief VisiblePatch를 엔진에 등록
 //----------------------------------------------------------------------------------------------------
+/// Per-frame cap on *first-time* frustum inserts that are far from the camera.
+///
+/// Measured cause of the chunk-display hitch: a whole map chunk's 256 patches
+/// entered the scene in one frame, each spawning a zz_mesh_terrain, and the next
+/// frame's render force-built all 256 (procedural vertex generation +
+/// CreateVertexBuffer + Lock/Unlock in D3DPOOL_DEFAULT) for 12-46 ms.
+///
+/// Measured lead time between a terrain mesh being queued and being force-loaded
+/// was **1 frame**, every time -- so the engine's lazy entrance line can never
+/// pre-load this work no matter how fast it drains. The only place left to
+/// spread the cost is here, where the burst is created.
+///
+/// Already-resident patches are unaffected (Insert_VisiblePatch only does work
+/// when m_wLastViewFRAME == 0; otherwise it just restamps), so this throttles
+/// exclusively the newly-appearing set. 24/frame turns a 256-patch burst into
+/// ~11 frames (~85 ms at 130 fps) of a few ms each.
+/// Tunable via [VIDEO] TERRAIN_INSERTS_PER_FRAME (0 = uncapped/legacy). It is
+/// effectively the "how big can a chunk-display spike get" dial: what actually
+/// costs the frame is the *textures* an inserted batch drags in (~2.8 ms each),
+/// not the terrain meshes (~0.1 ms each), so halving this roughly halves the
+/// worst-case spike at the price of slower horizon fill-in.
+static const int kMaxFarFrustumInsertsPerFrame = 24;
+
+/// Patches nearer than this are never deferred -- deferring something at the
+/// player's feet would be a visible hole rather than distant pop-in. A newly
+/// loaded map cell is >= 160 m away by construction (it is the adjacent cell),
+/// so the budget only ever bites on the far edge, where fog covers it.
+/// World units: 1000 = 10 m, so this is 60 m.
+static const float kNearInsertRadius = 6000.0f;
+
 void
 CPatchManager::Update_VisiblePatchManager(short nMappingX, short nMappingY) {
     short i;
@@ -329,10 +359,53 @@ CPatchManager::Update_VisiblePatchManager(short nMappingX, short nMappingY) {
 
     CalculateViewFrustumCulling();
 
-    for (i = 0; i < m_nSubPATCH; i += 1) {
+    float camera_eye[3] = {0.0f, 0.0f, 0.0f};
+    bool have_camera = false;
+    if (g_pCamera) {
+        HNODE camera_node = g_pCamera->GetZHANDLE();
+        if (camera_node) {
+            ::getCameraEye(camera_node, camera_eye);
+            have_camera = true;
+        }
+    }
+    const float near_radius_square = kNearInsertRadius * kNearInsertRadius;
+    const int configured_budget = (int)g_ClientStorage.GetTerrainInsertsPerFrame();
+    /// 0 means "uncapped" -- restores the original unbudgeted behaviour for A/B.
+    const bool budget_inserts = (configured_budget > 0);
+    int far_inserts_left = budget_inserts ? configured_budget : kMaxFarFrustumInsertsPerFrame;
 
-        this->Insert_VisiblePatch(m_ppSubPATCH[i]);
-        m_ppSubPATCH[i]->PlaySOUND();
+    for (i = 0; i < m_nSubPATCH; i += 1) {
+        CMAP_PATCH* pPATCH = m_ppSubPATCH[i];
+        if (!pPATCH) {
+            continue;
+        }
+
+        /// Already in-scene: restamping is free, never budget it.
+        if (pPATCH->m_wLastViewFRAME != 0) {
+            this->Insert_VisiblePatch(pPATCH);
+            pPATCH->PlaySOUND();
+            continue;
+        }
+
+        bool bNear = true;
+        if (have_camera) {
+            const float dx = pPATCH->m_AABBMin.x - camera_eye[0];
+            const float dy = pPATCH->m_AABBMin.y - camera_eye[1];
+            bNear = ((dx * dx + dy * dy) <= near_radius_square);
+        }
+
+        if (!bNear && budget_inserts) {
+            if (far_inserts_left <= 0) {
+                /// Deferred to a later frame. The patch stays outside the scene
+                /// for now; it is still inside the frustum next frame, so it
+                /// gets another chance immediately.
+                continue;
+            }
+            --far_inserts_left;
+        }
+
+        this->Insert_VisiblePatch(pPATCH);
+        pPATCH->PlaySOUND();
     }
 
     for (i = 0; i < m_nCameraPatch; i += 1) {

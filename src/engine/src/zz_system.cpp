@@ -599,6 +599,10 @@ int zz_system::manager_update (int time_to_update)
 		// This can be set by script interface, ::setLazyBufferSize()
 		zz_time total = ZZ_MSEC_TO_TIME(time_to_update);
 
+		// One wall-clock slice shared by every manager below, so the per-frame
+		// total is bounded rather than budget-per-manager.
+		zz_manager::begin_load_budget();
+
 		if (meshes->get_lazy()) {
 			meshes->update(total);
 		}
@@ -672,6 +676,11 @@ void zz_system::sleep ()
 	else {
 		::Sleep(1); // minimum sleep
 	}
+
+	// End of frame. The client's debug HUD is drawn during Render_GameMENU, which
+	// runs before swapBuffers() -> sleep(), so it has already sampled this frame's
+	// immediate-flush counters by now and they can be rolled over safely.
+	zz_manager::reset_flush_stats_frame();
 
 	start = timer.get_time();
 }

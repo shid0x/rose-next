@@ -40,7 +40,8 @@ zz_manager::zz_manager () :
 	entrance_line(zz_waiting_line<zz_node>::FOR_ENTRANCE, 0),
 	exit_line(zz_waiting_line<zz_node>::FOR_EXIT, 0),
 	is_lazy(false),
-	num_reuse(0)
+	num_reuse(0),
+	entrance_nonempty_since(0)
 {
 	entrance_time_accumulated = 0;
 	exit_time_accumulated = 0;
@@ -163,12 +164,27 @@ void zz_manager::load (zz_node * node)
 
 	if (!znzin->get_rs()->use_delayed_loading || (node->get_load_weight() == 0)) { // from zz_waiting_line::flush()
 		// try loading
+		++s_flush_stats.load_immediate;
 		if (node->load()) {
 			return;
 		}
 		if (node->is_load_terminally_failed()) {
 			return; // missing file: queueing it would only retry forever
 		}
+	}
+	else {
+		++s_flush_stats.load_queued;
+	}
+	// Lead-time tracking, per manager rather than per node: record when this
+	// entrance line last went from empty to occupied. The age of that transition
+	// at flush time is how long the oldest queued work has been waiting, which is
+	// the number that decides whether draining faster could ever have helped.
+	//
+	// Deliberately NOT a stamp on zz_node: that is the base class of every engine
+	// object, and changing its layout to measure something is disproportionate
+	// risk for instrumentation (it crashed the client at startup when tried).
+	if (entrance_line.empty()) {
+		entrance_nonempty_since = s_frame_counter;
 	}
 	entrance_line.push(node);
 }
@@ -302,6 +318,16 @@ void zz_manager::update (zz_time time_to_update)
 		// distribute time
 		entrance_time_accumulated += 1 + time_to_update/10;
 		exit_time_accumulated += 1 + time_to_update/10;
+
+		// In budgeted mode the entrance accumulator is never spent (the loop
+		// paces on wall clock), so cap it rather than let an unsigned counter
+		// climb forever across a long session.
+		if (s_load_budget_per_frame_usec > 0) {
+			const zz_time kAccumulatorCap = ZZ_MSEC_TO_TIME(1000);
+			if (entrance_time_accumulated > kAccumulatorCap) {
+				entrance_time_accumulated = kAccumulatorCap;
+			}
+		}
 	}
 	zz_node * node;
 	zz_time t;
@@ -357,11 +383,51 @@ void zz_manager::update (zz_time time_to_update)
 	// sound thread kept playing.
 	size_t failed_attempts_left = entrance_line.size();
 
+	// See set_load_budget_per_frame_usec().
+	//
+	// In budgeted mode the weight accounting is bypassed **entirely** -- the loop
+	// is paced by wall clock alone. Charging per-item weight instead of the whole
+	// accumulator was not enough on its own, and the arithmetic says why: the
+	// accumulator accrues `1 + total/10` ticks per frame (~24 at 130 fps, i.e.
+	// t = 5 ms), a terrain mesh has load_weight 1, and the `t > time_weight` gate
+	// therefore stops after ~4 loads/frame. CPatchManager inserts 4 patches/frame
+	// from its proximity ring alone, so the queue sat exactly at break-even and
+	// any burst never drained -- measured as terrain=181..256 still being
+	// force-flushed with the budget active, and raising the budget changing
+	// nothing because the budget was never the binding constraint.
+	//
+	// The weight model cannot be repaired by tuning: it is "1 ms per KB"
+	// (load_byte_per_msec = 1000), and it is a flat 1 for procedurally generated
+	// terrain meshes that read no file at all. Wall clock is the only honest
+	// measure of what a load costs.
+	const bool budgeted = (s_load_budget_per_frame_usec > 0);
+
 	try {
-		while (node && (t > time_weight) && (failed_attempts_left > 0)) {
+		while (node && (failed_attempts_left > 0)) {
+			if (budgeted) {
+				if (s_load_budget_usec_left <= 0) {
+					break; // spent this frame's slice; the rest waits for the next
+				}
+			}
+			else if (!(t > time_weight)) {
+				break; // historical pacing: one node per update
+			}
+
+			uint64 load_start = 0, load_end = 0;
+			if (budgeted) {
+				zz_os::get_ticks(load_start);
+			}
+
 			//ZZ_LOG("manager: [%s]->update() entrance->flush(%s)\n", get_name(), node ? node->get_name() : "(null)");
 			if (entrance_line.flush_node(node)) {
-				entrance_time_accumulated -= ZZ_MSEC_TO_TIME(t);
+				if (!budgeted) {
+					entrance_time_accumulated -= ZZ_MSEC_TO_TIME(t);
+				}
+				// Budgeted mode leaves entrance_time_accumulated alone: it is not
+				// read while budgeting is on, and zz_time is UNSIGNED so an
+				// unguarded subtraction here could wrap into an enormous value
+				// that would then hand out an infinite budget if the mode were
+				// ever switched back.
 				entrance_line.pop();
 			}
 			else {
@@ -386,6 +452,19 @@ void zz_manager::update (zz_time time_to_update)
 				// that is not queued (flush_entrance falls back to a direct
 				// flush). A later loadMesh() spawns a fresh node, so a file that
 				// reappears is still picked up.
+			}
+
+			// Charge the wall clock regardless of success/failure: a failed
+			// attempt costs real time too, and letting failures run free would
+			// reintroduce the unbounded-work-per-frame problem this exists to
+			// stop. `continue` below must not skip this, hence it sits before
+			// the node re-fetch.
+			if (budgeted) {
+				zz_os::get_ticks(load_end);
+				if (zz_system::ticks_per_second > 0) {
+					s_load_budget_usec_left -=
+						(int)((load_end - load_start) * 1000000 / zz_system::ticks_per_second);
+				}
 			}
 
 			node = entrance_line.back();
@@ -421,14 +500,169 @@ bool zz_manager::promote_exit (zz_node * node)
 	return exit_line.to_back(node);
 }
 
+zz_manager::flush_stats zz_manager::s_flush_stats = { 0 };
+
+// Amortised-loading budget, in microseconds per frame. 0 = historical pacing.
+//
+// Defaults to off, and the client's [VIDEO] LOAD_BUDGET_US also defaults to 0.
+// It was built to spread the 12-46 ms terrain flush spikes, and it does not:
+// measurement showed those nodes never enter the entrance line at all
+// (lazyterr=0 during every spike), so there is no backlog for it to drain. Kept
+// because it is the correct pacing model for work that *does* queue, but it
+// stays off until something measures a benefit.
+int zz_manager::s_load_budget_per_frame_usec = 0;
+int zz_manager::s_load_budget_usec_left = 0;
+unsigned int zz_manager::s_frame_counter = 0;
+
+void zz_manager::set_load_budget_per_frame_usec (int usec)
+{
+	s_load_budget_per_frame_usec = (usec < 0) ? 0 : usec;
+}
+
+int zz_manager::get_load_budget_per_frame_usec ()
+{
+	return s_load_budget_per_frame_usec;
+}
+
+void zz_manager::begin_load_budget ()
+{
+	s_load_budget_usec_left = s_load_budget_per_frame_usec;
+}
+
+// How long a spike is held on the "recent" readout before it re-baselines.
+static const int ZZ_FLUSH_RECENT_WINDOW_MS = 4000;
+
+static uint64 zz_flush_now_ms ()
+{
+	uint64 ticks = 0;
+	zz_os::get_ticks(ticks);
+	if (zz_system::ticks_per_second == 0) {
+		return 0;
+	}
+	return ticks * 1000 / zz_system::ticks_per_second;
+}
+
+void zz_manager::reset_flush_stats_frame ()
+{
+	const uint64 now_ms = zz_flush_now_ms();
+
+	if (s_flush_stats.per_frame_usec > s_flush_stats.worst_usec) {
+		s_flush_stats.worst_usec = s_flush_stats.per_frame_usec;
+		s_flush_stats.worst_count = s_flush_stats.per_frame_count;
+	}
+
+	// Replace immediately on a bigger spike; otherwise let the held value expire
+	// so the readout follows what is happening now rather than latching forever.
+	const bool expired =
+		(now_ms - s_flush_stats.recent_stamp_ms) >= (uint64)ZZ_FLUSH_RECENT_WINDOW_MS;
+	if ((s_flush_stats.per_frame_usec > s_flush_stats.recent_usec) || expired) {
+		s_flush_stats.recent_usec = s_flush_stats.per_frame_usec;
+		s_flush_stats.recent_count = s_flush_stats.per_frame_count;
+		for (int i = 0; i < FLUSH_KIND_COUNT; ++i) {
+			s_flush_stats.recent_kind[i] = s_flush_stats.per_frame_kind[i];
+		}
+		s_flush_stats.recent_stamp_ms = now_ms;
+	}
+	s_flush_stats.recent_age_ms = (int)(now_ms - s_flush_stats.recent_stamp_ms);
+
+	s_flush_stats.per_frame_usec = 0;
+	s_flush_stats.per_frame_count = 0;
+	s_flush_stats.load_queued = 0;
+	s_flush_stats.load_immediate = 0;
+	s_flush_stats.flush_from_queue = 0;
+	s_flush_stats.flush_direct = 0;
+	s_flush_stats.age_sum = 0;
+	s_flush_stats.age_samples = 0;
+	s_flush_stats.age_max = 0;
+
+	++s_frame_counter;
+	for (int i = 0; i < FLUSH_KIND_COUNT; ++i) {
+		s_flush_stats.per_frame_kind[i] = 0;
+	}
+}
+
+void zz_manager::reset_flush_stats_all ()
+{
+	s_flush_stats.per_frame_usec = 0;
+	s_flush_stats.per_frame_count = 0;
+	s_flush_stats.recent_usec = 0;
+	s_flush_stats.recent_count = 0;
+	s_flush_stats.recent_age_ms = 0;
+	s_flush_stats.recent_stamp_ms = zz_flush_now_ms();
+	s_flush_stats.worst_usec = 0;
+	s_flush_stats.worst_count = 0;
+	for (int i = 0; i < FLUSH_KIND_COUNT; ++i) {
+		s_flush_stats.per_frame_kind[i] = 0;
+		s_flush_stats.recent_kind[i] = 0;
+	}
+}
+
+/// Classify by which manager owns the node being flushed.
+zz_manager::flush_kind zz_manager::classify_flush_kind () const
+{
+	if (!znzin) {
+		return FLUSH_KIND_OTHER;
+	}
+	if (this == (const zz_manager *)znzin->terrain_meshes
+		|| this == (const zz_manager *)znzin->rough_terrain_meshes
+		|| this == (const zz_manager *)znzin->ocean_meshes) {
+		return FLUSH_KIND_TERRAIN;
+	}
+	if (this == znzin->meshes) {
+		return FLUSH_KIND_MESH;
+	}
+	if (this == (const zz_manager *)znzin->textures) {
+		return FLUSH_KIND_TEXTURE;
+	}
+	if (this == znzin->materials) {
+		return FLUSH_KIND_MATERIAL;
+	}
+	return FLUSH_KIND_OTHER;
+}
+
 bool zz_manager::flush_entrance (zz_node * node)
 {
+	// Instrumented: this is the single chokepoint for every forced synchronous
+	// load (zz_texture/zz_mesh/zz_material::flush_device(true) all route here).
+	// The timer pair is negligible next to a file read + D3D resource create.
+	uint64 start = 0, end = 0;
+	zz_os::get_ticks(start);
+
+	bool ret;
 	if (promote_entrance(node)) {
+		// Lead time: how many frames this manager's queue has been continuously
+		// occupied before something rendered its contents and forced the load.
+		// Small (0-2) means the amortiser never had a chance and draining faster
+		// cannot help; large means it simply was not draining fast enough.
+		const unsigned int age = s_frame_counter - entrance_nonempty_since;
+		s_flush_stats.age_sum += (int)age;
+		++s_flush_stats.age_samples;
+		if ((int)age > s_flush_stats.age_max) {
+			s_flush_stats.age_max = (int)age;
+		}
+
 		entrance_line.flush_n_pop(1);
-		return true;
+		++s_flush_stats.flush_from_queue;
+		ret = true;
 	}
-	// else not in entrance line
-	return entrance_line.flush_node(node); // direct flush
+	else {
+		// Not in the entrance line at all -- so no amount of amortised draining
+		// could ever have pre-loaded it. Counted separately because that
+		// distinction decides whether the fix belongs in the queue or upstream
+		// of it.
+		++s_flush_stats.flush_direct;
+		ret = entrance_line.flush_node(node); // direct flush
+	}
+
+	zz_os::get_ticks(end);
+	if (zz_system::ticks_per_second > 0) {
+		s_flush_stats.per_frame_usec +=
+			(int)((end - start) * 1000000 / zz_system::ticks_per_second);
+	}
+	++s_flush_stats.per_frame_count;
+	++s_flush_stats.per_frame_kind[classify_flush_kind()];
+
+	return ret;
 }
 
 bool zz_manager::flush_exit (zz_node * node)

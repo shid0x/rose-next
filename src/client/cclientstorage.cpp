@@ -98,6 +98,32 @@ CClientStorage::Load() {
     if (m_VideoOption.iShadowQuality > (UINT)g_iMaxShadowQuality)
         m_VideoOption.iShadowQuality = g_iMaxShadowQuality;
     m_VideoOption.background_render = ReadBool("VIDEO", "BACKGROUND_RENDER", true);
+    m_VideoOption.map_prefetch = ReadBool("VIDEO", "MAP_PREFETCH", true);
+    /// Amortised-loading budget. Does nothing for terrain meshes (measured lead
+    /// time there is 1 frame, so there is no slack to exploit), but it is what
+    /// fixes *textures*: their load_weight is "1 ms per KB", so a 350 KB lightmap
+    /// scored 350 and sat ~70+ frames behind the `t > time_weight` gate before
+    /// being force-loaded at render time anyway (observed leadavg 207-309 frames
+    /// with it off). Wall-clock pacing drains those in the slack instead, and
+    /// measurement showed every long-lead texture spike disappearing. 0 = legacy.
+    m_VideoOption.load_budget_us =
+        GetPrivateProfileInt("VIDEO", "LOAD_BUDGET_US", 2000, g_szIniFileName);
+
+    /// Per-frame cap on first-time far terrain-patch inserts. Each inserted patch
+    /// can drag in new tile/lightmap textures at ~2.8 ms each, and those are what
+    /// remains of the display hitch -- so this is effectively the "how big can a
+    /// chunk-display spike get" dial. Lower = smaller spikes, slower horizon
+    /// fill-in. 24 measured at 4-6 ms typical with an occasional ~35 ms outlier
+    /// when one batch happens to pull in 12 new textures.
+    m_VideoOption.terrain_inserts_per_frame =
+        GetPrivateProfileInt("VIDEO", "TERRAIN_INSERTS_PER_FRAME", 24, g_szIniFileName);
+
+    /// Streaming spike diagnostic, OFF by default: it writes a client.log line
+    /// for every frame spending >= this many ms force-loading resources, which is
+    /// what you want while investigating a hitch and not what you want during
+    /// normal play. 4 is the value the terrain/texture investigation used.
+    m_VideoOption.stream_spike_log_ms =
+        GetPrivateProfileInt("VIDEO", "STREAM_SPIKE_LOG_MS", 0, g_szIniFileName);
 
     m_SoundOption.iBgmVolume =
         GetPrivateProfileInt("SOUND", "BGMVOLUME", DEFAULT_BGM_VOLUME, g_szIniFileName);
@@ -216,6 +242,16 @@ CClientStorage::Save() {
     WritePrivateProfileString("VIDEO", "SHADOWQUALITY", szTemp, g_szIniFileName);
 
     WriteBool("VIDEO", "BACKGROUND_RENDER", m_VideoOption.background_render);
+    WriteBool("VIDEO", "MAP_PREFETCH", m_VideoOption.map_prefetch);
+
+    itoa(m_VideoOption.load_budget_us, szTemp, 10);
+    WritePrivateProfileString("VIDEO", "LOAD_BUDGET_US", szTemp, g_szIniFileName);
+
+    itoa(m_VideoOption.terrain_inserts_per_frame, szTemp, 10);
+    WritePrivateProfileString("VIDEO", "TERRAIN_INSERTS_PER_FRAME", szTemp, g_szIniFileName);
+
+    itoa(m_VideoOption.stream_spike_log_ms, szTemp, 10);
+    WritePrivateProfileString("VIDEO", "STREAM_SPIKE_LOG_MS", szTemp, g_szIniFileName);
 
     // Sound
     itoa(m_SoundOption.iBgmVolume, szTemp, 10);

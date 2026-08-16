@@ -207,7 +207,11 @@ CGameStateMain::Update(bool bLostFocus) {
 int
 CGameStateMain::Enter(int iPrevStateID) {
     ::SetOceanSFXOnOff(true);
-    g_pTerrain->SetMapPrefetchEnabled(true);
+    /// [VIDEO] MAP_PREFETCH=0 turns the chunk cache-warming worker off, which is
+    /// the A/B switch for the boundary-crossing hitch. SetMapPrefetchEnabled logs
+    /// the transition -- check the log rather than assuming, a toggle that
+    /// silently does nothing is how the previous version of this stayed broken.
+    g_pTerrain->SetMapPrefetchEnabled(g_ClientStorage.GetMapPrefetch());
 
     CGame::GetInstance().ClearWndMsgQ();
     g_pNet->Send_cli_JOIN_ZONE(g_pAVATAR->GetWeightRate());
@@ -324,6 +328,72 @@ CGameStateMain::Render_GameMENU() {
     // CTutorialEventManager::GetSingleton().Draw();
     ::endSprite();
 
+    /// Streaming spike diagnostic. OFF by default -- enable with
+    /// [VIDEO] STREAM_SPIKE_LOG_MS=4 (the threshold in ms doubles as the switch).
+    ///
+    /// Runs independently of the debug HUD, because a chunk-display stall lasts
+    /// one frame at 130 fps and no HUD row can be read while it happens; writing
+    /// to client.log lets the evidence be collected by just playing and reviewed
+    /// afterwards. That also makes it far too chatty to leave on, hence opt-in.
+    ///
+    /// Rate-limited because the zone-in burst would otherwise flood the log (and
+    /// the async logger flushes per record). Logs the MapIO figures alongside so
+    /// a display stall can be told apart from a chunk-load stall in one line.
+    const UINT nSpikeLogMs = g_ClientStorage.GetStreamSpikeLogMs();
+    if (nSpikeLogMs > 0) {
+        static DWORD s_dwLastSpikeLogTick = 0;
+        const float fFlushMs = ::getImmediateFlushMs();
+        const DWORD dwNow = ::GetTickCount();
+        if (fFlushMs >= (float)nSpikeLogMs && (DWORD)(dwNow - s_dwLastSpikeLogTick) >= 250) {
+            s_dwLastSpikeLogTick = dwNow;
+            /// terrain/mesh/tex/mat splits the count by owning manager, which is
+            /// what distinguishes terrain-block creation from object mesh and
+            /// texture loading -- 256 nodes is ambiguous otherwise, since a chunk
+            /// is both 16x16=256 patches and ~260 static objects.
+            /// ins/rem are patch scene toggles: rem>0 alongside ins>0 means
+            /// patches are churning in and out rather than genuinely appearing.
+            /// lazyq/lazyterr: entrance-line depth, but sampled HERE, i.e. AFTER
+            /// the render phase already force-flushed the queue. It therefore
+            /// reads ~0 during exactly the spikes it looks like it should
+            /// explain -- do not read that as "the nodes were never queued".
+            /// (That misreading cost a whole debugging round.) Use leadavg /
+            /// leadmax instead: they are measured at the flush itself.
+            ///
+            /// leadavg is the decisive field. ~1 frame = the work was needed
+            /// almost immediately, so no amount of pre-loading can help and the
+            /// fix belongs upstream at the insert (TERRAIN_INSERTS_PER_FRAME).
+            /// Hundreds of frames = the amortiser had slack and wasted it, which
+            /// LOAD_BUDGET_US fixes. Terrain measured 1; textures measured 200+.
+            LOG_INFO("Flush spike: {:.1f} ms over {} nodes "
+                     "[terrain={} mesh={} tex={} mat={} other={}] "
+                     "(last map load {:.1f} ms, queued={} ins={} rem={} "
+                     "lazyq={} lazyterr={} "
+                     "loadq={} loadimm={} fq={} fdirect={} delayed={} "
+                     "leadavg={} leadmax={} budget={}us)",
+                fFlushMs,
+                ::getImmediateFlushCount(),
+                ::getImmediateFlushKind(0),
+                ::getImmediateFlushKind(1),
+                ::getImmediateFlushKind(2),
+                ::getImmediateFlushKind(3),
+                ::getImmediateFlushKind(4),
+                CTERRAIN::s_MapIoStats.m_fLastLoadMs,
+                g_pTerrain ? g_pTerrain->GetQueuedMapLoadCount() : 0,
+                CMAP_PATCH::s_nInsertThisFrame,
+                CMAP_PATCH::s_nRemoveThisFrame,
+                ::getLazyQueueDepth(),
+                ::getLazyTerrainQueueDepth(),
+                ::getLoadPathCount(0),
+                ::getLoadPathCount(1),
+                ::getLoadPathCount(2),
+                ::getLoadPathCount(3),
+                ::getUseDelayedLoad(),
+                ::getLoadPathCount(4),
+                ::getLoadPathCount(5),
+                ::getLoadBudgetPerFrameUsec());
+        }
+    }
+
     if (g_GameDATA.m_bDisplayDebugInfo) {
         /// Debug HUD layout: single yellow column well clear of the
         /// top-left UI (char panel ends near x=230). 16 px row stride.
@@ -368,17 +438,63 @@ CGameStateMain::Render_GameMENU() {
         /// prefetcher thread. All four should return to 0 shortly after
         /// stopping movement; a non-zero steady-state means streaming is
         /// still catching up and you are paying InsertToScene bursts.
+        ///
+        /// pfHit = files the prefetch worker actually opened / files it tried.
+        /// This is the honesty check on the prefetcher: it used to fopen loose
+        /// map paths, which do not exist in a packed deployment, so it warmed
+        /// nothing while still looking alive on the `prefetch=` counter.
+        unsigned int nPrefetchAttempted = 0;
+        unsigned int nPrefetchSatisfied = 0;
+        g_pTerrain->GetPrefetchHitStats(nPrefetchAttempted, nPrefetchSatisfied);
+
         ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
             false,
             kDebugX,
             nRowY,
             g_dwYELLOW,
-            "Stream: loads=%u unload=%u dirty=%u prefetch=%u cold22=%u",
+            "Stream: loads=%u unload=%u dirty=%u prefetch=%u cold22=%u pfHit=%u/%u",
             g_pTerrain->GetQueuedMapLoadCount(),
             g_pTerrain->GetPendingUnloadCount(),
             g_pTerrain->GetDirtyMapCount(),
             g_pTerrain->GetPrefetchQueueDepth(),
-            g_pTerrain->GetProximityColdCount());
+            g_pTerrain->GetProximityColdCount(),
+            nPrefetchSatisfied,
+            nPrefetchAttempted);
+        nRowY += kDebugRowStride;
+
+        /// Wall-clock cost of the streaming work itself, which the averaged
+        /// `terr=` on the Logic: line cannot show: chunk loads are gated to one
+        /// per 150 ms, so at 60 fps most frames contain none at all and a single
+        /// 30 ms spike vanishes into a 30-frame mean.
+        ///
+        /// load/unload are the most recent occurrence, worst is the worst since
+        /// entering the zone. The bracketed phases break down the last load:
+        /// him = heightfield + lightmap material, til = tile materials,
+        /// ifo = static object construction, lit = per-part material cloning,
+        /// quad = quadtree rebuild.
+        ///
+        /// Read this together with `pfHit` above. pfHit satisfied==0 while
+        /// attempted>0 means the prefetch worker is resolving nothing, and every
+        /// load number here is a cold-cache measurement regardless of the
+        /// MAP_PREFETCH setting.
+        const tagMAPIO_STATS& mapio = CTERRAIN::s_MapIoStats;
+        ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
+            false,
+            kDebugX,
+            nRowY,
+            g_dwYELLOW,
+            "MapIO: load=%.1f (worst %.1f) [him=%.1f til=%.1f ifo=%.1f lit=%.1f quad=%.1f] "
+            "unload=%.1f (worst %.1f) n=%u",
+            mapio.m_fLastLoadMs,
+            mapio.m_fWorstLoadMs,
+            mapio.m_fHimMs,
+            mapio.m_fTilMs,
+            mapio.m_fIfoMs,
+            mapio.m_fLitMs,
+            mapio.m_fQuadMs,
+            mapio.m_fLastUnloadMs,
+            mapio.m_fWorstUnloadMs,
+            mapio.m_nLoadCount);
         nRowY += kDebugRowStride;
 
         /// Per-frame scene-toggle activity. ins/rem = CMAP_PATCH
@@ -445,6 +561,36 @@ CGameStateMain::Render_GameMENU() {
             ::getParticleBatchDrawCalls(),
             ::getParticleBatchFallback(),
             ::getParticleBatchSavedDrawCalls());
+        nRowY += kDebugRowStride;
+
+        /// Resource loads forced to run synchronously at first-render time
+        /// instead of being amortised by the engine's lazy entrance line --
+        /// mesh generation, vertex-buffer creation and texture upload for
+        /// anything that just became visible.
+        ///
+        /// This is the cost of *displaying* new terrain, as opposed to reading
+        /// its files (that is the MapIO: row). It lands inside beginScene(), so
+        /// it shows up in the Time: line's `shadow=` slot, not in `logic=`.
+        /// A spike here on the frame a new chunk appears -- or while the intro
+        /// camera sweeps toward the character, where nothing is being loaded
+        /// from disk at all -- means the hitch is the immediate-flush path.
+        ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
+            false,
+            kDebugX,
+            nRowY,
+            g_dwYELLOW,
+            "Flush: now=%.1fms n=%d | recent %.1fms over %d (%.1fs ago) | peak %.1fms over %d | "
+            "lazyq=%d/%d budget=%dus",
+            ::getImmediateFlushMs(),
+            ::getImmediateFlushCount(),
+            ::getImmediateFlushRecentMs(),
+            ::getImmediateFlushRecentCount(),
+            ::getImmediateFlushRecentAgeMs() / 1000.0f,
+            ::getImmediateFlushWorstMs(),
+            ::getImmediateFlushWorstCount(),
+            ::getLazyTerrainQueueDepth(),
+            ::getLazyQueueDepth(),
+            ::getLoadBudgetPerFrameUsec());
         nRowY += kDebugRowStride;
 
         /// Where the milliseconds actually go. Averaged over 30 frames; max is the worst

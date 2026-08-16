@@ -5362,6 +5362,168 @@ int getParticleBatchSavedDrawCalls ( void )
 	return zz_particle_emitter::GetBatchStats().saved;
 }
 
+//--------------------------------------------------------------------------------
+// Immediate-flush counters. See the comment on zz_manager::flush_stats: this is
+// resource loading that was forced to happen synchronously at first-render time
+// instead of being amortised through the lazy entrance line.
+//--------------------------------------------------------------------------------
+
+ZZ_SCRIPT
+int getImmediateFlushCount ( void )
+{
+	CHECK_INTERFACE(getImmediateFlushCount);
+	return zz_manager::get_flush_stats().per_frame_count;
+}
+
+ZZ_SCRIPT
+float getImmediateFlushMs ( void )
+{
+	CHECK_INTERFACE(getImmediateFlushMs);
+	return zz_manager::get_flush_stats().per_frame_usec / 1000.0f;
+}
+
+ZZ_SCRIPT
+float getImmediateFlushRecentMs ( void )
+{
+	CHECK_INTERFACE(getImmediateFlushRecentMs);
+	return zz_manager::get_flush_stats().recent_usec / 1000.0f;
+}
+
+ZZ_SCRIPT
+int getImmediateFlushRecentCount ( void )
+{
+	CHECK_INTERFACE(getImmediateFlushRecentCount);
+	return zz_manager::get_flush_stats().recent_count;
+}
+
+ZZ_SCRIPT
+int getImmediateFlushRecentAgeMs ( void )
+{
+	CHECK_INTERFACE(getImmediateFlushRecentAgeMs);
+	return zz_manager::get_flush_stats().recent_age_ms;
+}
+
+/// Wall-clock microseconds per frame the lazy entrance line may spend loading
+/// ahead. 0 restores the historical one-node-per-update behaviour.
+ZZ_SCRIPT
+int setLoadBudgetPerFrameUsec ( int iUsec )
+{
+	CHECK_INTERFACE(setLoadBudgetPerFrameUsec);
+	zz_manager::set_load_budget_per_frame_usec(iUsec);
+	ZZ_LOG("interface: setLoadBudgetPerFrameUsec(%d)\n", iUsec);
+	return 1;
+}
+
+ZZ_SCRIPT
+int getLoadBudgetPerFrameUsec ( void )
+{
+	CHECK_INTERFACE(getLoadBudgetPerFrameUsec);
+	return zz_manager::get_load_budget_per_frame_usec();
+}
+
+/// Total nodes still waiting in the lazy entrance lines, across the managers
+/// that use them. This is the backlog the per-frame budget is draining: if it
+/// sits high while flush spikes continue, the drain rate is still losing to the
+/// insert rate; if it is ~0 when a spike happens, the nodes are being created
+/// and rendered in the same frame and no amount of pre-loading can help.
+ZZ_SCRIPT
+int getLazyQueueDepth ( void )
+{
+	CHECK_INTERFACE(getLazyQueueDepth);
+	if (!znzin) {
+		return 0;
+	}
+	int total = 0;
+	if (znzin->meshes) total += (int)znzin->meshes->get_entrance_size();
+	if (znzin->terrain_meshes) total += (int)znzin->terrain_meshes->get_entrance_size();
+	if (znzin->rough_terrain_meshes) total += (int)znzin->rough_terrain_meshes->get_entrance_size();
+	if (znzin->ocean_meshes) total += (int)znzin->ocean_meshes->get_entrance_size();
+	if (znzin->textures) total += (int)znzin->textures->get_entrance_size();
+	return total;
+}
+
+/// Entrance-line depth for terrain meshes only -- the population that has been
+/// force-flushing in whole-chunk bursts.
+ZZ_SCRIPT
+int getLazyTerrainQueueDepth ( void )
+{
+	CHECK_INTERFACE(getLazyTerrainQueueDepth);
+	if (!znzin || !znzin->terrain_meshes) {
+		return 0;
+	}
+	return (int)znzin->terrain_meshes->get_entrance_size();
+}
+
+/// Branch counters for one frame:
+/// iWhich: 0 load_queued, 1 load_immediate, 2 flush_from_queue, 3 flush_direct,
+///         4 mean entrance lead time in frames, 5 max lead time in frames.
+///
+/// The lead-time entries are the decisive ones. getLazyTerrainQueueDepth() is
+/// sampled by the HUD *after* the render phase has already force-flushed the
+/// queue empty, so it reads 0 during exactly the spikes it was meant to explain
+/// -- do not draw conclusions from it. Lead time is measured at the flush itself
+/// and has no such blind spot.
+ZZ_SCRIPT
+int getLoadPathCount ( int iWhich )
+{
+	CHECK_INTERFACE(getLoadPathCount);
+	const zz_manager::flush_stats& s = zz_manager::get_flush_stats();
+	switch (iWhich) {
+		case 0: return s.load_queued;
+		case 1: return s.load_immediate;
+		case 2: return s.flush_from_queue;
+		case 3: return s.flush_direct;
+		case 4: return (s.age_samples > 0) ? (s.age_sum / s.age_samples) : 0;
+		case 5: return s.age_max;
+		default: return 0;
+	}
+}
+
+/// Is the engine currently in delayed-loading mode? zz_manager::load() only
+/// queues when this is on; otherwise it loads inline and the entrance line stays
+/// empty, which is what an all-zero lazyterr alongside a big terrain spike would
+/// imply. Flipped all over the client (setDelayedLoad), so it is worth reading
+/// at the moment of a spike rather than assuming.
+ZZ_SCRIPT
+int getUseDelayedLoad ( void )
+{
+	CHECK_INTERFACE(getUseDelayedLoad);
+	return (znzin && znzin->get_rs() && znzin->get_rs()->use_delayed_loading) ? 1 : 0;
+}
+
+/// iKind: 0 terrain, 1 mesh, 2 texture, 3 material, 4 other.
+ZZ_SCRIPT
+int getImmediateFlushKind ( int iKind )
+{
+	CHECK_INTERFACE(getImmediateFlushKind);
+	if (iKind < 0 || iKind >= zz_manager::FLUSH_KIND_COUNT) {
+		return 0;
+	}
+	return zz_manager::get_flush_stats().per_frame_kind[iKind];
+}
+
+ZZ_SCRIPT
+float getImmediateFlushWorstMs ( void )
+{
+	CHECK_INTERFACE(getImmediateFlushWorstMs);
+	return zz_manager::get_flush_stats().worst_usec / 1000.0f;
+}
+
+ZZ_SCRIPT
+int getImmediateFlushWorstCount ( void )
+{
+	CHECK_INTERFACE(getImmediateFlushWorstCount);
+	return zz_manager::get_flush_stats().worst_count;
+}
+
+ZZ_SCRIPT
+int resetImmediateFlushStats ( void )
+{
+	CHECK_INTERFACE(resetImmediateFlushStats);
+	zz_manager::reset_flush_stats_all();
+	return 1;
+}
+
 ZZ_SCRIPT
 int setCameraPerspective ( HNODE hCamera, float fFovY, float fAspectRatio, float fNear, float fFar )
 {

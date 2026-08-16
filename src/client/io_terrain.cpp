@@ -23,15 +23,76 @@
 #include <deque>
 #include <set>
 #include <string>
+#include <vector>
 
 #define VIEW_PATCH_RANGE 8
 
 //----------------------------------------------------------------------------------------------------
-/// Map file prefetcher — background thread that warms the OS file cache
-/// for .HIM/.TIL/.IFO files before the main thread reads them in CMAP::Load.
-/// This dramatically cuts the per-sector-crossing hitch caused by synchronous disk I/O.
+/// Map file prefetcher — background thread that warms the OS file cache for the
+/// files CMAP::Load reads, before the main thread gets to them. This cuts the
+/// per-sector-crossing hitch caused by synchronous disk I/O.
+///
+/// IMPORTANT — read this before changing how the read is done.
+///
+/// This originally used plain fopen() on the *loose* map paths, which works only
+/// on a loose dev install. A deployed client has no loose 3ddata\MAPS at all --
+/// every map file lives inside rose.vfs -- so `fopen` failed and the `if (!f)
+/// continue;` swallowed it: the prefetcher was silently warming nothing, and the
+/// whole mitigation was inert in exactly the build that ships. It now goes
+/// through the VFS, and falls back to the loose path so dev installs still work.
+///
+/// Thread-safety rests on the worker owning a *private* VHANDLE:
+///   - The handle is opened on the MAIN thread in EnsureStarted(), because
+///     CVFS::Open() writes global CRT state (_set_fmode) and must not race.
+///   - After that the worker only calls VOpenFile/vfread/VCloseFile on its own
+///     handle, so it shares no mutable state with the engine's handle. The index
+///     maps it reads (CVFS::m_si / m_ve) are filled at mount and never written
+///     again.
+///   - Mode is "r", not "mr": the plain-FILE* branch makes vfread() an
+///     fseek+fread, which warms the OS cache without any MapViewOfFile churn in
+///     a 32-bit address space. It is also what the client's own handle uses
+///     (winmain.cpp), so this warms precisely the pages CMAP::Load will touch.
+///
+/// The worker still owns no engine object and discards everything it reads --
+/// keep it that way.
 //----------------------------------------------------------------------------------------------------
 namespace {
+
+/// Wall-clock stopwatch for the streaming instrumentation.
+///
+/// QueryPerformanceCounter, not timeGetTime: the whole point is to catch a single
+/// 20-40 ms spike, and timeGetTime quantises to the system tick (~15.6 ms by
+/// default -- see the "Frame Timing & Timer Precision" note in the client
+/// CLAUDE.md). Measuring a hitch with a 15.6 ms ruler is how you conclude there
+/// isn't one.
+class CStopwatch {
+public:
+    CStopwatch() { ::QueryPerformanceCounter(&m_Start); }
+
+    float ElapsedMs() const {
+        LARGE_INTEGER now;
+        ::QueryPerformanceCounter(&now);
+        const LONGLONG freq = Frequency();
+        if (freq <= 0) {
+            return 0.0f;
+        }
+        return (float)((double)(now.QuadPart - m_Start.QuadPart) * 1000.0 / (double)freq);
+    }
+
+private:
+    static LONGLONG Frequency() {
+        static LONGLONG freq = 0;
+        if (freq == 0) {
+            LARGE_INTEGER f;
+            if (::QueryPerformanceFrequency(&f)) {
+                freq = f.QuadPart;
+            }
+        }
+        return freq;
+    }
+
+    LARGE_INTEGER m_Start;
+};
 
 class CMapFilePrefetcher {
 public:
@@ -104,6 +165,23 @@ public:
         return queue_depth;
     }
 
+    /// Files the worker tried to warm vs. files it actually opened. A zero
+    /// satisfied count with a non-zero attempted count means the prefetcher is
+    /// running but resolving nothing -- which is exactly the failure mode that
+    /// made the loose-fopen version silently useless. Surfaced on the HUD.
+    void GetHitStats(unsigned int& attempted, unsigned int& satisfied) {
+        if (!m_bStarted) {
+            attempted = 0;
+            satisfied = 0;
+            return;
+        }
+
+        EnterCriticalSection(&m_cs);
+        attempted = m_nFilesAttempted;
+        satisfied = m_nFilesSatisfied;
+        LeaveCriticalSection(&m_cs);
+    }
+
     void OnZoneChanged() {
         if (!m_bStarted)
             return;
@@ -119,10 +197,13 @@ private:
     CMapFilePrefetcher():
         m_hThread(NULL),
         m_hEvent(NULL),
+        m_hVFS(NULL),
         m_bStop(false),
         m_bStarted(false),
         m_bEnabled(false),
-        m_Generation(0) {}
+        m_Generation(0),
+        m_nFilesAttempted(0),
+        m_nFilesSatisfied(0) {}
 
     ~CMapFilePrefetcher() {
         if (!m_bStarted)
@@ -140,6 +221,12 @@ private:
             m_hThread = NULL;
         }
 
+        /// Only safe after the worker has actually exited -- it is the sole user.
+        if (m_hVFS) {
+            CloseVFS(m_hVFS);
+            m_hVFS = NULL;
+        }
+
         if (m_hEvent) {
             CloseHandle(m_hEvent);
             m_hEvent = NULL;
@@ -153,6 +240,26 @@ private:
             return;
         InitializeCriticalSection(&m_cs);
         m_hEvent = CreateEventA(NULL, FALSE, FALSE, NULL);
+
+        /// Open the worker's private VFS handle here, on the main thread, BEFORE
+        /// the thread exists. CVFS::Open() writes global CRT state
+        /// (_set_fmode(_O_BINARY)) and mounts the index, neither of which may race
+        /// the main thread. "r" (not "mr") keeps this a plain FILE*, so the
+        /// worker's reads are fseek+fread and warm the OS cache without mapping
+        /// views into a 32-bit address space. A NULL handle is not fatal: the
+        /// worker falls back to loose files.
+        m_hVFS = OpenVFS("data.idx", "r");
+        if (!m_hVFS) {
+            /// LOG_INFO, not LogString: LogString reports every line as Debug
+            /// regardless of its LOG_NORMAL/LOG_DEBUG_ argument, and the client
+            /// runs the logger at Info -- so a LogString diagnostic never reaches
+            /// client.log. The streaming diagnostics have to be visible or the
+            /// MAP_PREFETCH A/B is unfalsifiable, which is exactly how the
+            /// loose-fopen prefetcher stayed broken.
+            LOG_INFO("Terrain map prefetch: OpenVFS(\"data.idx\") failed; "
+                     "falling back to loose files only");
+        }
+
         m_hThread = (HANDLE)_beginthreadex(NULL, 0, WorkerEntry, this, 0, NULL);
         if (m_hThread) {
             // Below-normal priority so the worker never steals cycles from the render thread.
@@ -166,9 +273,73 @@ private:
         return 0;
     }
 
+    /// Every file CMAP::Load touches for one map cell, in the order it reads them.
+    ///
+    /// The base path already ends in "<x>_<64-y>" (CTERRAIN::GetMapFILE), and
+    /// CMAP::Load builds the lightmap name as "<base>\<x>_<64-y>_PlaneLightingMap.dds"
+    /// from the same pair -- so the leaf of the base *is* that prefix, and no extra
+    /// coordinates need to be plumbed through Request().
+    ///
+    /// The lightmap and the two .lit files were missing from the original
+    /// three-extension list, and the lightmap is the one that matters: measured
+    /// against the shipped data.idx, a map cell is roughly
+    ///     .HIM 19 KB + .TIL 1.8 KB + .IFO 5-23 KB + .lit 0.1-22 KB
+    ///     + <x>_<y>_PlaneLightingMap.dds  131-350 KB
+    /// so warming only .HIM/.TIL/.IFO covered under a tenth of the bytes and left
+    /// the single largest read still faulting on the main thread.
+    ///
+    /// Note the lightmap DDS is read by the *engine* (loadColormapMaterial ->
+    /// zz_texture -> zz_vfs_pkg), which holds a separate memory-mapped "mr" handle
+    /// rather than going through CVFSManager. Warming it with a plain read still
+    /// works: both handles are views of the same rose.vfs, and Windows backs the
+    /// file cache and the mapped section with the same physical pages, so an
+    /// fread here means the later mapped touch hits cache instead of disk.
+    static void BuildPrefetchPaths(const std::string& base, std::vector<std::string>& out) {
+        out.clear();
+        out.push_back(base + ".HIM");
+        out.push_back(base + ".TIL");
+        out.push_back(base + ".IFO");
+
+        const size_t leaf_pos = base.find_last_of("\\/");
+        if (leaf_pos != std::string::npos && leaf_pos + 1 < base.size()) {
+            const std::string leaf = base.substr(leaf_pos + 1);
+            out.push_back(base + "\\" + leaf + "_PlaneLightingMap.dds");
+        }
+
+        out.push_back(base + "\\LightMap\\BuildingLightMapData.lit");
+        out.push_back(base + "\\LightMap\\ObjectLightMapData.lit");
+    }
+
+    /// Read a file end-to-end and throw the bytes away. Returns false when the
+    /// file could not be opened at all (missing lightmap, loose-only install...),
+    /// which is normal and must stay silent.
+    bool WarmOneFile(const std::string& path, char* buf, size_t buf_size) {
+        if (m_hVFS) {
+            VFileHandle* vf = VOpenFile(path.c_str(), m_hVFS);
+            if (vf) {
+                while (vfread(buf, 1, buf_size, vf) > 0) {
+                    // discard — purpose is purely to warm the OS page cache
+                }
+                VCloseFile(vf);
+                return true;
+            }
+        }
+
+        /// Loose fallback, for a dev install whose data is not packed.
+        FILE* f = fopen(path.c_str(), "rb");
+        if (!f)
+            return false;
+        while (fread(buf, 1, buf_size, f) > 0) {
+            // discard
+        }
+        fclose(f);
+        return true;
+    }
+
     void Run() {
-        static const char* kExts[3] = {".HIM", ".TIL", ".IFO"};
         char buf[32 * 1024];
+        std::vector<std::string> paths;
+
         while (true) {
             WaitForSingleObject(m_hEvent, INFINITE);
             for (;;) {
@@ -192,19 +363,23 @@ private:
                 if (!ShouldProcessGeneration(item.generation))
                     continue;
 
-                for (int i = 0; i < 3; ++i) {
+                BuildPrefetchPaths(item.base_path, paths);
+
+                unsigned int attempted = 0;
+                unsigned int satisfied = 0;
+                for (size_t i = 0; i < paths.size(); ++i) {
                     if (!ShouldProcessGeneration(item.generation))
                         break;
 
-                    std::string path = item.base_path + kExts[i];
-                    FILE* f = fopen(path.c_str(), "rb");
-                    if (!f)
-                        continue;
-                    while (fread(buf, 1, sizeof(buf), f) > 0) {
-                        // discard — purpose is purely to warm the OS page cache
-                    }
-                    fclose(f);
+                    ++attempted;
+                    if (WarmOneFile(paths[i], buf, sizeof(buf)))
+                        ++satisfied;
                 }
+
+                EnterCriticalSection(&m_cs);
+                m_nFilesAttempted += attempted;
+                m_nFilesSatisfied += satisfied;
+                LeaveCriticalSection(&m_cs);
             }
         }
     }
@@ -218,6 +393,8 @@ private:
 
     HANDLE m_hThread;
     HANDLE m_hEvent;
+    /// Private to the worker after EnsureStarted(); never shared with the engine.
+    VHANDLE m_hVFS;
     CRITICAL_SECTION m_cs;
     std::deque<QueueItem> m_Queue;
     std::set<std::string> m_Seen;
@@ -225,6 +402,8 @@ private:
     bool m_bStarted;
     bool m_bEnabled;
     unsigned long m_Generation;
+    unsigned int m_nFilesAttempted;
+    unsigned int m_nFilesSatisfied;
 };
 
 } // namespace
@@ -281,6 +460,8 @@ static char s_SubSecIdx[11][10] = {
 };
 
 int CTERRAIN::m_RegistedPatchCnt = 0;
+
+tagMAPIO_STATS CTERRAIN::s_MapIoStats = {};
 
 CQuadPatchManager::CQuadPatchManager(void) {
     InitializeQuadPatch();
@@ -1756,7 +1937,6 @@ CMAP::ReadObjINFO(CFileSystem* pFileSystem, long lOffset, int iLumpType) {
             }
 
             case LUMP_TERRAIN_MOB: {
-                short nQuestIDX;
                 int iAI;
                 pFileSystem->ReadInt32(&iAI);
 
@@ -1766,7 +1946,23 @@ CMAP::ReadObjINFO(CFileSystem* pFileSystem, long lOffset, int iLumpType) {
                 pFileSystem->Read(szName, sizeof(char) * cNameLen); // sound file name ..
                 szName[cNameLen] = 0;
 
-                nQuestIDX = 0;
+                if (NPC_TYPE(iObjID) == 999) {
+                    g_pObjMGR->AddNpcInfo(this, iObjID, Position);
+                }
+#ifdef __VIRTUAL_SERVER
+                /// Resolve the spawn's AI/quest file name to a LIST_EVENT row.
+                ///
+                /// This lives inside __VIRTUAL_SERVER because nQuestIDX has exactly
+                /// one consumer -- the Add_NpcCHAR call below -- and that is the only
+                /// thing the define guards. It used to run unconditionally, i.e. in
+                /// the shipping client, where the result was computed and dropped on
+                /// the floor. It is not cheap: a linear walk of all ~1100 LIST_EVENT
+                /// rows per named spawn, each row building a std::filesystem::path
+                /// (a std::wstring on Windows, so an MBCS->UTF-16 conversion plus a
+                /// heap allocation), then .filename(), then .string() back to narrow
+                /// -- and it does not break on a match. All of it on the main thread
+                /// inside CMAP::Load, on a frame that is already hitching.
+                short nQuestIDX = 0;
                 if (strlen(szName)) {
                     for (size_t row_idx = 0; row_idx < g_TblEVENT.row_count; ++row_idx) {
                         char* event_filename = EVENT_FILENAME(row_idx);
@@ -1780,10 +1976,6 @@ CMAP::ReadObjINFO(CFileSystem* pFileSystem, long lOffset, int iLumpType) {
                     }
                 }
 
-                if (NPC_TYPE(iObjID) == 999) {
-                    g_pObjMGR->AddNpcInfo(this, iObjID, Position);
-                }
-#ifdef __VIRTUAL_SERVER
                 if (NPC_TYPE(iObjID) == 999) {
                     float fModelDIR =
                         quaternionToModelDirection(Rotate.w, Rotate.x, Rotate.y, Rotate.z);
@@ -1946,6 +2138,16 @@ CMAP*
 CMAP::Load(char* szFileName, short nZoneMapXIDX, short nZoneMapYIDX) {
     char* szFullPathName;
 
+    /// Phase timers for the MapIO: HUD row. Each phase is a natural boundary in
+    /// this function; the point is to say *which* part of a chunk load costs the
+    /// frame rather than only that the load did.
+    CStopwatch phase_timer;
+    CTERRAIN::s_MapIoStats.m_fHimMs = 0.0f;
+    CTERRAIN::s_MapIoStats.m_fTilMs = 0.0f;
+    CTERRAIN::s_MapIoStats.m_fIfoMs = 0.0f;
+    CTERRAIN::s_MapIoStats.m_fLitMs = 0.0f;
+    CTERRAIN::s_MapIoStats.m_fQuadMs = 0.0f;
+
     m_nZoneMapXIDX = nZoneMapXIDX;
     m_nZoneMapYIDX = nZoneMapYIDX;
 
@@ -2059,6 +2261,9 @@ CMAP::Load(char* szFileName, short nZoneMapXIDX, short nZoneMapYIDX) {
 
     pFileSystem->CloseFile();
 
+    CTERRAIN::s_MapIoStats.m_fHimMs = phase_timer.ElapsedMs();
+    phase_timer = CStopwatch();
+
     ///////////////////////////////////////////////////////////////////////////////
     /// Tile info file
     ///////////////////////////////////////////////////////////////////////////////
@@ -2110,6 +2315,9 @@ CMAP::Load(char* szFileName, short nZoneMapXIDX, short nZoneMapYIDX) {
     }
 
     pFileSystem->CloseFile();
+
+    CTERRAIN::s_MapIoStats.m_fTilMs = phase_timer.ElapsedMs();
+    phase_timer = CStopwatch();
 
     ///////////////////////////////////////////////////////////////////////////////
     /// Map info file
@@ -2167,6 +2375,9 @@ CMAP::Load(char* szFileName, short nZoneMapXIDX, short nZoneMapYIDX) {
     pFileSystem->CloseFile();
     (CVFSManager::GetSingleton()).ReturnToManager(pFileSystem);
 
+    CTERRAIN::s_MapIoStats.m_fIfoMs = phase_timer.ElapsedMs();
+    phase_timer = CStopwatch();
+
     // load construct light map ...
     szFullPathName = CStr::Printf("%s\\LightMap\\BuildingLightMapData.lit", szFileName);
     LoadLightMapINFO(LUMP_TERRAIN_CNST, szFullPathName, szFileName);
@@ -2182,11 +2393,16 @@ CMAP::Load(char* szFileName, short nZoneMapXIDX, short nZoneMapYIDX) {
 
     LogString(LOG_DEBUG_, ">>>>>>> load MAP :: %d, %d \n", m_nZoneMapXIDX, m_nZoneMapYIDX);
 
+    CTERRAIN::s_MapIoStats.m_fLitMs = phase_timer.ElapsedMs();
+    phase_timer = CStopwatch();
+
     // Load quadManager
     m_QuadManager.LoadQuadPatch(this);
 
     CompareSizePath2ObjAll();
     m_QuadManager.SetExPatchTotal();
+
+    CTERRAIN::s_MapIoStats.m_fQuadMs = phase_timer.ElapsedMs();
     return this;
 }
 
@@ -2344,6 +2560,7 @@ CTERRAIN::CTERRAIN() {
 
     m_dwLastMapLoadTick = 0;
     m_dwLastDirtyFreeTick = 0;
+    m_dwLastUnloadTick = 0;
     m_bPatchIndexDirty = false;
     m_nLastMappingX = 0;
     m_nLastMappingY = 0;
@@ -2614,8 +2831,8 @@ CTERRAIN::LoadZONE(short nZoneNO, bool bPlayBGM) {
 
     g_pEventLIST->Clear();
     if (!m_LoadOneMapData.empty() || !m_DirtyMapList.empty()) {
-        LogString(LOG_NORMAL,
-            "Terrain streaming state carried into LoadZONE(%d): queued=%u dirty=%u prefetch=%s queue=%u\n",
+        LOG_INFO("Terrain streaming state carried into LoadZONE({}): queued={} dirty={} "
+                 "prefetch={} queue={}",
             nZoneNO,
             (unsigned int)m_LoadOneMapData.size(),
             (unsigned int)m_DirtyMapList.size(),
@@ -2712,8 +2929,8 @@ CTERRAIN::LoadZONE(short nZoneNO, bool bPlayBGM) {
 void
 CTERRAIN::FreeZONE() {
     CMapFilePrefetcher::Get().OnZoneChanged();
-    LogString(LOG_NORMAL,
-        "Terrain streaming reset before FreeZONE(%d): queued=%u dirty=%u prefetch=%s queue=%u\n",
+    LOG_INFO("Terrain streaming reset before FreeZONE({}): queued={} dirty={} prefetch={} "
+             "queue={}",
         m_nZoneNO,
         (unsigned int)m_LoadOneMapData.size(),
         (unsigned int)m_DirtyMapList.size(),
@@ -2745,8 +2962,8 @@ CTERRAIN::FreeZONE() {
     if (pDlg)
         pDlg->FreeMinimap();
 
-    LogString(LOG_NORMAL,
-        "Terrain streaming reset after FreeZONE(%d): queued=%u dirty=%u prefetch=%s queue=%u\n",
+    LOG_INFO("Terrain streaming reset after FreeZONE({}): queued={} dirty={} prefetch={} "
+             "queue={}",
         m_nZoneNO,
         (unsigned int)m_LoadOneMapData.size(),
         (unsigned int)m_DirtyMapList.size(),
@@ -2760,12 +2977,21 @@ CTERRAIN::SetMapPrefetchEnabled(bool enabled) {
     CMapFilePrefetcher::Get().SetEnabled(enabled);
 
     if (was_enabled != enabled) {
-        LogString(LOG_NORMAL,
-            "Terrain map prefetch %s (queued=%u dirty=%u queue=%u)\n",
+        unsigned int nAttempted = 0;
+        unsigned int nSatisfied = 0;
+        this->GetPrefetchHitStats(nAttempted, nSatisfied);
+
+        /// See the LOG_INFO note in CMapFilePrefetcher::EnsureStarted for why this
+        /// is not LogString. warmed=satisfied/attempted is the honesty check: a
+        /// zero numerator with a non-zero denominator means the worker is running
+        /// but resolving nothing.
+        LOG_INFO("Terrain map prefetch {} (queued={} dirty={} queue={} warmed={}/{})",
             enabled ? "enabled" : "disabled",
             this->GetQueuedMapLoadCount(),
             this->GetDirtyMapCount(),
-            this->GetPrefetchQueueDepth());
+            this->GetPrefetchQueueDepth(),
+            nSatisfied,
+            nAttempted);
     }
 }
 
@@ -2787,6 +3013,11 @@ CTERRAIN::GetDirtyMapCount() const {
 unsigned int
 CTERRAIN::GetPrefetchQueueDepth() const {
     return CMapFilePrefetcher::Get().GetQueueDepth();
+}
+
+void
+CTERRAIN::GetPrefetchHitStats(unsigned int& attempted, unsigned int& satisfied) const {
+    CMapFilePrefetcher::Get().GetHitStats(attempted, satisfied);
 }
 
 unsigned int
@@ -2819,7 +3050,12 @@ CTERRAIN::ResetStreamingState() {
 
     m_dwLastMapLoadTick = 0;
     m_dwLastDirtyFreeTick = 0;
+    m_dwLastUnloadTick = 0;
     m_bPatchIndexDirty = false;
+
+    /// Streaming timings are per-zone: a worst-case carried across a warp would
+    /// report the loading screen's own work forever.
+    s_MapIoStats.Reset();
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -2907,16 +3143,40 @@ CTERRAIN::DeferSubMAP(WORD wUpdateFLAG) {
     }
 }
 
-void
-CTERRAIN::DrainPendingUnloads() {
+bool
+CTERRAIN::DrainPendingUnloads(DWORD dwNow) {
     if (m_PendingUnloadList.empty()) {
-        return;
+        return false;
     }
 
-    DWORD dwNow = GetTickCount();
+    /// Commit at most ONE map teardown per kMinDirtyFreeIntervalMs, mirroring the
+    /// load path's own one-per-150 ms gate.
+    ///
+    /// Why this is needed: a map teardown is not cheap and is not deferred.
+    /// CMAP::Free() calls ClearFromNZIN() inline, which unregisters all 256
+    /// patches (each an unloadTerrainBlock -> unloadVisible/unloadMesh/
+    /// unloadMaterial), deletes every fixed object, effect and sound in the cell,
+    /// and frees the 257 heightfield rows. This loop used to commit *every*
+    /// eligible cell in one pass, and a diagonal boundary crossing makes up to
+    /// five eligible at once -- on the same frames the load path is already
+    /// hitching.
+    ///
+    /// The throttle that was supposed to cover this never fired: CMAP::Free()
+    /// sets MAP_DIRTY, but ClearFromNZIN() sets MAP_EMPTY before returning, so by
+    /// the time Free() returns nothing is ever DIRTY and CTERRAIN::FreeDirtyMAP()'s
+    /// IsDirty() scan can never match. Gating here rather than restoring the
+    /// intended two-phase teardown deliberately leaves teardown ordering (and the
+    /// ZeroMemory(m_PATCH) / m_bPatchIndexDirty staleness hazard) untouched.
+    ///
+    /// A cell that stays eligible simply waits for the next interval;
+    /// CancelPendingUnload's curve-back fast path is unaffected.
+    if ((DWORD)(dwNow - m_dwLastUnloadTick) < kMinDirtyFreeIntervalMs) {
+        return false;
+    }
 
     for (std::list<tagPENDING_UNLOAD>::iterator it = m_PendingUnloadList.begin();
-         it != m_PendingUnloadList.end();) {
+         it != m_PendingUnloadList.end();
+         ++it) {
         int dx = (int)it->m_nZoneMapX - (int)m_nCenterMapXIDX;
         int dy = (int)it->m_nZoneMapY - (int)m_nCenterMapYIDX;
         if (dx < 0)
@@ -2933,11 +3193,13 @@ CTERRAIN::DrainPendingUnloads() {
 
         if (bShouldUnload) {
             DoActualUnload(it->m_nZoneMapX, it->m_nZoneMapY);
-            it = m_PendingUnloadList.erase(it);
-        } else {
-            ++it;
+            m_PendingUnloadList.erase(it);
+            m_dwLastUnloadTick = dwNow;
+            return true; // one per interval
         }
     }
+
+    return false;
 }
 
 void
@@ -3346,6 +3608,22 @@ CTERRAIN::FindLoadedMAP(short nZoneMapXIDX, short nZoneMapYIDX) {
 
     return NULL;
 }
+/// NOTE: this is currently a no-op, and the throttle around its call site
+/// protects nothing.
+///
+/// The intent was two-phase teardown: mark a map MAP_DIRTY on unload, then do the
+/// expensive ClearFromNZIN() here, one map per kMinDirtyFreeIntervalMs. But
+/// CMAP::Free() sets MAP_DIRTY and then calls ClearFromNZIN() inline, and
+/// ClearFromNZIN() ends with `m_nUseMODE = MAP_EMPTY` -- so by the time Free()
+/// returns no map is ever DIRTY and the IsDirty() scan below can never match.
+///
+/// The real teardown cost is therefore paid synchronously inside
+/// DrainPendingUnloads(); that is where the per-frame cap now lives. Restoring the
+/// intended two-phase behaviour would be the cleaner fix, but it leaves doomed
+/// patches live between the two phases and has to be reconciled with Free()'s
+/// ZeroMemory(m_PATCH) and the m_bPatchIndexDirty staleness hazard -- deliberately
+/// out of scope. Left in place so the shape of the original design is still
+/// visible; do not assume it runs.
 void
 CTERRAIN::FreeDirtyMAP() {
     for (short nI = 0; nI < MAX_MAP_BUFFER; nI++) {
@@ -3671,8 +3949,10 @@ CTERRAIN::SetCenterPosition(float fWorldX, float fWorldY) {
 
     DWORD dwNow = GetTickCount();
 
-    /// Time-budgeted dirty-map cleanup. One ClearFromNZIN per interval keeps
-    /// the main thread from hitching when a wave of maps goes dirty at once.
+    /// Dirty-map cleanup. NOTE: FreeDirtyMAP() never actually finds anything --
+    /// see the comment on its definition. Kept (with its gate) because it is
+    /// harmless and documents the intended two-phase design; the teardown cost it
+    /// was meant to spread is capped inside DrainPendingUnloads instead.
     if ((DWORD)(dwNow - m_dwLastDirtyFreeTick) >= kMinDirtyFreeIntervalMs) {
         FreeDirtyMAP();
         m_dwLastDirtyFreeTick = dwNow;
@@ -3680,7 +3960,21 @@ CTERRAIN::SetCenterPosition(float fWorldX, float fWorldY) {
 
     /// Drain the map-unload hysteresis list so grace-expired cells get torn
     /// down even when the player is no longer crossing boundaries.
-    DrainPendingUnloads();
+    ///
+    /// Only record a timing when a teardown actually happened: the drain
+    /// early-returns on most frames (throttled, or nothing eligible yet), and
+    /// letting those overwrite m_fLastUnloadMs would bury the one number worth
+    /// reading under sub-microsecond noise.
+    if (!m_PendingUnloadList.empty()) {
+        CStopwatch unload_timer;
+        if (DrainPendingUnloads(dwNow)) {
+            const float fUnloadMs = unload_timer.ElapsedMs();
+            s_MapIoStats.m_fLastUnloadMs = fUnloadMs;
+            if (fUnloadMs > s_MapIoStats.m_fWorstUnloadMs) {
+                s_MapIoStats.m_fWorstUnloadMs = fUnloadMs;
+            }
+        }
+    }
 
     //----------------------------------------------------------------------------------------------------
     /// @brief Delayed load 가 세팅되었을경우.. 맵 로딩 큐가 비어 있지 않다면.. 먼저 그맵을 읽는다.
@@ -3698,7 +3992,18 @@ CTERRAIN::SetCenterPosition(float fWorldX, float fWorldY) {
         } else
             ::setDelayedLoad(true);
 
-        AddOneMap(pOneMapData->m_nCenterX, pOneMapData->m_nCenterY, pOneMapData->m_nUpdateIndex);
+        {
+            CStopwatch load_timer;
+            AddOneMap(pOneMapData->m_nCenterX,
+                pOneMapData->m_nCenterY,
+                pOneMapData->m_nUpdateIndex);
+            const float fLoadMs = load_timer.ElapsedMs();
+            s_MapIoStats.m_fLastLoadMs = fLoadMs;
+            if (fLoadMs > s_MapIoStats.m_fWorstLoadMs) {
+                s_MapIoStats.m_fWorstLoadMs = fLoadMs;
+            }
+            ++s_MapIoStats.m_nLoadCount;
+        }
 
         ::setDelayedLoad(true);
 

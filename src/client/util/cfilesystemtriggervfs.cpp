@@ -6,9 +6,53 @@
 CFileSystemTriggerVFS::CFileSystemTriggerVFS(void): m_pFileHandle(NULL), m_hVFile(NULL) {
     m_pData = NULL;
     m_iSize = 0;
+
+    m_pReadBuf = NULL;
+    m_lBufStart = -1;
+    m_iBufValid = 0;
+    m_lLogicalPos = 0;
 };
 
-CFileSystemTriggerVFS::~CFileSystemTriggerVFS(void) {}
+CFileSystemTriggerVFS::~CFileSystemTriggerVFS(void) {
+    delete[] m_pReadBuf;
+    m_pReadBuf = NULL;
+}
+
+void
+CFileSystemTriggerVFS::InvalidateReadBuffer() {
+    m_lBufStart = -1;
+    m_iBufValid = 0;
+}
+
+long
+CFileSystemTriggerVFS::ClampToFile(long lPos) {
+    if (lPos < 0) {
+        return 0;
+    }
+    const long lSize = (long)::vfgetsize(m_pFileHandle);
+    return (lPos > lSize) ? lSize : lPos;
+}
+
+bool
+CFileSystemTriggerVFS::RefillReadBuffer() {
+    if (m_pReadBuf == NULL) {
+        m_pReadBuf = new unsigned char[kReadBufSize];
+        if (m_pReadBuf == NULL) {
+            return false;
+        }
+    }
+
+    ::vfseek(m_pFileHandle, m_lLogicalPos, SEEK_SET);
+    const int iGot = (int)::vfread(m_pReadBuf, 1, kReadBufSize, m_pFileHandle);
+    if (iGot <= 0) {
+        InvalidateReadBuffer();
+        return false;
+    }
+
+    m_lBufStart = m_lLogicalPos;
+    m_iBufValid = iGot;
+    return true;
+}
 
 bool
 CFileSystemTriggerVFS::OpenFile(const char* fname, int iMode) {
@@ -34,6 +78,12 @@ CFileSystemTriggerVFS::OpenFile(const char* fname, int iMode) {
 
     m_iSize = 0;
 
+    /// These objects are pooled and reused across files (CVFSManager), so stale
+    /// buffer state from the previous file would be read as this one's content.
+    /// VOpenFile starts a fresh handle at offset 0.
+    InvalidateReadBuffer();
+    m_lLogicalPos = 0;
+
     return true;
 }
 
@@ -45,6 +95,9 @@ CFileSystemTriggerVFS::CloseFile() {
     }
 
     m_strFileName = std::string("");
+
+    InvalidateReadBuffer();
+    m_lLogicalPos = 0;
 }
 
 void
@@ -65,9 +118,57 @@ CFileSystemTriggerVFS::Read(void* lpBuf, unsigned int nCount) {
         return 0;
     }
 
+    /// Zero-fill up front, exactly as the unbuffered version did: a short read
+    /// at EOF must leave the tail of the caller's buffer zeroed, and several
+    /// parsers rely on that for name buffers.
     memset(lpBuf, 0, sizeof(char) * nCount);
 
-    return ::vfread(lpBuf, 1, nCount, m_pFileHandle);
+    if (nCount == 0) {
+        return 0;
+    }
+
+    unsigned char* pDst = (unsigned char*)lpBuf;
+
+    /// Reads at or above the buffer size would gain nothing from staging and
+    /// would evict a useful buffer, so they go straight through.
+    if (nCount >= (unsigned int)kReadBufSize) {
+        InvalidateReadBuffer();
+        ::vfseek(m_pFileHandle, m_lLogicalPos, SEEK_SET);
+        const int iGot = (int)::vfread(pDst, 1, nCount, m_pFileHandle);
+        if (iGot > 0) {
+            m_lLogicalPos += iGot;
+        }
+        return iGot;
+    }
+
+    unsigned int nRemaining = nCount;
+    unsigned int nTotal = 0;
+
+    while (nRemaining > 0) {
+        long lOffInBuf = (m_lBufStart < 0) ? -1 : (m_lLogicalPos - m_lBufStart);
+
+        if (lOffInBuf < 0 || lOffInBuf >= (long)m_iBufValid) {
+            if (!RefillReadBuffer()) {
+                break; // EOF, or allocation failure -- short read, tail stays zeroed
+            }
+            lOffInBuf = m_lLogicalPos - m_lBufStart;
+            if (lOffInBuf < 0 || lOffInBuf >= (long)m_iBufValid) {
+                break;
+            }
+        }
+
+        const unsigned int nAvail = (unsigned int)((long)m_iBufValid - lOffInBuf);
+        const unsigned int nTake = (nRemaining < nAvail) ? nRemaining : nAvail;
+
+        memcpy(pDst, m_pReadBuf + lOffInBuf, nTake);
+
+        pDst += nTake;
+        nRemaining -= nTake;
+        nTotal += nTake;
+        m_lLogicalPos += nTake;
+    }
+
+    return (int)nTotal;
 }
 
 void
@@ -82,40 +183,51 @@ CFileSystemTriggerVFS::Write(const void* lpBuf, unsigned int nCount) {
     */
 }
 
+/// Seeks move the logical position only. The read buffer is deliberately NOT
+/// invalidated: Read() re-checks whether the new position falls inside the
+/// buffered window, so a seek that stays within it costs nothing. That is the
+/// common case in the .IFO lump walk, which does Tell() -> Seek(lump offset) ->
+/// read -> Seek(back) for every lump.
+///
+/// vfseek clamps to the file bounds and reports success even for an out-of-range
+/// request, so the clamp is mirrored here rather than failing.
 bool
 CFileSystemTriggerVFS::Seek(long lOff, unsigned int nFrom) {
     assert(m_pFileHandle && "Seek failed from FileStream, file description is null");
     if (m_pFileHandle == NULL)
         return false;
 
-    int iResult = 1;
-
     switch (nFrom) {
         case FILE_POS_SET:
-            iResult = ::vfseek(m_pFileHandle, lOff, SEEK_SET);
+            m_lLogicalPos = ClampToFile(lOff);
             break;
         case FILE_POS_CUR:
-            iResult = ::vfseek(m_pFileHandle, lOff, SEEK_CUR);
+            m_lLogicalPos = ClampToFile(m_lLogicalPos + lOff);
             break;
         case FILE_POS_END:
-            iResult = ::vfseek(m_pFileHandle, lOff, SEEK_END);
+            m_lLogicalPos = ClampToFile((long)::vfgetsize(m_pFileHandle) + lOff);
             break;
+        default:
+            return false; // unknown origin: matches the old iResult == 1 path
     }
-
-    if (iResult)
-        return false;
 
     return true;
 }
 
 long
 CFileSystemTriggerVFS::Tell() {
-    return vftell(m_pFileHandle);
+    /// Must be the logical position, not vftell(): after a refill the underlying
+    /// handle sits up to kReadBufSize bytes ahead of where the caller thinks it
+    /// is, and the .IFO lump walk seeks back to values it got from here.
+    return m_lLogicalPos;
 }
 
 bool
 CFileSystemTriggerVFS::IsEOF() {
-    return vfeof(m_pFileHandle);
+    if (m_pFileHandle == NULL) {
+        return true;
+    }
+    return m_lLogicalPos >= (long)::vfgetsize(m_pFileHandle);
 }
 
 int

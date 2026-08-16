@@ -536,6 +536,23 @@ CChatDLG::SendChatMsg(char* szMsg) {
         return;
     }
 
+    /// "/perfreset" re-zeroes the streaming peak counters (Flush: peak and
+    /// MapIO: worst). Both saturate during the zone-in burst, so without a way
+    /// to clear them once you are standing in the world they only ever report
+    /// the loading screen. Local command, never sent.
+    if (stMsg == "/perfreset") {
+        ::resetImmediateFlushStats();
+        CTERRAIN::s_MapIoStats.m_fWorstLoadMs = 0.0f;
+        CTERRAIN::s_MapIoStats.m_fWorstUnloadMs = 0.0f;
+        CTERRAIN::s_MapIoStats.m_nLoadCount = 0;
+        g_itMGR.AppendChatMsg("Streaming peak counters reset.", IT_MGR::CHAT_TYPE_SYSTEM);
+
+        CWinCtrl* pEditCtrl = Find(IID_EDITBOX);
+        if (pEditCtrl != NULL && pEditCtrl->GetControlType() == CTRL_EDITBOX)
+            ((CTEditBox*)pEditCtrl)->clear_text();
+        return;
+    }
+
     ///아이템 링크: "[Name]" → wire token 치환 ( GM 명령어는 제외 )
     if (stMsg[0] != '/')
         SubstitutePendingItemLinks(stMsg);

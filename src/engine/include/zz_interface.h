@@ -1825,6 +1825,69 @@ int getParticleBatchFallback ( void );
 ZZ_SCRIPT
 int getParticleBatchSavedDrawCalls ( void );
 
+/// Resource loads that were forced to run synchronously at first-render time
+/// (zz_manager::flush_entrance) instead of being amortised through the lazy
+/// entrance line. Per-frame count/ms plus the worst frame seen since reset.
+ZZ_SCRIPT
+int getImmediateFlushCount ( void );
+
+ZZ_SCRIPT
+float getImmediateFlushMs ( void );
+
+ZZ_SCRIPT
+float getImmediateFlushRecentMs ( void );
+
+ZZ_SCRIPT
+int getImmediateFlushRecentCount ( void );
+
+ZZ_SCRIPT
+int getImmediateFlushRecentAgeMs ( void );
+
+/// Per-frame flush count broken down by owning manager.
+/// iKind: 0 terrain, 1 mesh, 2 texture, 3 material, 4 other.
+ZZ_SCRIPT
+int getImmediateFlushKind ( int iKind );
+
+/// Per-frame load-path branch counters.
+/// iWhich: 0 load_queued, 1 load_immediate, 2 flush_from_queue, 3 flush_direct,
+///         4 mean entrance lead time (frames), 5 max lead time (frames).
+/// NOTE: getLazyTerrainQueueDepth() is sampled after the render phase has
+/// already drained the queue, so it reads 0 during a spike. Use the lead-time
+/// entries instead.
+ZZ_SCRIPT
+int getLoadPathCount ( int iWhich );
+
+/// 1 when the engine is in delayed-loading mode (zz_manager::load queues rather
+/// than loading inline).
+ZZ_SCRIPT
+int getUseDelayedLoad ( void );
+
+/// Wall-clock microseconds per frame the lazy entrance line may spend loading
+/// ahead, so resources are ready before something renders them. 0 restores the
+/// historical one-node-per-update behaviour (the A/B switch).
+ZZ_SCRIPT
+int setLoadBudgetPerFrameUsec ( int iUsec );
+
+ZZ_SCRIPT
+int getLoadBudgetPerFrameUsec ( void );
+
+/// Nodes still waiting in the lazy entrance lines -- the backlog the per-frame
+/// load budget is draining. See the definitions for how to read them.
+ZZ_SCRIPT
+int getLazyQueueDepth ( void );
+
+ZZ_SCRIPT
+int getLazyTerrainQueueDepth ( void );
+
+ZZ_SCRIPT
+float getImmediateFlushWorstMs ( void );
+
+ZZ_SCRIPT
+int getImmediateFlushWorstCount ( void );
+
+ZZ_SCRIPT
+int resetImmediateFlushStats ( void );
+
 // min-max 안에 있는 모든 Visible 노드들을 찾아 구성하고,
 // 그 개수를 리턴
 // 주의 : collectByMinMax() 와 collectNode() 사이에는 다른 collectByMinMax()나 collectByNodeBBox()를 호출할 수 없음.

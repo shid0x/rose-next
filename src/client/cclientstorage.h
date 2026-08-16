@@ -26,6 +26,21 @@ struct t_OptionVideo {
     UINT iShadowQuality;
     // Render the game even if window is not focused
     bool background_render;
+    // Background thread that warms the OS file cache for map chunks before the
+    // main thread reads them (CMapFilePrefetcher, io_terrain.cpp). On by default;
+    // set [VIDEO] MAP_PREFETCH=0 to A/B the chunk-load hitch against it.
+    bool map_prefetch;
+    // Wall-clock microseconds per frame the engine may spend loading resources
+    // ahead of when they are rendered. 0 = old behaviour (one node per update),
+    // which force-loaded a whole map chunk's terrain meshes in a single frame.
+    UINT load_budget_us;
+    // Per-frame cap on first-time *far* terrain-patch inserts. Lower = smaller
+    // display hitches but slower horizon fill-in. 0 = uncapped (legacy).
+    UINT terrain_inserts_per_frame;
+    // Threshold in ms for the "Flush spike:" streaming diagnostic in client.log.
+    // 0 = off (default). Diagnostic only -- it writes a line per qualifying
+    // frame, so it is not something to leave on during normal play.
+    UINT stream_spike_log_ms;
 };
 
 struct t_OptionSound {
@@ -133,6 +148,10 @@ public:
     void SetUseRoughMap(UINT iUseRoughMap) { m_VideoOption.iUseRoughMap = iUseRoughMap; }
     UINT GetUseRoughMap() { return m_VideoOption.iUseRoughMap; }
     UINT GetShadowQuality() { return m_VideoOption.iShadowQuality; }
+    bool GetMapPrefetch() { return m_VideoOption.map_prefetch; }
+    UINT GetLoadBudgetUs() { return m_VideoOption.load_budget_us; }
+    UINT GetTerrainInsertsPerFrame() { return m_VideoOption.terrain_inserts_per_frame; }
+    UINT GetStreamSpikeLogMs() { return m_VideoOption.stream_spike_log_ms; }
     ///*********************************************************************/
     /// Sound
     void SetSoundOption(t_OptionSound& option);

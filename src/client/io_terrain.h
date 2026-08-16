@@ -352,6 +352,35 @@ struct tagPENDING_UNLOAD {
     DWORD m_dwQueuedTick;
 };
 
+/// Wall-clock instrumentation for terrain streaming, surfaced as the debug HUD's
+/// "MapIO:" row.
+///
+/// FrameProfiler's SLOT_LOGIC_TERRAIN already covers SetCenterPosition, but it
+/// publishes a 30-frame *average* -- which is precisely where a single 30 ms
+/// chunk-load spike disappears. Chunk loads are also rate-limited to one per
+/// 150 ms, so at 60 fps at most one frame in nine even contains one. Hence
+/// separate last/worst tracking, and a phase breakdown so the number is
+/// attributable rather than just alarming.
+///
+/// Written from CMAP::Load (phases) and CTERRAIN::SetCenterPosition (totals);
+/// read by CGameStateMain::Render_GameMENU.
+struct tagMAPIO_STATS {
+    float m_fLastLoadMs;
+    float m_fWorstLoadMs;
+    float m_fLastUnloadMs;
+    float m_fWorstUnloadMs;
+    unsigned int m_nLoadCount;
+
+    /// Phase breakdown of the most recent CMAP::Load.
+    float m_fHimMs; ///< .HIM heightfield + lightmap material
+    float m_fTilMs; ///< .TIL tile materials
+    float m_fIfoMs; ///< .IFO lumps, i.e. static object construction
+    float m_fLitMs; ///< the two .lit files, i.e. per-part material cloning
+    float m_fQuadMs; ///< quadtree build (LoadQuadPatch / CompareSizePath2ObjAll / SetExPatchTotal)
+
+    void Reset() { ::ZeroMemory(this, sizeof(*this)); }
+};
+
 struct Brush {
     int texture1_id;
     int texture2_id;
@@ -443,13 +472,22 @@ private:
     /// Map-unload hysteresis. See SetCenterPosition / DrainPendingUnloads.
     std::list<tagPENDING_UNLOAD> m_PendingUnloadList;
     void DeferSubMAP(WORD wUpdateFLAG);
-    void DrainPendingUnloads();
+    /// Commits at most one map teardown per kMinDirtyFreeIntervalMs. Takes the
+    /// caller's tick so it shares one GetTickCount() with the rest of the frame.
+    /// Returns true only when a teardown actually ran, so the caller can time it
+    /// without recording the (frequent) early-return frames.
+    bool DrainPendingUnloads(DWORD dwNow);
     void DoActualUnload(short nZoneMapX, short nZoneMapY);
     bool CancelPendingUnload(short nZoneMapX, short nZoneMapY);
 
     /// Tick-based throttles for main-thread streaming work.
     DWORD m_dwLastMapLoadTick;
     DWORD m_dwLastDirtyFreeTick;
+    /// Throttles DrainPendingUnloads to one map teardown per interval. Separate
+    /// from m_dwLastDirtyFreeTick so a load-side burst cannot starve unloads (and
+    /// vice versa); see the comment on DrainPendingUnloads for why the existing
+    /// FreeDirtyMAP throttle does not cover this.
+    DWORD m_dwLastUnloadTick;
 
     /// Cached last mapping coords passed to Update_VisiblePatchManager so the
     /// HUD can query cold-proximity count without re-deriving the center.
@@ -515,7 +553,15 @@ public:
     unsigned int GetQueuedMapLoadCount() const;
     unsigned int GetDirtyMapCount() const;
     unsigned int GetPrefetchQueueDepth() const;
+    /// Files the prefetch worker tried to warm vs. actually opened. A non-zero
+    /// attempted with a zero satisfied means the prefetcher resolves nothing --
+    /// the exact failure that made the old loose-fopen version a silent no-op.
+    void GetPrefetchHitStats(unsigned int& attempted, unsigned int& satisfied) const;
     unsigned int GetPendingUnloadCount() const;
+
+    /// Streaming wall-clock stats for the debug HUD. Public and static because
+    /// CMAP::Load writes the phase fields directly.
+    static tagMAPIO_STATS s_MapIoStats;
     /// Last (nMappingX, nMappingY) passed to Update_VisiblePatchManager, used
     /// by the HUD to compute cold-proximity count against the current center.
     unsigned int GetProximityColdCount() const;
