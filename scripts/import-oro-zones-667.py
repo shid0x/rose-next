@@ -78,6 +78,22 @@ MAX_ZONE_ROW = max(r for r, _, _, _ in ZONES)
 ZONE_COPY_COLS = 31          # cols 0..30 align between the two schemas; 31+ diverge
 REVIVE_EVENT = b"restore"    # verified present in all three .ZONs
 
+# --- state needed to undo an import exactly ----------------------------------
+# --revert has to rebuild what the import overwrote, and the two tables were not
+# simply appended to: row 14 already existed carrying one orphan cell (c19='1',
+# no name and no .zon path, so never a functional zone), and only rows 83-85 were
+# genuine appends. LZON084 already existed and is shared with rows 75-77, so it
+# must survive; only LZON014 and LZON087 were added here.
+#
+# The sizes are the pre-import files, and --revert asserts against them: an exact
+# byte-size match is a strong check that the header row-label truncation and the
+# STL key removal both landed correctly.
+ORIGINAL_ZONE_ROWS = 83
+ORIGINAL_STL_KEYS = 45
+ORIGINAL_ROW14 = {19: b"1"}          # every other column was blank
+REVERT_STL_KEYS = ("LZON014", "LZON087")
+ORIGINAL_SIZES = {"LIST_ZONE.STB": 21404, "LIST_ZONE_S.STL": 5565}
+
 
 def load_importer():
     """Reuse import-oro.py's STB/STL/IFO codecs rather than reimplementing them."""
@@ -202,9 +218,82 @@ def verify(m, ours):
     return bad
 
 
+def revert(m, ours, dry):
+    """Undo the import: drop the map trees, the zone rows and the two STL keys."""
+    import struct
+
+    removed = 0
+    freed = 0
+    for _row, folder, _name, _key in ZONES:
+        d = os.path.join(ours, "3DDATA", "MAPS", "ORO", folder)
+        if not os.path.isdir(d):
+            continue
+        for base, _dirs, files in os.walk(d):
+            for f in files:
+                freed += os.path.getsize(os.path.join(base, f))
+                removed += 1
+        if not dry:
+            shutil.rmtree(d)
+    print(f"    {'map files':26s} {removed:5d} removed  {freed / 1048576:7.2f} MB")
+
+    # --- zone rows. Clear ours, restore row 14's orphan cell, then truncate the
+    # appended rows *and* their row labels, which live at the end of the header.
+    zp = os.path.join(ours, "3DDATA", "STB", "LIST_ZONE.STB")
+    z = m.Stb(zp)
+    if z.rows > ORIGINAL_ZONE_ROWS:
+        for row, _f, _n, _k in ZONES:
+            for c in range(z.cols):
+                z.set(row, c, ORIGINAL_ROW14.get(c, b"") if row == 14 else b"")
+        offs, o = [], 0
+        while o < len(z.header):
+            n, = struct.unpack_from("<H", z.header, o)
+            offs.append(o)
+            o += 2 + n
+        drop = z.rows - ORIGINAL_ZONE_ROWS
+        z.header = z.header[:offs[len(offs) - drop]]
+        z.d = z.d[:ORIGINAL_ZONE_ROWS]
+        z.rows = ORIGINAL_ZONE_ROWS
+        blob = z.to_bytes()
+        want = ORIGINAL_SIZES["LIST_ZONE.STB"]
+        if len(blob) != want:
+            sys.exit(f"refusing to write LIST_ZONE.STB: rebuilt {len(blob)} bytes, "
+                     f"expected {want} -- reverting would corrupt the table")
+        print(f"    {'LIST_ZONE.STB':26s} {z.rows} rows, {len(blob)} bytes (matches pre-import)")
+        if not dry:
+            with open(zp, "wb") as fh:
+                fh.write(blob)
+    else:
+        print(f"    {'LIST_ZONE.STB':26s} already at {z.rows} rows -- nothing to do")
+
+    # --- zone names. Only the two keys this script appended; LZON084 predates it.
+    sp = os.path.join(ours, "3DDATA", "STB", "LIST_ZONE_S.STL")
+    s = m.Stl(sp)
+    drop_idx = [i for i, (k, _) in enumerate(s.keys)
+                if k.decode("latin-1") in REVERT_STL_KEYS]
+    if drop_idx:
+        for i in sorted(drop_idx, reverse=True):
+            s.keys.pop(i)
+            for rows in s.langs:
+                rows.pop(i)
+        blob = s.to_bytes()
+        want = ORIGINAL_SIZES["LIST_ZONE_S.STL"]
+        if len(blob) != want:
+            sys.exit(f"refusing to write LIST_ZONE_S.STL: rebuilt {len(blob)} bytes, "
+                     f"expected {want}")
+        print(f"    {'LIST_ZONE_S.STL':26s} {len(s.keys)} keys, {len(blob)} bytes "
+              f"(matches pre-import)")
+        if not dry:
+            with open(sp, "wb") as fh:
+                fh.write(blob)
+    else:
+        print(f"    {'LIST_ZONE_S.STL':26s} keys already absent -- nothing to do")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--revert", action="store_true",
+                    help="undo the import (map trees, zone rows, the two STL keys)")
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--root", default=ROOT)
     ap.add_argument("--source", default=DEFAULT_SRC)
@@ -217,6 +306,15 @@ def main():
         print("verifying the three 667 Oro zones:")
         bad = verify(m, ours)
         sys.exit(1 if bad else 0)
+
+    if args.revert:
+        print("reverting the 667 Oro zone import:")
+        revert(m, ours, args.dry_run)
+        if args.dry_run:
+            print("\ndry run -- nothing written")
+        else:
+            print("\nreverted. Re-pack the VFS (scripts/pack.ps1) and restart the servers.")
+        return
 
     if not os.path.isdir(args.source):
         sys.exit(f"source not found: {args.source}")
