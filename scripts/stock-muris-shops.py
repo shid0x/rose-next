@@ -12,6 +12,20 @@ One tab per base class, twelve items each, well inside the 48 slots a tab has:
     lv210 job sets   2 sets x 4 pieces   (cap / body / gauntlet / boots)
     lv220 "Crystal"  1 set  x 4 pieces
 
+Laid out as a grid rather than poured in sequentially, because a shop tab is 8
+columns x 6 rows (dlgstore.xml stacks six 41px STORE_MIDDLE strips, 48 slots) and
+the client positions each icon by its slot index, so an empty slot is a real gap:
+
+    col       0            1            2
+    row 0     lv210 A cap  lv210 B cap  Crystal cap
+    row 1     lv210 A body lv210 B body Crystal body
+    row 2     lv210 A arms lv210 B arms Crystal arms
+    row 3     lv210 A foot lv210 B foot Crystal foot
+
+One set per column, one body part per row, ascending level left to right. Filling
+slots 0..11 in order instead would run all four caps along the top row and wrap
+mid-set, which is what it did before.
+
 The class split is not guesswork and not read off the item names. scripts/
 import-armour-tier.py appended the lv210 tier one set per *second* job in ascending
 job order (11 Knight, 12 Champion, 13 Mage, 14 Cleric, 15 Raider, 16 Scout,
@@ -70,6 +84,7 @@ SIDECAR = os.path.join(STB, "LIST_SELL.muris-shops.json")
 SELL_TAB_COLS = (21, 22, 23, 24)
 SLOT0_COL = 2                       # STORE_ITEM(I, T) = get_int32(I, 2 + T)
 SLOT_COUNT = 48
+GRID_COLS = 8                       # 48 slots over the 6 rows dlgstore.xml draws
 
 # Mirrors rose/common/store_item_code.h. Keep the two in step.
 LEGACY_MAX_ITEM_NO = 999
@@ -134,12 +149,19 @@ def rows_at_level(m, table, level):
 
 
 def armour_tab(k):
-    """The twelve encoded item numbers for class index k (0=Soldier .. 3=Dealer)."""
-    out = []
-    for _tbl, typ, crystal0, lv210_0 in ARMOUR_SLOTS:
-        out.append(encode_item(typ, crystal0 + k))          # Crystal, one per class
-        out.append(encode_item(typ, lv210_0 + 2 * k))       # lv210 set A
-        out.append(encode_item(typ, lv210_0 + 2 * k + 1))   # lv210 set B
+    """{slot: encoded item} for class index k (0=Soldier .. 3=Dealer).
+
+    One set per column, one body part per row -- see the layout in the docstring.
+    Sparse on purpose: the client places each icon at its slot index, so the unused
+    columns of each row stay empty instead of the next set wrapping into them.
+    """
+    out = {}
+    for row, (_tbl, typ, crystal0, lv210_0) in enumerate(ARMOUR_SLOTS):
+        sets = [lv210_0 + 2 * k,        # lv210 set A
+                lv210_0 + 2 * k + 1,    # lv210 set B
+                crystal0 + k]           # lv220 Crystal, highest level last
+        for col, item_row in enumerate(sets):
+            out[row * GRID_COLS + col] = encode_item(typ, item_row)
     return out
 
 
@@ -165,18 +187,26 @@ def build_plan(m):
         if len(rows) != expect_n:
             sys.exit(f"{table} has {len(rows)} items at level {level}, expected {expect_n} "
                      f"-- refusing to write; re-check the tier import")
-        plan.append((HUZAM_NPC_ROW, label, [encode_item(typ, r) for r in rows]))
+        plan.append((HUZAM_NPC_ROW, label,
+                     {i: encode_item(typ, r) for i, r in enumerate(rows)}))
 
     shields = []
     for level in SHIELD_LEVELS:
         shields += [encode_item(9, r) for r in rows_at_level(m, "LIST_SUBWPN", level)]
     if len(shields) != SHIELD_EXPECTED:
         sys.exit(f"found {len(shields)} shields, expected {SHIELD_EXPECTED}")
-    plan.append((HUZAM_NPC_ROW, "Shields", shields))
+    plan.append((HUZAM_NPC_ROW, "Shields", {i: v for i, v in enumerate(shields)}))
 
-    for npc, label, items in plan:
-        if len(items) > SLOT_COUNT:
-            sys.exit(f"tab {label!r} has {len(items)} items, more than the {SLOT_COUNT} slots")
+    for npc, label, slots in plan:
+        bad = [s for s in slots if not (0 <= s < SLOT_COUNT)]
+        if bad:
+            sys.exit(f"tab {label!r} places items at slots {bad}, outside 0..{SLOT_COUNT - 1}")
+    per_npc = {}
+    for npc, _label, _slots in plan:
+        per_npc[npc] = per_npc.get(npc, 0) + 1
+    for npc, n in per_npc.items():
+        if n > len(SELL_TAB_COLS):
+            sys.exit(f"NPC {npc} needs {n} tabs but only {len(SELL_TAB_COLS)} exist")
     return plan
 
 
@@ -220,16 +250,23 @@ def main():
             sys.exit("no sidecar -- not applied")
         s = m.Stb(os.path.join(STB, "LIST_SELL.STB"))
         n = m.Stb(os.path.join(STB, "LIST_NPC.STB"))
+        stl = m.Stl(os.path.join(STB, "LIST_SELL_S.STL"))
         plan = build_plan(m)
         bad = []
-        for (npc, label, items), row in zip(plan, saved["rows"]):
-            got = [int(s.get(row, SLOT0_COL + i).strip() or 0) for i in range(len(items))]
-            if got != items:
+        for (npc, label, slots), row in zip(plan, saved["rows"]):
+            want = {i: slots.get(i, 0) for i in range(SLOT_COUNT)}
+            got = {i: int(s.get(row, SLOT0_COL + i).strip() or 0) for i in range(SLOT_COUNT)}
+            if got != want:
                 bad.append(f"row {row} ({label}) contents differ")
+            # A tab whose name key is missing renders unlabeled -- the bug that hid
+            # Huzam's second and third tabs. Check it, do not assume it.
+            key = f"LSEL{row}"
+            if s.get(row, 1).decode("latin-1", "replace") != key or not stl.has(key):
+                bad.append(f"row {row} ({label}) has no name entry ({key})")
         for npc in (AZIM_NPC_ROW, HUZAM_NPC_ROW):
             want = [r for (p, _l, _i), r in zip(plan, saved["rows"]) if p == npc]
             got = [int(n.get(npc, c).strip() or 0) for c in SELL_TAB_COLS]
-            if got[:len(want)] != want:
+            if got[:len(want)] != want or any(got[len(want):]):
                 bad.append(f"NPC {npc} tabs are {got}, expected {want} then blank")
         print(f"    {len(plan)} tabs -> LIST_SELL rows {saved['rows']}, "
               f"{len(bad)} problems" + (": " + "; ".join(bad) if bad else ""))
@@ -240,18 +277,31 @@ def main():
             sys.exit("no sidecar -- nothing to revert")
         s = m.Stb(os.path.join(STB, "LIST_SELL.STB"))
         n = m.Stb(os.path.join(STB, "LIST_NPC.STB"))
+        stl = m.Stl(os.path.join(STB, "LIST_SELL_S.STL"))
         for row in saved["rows"]:
             for c in range(0, s.cols):
                 s.set(row, c, b"")
         for npc in saved.get("npcs", [AZIM_NPC_ROW]):
             for c in SELL_TAB_COLS:
                 n.set(npc, c, b"")
+        # Drop the tab-name keys too. Leaving them behind orphans an STL entry that
+        # a later run silently reuses, which is how Huzam ended up with unnamed tabs
+        # while Azim looked fine.
+        drop = {f"LSEL{r}" for r in saved["rows"]}
+        keep = [i for i, (k, _) in enumerate(stl.keys)
+                if k.decode("latin-1", "replace") not in drop]
+        removed = len(stl.keys) - len(keep)
+        if removed:
+            stl.keys = [stl.keys[i] for i in keep]
+            stl.langs = [[rows[i] for i in keep] for rows in stl.langs]
         s.save(args.dry_run)
         n.save(args.dry_run)
+        if removed:
+            stl.save(args.dry_run)
         if not args.dry_run:
             os.remove(SIDECAR)
-        print(f"    cleared LIST_SELL rows {saved['rows']} and the tabs on "
-              f"{saved.get('npcs', [AZIM_NPC_ROW])}")
+        print(f"    cleared LIST_SELL rows {saved['rows']}, {removed} name keys, "
+              f"and the tabs on {saved.get('npcs', [AZIM_NPC_ROW])}")
         return
 
     if saved:
@@ -265,20 +315,28 @@ def main():
     stl = m.Stl(os.path.join(STB, "LIST_SELL_S.STL"))
 
     per_npc = {}
+    named = 0
     print(f"stocking {len(set(p for p, _l, _i in plan))} merchants "
           f"using LIST_SELL rows {rows}\n")
-    for (npc, label, items), row in zip(plan, rows):
+    for (npc, label, slots), row in zip(plan, rows):
         key = f"LSEL{row}"
         s.set(row, 0, label.encode("latin-1"))
         s.set(row, 1, key.encode("latin-1"))
-        for i, v in enumerate(items):
-            s.set(row, SLOT0_COL + i, str(v).encode("ascii"))
+        for i in range(SLOT_COUNT):
+            s.set(row, SLOT0_COL + i, str(slots[i]).encode("ascii") if i in slots else b"")
+        # The client reads the tab caption from LIST_SELL_S.STL via col 1, not from
+        # col 0. Without this the tab draws with no label and is effectively hidden.
+        if not stl.has(key):
+            stl.append(key, row, label)
+            named += 1
         slot = per_npc.setdefault(npc, 0)
         n.set(npc, SELL_TAB_COLS[slot], str(row).encode("ascii"))
         per_npc[npc] = slot + 1
-        wide = sum(1 for v in items if v >= WIDE_BASE)
+        wide = sum(1 for v in slots.values() if v >= WIDE_BASE)
         print(f"    npc {npc}  tab {slot}  row {row:>3}  {label:<15} "
-              f"{len(items):>2} items ({wide} wide-form)")
+              f"{len(slots):>2} items ({wide} wide-form), slots "
+              f"{min(slots)}..{max(slots)}")
+    print(f"\n    {named} tab-name keys added to LIST_SELL_S.STL")
 
     if args.dry_run:
         print("\ndry run -- nothing written")
