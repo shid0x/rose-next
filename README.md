@@ -31,7 +31,13 @@ Beyond the MSSQL → PostgreSQL port, the notable changes from the original code
   display mode. The classic exclusive device is still there behind
   `[VIDEO] EXCLUSIVE_FULLSCREEN=1` — see *Client settings* below.
 - Frame-pacing fix (`timeBeginPeriod(1)`); vsync is the only frame cap.
-- Terrain streaming and particle-budget work to cut hitches in busy zones.
+- **Map-chunk streaming**: walking across a chunk boundary used to drop frames.
+  Chunk loading went from ~14 ms to ~2–3 ms (the VFS read path was doing one OS
+  call *per number read*), and the display-time stall — a whole chunk's 256
+  terrain tiles built and uploaded in a single frame — is now spread across
+  frames. At 60 Hz the remaining dip is 1–2 fps. Tunable, see *Streaming and
+  hitch tuning* below.
+- Particle-budget work to cut hitches in busy zones.
 
 **Combat**
 - Combat damage is **server-authoritative**. The client presents what the server
@@ -259,6 +265,10 @@ hand and are useful when developing or diagnosing:
 | `[VIDEO] FULLSCREEN` | `1` = fullscreen, `0` = windowed. Written by the in-game options screen. Windowed is the only resizable mode. |
 | `[VIDEO] EXCLUSIVE_FULLSCREEN` | *Which kind* of fullscreen `FULLSCREEN=1` gives you: `0` (default) = **borderless**, `1` = legacy exclusive. See below. |
 | `[RESOLUTION] WIDTH` / `HEIGHT` | Client size. Ignored in borderless, which always renders at the monitor's native size. |
+| `[VIDEO] TERRAIN_INSERTS_PER_FRAME` | Default `24`. How many distant terrain tiles may appear per frame. **Lower = smaller hitch, slower horizon fill-in.** See below. |
+| `[VIDEO] LOAD_BUDGET_US` | Default `2000`. Microseconds per frame the engine may spend pre-loading resources. `0` = legacy behaviour. See below. |
+| `[VIDEO] MAP_PREFETCH` | Default `1`. Background thread that warms the OS file cache for map chunks before they are read. `0` disables it. |
+| `[VIDEO] STREAM_SPIKE_LOG_MS` | Default `0` (off). Diagnostic: log a `client.log` line for every frame spending ≥ this many ms loading resources. `4` is a good value when hunting a hitch. |
 
 Three environment variables override the INI, which is handy for one-off runs:
 
@@ -299,6 +309,53 @@ Confirm which one you actually got from `error.txt`:
 ```
 screen: mode=borderless size=1920x1080 (ini FULLSCREEN=1, EXCLUSIVE_FULLSCREEN=0)
 ```
+
+#### Streaming and hitch tuning
+
+The world is streamed in *chunks* (a 160 m square of terrain, 16×16 tiles). When
+you cross a boundary the client loads the next chunk from disk and, shortly
+after, has to build and upload its geometry and textures to the GPU. Both used to
+stall the frame. The defaults below are the measured-good values; you should only
+need to touch them if you are on unusual hardware or chasing a stutter.
+
+**`TERRAIN_INSERTS_PER_FRAME`** (default `24`) is the one worth experimenting
+with. It caps how many *distant* terrain tiles are allowed to appear in a single
+frame — tiles near you are never delayed, so this can't leave a hole under your
+feet. Previously all 256 tiles of an arriving chunk appeared at once, and the
+frame that rendered them paid for all of it (12–46 ms).
+
+- **Lower it** (12, 8) for a smaller hitch, at the cost of distant terrain
+  filling in more gradually. If you can see terrain popping in at the horizon,
+  you have gone too low.
+- **`0`** disables the cap entirely, restoring the old behaviour.
+
+What actually costs the time is the *textures* a batch of tiles pulls in (~3 ms
+each) rather than the tiles themselves (~0.1 ms each), so this dial has more
+effect than its name suggests.
+
+**`LOAD_BUDGET_US`** (default `2000`) is how long per frame the engine may spend
+loading resources *ahead* of needing them. The engine estimates load cost with a
+rule from 2003 — one millisecond per kilobyte — which badly overestimates modern
+hardware, so a 350 KB texture was assumed to need 350 ms and got postponed for
+~70 frames, then loaded urgently at the worst possible moment. This paces that
+work on actual measured time instead. `0` restores the old behaviour.
+
+**Diagnosing a hitch.** Set `STREAM_SPIKE_LOG_MS=4` and play; every frame that
+spends ≥ 4 ms loading writes a line to `client.log`:
+
+```
+Flush spike: 25.3 ms over 259 nodes [terrain=255 mesh=0 tex=4 ...] leadavg=1 ...
+```
+
+`terrain`/`mesh`/`tex` say *what* was loaded, and `leadavg` — how many frames the
+work sat waiting before it was needed — says which knob applies: **~1 frame**
+means it was needed immediately, so lower `TERRAIN_INSERTS_PER_FRAME`;
+**hundreds of frames** means the pre-loader had time and wasted it, so raise
+`LOAD_BUDGET_US`. Turn the log back off (`0`) afterwards — it is chatty.
+
+The in-game debug HUD (`D` with GM rights) also carries `MapIO:` and `Flush:`
+rows for live values, and `/perfreset` re-zeroes the peak counters, which
+otherwise saturate during zone-in and then tell you nothing.
 
 ### Connecting to a server
 
