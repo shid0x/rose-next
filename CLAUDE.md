@@ -264,6 +264,16 @@ Our `data/` is a translated iROSE dump with gaps; the reference dumps in `C:\Use
 
 Note `src/pipeline/src/pack.rs` walks the data tree filtering only *hidden* entries — no extension filter — so any `.bak` these scripts leave behind gets baked into the `.vfs`. Clean them before a bake.
 
+### The .vfs 2 GB Offset Limit
+
+**A `.vfs` archive cannot exceed 2 GiB.** `FileEntry::lFileOffset` in triggervfs is a *signed 32-bit* `long`, so a file stored past byte 2,147,483,647 gets a negative offset, the client seeks to garbage and reads binary noise.
+
+The failure looks nothing like its cause. Whichever files happen to land past the boundary are simply the tail of the archive — when it first hit, that was `SCRIPTS\INIT.LUA`, so the client died at startup with a Lua `invalid control char near 'char(6)'` parse error followed by `assert: failed. zz_shader::check_system_shaders()`. Nothing pointed at the archive.
+
+`pack.rs` now **rolls over to `rose_2.vfs`, `rose_3.vfs`, …** at 1.9 GB (the margin absorbs the largest single asset, since the check runs before writing) and hard-errors if an offset would still overflow. Both the `.idx` format (`VfsIndex::file_systems` is a list) and the runtime (`CVFS_Manager::m_vecVFS`, searched by `OpenFile`) already supported multiple archives — only the packer was hardcoded to one. **Ship every `rose*.vfs` alongside `data.idx`**, not just `rose.vfs`.
+
+Diagnosing a suspected bad bake: parse the `.idx` FAT (`short len; char name[len]; long off,len,blk; BYTE deleted,compress,enc; DWORD version,crc`) and check for negative offsets — that is a two-minute script and it is unambiguous.
+
 ### Item Import Tooling
 `scripts/import-weapon.py` imports a weapon from another ROSE data dump (e.g. an evo-era private server) as a new appended ID: STB row, `LIST_WEAPON.ZSC` model object (with mesh/material dedup), ground-drop model (`--copy-field-model`), STL name/desc key, and any missing mesh/texture files. Always start with `--dry-run`; it makes `.bak` backups and verifies after writing. `scripts/add-item-icon.py` adds a custom item icon from a PNG (any size, auto-downscaled to a 40×40 cell) to the `ITEM1.TSI` atlas and prints the new global icon index (`--weapon-row N` also patches the STB); requires Pillow. `scripts/add-skill-icon.py` is the same tool for **skill** icons (`SKILLICON.TSI`, extension sheets `skill04.dds`+, original indices 0–506, extensions from 507; `--skill-row N` patches `LIST_SKILL.STB` col 51). Note the two TSIs use different sprite-rect conventions (item `x..x+40`, skill `x..x+39`) — each script matches its atlas. Both docstrings document the underlying binary formats — read them before editing STB/ZSC/STL/TSI by hand.
 

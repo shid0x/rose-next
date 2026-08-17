@@ -83,20 +83,52 @@ pub fn pack(matches: &ArgMatches) -> Result<(), PipelineError> {
     let no_pack_globs = globs.get("nopack").unwrap_or(&empty_globset);
     let ignore_globs = globs.get("ignore").unwrap_or(&empty_globset);
 
-    let output_vfs_path = output_dir.join(DEFAULT_VFS_NAME);
-    let mut vfs = match fs::File::create(&output_vfs_path) {
-        Ok(f) => f,
-        Err(e) => {
-            return Err(PipelineError::Message(format!(
-                "Failed to create vfs file {}: {}",
-                output_vfs_path.display(),
-                e
-            )));
+    // The .vfs format stores each file's offset as a SIGNED 32-BIT `long`
+    // (triggervfs FileEntry::lFileOffset). Past 2 GiB an offset wraps negative,
+    // the client seeks to garbage, and every affected file reads as binary
+    // noise. This used to happen silently -- `cur_offset as i32` truncated
+    // without complaint -- and the failure looked nothing like its cause: the
+    // files that happened to land past the boundary were the tail of the
+    // archive, which included SCRIPTS\INIT.LUA, so the client died at startup
+    // with a Lua "invalid control char" parse error and a shader assert.
+    //
+    // Both the .idx format (VfsIndex::file_systems is a list) and the runtime
+    // (CVFS_Manager::m_vecVFS, searched by OpenFile) already support several
+    // archives, so the fix is to roll over to rose_2.vfs, rose_3.vfs, ... before
+    // the limit rather than to grow one file past it.
+    //
+    // The cap is deliberately below 2 GiB: the check runs *before* writing, and
+    // a single file can be large, so the margin absorbs the biggest asset.
+    const VFS_MAX_BYTES: u64 = 1_900_000_000;
+
+    let vfs_name_for = |index: usize| -> String {
+        if index == 0 {
+            DEFAULT_VFS_NAME.to_string()
+        } else {
+            // Keep the ".vfs" extension so existing tooling still recognises it.
+            format!("rose_{}.vfs", index + 1)
         }
     };
 
+    let create_vfs = |name: &str| -> Result<fs::File, PipelineError> {
+        let path = output_dir.join(name);
+        fs::File::create(&path).map_err(|e| {
+            PipelineError::Message(format!(
+                "Failed to create vfs file {}: {}",
+                path.display(),
+                e
+            ))
+        })
+    };
+
+    let mut vfs_index = 0usize;
+    let mut vfs = create_vfs(&vfs_name_for(vfs_index))?;
+
+    // Completed archives, pushed into the index once the walk finishes.
+    let mut finished_metadata: Vec<VfsMetadata> = Vec::new();
+
     let mut vfs_metadata = VfsMetadata::new();
-    vfs_metadata.filename = PathBuf::from(DEFAULT_VFS_NAME);
+    vfs_metadata.filename = PathBuf::from(vfs_name_for(vfs_index));
 
     let is_hidden = |entry: &walkdir::DirEntry| -> bool {
         entry
@@ -110,7 +142,10 @@ pub fn pack(matches: &ArgMatches) -> Result<(), PipelineError> {
         .into_iter()
         .filter_entry(|e| !is_hidden(e));
 
-    println!("Building vfs file {}", output_vfs_path.display());
+    println!(
+        "Building vfs file {}",
+        output_dir.join(vfs_name_for(0)).display()
+    );
 
     for entry in walker {
         if let Ok(ent) = entry {
@@ -174,7 +209,26 @@ pub fn pack(matches: &ArgMatches) -> Result<(), PipelineError> {
                 }
             };
 
-            let cur_offset = vfs.seek(SeekFrom::Current(0)).unwrap();
+            let mut cur_offset = vfs.seek(SeekFrom::Current(0)).unwrap();
+
+            // Roll over to a new archive before this file would push us past the
+            // 32-bit offset limit. See VFS_MAX_BYTES above.
+            if cur_offset + input_size as u64 > VFS_MAX_BYTES {
+                finished_metadata.push(vfs_metadata);
+
+                vfs_index += 1;
+                let next_name = vfs_name_for(vfs_index);
+                println!(
+                    "  vfs would exceed {} MB, rolling over to {}",
+                    VFS_MAX_BYTES / 1_048_576,
+                    next_name
+                );
+
+                vfs = create_vfs(&next_name)?;
+                vfs_metadata = VfsMetadata::new();
+                vfs_metadata.filename = PathBuf::from(next_name);
+                cur_offset = 0;
+            }
 
             if let Err(e) = vfs.write_all(&input_data) {
                 return Err(PipelineError::Message(format!(
@@ -183,6 +237,20 @@ pub fn pack(matches: &ArgMatches) -> Result<(), PipelineError> {
                     e
                 )));
             };
+
+            // Belt and braces: the rollover above should make this unreachable,
+            // but a silent truncation here corrupts the archive in a way that is
+            // extremely hard to trace back (see VFS_MAX_BYTES). Fail loudly.
+            if cur_offset > i32::MAX as u64 || input_size > i32::MAX as usize {
+                return Err(PipelineError::Message(format!(
+                    "vfs offset overflow packing {} (offset {}, size {}): the .vfs \
+                     format stores 32-bit signed offsets. This is a bug in the \
+                     rollover logic.",
+                    input_path.display(),
+                    cur_offset,
+                    input_size
+                )));
+            }
 
             // Client requires upper case
             let relative_path_upper = input_relative_path.to_string_lossy().to_uppercase();
@@ -204,7 +272,17 @@ pub fn pack(matches: &ArgMatches) -> Result<(), PipelineError> {
     let mut vfs_idx = VfsIndex::new();
     vfs_idx.base_version = 100;
     vfs_idx.current_version = 100;
-    vfs_idx.file_systems.push(vfs_metadata);
+
+    finished_metadata.push(vfs_metadata);
+    if finished_metadata.len() > 1 {
+        println!(
+            "Packed into {} vfs archives (32-bit offset limit)",
+            finished_metadata.len()
+        );
+    }
+    for metadata in finished_metadata {
+        vfs_idx.file_systems.push(metadata);
+    }
 
     if let Err(e) = vfs_idx.write_to_path(&output_idx_path) {
         return Err(PipelineError::Message(format!(
