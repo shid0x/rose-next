@@ -1,15 +1,12 @@
 """Stock the Muris merchants, who currently sell nothing.
 
-Muris ships with two merchant NPCs whose four sell-tab columns are all blank:
+Muris ships two merchant NPCs whose four sell-tab columns are all blank:
 
-    row 2122   [Weapon Merchant] Huzam
-    row 2124   [Armor Merchant] Azim
+    row 2122   [Weapon Merchant] Huzam   -> the lv210 and lv230 weapon tiers
+    row 2124   [Armor Merchant] Azim     -> the lv210 and lv220 armour tiers
 
-This fills **Azim** with the level 210 and 220 armour tiers. Huzam is *not* filled,
-and cannot be without other work first -- see the hard limit below.
-
-Azim's layout
--------------
+Azim
+----
 One tab per base class, twelve items each, well inside the 48 slots a tab has:
 
     lv210 job sets   2 sets x 4 pieces   (cap / body / gauntlet / boots)
@@ -29,28 +26,27 @@ Note the armour carries **no class gate at all** -- the only requirement on thes
 rows is type 31 (character level). The tabs are a shopping convenience, not an
 enforcement; anyone can buy any of it.
 
-Why Huzam is empty
-------------------
-A shop slot stores an item as the packed `type * 1000 + id`, read back by
-`CObjNPC::Get_SellITEM` into a **short** and handed to `tagBaseITEM::Init(uint)`.
-That format cannot represent an item id above 999: a weapon at row 1379 encodes as
-`8 * 1000 + 1379 = 9379`, which decodes as **type 9, id 379** -- a different item
-entirely, from a different table.
+Huzam
+-----
+Three tabs: lv210 weapons (13), lv230 weapons (13), and the two shields. Both
+weapon tiers are one item per weapon type, so a tab is a complete set.
 
-Our level 210 and 230 weapon tiers were appended to LIST_WEAPON.STB, which is now
-1380 rows long, so they sit at rows 1355-1379. **Twenty-five of the twenty-six are
-unsellable by construction.** Only three relevant items encode legally:
+Huzam needs the widened shop-slot encoding (`rose/common/store_item_code.h`) and a
+client and server built with it. Retail packs a slot as `type * 1000 + id`, which
+cannot express an id above 999: the lv230 weapons sit at LIST_WEAPON rows 1355-1367
+and the lv210 ones at 1368-1379, so a row-1379 weapon packed the old way becomes
+`8 * 1000 + 1379 = 9379` and decodes as type 9 id 379 -- a subweapon. Twenty-five of
+the twenty-six were unsellable before that change. Anything at or above
+`kWideBase` (100000) is the wide form; everything below is untouched legacy, which
+is why `Dual Tornado Rifles` (row 381, encode 8381) sits in the lv210 tab in the old
+form while its neighbours use the new one.
 
-    weapon  381  Dual Tornado Rifles    (lv210, an older row)
-    subwpn  306  Golden Angel Shield    (lv210)
-    subwpn  307  Ancient Davion Shield  (lv230)
+**If you run this against a client or server built before that helper existed, the
+wide-form slots decode as garbage.** Ship all three together.
 
-Three items is not a shop, so nothing is written for Huzam rather than leaving a
-misleading stub. The fix is to renumber the weapon tiers into ids below 999 --
-LIST_WEAPON has 430 free rows down there -- but that is a real migration, not a data
-tweak: LIST_WEAPON.ZSC is indexed 1:1 with the STB row, so the model object has to
-move with each row, and any weapon already owned by a character would change id
-underneath the database.
+Membership is derived by scanning the item tables for requirement type 31 (character
+level) rather than hardcoding rows, so a re-import cannot silently leave this stale;
+the expected counts are asserted before anything is written.
 
 Idempotent, verifiable, reversible.
 
@@ -71,20 +67,41 @@ ROOT = os.path.dirname(HERE)
 STB = os.path.join(ROOT, "data", "3DDATA", "STB")
 SIDECAR = os.path.join(STB, "LIST_SELL.muris-shops.json")
 
-AZIM_NPC_ROW = 2124
 SELL_TAB_COLS = (21, 22, 23, 24)
 SLOT0_COL = 2                       # STORE_ITEM(I, T) = get_int32(I, 2 + T)
 SLOT_COUNT = 48
 
+# Mirrors rose/common/store_item_code.h. Keep the two in step.
+LEGACY_MAX_ITEM_NO = 999
+WIDE_BASE = 100000
+
+AZIM_NPC_ROW = 2124
+HUZAM_NPC_ROW = 2122
+
 # (table, item type, first Crystal row, first lv210 row). The two tiers are
 # contiguous per table because they were appended back to back, Crystal first.
-SLOTS = [
+ARMOUR_SLOTS = [
     ("LIST_CAP", 2, 977, 981),
     ("LIST_BODY", 3, 904, 908),
     ("LIST_ARMS", 4, 880, 884),
     ("LIST_FOOT", 5, 878, 882),
 ]
 CLASSES = ["Soldier", "Muse", "Hawker", "Dealer"]
+
+# Huzam's tabs: (label, table, item type, required level, expected item count).
+WEAPON_TABS = [
+    ("Weapons lv210", "LIST_WEAPON", 8, 210, 13),
+    ("Weapons lv230", "LIST_WEAPON", 8, 230, 13),
+]
+SHIELD_LEVELS = (210, 230)
+SHIELD_EXPECTED = 2
+
+
+def encode_item(item_type, item_no):
+    """Same split as Rose::Store::encode_store_item."""
+    if item_no <= LEGACY_MAX_ITEM_NO:
+        return item_type * 1000 + item_no
+    return item_type * WIDE_BASE + item_no
 
 
 def load_importer():
@@ -101,33 +118,66 @@ def load_importer():
     return mod
 
 
-def tab_items(k):
+def req_level(z, row):
+    """Requirement pairs live at cols 19/20 and 21/22; type 31 is character level."""
+    for a, b in ((19, 20), (21, 22)):
+        if z.get(row, a).strip() == b"31":
+            v = z.get(row, b).strip()
+            return int(v) if v.lstrip(b"-").isdigit() else 0
+    return 0
+
+
+def rows_at_level(m, table, level):
+    z = m.Stb(os.path.join(STB, table + ".STB"))
+    return [r for r in range(1, z.rows)
+            if z.get(r, 0).strip() and req_level(z, r) == level]
+
+
+def armour_tab(k):
     """The twelve encoded item numbers for class index k (0=Soldier .. 3=Dealer)."""
     out = []
-    for _tbl, typ, crystal0, lv210_0 in SLOTS:
-        out.append(typ * 1000 + crystal0 + k)          # Crystal, one per class
-        out.append(typ * 1000 + lv210_0 + 2 * k)       # lv210 set A
-        out.append(typ * 1000 + lv210_0 + 2 * k + 1)   # lv210 set B
+    for _tbl, typ, crystal0, lv210_0 in ARMOUR_SLOTS:
+        out.append(encode_item(typ, crystal0 + k))          # Crystal, one per class
+        out.append(encode_item(typ, lv210_0 + 2 * k))       # lv210 set A
+        out.append(encode_item(typ, lv210_0 + 2 * k + 1))   # lv210 set B
     return out
 
 
-def check_source_rows(m):
-    """Refuse to run if the tier rows are not where the script thinks they are."""
+def build_plan(m):
+    """[(npc_row, label, [encoded items]), ...] in tab order, or exit on a mismatch."""
+    # --- Azim: verify the tier rows are where we think, then lay out four tabs
     bad = []
-    for tbl, _typ, crystal0, lv210_0 in SLOTS:
+    for tbl, _typ, crystal0, lv210_0 in ARMOUR_SLOTS:
         z = m.Stb(os.path.join(STB, tbl + ".STB"))
         for r, want in [(crystal0, 220), (crystal0 + 3, 220),
                         (lv210_0, 210), (lv210_0 + 7, 210)]:
-            lv = 0
-            for a, b in ((19, 20), (21, 22)):
-                if z.get(r, a).strip() == b"31":
-                    v = z.get(r, b).strip()
-                    lv = int(v) if v.lstrip(b"-").isdigit() else 0
-            if lv != want or not z.get(r, 0).strip():
-                bad.append(f"{tbl} row {r}: level {lv}, expected {want}")
+            if req_level(z, r) != want or not z.get(r, 0).strip():
+                bad.append(f"{tbl} row {r}: level {req_level(z, r)}, expected {want}")
     if bad:
-        sys.exit("tier rows are not where expected -- refusing to write:\n  "
+        sys.exit("armour tier rows are not where expected -- refusing to write:\n  "
                  + "\n  ".join(bad))
+
+    plan = [(AZIM_NPC_ROW, f"{CLASSES[k]} Armor", armour_tab(k)) for k in range(4)]
+
+    # --- Huzam: derive membership from the tables rather than hardcoding rows
+    for label, table, typ, level, expect_n in WEAPON_TABS:
+        rows = rows_at_level(m, table, level)
+        if len(rows) != expect_n:
+            sys.exit(f"{table} has {len(rows)} items at level {level}, expected {expect_n} "
+                     f"-- refusing to write; re-check the tier import")
+        plan.append((HUZAM_NPC_ROW, label, [encode_item(typ, r) for r in rows]))
+
+    shields = []
+    for level in SHIELD_LEVELS:
+        shields += [encode_item(9, r) for r in rows_at_level(m, "LIST_SUBWPN", level)]
+    if len(shields) != SHIELD_EXPECTED:
+        sys.exit(f"found {len(shields)} shields, expected {SHIELD_EXPECTED}")
+    plan.append((HUZAM_NPC_ROW, "Shields", shields))
+
+    for npc, label, items in plan:
+        if len(items) > SLOT_COUNT:
+            sys.exit(f"tab {label!r} has {len(items)} items, more than the {SLOT_COUNT} slots")
+    return plan
 
 
 def free_sell_rows(m, need):
@@ -170,15 +220,18 @@ def main():
             sys.exit("no sidecar -- not applied")
         s = m.Stb(os.path.join(STB, "LIST_SELL.STB"))
         n = m.Stb(os.path.join(STB, "LIST_NPC.STB"))
+        plan = build_plan(m)
         bad = []
-        for k, row in enumerate(saved["rows"]):
-            want = tab_items(k)
-            got = [int(s.get(row, SLOT0_COL + i).strip() or 0) for i in range(len(want))]
-            if got != want:
-                bad.append(f"LIST_SELL row {row} contents differ")
-            if int(n.get(AZIM_NPC_ROW, SELL_TAB_COLS[k]).strip() or 0) != row:
-                bad.append(f"Azim tab {k} does not point at row {row}")
-        print(f"    Azim: 4 tabs -> LIST_SELL rows {saved['rows']}, "
+        for (npc, label, items), row in zip(plan, saved["rows"]):
+            got = [int(s.get(row, SLOT0_COL + i).strip() or 0) for i in range(len(items))]
+            if got != items:
+                bad.append(f"row {row} ({label}) contents differ")
+        for npc in (AZIM_NPC_ROW, HUZAM_NPC_ROW):
+            want = [r for (p, _l, _i), r in zip(plan, saved["rows"]) if p == npc]
+            got = [int(n.get(npc, c).strip() or 0) for c in SELL_TAB_COLS]
+            if got[:len(want)] != want:
+                bad.append(f"NPC {npc} tabs are {got}, expected {want} then blank")
+        print(f"    {len(plan)} tabs -> LIST_SELL rows {saved['rows']}, "
               f"{len(bad)} problems" + (": " + "; ".join(bad) if bad else ""))
         sys.exit(1 if bad else 0)
 
@@ -190,39 +243,42 @@ def main():
         for row in saved["rows"]:
             for c in range(0, s.cols):
                 s.set(row, c, b"")
-        for c in SELL_TAB_COLS:
-            n.set(AZIM_NPC_ROW, c, b"")
+        for npc in saved.get("npcs", [AZIM_NPC_ROW]):
+            for c in SELL_TAB_COLS:
+                n.set(npc, c, b"")
         s.save(args.dry_run)
         n.save(args.dry_run)
         if not args.dry_run:
             os.remove(SIDECAR)
-        print(f"    cleared LIST_SELL rows {saved['rows']} and Azim's four tabs")
+        print(f"    cleared LIST_SELL rows {saved['rows']} and the tabs on "
+              f"{saved.get('npcs', [AZIM_NPC_ROW])}")
         return
 
     if saved:
         print("already applied -- nothing to do (use --revert to undo)")
         return
 
-    check_source_rows(m)
-    rows = free_sell_rows(m, 4)
+    plan = build_plan(m)
+    rows = free_sell_rows(m, len(plan))
     s = m.Stb(os.path.join(STB, "LIST_SELL.STB"))
     n = m.Stb(os.path.join(STB, "LIST_NPC.STB"))
     stl = m.Stl(os.path.join(STB, "LIST_SELL_S.STL"))
 
-    print(f"stocking Azim (LIST_NPC row {AZIM_NPC_ROW}) using LIST_SELL rows {rows}\n")
-    for k, row in enumerate(rows):
-        items = tab_items(k)
-        label = f"{CLASSES[k]} Armor"
+    per_npc = {}
+    print(f"stocking {len(set(p for p, _l, _i in plan))} merchants "
+          f"using LIST_SELL rows {rows}\n")
+    for (npc, label, items), row in zip(plan, rows):
         key = f"LSEL{row}"
         s.set(row, 0, label.encode("latin-1"))
         s.set(row, 1, key.encode("latin-1"))
         for i, v in enumerate(items):
             s.set(row, SLOT0_COL + i, str(v).encode("ascii"))
-        n.set(AZIM_NPC_ROW, SELL_TAB_COLS[k], str(row).encode("ascii"))
-        if not stl.has(key):
-            stl.append(key, row, label)
-        print(f"    tab {k}  row {row:>3}  {label:<15} {len(items)} items: "
-              f"{' '.join(str(v) for v in items)}")
+        slot = per_npc.setdefault(npc, 0)
+        n.set(npc, SELL_TAB_COLS[slot], str(row).encode("ascii"))
+        per_npc[npc] = slot + 1
+        wide = sum(1 for v in items if v >= WIDE_BASE)
+        print(f"    npc {npc}  tab {slot}  row {row:>3}  {label:<15} "
+              f"{len(items):>2} items ({wide} wide-form)")
 
     if args.dry_run:
         print("\ndry run -- nothing written")
@@ -231,9 +287,10 @@ def main():
     n.save(False)
     stl.save(False)
     with open(SIDECAR, "w", encoding="utf-8") as fh:
-        json.dump({"rows": rows, "npc": AZIM_NPC_ROW}, fh, indent=1)
-    print("\ndone. Restart the game server (STBs are cached) and rebake the client VFS.")
-    print("Huzam is deliberately untouched -- see the module docstring.")
+        json.dump({"rows": rows, "npcs": sorted(per_npc)}, fh, indent=1)
+    print("\ndone. Restart the game server and rebake the client VFS.")
+    print("Huzam's wide-form slots need a client AND server built with "
+          "rose/common/store_item_code.h -- ship all three together.")
 
 
 if __name__ == "__main__":

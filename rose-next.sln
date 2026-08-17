@@ -57,6 +57,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "combat_presenter_tests", "s
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "vfs_buffer_tests", "src\tests\vfs_buffer\vfs_buffer_tests.vcxproj", "{404D6D17-06A0-4B6F-88FE-E1F9985D7DB3}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "store_item_code_tests", "src\tests\store_item_code\store_item_code_tests.vcxproj", "{273D7FCB-93B8-42A9-9300-19847A617368}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "common-shared", "common-shared", "{3B7AC165-5D32-4DA0-B266-9AF7A1AEFDE2}"
 	ProjectSection(SolutionItems) = preProject
 		src\common\shared\cai_file.cpp = src\common\shared\cai_file.cpp
@@ -151,6 +153,10 @@ Global
 		{404D6D17-06A0-4B6F-88FE-E1F9985D7DB3}.debug|x86.Build.0 = debug|Win32
 		{404D6D17-06A0-4B6F-88FE-E1F9985D7DB3}.release|x86.ActiveCfg = release|Win32
 		{404D6D17-06A0-4B6F-88FE-E1F9985D7DB3}.release|x86.Build.0 = release|Win32
+		{273D7FCB-93B8-42A9-9300-19847A617368}.debug|x86.ActiveCfg = debug|Win32
+		{273D7FCB-93B8-42A9-9300-19847A617368}.debug|x86.Build.0 = debug|Win32
+		{273D7FCB-93B8-42A9-9300-19847A617368}.release|x86.ActiveCfg = release|Win32
+		{273D7FCB-93B8-42A9-9300-19847A617368}.release|x86.Build.0 = release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

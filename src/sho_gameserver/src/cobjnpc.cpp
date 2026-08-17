@@ -6,6 +6,8 @@
 #include "IO_Quest.h"
 #include "ZoneLIST.h"
 
+#include "rose/common/store_item_code.h"
+
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
 bool
@@ -826,7 +828,7 @@ CObjNPC::Make_gsv_ADD_OBJECT(classPACKET* pCPacket) {
 //-------------------------------------------------------------------------------------------------
 bool
 CObjNPC::Get_SellITEM(short nSellTAB, short nSellCOL, tagITEM& OutITEM) {
-    short nListSellROW, nSellITEM;
+    short nListSellROW;
 
     nListSellROW = NPC_SELL_TAB(this->Get_CharNO(), nSellTAB);
     if (0 == nListSellROW || nListSellROW >= g_TblStore.row_count)
@@ -835,11 +837,14 @@ CObjNPC::Get_SellITEM(short nSellTAB, short nSellCOL, tagITEM& OutITEM) {
     if (nSellCOL < 0 || nSellCOL + 2 >= g_TblStore.col_count)
         return false;
 
-    nSellITEM = STORE_ITEM(nListSellROW, nSellCOL);
-    if (0 == nSellITEM)
+    // int, not short: the wide form of a slot (Rose::Store) runs past 32767, and a
+    // short here would silently truncate it into a different item.
+    const int iSellITEM = STORE_ITEM(nListSellROW, nSellCOL);
+    int iType = 0, iNo = 0;
+    if (!Rose::Store::decode_store_item(iSellITEM, iType, iNo))
         return false;
 
-    OutITEM.Init(nSellITEM);
+    OutITEM.Init(static_cast<unsigned int>(iType), static_cast<unsigned int>(iNo));
 
     return true;
 }

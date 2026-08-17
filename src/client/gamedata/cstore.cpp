@@ -7,6 +7,7 @@
 //#include "../gamecommon/CItemPat.h"
 #include "../gamecommon/Item.h"
 #include "../object.h"
+#include "rose/common/store_item_code.h"
 #include "../gamecommon/itemcommand.h"
 #include "../interface/command/CTCmdNumberInput.h"
 #include "../interface/command/UICOMMAND.h"
@@ -76,7 +77,6 @@ CStore::ChangeStore(int iNpcObjIndex, bool bSpecialTab) {
 
     //상점에 아이템을 등록해준다
     short nI;
-    short nItemNo;
 
     CItem* pItem = NULL;
     for (int i = 0; i < 4; i++) {
@@ -85,9 +85,14 @@ CStore::ChangeStore(int iNpcObjIndex, bool bSpecialTab) {
                 m_strTabName[i] = STORE_NAME(nDeal[i]);
 
                 for (nI = 0; nI < c_iSlotCountPerTab; nI++) {
-                    nItemNo = STORE_ITEM(nDeal[i], nI);
-                    if (nItemNo) {
-                        sITEM.Init(nItemNo);
+                    // int, not short: the wide form of a slot (Rose::Store) runs
+                    // past 32767, and a short here would silently truncate it into
+                    // a different item than the one the server will sell.
+                    const int iSlot = STORE_ITEM(nDeal[i], nI);
+                    int iType = 0, iNo = 0;
+                    if (Rose::Store::decode_store_item(iSlot, iType, iNo)) {
+                        sITEM.Init(static_cast<unsigned int>(iType),
+                            static_cast<unsigned int>(iNo));
                         pItem = new CItem;
                         if (pItem) {
                             pItem->SetIndexType(CItem::IT_STORE);
