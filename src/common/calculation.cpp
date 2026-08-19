@@ -65,16 +65,27 @@ CCal::Get_NeedRawEXP(int iLevel) {
         return static_cast<int64_t>(((iLevel - 31) * (iLevel - 20) * (iLevel + 4) * 3.8f));
     }
 
-    if (iLevel <= 189) {
-        return static_cast<int64_t>(((iLevel - 67) * (iLevel - 20) * (iLevel - 10) * 6.f));
-    }
-
-    // int64 arithmetic all the way through. Casting only the finished product (as this
-    // line did while the branch was unreachable dead code) overflows int32 from level
-    // 215 up: 16 of the levels between 215 and 240 came out negative, and a negative
-    // requirement satisfies the Add_EXP loop condition immediately.
+    // Runs to the level cap. This used to stop at 189 and hand over to a quintic
+    // -- `(lv-90)*(lv-120)*(lv-60)*(lv-170)*(lv-188)` -- which was unreachable dead
+    // code while the cap was 190 and is not a curve anyone tuned. It overflowed int32
+    // (16 of the levels from 215 up came out negative, and a negative requirement
+    // satisfies the Add_EXP loop immediately), and once the cap moved to 240 and it
+    // went live it was worse than wrong, it was discontinuous: the five cubic segments
+    // hand off to each other with a per-level growth ratio decaying smoothly from 1.24
+    // at level 16 to 1.02 at 189, and the quintic jumped that ratio straight back to
+    // 1.64. Level 195 cost 8.4x level 189, level 240 cost 11.79 BILLION, and 99.6% of
+    // all the EXP in the game sat above level 180.
+    //
+    // The subtler damage was inside a single zone: at 1.6x per level, two monsters nine
+    // levels apart in the same field differ ~50x in what they are worth against the bar,
+    // so no amount of reward tuning could survive it.
+    //
+    // Continuing this cubic instead keeps the ratio between 1.020 and 1.015 to the cap
+    // and puts level 240 at 52.5M. Kept as int64 arithmetic regardless -- the product is
+    // comfortably inside int32 now, but the cap is a knob and this is not worth
+    // rediscovering.
     const int64_t lLevel = iLevel;
-    return (lLevel - 90) * (lLevel - 120) * (lLevel - 60) * (lLevel - 170) * (lLevel - 188);
+    return (lLevel - 67) * (lLevel - 20) * (lLevel - 10) * 6;
 }
 
 //-------------------------------------------------------------------------------------------------
