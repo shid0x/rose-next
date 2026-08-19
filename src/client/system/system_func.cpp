@@ -456,6 +456,16 @@ SC_ShowNotifyMessage(int iStringIDX) {
 }
 
 ///
+/// 퀘스트 진행 메세지를 채팅창에 출력
+///
+void
+SC_AppendQuestMsg(ZSTRING szMessage) {
+    if (szMessage) {
+        g_itMGR.AppendChatMsg(szMessage, IT_MGR::CHAT_TYPE_QUEST);
+    }
+}
+
+///
 /// Log/OutputDebugString
 ///
 void

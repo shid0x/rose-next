@@ -188,6 +188,17 @@ void SC_ShowNotifyMessage ( int iStringIDX );
 
 
 ///
+/// 퀘스트 진행 메세지를 채팅창에 출력
+///
+/// For world-pickup scripts run by REWD_029. Those fire several times per quest
+/// (three cacti, six salvage spots), so a modal box would cost a dismissal each
+/// time; the quest chat channel says the same thing without interrupting.
+///
+SYSTEM_SCRIPT
+void SC_AppendQuestMsg ( ZSTRING szMessage );
+
+
+///
 /// Log/OutputDebugString
 ///
 SYSTEM_SCRIPT
