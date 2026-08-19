@@ -521,11 +521,22 @@ F_QSTCOND006(uniQstENTITY* pCOND, tQST_PARAM* pPARAM) {
         return false;
     }
 
-#ifdef __SERVER
-    int radius = pCOND->m_Cond006.iRadius;
-#else
-    int radius = pCOND->m_Cond006.iRadius * 100;
-#endif
+    // iRadius is authored in metres; the world is in centimetres. The original
+    // client copy of this file scaled by 100 unconditionally and the server copy
+    // did not, and merging the two preserved that divergence behind an #ifdef --
+    // so the client offered the trigger and the server silently refused it.
+    //
+    // The data only resolves at the client's scale. Of the 26 COND_006 areas in
+    // 3DDATA/QUESTDATA that have an event object carrying the same trigger name,
+    // all 26 contain that object at x100 and 3 do at x1; the Golden Ring cacti
+    // behind "In Need of Water" sit 72-343 units out from a radius-50 centre, and
+    // one Wasteland salvage spot is 1011 out.
+    //
+    // Widening the server can only turn a refusal into an acceptance, and no
+    // COND_006 trigger is reachable server-side without a cli_QUEST_REQ that the
+    // client already gated on this same x100 test -- so this aligns the two sides
+    // rather than making the server the looser of the two.
+    const int radius = pCOND->m_Cond006.iRadius * 100;
 
     if (pPARAM->m_pOWNER->Quest_DistanceFrom(pCOND->m_Cond006.iX,
             pCOND->m_Cond006.iY,
@@ -975,10 +986,21 @@ F_QSTCOND021(uniQstENTITY* pCOND, tQST_PARAM* pPARAM) {
     if (pPARAM->m_pOWNER->Quest_GetZoneNO() != pPARAM->m_pNpcVAR->VGetCur_ZoneNO())
         return false;
 
+    // Same metres-vs-centimetres mistake as COND_006 above, but with no client
+    // counterpart to compare against -- the client copy of this function is
+    // `return true`, so nothing ever hinted the server was measuring in the wrong
+    // unit. Every COND_021 in our quest data asks for 5 or 10, while CObjAI walks
+    // the avatar to NPC_CLICK_EVENT_RANGE (250) and stops: raw, the condition
+    // demands the player stand 10 cm from an NPC it cannot physically approach
+    // closer than 2.5 m, so every accept and turn-in carrying it failed on the
+    // server with no message to the client. That is all 343 of them, including
+    // every Oro dialog quest and 4410-01, the trigger that opens the chain.
+    const int radius = pCOND->m_Cond021.iRadius * 100;
+
     if (pPARAM->m_pOWNER->Quest_DistanceFrom(static_cast<int>(pSelOBJ->VGetCur_XPOS()),
             static_cast<int>(pSelOBJ->VGetCur_YPOS()),
             0)
-        <= pCOND->m_Cond021.iRadius)
+        <= radius)
         return true;
     return false;
 #else
