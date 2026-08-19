@@ -29,24 +29,43 @@ so given a target number of kills per level the column falls straight out:
     EXP_column = need(lv) / target_kills(lv) / 0.2883 / (lv + 3)
 
 The pace ladder is anchored on level 50, which is the one point in the game that
-currently feels right at 466 kills, and then compounds 10% per fifty levels:
+currently feels right at 466 kills, and then compounds -10% per fifty levels:
 
     lv   1- 50   untouched -- no row at or below level 50 is written at all
-    lv  51-100   466 -> 513      (+10%)
-    lv 101-150   513 -> 564      (+10%)
-    lv 151-200   564 -> 620      (+10%)
-    lv 200-240   682, flat       (+10%, then held to the cap)
+    lv  51-100   466 -> 419      (-10%)
+    lv 101-150   419 -> 378      (-10%)
+    lv 151-200   378 -> 340      (-10%)
+    lv 200-240   306, flat       (-10%, then held to the cap)
 
-Anchors are interpolated, not stepped, so level 75 sits between 466 and 513. The
+Anchors are interpolated, not stepped, so level 75 sits between 466 and 419. The
 one discontinuity is deliberate: the last tier starts *at* 200 rather than ramping
 into it, so crossing into the endgame is a single visible 10% step.
 
-Note this is +10% per tier in KILLS, not in time. Monster max HP goes from ~1,240
-at level 50 to ~13,220 at level 220, so the same kill count is far more work: a
-level at the cap costs 18.5x the total HP of a level at 50, and roughly 4x the
-time even assuming player damage grows linearly with level. That is intended --
-rising time per level is what makes an endgame feel like one -- but it is the
-reason the kill counts here look almost flat when the experience is not.
+WHY THE LADDER GOES DOWN
+
+The first calibration ran this ladder the other way, +10% per tier, on the theory
+that a rising time-per-level is what makes an endgame feel like one. Played, it was
+much better than before and still felt daunting, and the reason is a design
+assumption we do not share with retail.
+
+Retail ROSE past level 100 assumes a cleric in the party. Fully buffed characters
+tear through monsters, so demanding a few hundred kills per level costs them
+little. **We have no buffs** -- they were replaced with a flat stat boost -- so the
+same monster is a far longer fight here than the content was authored for. Killing
+500 Grunters and killing 500 Eldeon monsters are not the same request, and the
+original tuning never had to care.
+
+That means kill count is the wrong thing to hold steady. Monster max HP runs from
+~1,240 at level 50 to ~13,220 at level 220, so even a *flat* count is 10x the
+damage per level, and the +10% ladder made a level at the cap cost 16x the HP and
+~3.6x the time of a level at 50. Stepping the count *down* 10% per tier pulls that
+back to ~7x the HP and ~1.6x the time -- still rising, so the endgame still weighs
+more, but by an amount an unbuffed character can actually pay.
+
+Note this does not make a single fight any shorter. Damage is proportional to
+`(ATK - DEF + 250)` and high-level monsters sit close enough to player ATK to be on
+the damage floor, which is a separate problem in `LIST_NPC` DEF (see
+rebalance-endgame-curve.py). This pass only changes what the fight is worth.
 
 ELITES
 
@@ -141,7 +160,7 @@ EXP_FORMULA_K = (1.0 + 1.0 / 15.0) * 100.0 / 370.0
 
 FREEZE_TO = 50                  # levels 1-50 keep today's pace exactly
 ANCHOR_KILLS = 466.0            # measured pace at level 50 today
-TIER_STEP = 0.10
+TIER_STEP = -0.10               # negative on purpose -- see WHY THE LADDER GOES DOWN
 TIER_SIZE = 50
 LAST_TIER_FROM = 200            # flat from here to the cap
 
@@ -382,7 +401,7 @@ def main():
         return
 
     print(f"ladder anchored at level {FREEZE_TO} = {ANCHOR_KILLS:.0f} kills, "
-          f"+{TIER_STEP * 100:.0f}% per {TIER_SIZE} levels")
+          f"{TIER_STEP * 100:+.0f}% per {TIER_SIZE} levels")
     for lv, k in ANCHORS:
         print(f"    lv {lv:>3}: {k:>6.0f} kills")
     print(f"    lv {LAST_TIER_FROM}+: {LAST_TIER_KILLS:>6.0f} kills, flat to {MAX_LEVEL}")
