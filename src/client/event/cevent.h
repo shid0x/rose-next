@@ -53,6 +53,7 @@ struct tagSCRIPTDATA {
 
 //-------------------------------------------------------------------------------------------------
 class CEvent;
+class CQuestTRIGGER;
 struct tagEventITEM {
     CEvent* m_pEVENT;
     tagSCRIPTITEM* m_pScrITEM;
@@ -105,11 +106,17 @@ private:
     // Retail path: QSD trigger names harvested from this conversation's Lua
     // string constants (readable even in compiled bytecode) and classified by
     // the trigger's own condition/reward composition in the quest data.
+    //
+    // m_bAccept / m_bTurnIn describe the whole check_next chain and are only a
+    // filter for "is this name quest-relevant at all". The icon itself is
+    // decided per link at query time, because one chain can hold both kinds --
+    // see ResolveQuestTrigger in the .cpp.
     struct tagQuestTriggerRef {
         std::string m_Name;
+        CQuestTRIGGER* m_pTrigger; // chain head, resolved once at scan time
         int m_iAddQuestSN; // quest granted by REWD_000 op1, or -1
-        bool m_bAccept; // offers a new quest
-        bool m_bTurnIn; // completes / advances a registered quest
+        bool m_bAccept; // some link offers a new quest
+        bool m_bTurnIn; // some link completes / advances a registered quest
     };
     std::vector<tagQuestTriggerRef> m_QuestTriggerRefs;
     void ScanQuestTriggerRefs();

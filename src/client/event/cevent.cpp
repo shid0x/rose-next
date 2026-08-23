@@ -797,15 +797,21 @@ HarvestLuaStrings(const char* pData, int iLen, std::vector<std::string>& Out) {
 //    (REWD_000 op 2 swap / op 3 reset-start) or deletes it (op 0) while
 //    granting something (item give / ability / calc reward / hp-mp / skill).
 //    Delete-only chains are quest-abandon options and stay unclassified.
+//
+// Classifies ONE link. A check_next chain is a sequence of alternatives, not a
+// single unit: `4411-02` advances a registered quest while `4411-03`, the link
+// it falls through to, hands out a new one. Folding a chain into one verdict
+// makes such a name both an accept and a turn-in, and since turn-in wins the
+// icon, Captain Bruise showed "?" over an offer of Bruised Ego. Classify links
+// separately and let the caller pick the one that actually fires.
 static void
-ClassifyQuestTrigger(CQuestTRIGGER* pEntry, bool& bAccept, bool& bTurnIn, int& iAddQuestSN) {
+ClassifyOneTrigger(CQuestTRIGGER* pT, bool& bAccept, bool& bTurnIn, int& iAddQuestSN) {
     bAccept = bTurnIn = false;
     iAddQuestSN = -1;
 
     bool bHasQuestCond = false, bGrant = false, bDelete = false, bAdvance = false;
 
-    int iGuard = 0;
-    for (CQuestTRIGGER* pT = pEntry; pT && iGuard < 64; iGuard++) {
+    {
         for (unsigned int uiC = 0; uiC < pT->GetCondCNT(); uiC++) {
             uniQstENTITY* pCOND = pT->GetCOND(uiC);
             if (pCOND && (pCOND->iType & 0xffff) == 0)
@@ -846,11 +852,30 @@ ClassifyQuestTrigger(CQuestTRIGGER* pEntry, bool& bAccept, bool& bTurnIn, int& i
                     break;
             }
         }
-
-        pT = pT->GetCheckNext() ? pT->m_pNextTrigger : NULL;
     }
 
     bTurnIn = bHasQuestCond && (bAdvance || (bDelete && bGrant));
+}
+
+// Chain-wide union, used only to decide whether a harvested name is worth
+// keeping at all. Never used to pick the icon.
+static void
+ClassifyQuestChain(CQuestTRIGGER* pEntry, bool& bAccept, bool& bTurnIn, int& iAddQuestSN) {
+    bAccept = bTurnIn = false;
+    iAddQuestSN = -1;
+
+    int iGuard = 0;
+    for (CQuestTRIGGER* pT = pEntry; pT && iGuard < 64; iGuard++) {
+        bool bA = false, bT = false;
+        int iSN = -1;
+        ClassifyOneTrigger(pT, bA, bT, iSN);
+        bAccept = bAccept || bA;
+        bTurnIn = bTurnIn || bT;
+        if (iAddQuestSN < 0)
+            iAddQuestSN = iSN;
+
+        pT = pT->GetCheckNext() ? pT->m_pNextTrigger : NULL;
+    }
 }
 
 void
@@ -874,7 +899,8 @@ CEvent::ScanQuestTriggerRefs() {
 
         tagQuestTriggerRef Ref;
         Ref.m_Name = Strings[i];
-        ClassifyQuestTrigger(pTrigger, Ref.m_bAccept, Ref.m_bTurnIn, Ref.m_iAddQuestSN);
+        Ref.m_pTrigger = pTrigger;
+        ClassifyQuestChain(pTrigger, Ref.m_bAccept, Ref.m_bTurnIn, Ref.m_iAddQuestSN);
         if (Ref.m_bAccept || Ref.m_bTurnIn)
             m_QuestTriggerRefs.push_back(Ref);
     }
@@ -896,14 +922,41 @@ CallQuestCheckFunc(classLUA& LUA, CEvent* pEvent, const char* szFunc) {
     return lua_CallIntFUNC(LUA.m_pState, szFunc, ZZ_PARAM_INT, pEvent, ZZ_PARAM_END) >= 1;
 }
 
-// True when the trigger's conditions currently pass for the local avatar.
-// bDoReward=false walks conditions only; rewards are skipped, so probing has
-// no side effects. COND_013 (NPC binder) is a server-only check and always
-// passes on the client, which is exactly right for a per-NPC probe.
+// Walks a check_next chain the way CQuestDATA::CheckQUEST does -- first link
+// whose conditions pass wins -- and reports what THAT link is, rather than what
+// the chain as a whole contains. Returns false when no link fires.
+//
+// bDoReward=false walks conditions only; every client reward function returns
+// early on it, which is what makes CheckQUEST safe to use as a probe, so this
+// is no more intrusive than the call it replaces. m_pCurrentTRIGGER has to be
+// set per link because a failing condition logs through it. COND_013 (the NPC
+// binder) is server-only and always passes here, which is right for a per-NPC
+// probe.
 static bool
-QuestTriggerConditionsPass(const char* szTriggerName) {
-    return g_QuestList.CheckQUEST(g_pAVATAR, ::StrToHashKey(szTriggerName), false)
-        == QST_RESULT_SUCCESS;
+ResolveQuestTrigger(CQuestTRIGGER* pEntry, bool& bAccept, bool& bTurnIn, int& iAddQuestSN) {
+    bAccept = bTurnIn = false;
+    iAddQuestSN = -1;
+
+    if (g_pAVATAR == NULL)
+        return false;
+
+    tQST_PARAM qstPARAM;
+    int iGuard = 0;
+    for (CQuestTRIGGER* pT = pEntry; pT && iGuard < 64; iGuard++) {
+        qstPARAM.Init(g_pAVATAR, g_pAVATAR->Quest_GetZoneNO());
+        qstPARAM.m_pCurrentTRIGGER = pT;
+
+        if (pT->Proc(&qstPARAM, false)) {
+            ClassifyOneTrigger(pT, bAccept, bTurnIn, iAddQuestSN);
+            return true;
+        }
+
+        if (!pT->GetCheckNext())
+            break;
+        pT = pT->m_pNextTrigger;
+    }
+
+    return false;
 }
 
 short
@@ -918,25 +971,36 @@ CEvent::GetQuestSignal() {
         && m_QuestCompleteFuncs.empty())
         return 0;
 
-    // Retail/QSD path first — pure condition walks, no Lua involved. Turn-in
-    // beats available when an NPC has both.
-    for (size_t i = 0; i < m_QuestTriggerRefs.size(); i++)
-        if (m_QuestTriggerRefs[i].m_bTurnIn
-            && QuestTriggerConditionsPass(m_QuestTriggerRefs[i].m_Name.c_str()))
-            return 3;
-
-    bool bAvailable = false;
-    for (size_t i = 0; i < m_QuestTriggerRefs.size() && !bAvailable; i++) {
+    // Retail/QSD path first — pure condition walks, no Lua involved. Resolve
+    // each name to the single link that would actually fire, and judge that
+    // link; a chain holding both an advance and an offer must not be read as a
+    // turn-in when it is the offer that passes. Turn-in still beats available
+    // when an NPC genuinely has both.
+    bool bAvailable = false, bComplete = false;
+    for (size_t i = 0; i < m_QuestTriggerRefs.size(); i++) {
         const tagQuestTriggerRef& Ref = m_QuestTriggerRefs[i];
-        if (!Ref.m_bAccept)
+        if (Ref.m_pTrigger == NULL)
             continue;
+
+        bool bAccept = false, bTurnIn = false;
+        int iAddQuestSN = -1;
+        if (!ResolveQuestTrigger(Ref.m_pTrigger, bAccept, bTurnIn, iAddQuestSN))
+            continue;
+
+        if (bTurnIn) {
+            bComplete = true;
+            break;
+        }
         // Never re-offer a quest that is already in the log (retail register
         // triggers do not always carry that guard themselves).
-        if (Ref.m_iAddQuestSN >= 0
-            && g_pAVATAR->Quest_GetRegistered(Ref.m_iAddQuestSN) < QUEST_PER_PLAYER)
-            continue;
-        bAvailable = QuestTriggerConditionsPass(Ref.m_Name.c_str());
+        if (bAccept
+            && (iAddQuestSN < 0
+                || g_pAVATAR->Quest_GetRegistered(iAddQuestSN) >= QUEST_PER_PLAYER))
+            bAvailable = true;
     }
+
+    if (bComplete)
+        return 3;
 
     // Quest-editor Lua check functions (dialog-exact gating; also covers any
     // future custom check logic). Skipped when the QSD path already decided.
