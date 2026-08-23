@@ -885,10 +885,29 @@ CNetwork::recv_combat_swing(Packet& p) {
     to.x = req->target_pos()->x();
     to.y = req->target_pos()->y();
     to.z = req->target_pos()->z();
+
+    const Rose::Combat::DamageEvent event = to_client_damage_event(req->damage());
+
+    // Every authorised swing is recorded on arrival, not just the ones that reach a
+    // hit frame. Paired with the "queued presentation pop" / "queued presentation
+    // miss" lines from PopCombatDamageEvent, this is what separates "the server
+    // stopped swinging" from "the client swung more often than the server did":
+    // client attack motions self-repeat in ProcCMD_ATTACK, so a hit frame with no
+    // arrival behind it presents nothing at all -- no digit, no MISS.
+    LogString(LOG_DEBUG_,
+        "CombatTrace combat swing received: attacker %d defender %d event %u seq %u damage %d hp_after %d lethal %d\n",
+        event.attacker_id,
+        event.defender_id,
+        event.event_id,
+        event.defender_seq,
+        event.damage_value,
+        event.hp_after,
+        event.lethal ? 1 : 0);
+
     attacker->StartConfirmedCombatSwing(req->defender_id(),
         req->target_distance(),
         to,
-        to_client_damage_event(req->damage()));
+        event);
 }
 
 void

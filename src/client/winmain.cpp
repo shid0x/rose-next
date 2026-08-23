@@ -12,6 +12,9 @@
 
 #include "rose/common/common_interface.h"
 
+#include <ctype.h>
+#include <string.h>
+
 #define _CRTDBG_MAP_ALLOC
 #include <stdlib.h>
 #include <crtdbg.h>
@@ -120,6 +123,71 @@ Free_DEVICE(void) {
     ::destZnzin();
 }
 
+//---------------------------------------------------------------------------------------------------------
+/// Log verbosity for client.log.
+///
+/// Info by default. The CombatTrace / skill / streaming diagnostics all report at
+/// Debug (LogString(LOG_DEBUG_, ...) maps to LogLevel::Debug), so investigating a
+/// combat presentation problem used to need a rebuild of this file. It is now a
+/// runtime switch so a player can reproduce and hand over a log:
+///
+///   rose-next.ini  ->  [LOG]  LEVEL=debug
+///   environment    ->  ROSE_LOG_LEVEL=debug        (wins over the ini)
+///
+/// Accepted: trace, debug, info, warn, error, off. Anything unrecognised falls back
+/// to Info rather than silently disabling the log.
+///
+/// Debug is *loud* -- every terrain object logs one line while chunks stream in (see
+/// the note in rose/common/log.h), so client.log grows fast and the formatting cost
+/// is paid on exactly the frames that already hitch. It is a diagnostic setting, not
+/// something to leave on.
+//---------------------------------------------------------------------------------------------------------
+static const struct {
+    const char* szName;
+    Rose::Common::LogLevel eLevel;
+} g_LogLevelNAMES[] = {
+    {"trace", Rose::Common::LogLevel::Trace},
+    {"debug", Rose::Common::LogLevel::Debug},
+    {"info", Rose::Common::LogLevel::Info},
+    {"warn", Rose::Common::LogLevel::Warn},
+    {"error", Rose::Common::LogLevel::Error},
+    {"off", Rose::Common::LogLevel::Off},
+};
+
+static Rose::Common::LogLevel
+ResolveLogLevel(void) {
+    char szLevel[32] = {0};
+
+    ::GetPrivateProfileStringA("LOG", "LEVEL", "info", szLevel, sizeof(szLevel), "./rose-next.ini");
+
+    char szEnv[32] = {0};
+    if (::GetEnvironmentVariableA("ROSE_LOG_LEVEL", szEnv, sizeof(szEnv)) != 0) {
+        ::lstrcpynA(szLevel, szEnv, sizeof(szLevel));
+    }
+
+    for (int iC = 0; szLevel[iC]; ++iC) {
+        szLevel[iC] = (char)::tolower((unsigned char)szLevel[iC]);
+    }
+
+    for (size_t iL = 0; iL < _countof(g_LogLevelNAMES); ++iL) {
+        if (0 == ::strcmp(szLevel, g_LogLevelNAMES[iL].szName)) {
+            return g_LogLevelNAMES[iL].eLevel;
+        }
+    }
+
+    return Rose::Common::LogLevel::Info;
+}
+
+static const char*
+LogLevelNAME(Rose::Common::LogLevel eLevel) {
+    for (size_t iL = 0; iL < _countof(g_LogLevelNAMES); ++iL) {
+        if (g_LogLevelNAMES[iL].eLevel == eLevel) {
+            return g_LogLevelNAMES[iL].szName;
+        }
+    }
+    return "info";
+}
+
 int APIENTRY
 WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCmdLine, int nCmdShow) {
     HighResTimerScope timer_scope;
@@ -127,17 +195,24 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCmdLine, int nCmd
     // Initialize the logger so LogString / LOG_* calls reach a file. Without
     // this call, log::set_max_level() is never invoked and every log line is
     // silently dropped by the log crate's default LevelFilter::Off.
-    // Raise to LogLevel::Debug when investigating combat/skill issues
-    // (LogString(LOG_DEBUG_, ...) lines, CombatTrace, etc.).
+    // Level comes from [LOG] LEVEL / ROSE_LOG_LEVEL -- see ResolveLogLevel above;
+    // use debug when investigating combat/skill issues (LogString(LOG_DEBUG_, ...)
+    // lines, CombatTrace, etc.).
     //
     // Log::set_max_level must mirror whatever is passed to logger_init: it is the
     // C++-side copy that lets Log::legacy_printf drop a filtered record *before*
     // formatting it. Miss it and the only cost is the old behaviour (format, then
     // discard in Rust) -- but that is thousands of wasted fmt::sprintf calls per
     // terrain chunk load. See rose/common/log.h.
-    const Rose::Common::LogLevel log_level = Rose::Common::LogLevel::Info;
+    const Rose::Common::LogLevel log_level = ResolveLogLevel();
     Rose::Common::logger_init("client.log", log_level);
     Log::set_max_level(log_level);
+
+    // Recorded so a handed-over client.log states its own verbosity: a log with no
+    // CombatTrace lines otherwise reads identically whether the trace was off or
+    // the traced code never ran.
+    LOG_INFO("Log level: {} ([LOG] LEVEL in rose-next.ini, ROSE_LOG_LEVEL overrides)",
+        LogLevelNAME(log_level));
 
     VHANDLE hVFS = OpenVFS("data.idx", "r");
 

@@ -443,3 +443,30 @@ rosenext.exe --server 127.0.0.1 --username user --password pass --auto-connect-s
 ```
 
 Working directory: `dev/game/` (set up via `just dev-setup`)
+
+### Diagnostic logging
+
+`client.log` verbosity is a runtime switch resolved in `winmain.cpp::ResolveLogLevel()`:
+
+```
+rose-next.ini  ->  [LOG]  LEVEL=debug
+environment    ->  ROSE_LOG_LEVEL=debug     (wins over the ini)
+```
+
+Accepted: `trace` / `debug` / `info` (default) / `warn` / `error` / `off`; anything else
+falls back to `info`. The resolved level is echoed into the log itself as
+`Log level: <name>`, so a handed-over log states its own verbosity — without it a log with
+no `CombatTrace` lines reads identically whether the trace was off or the traced code never ran.
+
+**Everything diagnostic reports at Debug.** `LogString(LOG_DEBUG_, ...)` maps to
+`LogLevel::Debug`, which covers all `CombatTrace` lines (queued/popped/discarded damage
+events, server swings, skill classification), skill tracing and the streaming counters. It
+is also *loud*: terrain streaming logs per object, so the file grows fast and the
+`fmt::sprintf` cost lands on exactly the frames that already hitch (see `rose/common/log.h`).
+Keep repros short and put it back to `info` afterwards.
+
+The file is `client-YYYY-MM-DD.log` in the game directory, opened in **append** mode — it
+accumulates across runs on the same day, so delete it (or note the wall-clock time of the
+repro) before capturing. It flushes per record, so it survives a hard crash; `error.txt`
+does not.
+
