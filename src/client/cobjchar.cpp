@@ -214,6 +214,23 @@ CObjCHAR::StartConfirmedCombatSwing(int iServerTarget,
     this->SetCMD_ATTACK(iServerTarget, wSrvDIST, PosGOTO);
 }
 
+bool
+CObjCHAR::IsPresentedDead() const {
+    // Deliberately not consulted for the local avatar. Avatar death runs through the
+    // pending-authoritative-death path instead, and m_bDead is only ever *set* -- no
+    // code path clears it on revive -- so reading it here would latch the player's
+    // attacks off permanently after their first death.
+    if (this == (const CObjCHAR*)g_pAVATAR) {
+        return false;
+    }
+
+    // m_bDead is the pre-mark set when a lethal event is queued; the queue itself is
+    // the primary source. Reading both means a committed death is honoured even if the
+    // pre-mark was never applied (legacy paths, or a defender resolved through a
+    // different lookup than the one that queued the event).
+    return m_bDead || m_CombatDamageQueue.has_lethal_pending(DEAD_HP);
+}
+
 void
 CObjCHAR::MarkPendingCombatSwingProjectileSpawned() {
     if (m_dwPendingCombatSwingEventId == 0 || !m_bPendingCombatSwingProjectile) {
@@ -3057,6 +3074,35 @@ CObjCHAR::Hitted(CObjCHAR* pFromOBJ,
             PopCombatDamageEvent(pFromOBJ->Get_INDEX(), damageEvent);
 
         if (presentation == Rose::Combat::PresentationResult::NoEvent) {
+            // Normally this is silent on purpose: an unbacked hit frame usually means the
+            // client does not know what happened yet, and inventing a result there is the
+            // false-MISS regression.
+            //
+            // A committed-dead attacker is the one case where it is not ambiguous. The
+            // server cannot run Attack_START on a corpse, and any swing it sent earlier is
+            // already delivered -- same socket, and the lethal packet was sent after it, so
+            // ordering guarantees it arrived first. Once we hold that attacker's death,
+            // this swing certainly never happened, and the honest rendering is a miss. The
+            // alternative -- drawing nothing while the animation swings, or freezing the
+            // attacker mid-fight -- both read to the player as a bug.
+            //
+            // Digit only, then out. Falling through would run ClearStateByHitted(), which
+            // strips the defender's active states: a swing that never happened must not
+            // cancel the player's buffs. No damage, no HP change, no hit effect, no sound,
+            // no vibration, and nothing reaches the damage meter (it taps
+            // PushCombatDamageEvent, and there is no event here).
+            if (pFromOBJ->IsPresentedDead()) {
+                LogString(LOG_DEBUG_,
+                    "CombatTrace phantom swing presented as miss: attacker %d target %d\n",
+                    pFromOBJ->Get_INDEX(),
+                    this->Get_INDEX());
+
+                g_UIMed.CreateDamageDigit(0,
+                    pos.x,
+                    pos.y,
+                    pos.z + m_fStature,
+                    this->IsA(OBJ_USER));
+            }
             return true;
         }
 

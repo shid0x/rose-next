@@ -154,6 +154,20 @@ public:
             now_ms, grace_ms, grace_ms, dead_hp, [](const DamageEvent&) { return false; }, out);
     }
 
+    // Is a committed death sitting in this queue, waiting for its animation frame?
+    // The server applies the kill at swing start; presentation is deferred, so for
+    // that whole window the character is dead server-side and alive client-side.
+    // Read this rather than trusting a derived flag -- it is the same data the
+    // m_bDead pre-mark is computed from, but it cannot go stale or be missed.
+    bool has_lethal_pending(int32_t dead_hp) const {
+        for (const auto& event: m_events) {
+            if (event.lethal || event.hp_after <= dead_hp) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool has_pending_damage() const {
         for (const auto& event: m_events) {
             if (event.damage_value > 0 || event.lethal) {

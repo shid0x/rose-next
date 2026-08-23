@@ -310,6 +310,7 @@ public:
     bool HasPendingCombatSwingEvent(uint32_t eventId) const {
         return eventId != 0 && m_dwPendingCombatSwingEventId == eventId;
     }
+    bool IsPresentedDead() const;
     void ClearPendingCombatSwingPresentation(uint32_t eventId = 0);
     void CancelInterruptedCombatSwingPresentation(const char* reason);
     /*override*/ bool Attack_START(CObjCHAR* pTarget);

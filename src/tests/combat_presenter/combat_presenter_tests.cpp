@@ -1470,6 +1470,52 @@ main() {
             "all-PC projectile script skill against non-allied target should be blocked");
     }
 
+    {
+        // has_lethal_pending is what tells the client "this character is dead
+        // server-side, the death just has not been presented yet" -- the window in
+        // which a dead monster used to keep swinging at air.
+        Rose::Combat::CombatPresentationQueue queue;
+        const int32_t kDeadHP = 0;
+
+        expect(!queue.has_lethal_pending(kDeadHP), "empty queue holds no committed death");
+
+        Rose::Combat::DamageEvent hit;
+        hit.event_id = 1;
+        hit.attacker_id = 10;
+        hit.damage_value = 50;
+        hit.hp_after = 200;
+        queue.push(hit);
+        expect(!queue.has_lethal_pending(kDeadHP), "a survivable hit is not a committed death");
+
+        Rose::Combat::DamageEvent kill;
+        kill.event_id = 2;
+        kill.attacker_id = 10;
+        kill.damage_value = 200;
+        kill.hp_after = -30000;
+        kill.lethal = true;
+        queue.push(kill);
+        expect(queue.has_lethal_pending(kDeadHP),
+            "a queued lethal event is a committed death while it waits for its hit frame");
+
+        Rose::Combat::DamageEvent out;
+        expect(queue.pop_for_attacker(10, out) && out.event_id == 1,
+            "the survivable hit still presents first");
+        expect(queue.has_lethal_pending(kDeadHP),
+            "the death stays committed until its own event is presented");
+        expect(queue.pop_for_attacker(10, out) && out.event_id == 2, "then the kill presents");
+        expect(!queue.has_lethal_pending(kDeadHP), "and the queue is clear afterwards");
+
+        // hp_after alone is enough: legacy paths can report a dead checkpoint without
+        // setting the lethal flag.
+        Rose::Combat::DamageEvent deadHpOnly;
+        deadHpOnly.event_id = 3;
+        deadHpOnly.attacker_id = 11;
+        deadHpOnly.hp_after = kDeadHP;
+        queue.push(deadHpOnly);
+        expect(queue.has_lethal_pending(kDeadHP),
+            "hp_after at or below dead HP counts even without the lethal flag");
+    }
+
     std::cout << "combat_presenter_tests passed\n";
     return 0;
 }
