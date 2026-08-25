@@ -1115,13 +1115,29 @@ CObjCHAR::Apply_DAMAGE(CObjCHAR* pTarget,
 
             pTarget->Do_DamagedAI(this, iDamage);
 
-            if (sDamage.m_wACTION & DMG_ACT_HITTED) {
-                // 맞는 동작해야...
-                if (!(pTarget->Get_STATE() & CS_BIT_INT2)) {
-                    pTarget->Set_MOTION(pTarget->GetANI_Hit());
-                    pTarget->Set_STATE(CS_HIT);
-                }
-            }
+            // No hit reaction. This is a deliberate removal, not an oversight --
+            // do not restore it without reading the client CLAUDE.md note.
+            //
+            // The retail flinch replaced the target's current motion with its hit
+            // motion (DMG_ACT_HITTED, gated on !CS_BIT_INT2). Three measured reasons
+            // it had to go:
+            //   * Its mechanical effect ran BACKWARDS. Damage is dealt at frame 0 of
+            //     the attack motion (Start_ATTACK -> Attack_START), so a flinch never
+            //     cancelled a hit -- it swapped the remainder of the attack motion for
+            //     the (usually shorter, and never attack-speed-scaled) hit motion,
+            //     after which the attack restarted and dealt damage again. 85% of
+            //     monsters had hit motion < half their attack motion, so staggering a
+            //     monster made it damage you *sooner* -- up to 1.85x in a party.
+            //   * It was one-way. Players staggered monsters on 29-65% of hits;
+            //     monsters staggered players on 0-12%, because monster ATK sits at
+            //     parity with player DEF so the (ATK+20)/(DEF+5) term never cleared
+            //     the gate.
+            //   * It was illegible -- the trigger is a hidden crit-adjacent roll.
+            // Numbers: scripts/measure-flinch-timing.py.
+            //
+            // CCal::Get_*DAMAGE still sets DMG_BIT_HITTED and it still rides the wire;
+            // nothing consumes it now. Left in place so the wire format is unchanged
+            // and the information is there if a future interrupt wants it.
 
             return SEND_DAMAGE_TO_TARGET;
         }

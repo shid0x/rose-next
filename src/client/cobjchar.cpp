@@ -241,6 +241,12 @@ CObjCHAR::MarkPendingCombatSwingProjectileSpawned() {
     m_bPendingCombatSwingProjectileSpawned = true;
 }
 
+// DORMANT since hit reactions were removed -- nothing currently defers a motion
+// change behind a swing, so this has no caller and m_bOwedHitReaction is never set.
+// Kept on purpose: it is the correct guard for *any* effect that would cancel an
+// attack motion (knockback, stun, a crit-only flinch), because the server applies a
+// swing's damage at frame 0 of that motion and the client still owes its hit frame.
+// Wire it up rather than re-deriving it.
 bool
 CObjCHAR::HasUnconsumedConfirmedSwing() {
     if (m_dwPendingCombatSwingEventId == 0 || m_iPendingCombatSwingDefenderIndex == 0) {
@@ -265,6 +271,10 @@ CObjCHAR::HasUnconsumedConfirmedSwing() {
     return pDefender && pDefender->HasQueuedCombatDamageEvent(m_dwPendingCombatSwingEventId);
 }
 
+// DORMANT alongside HasUnconsumedConfirmedSwing() -- m_bOwedHitReaction is never
+// set now that hit reactions are gone, so this is a no-op on every call. It stays
+// wired into ClearPendingCombatSwingPresentation so a future deferred motion change
+// only needs to set the flag.
 void
 CObjCHAR::ResolveOwedHitReaction() {
     if (!m_bOwedHitReaction) {
@@ -273,9 +283,8 @@ CObjCHAR::ResolveOwedHitReaction() {
 
     m_bOwedHitReaction = false;
 
-    // Same gates as the original flinch site: a corpse does not react, a mounted
-    // rider's motion is driven by its cart, and CS_BIT_INT2 states (casting, skill
-    // action) suppress the hit motion outright.
+    // A corpse does not react, a mounted rider's motion is driven by its cart, and
+    // CS_BIT_INT2 states (casting, skill action) suppress the hit motion outright.
     if (this->Get_HP() <= DEAD_HP || this->GetPetMode() > 0
         || (this->Get_STATE() & CS_BIT_INT2)) {
         return;
@@ -2427,33 +2436,17 @@ CObjCHAR::ApplyPresentedCombatFeedback(CObjCHAR* pAtkOBJ,
 
     this->Do_DamagedAI(pAtkOBJ, Damage.m_wVALUE);
 
-    if (pAtkOBJ && (Damage.m_wDamage & DMG_BIT_HITTED)) {
-        if (this->GetPetMode() <= 0 && !(this->Get_STATE() & CS_BIT_INT2)) {
-            // Do not cancel an attack motion that still owes a hit frame. The server
-            // applies a swing's damage at frame 0 of that motion (Start_ATTACK ->
-            // Attack_START) and has already sent it; the motion is only the client's
-            // vehicle for *presenting* it. Replacing it here orphaned the queued
-            // event, which left the defender's HP bar a full swing behind, kept
-            // has_pending_damage() latched true (gating off both reconciliation
-            // paths), and eventually dumped the backlog into an unrelated hit.
-            //
-            // The flinch is owed, not dropped: ClearPendingCombatSwingPresentation
-            // plays it as soon as the swing resolves, so the stagger still reads,
-            // just after the blow it was already committed to lands.
-            if (HasUnconsumedConfirmedSwing()) {
-                m_bOwedHitReaction = true;
-                LogString(LOG_DEBUG_,
-                    "CombatTrace hit reaction deferred behind confirmed swing: target %d attacker %d event %u defender %d\n",
-                    this->Get_INDEX(),
-                    pAtkOBJ->Get_INDEX(),
-                    m_dwPendingCombatSwingEventId,
-                    m_iPendingCombatSwingDefenderIndex);
-            } else {
-                this->Set_MOTION(this->GetANI_Hit());
-                this->Set_STATE(CS_HIT);
-            }
-        }
-    }
+    // No hit reaction -- deliberately removed, mirroring CObjCHAR::Apply_DAMAGE on
+    // the server. See the client CLAUDE.md "Hit reactions are gone" note for the
+    // measurements; the short version is that it was a one-way, illegible mechanic
+    // whose only mechanical effect was to make the staggered target attack sooner.
+    //
+    // The two sides MUST stay in agreement. A flinch on one side only desynchronises
+    // the attack cadence between server and client, which is exactly the shape of the
+    // client-only poison-tick stagger this removal also disposes of.
+    //
+    // Everything else about getting hit is unchanged: damage digit, hit effect, hit
+    // sound and StartVibration() all still fire from Hitted().
 }
 
 void

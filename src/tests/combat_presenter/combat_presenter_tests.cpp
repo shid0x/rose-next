@@ -553,11 +553,17 @@ struct ProjectileSkillHarness {
 
 // Mirrors the attacker-side swing bookkeeping in CObjCHAR and the two rules that
 // keep a confirmed swing's presentation attached to its own hit frame:
-//   A -- a hit reaction must not cancel an attack motion that still owes a hit
-//        frame (the server applied that damage at frame 0 and already sent it);
-//        the flinch is deferred, not dropped.
+//   A -- an interrupt must not cancel an attack motion that still owes a hit frame
+//        (the server applied that damage at frame 0 and already sent it); the
+//        interrupt is deferred, not dropped.
 //   B -- a swing whose motion is gone anyway must be resolved, never left to
 //        orphan in the defender's queue where it latches has_pending_damage().
+//
+// Rule B is live. Rule A is currently DORMANT in production: hit reactions were
+// removed from both client and server, so nothing sets m_bOwedHitReaction today.
+// These cases stay because the guard is kept for any future motion-cancelling
+// effect (knockback, stun, a crit-only flinch) -- "take_hit_reaction" below stands
+// in for whatever that turns out to be.
 struct FlinchHarness {
     static const uint32_t kAttacker = 7;
     static const uint32_t kGraceMs = 1000;
