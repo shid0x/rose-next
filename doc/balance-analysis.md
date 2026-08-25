@@ -128,10 +128,23 @@ a flat ~7% chance to land at equal levels, no matter how far below 20 it is:
 |  320 |  60.5 | 87.6% |
 
 Forty points of HIT moves you from 7% to 35%. That is a build falling off a
-ledge, not a build being slightly under-geared. In the model a dual-wield Raider
-(which dumps CON, the only stat feeding HIT) sits at 7% from level 140 onward,
-while a gun Bourgeois (CON-based) stays above 79% forever. Scouts and Mages fall
-from ~85% at level 60 to ~35% at level 200.
+ledge, not a build being slightly under-geared.
+
+**Corrected 2026-08-25.** An earlier version of this section claimed a dual-wield
+Raider sits at 7% from level 140 onward. That was an artifact of the simulation's
+stat allocator, which buys stats purely by damage-per-point and therefore never
+buys CON -- the only stat feeding HIT. Real players follow a long-standing rule
+of thumb, CON roughly equal to your level, and under that rule the Raider holds
+81-95% land rate all the way to 220 and sits in the same swings-per-kill band as
+every other class. The cliff is real as a mechanism, but it does not break a
+class; it acts as an undocumented ~20% tax on the bonus-point budget (a
+remarkably stable share: 19% at level 100, 21% at 180, 22% at 240). At level 200
+the rule yields HIT 273 against a 285 requirement, with the class's own +80 HIT
+buff carrying it over -- which is presumably how players found the rule.
+
+The general erosion underneath it is still true: `Cal_HIT` has no level term, so
+player HIT grows about 4x across the curve while monster AVOID grows about 9.6x.
+Everyone drifts toward the ledge; the CON tithe is what keeps you off it.
 
 This is not the same problem as fight length, and no damage change fixes it. It
 also means player HIT and monster AVOID are the most dangerous numbers in the
@@ -349,6 +362,30 @@ shorter fights at 200+. It compresses the level 60 -> 220 ratio from 9.4x to
 about 3.1x. It is worth roughly 2x of the ~5x that would fully flatten the curve,
 which is why step 2 (monster HP) still matters.
 
-Untouched by this and still true: the Raider sits at a 7% land rate from level
-140 onward and needs ~660 swings per kill at 220 even fully converted. No damage
-or defence change reaches that; it is the accuracy cliff, step 4.
+Measured again on 2026-08-25 with a realistic build (CON = level, the rule
+players actually follow), swings per kill from level 100 to 220 are Champion
+17->39, Scout 18->37, Bourgeois 28->49, Knight 24->61, Raider 31->66. Roughly
+2-2.5x across 120 levels, with every class in the same band. After step 1 the
+curve up to 220 looks like ordinary progression rather than drift, which
+downgrades steps 2 and 4 considerably -- see the corrected accuracy section
+above.
+
+What still looks open, in rough order:
+  * The level 220-249 content gap. Ordinary (non-boss) monster rows: 15 at
+    210-219, 10 at 220-229, 1 at 230-239, none above. The top-end "balance
+    problem" is largely that there is almost nothing there but bosses.
+  * Magic skill damage does not scale with level. `Get_SkillDAMAGE` puts attack
+    power in the weapon-skill numerator twice -- `(POWER + ATK*0.2) * (ATK + 60)`
+    -- so it grows quadratically against a linear denominator, while the magic
+    branch has it once, `POWER * (ATK*0.8 + INT*1.2 + 100)`, so numerator and
+    denominator both grow linearly and cancel. Measured single-target, a Mage's
+    Magma Burn does 974 damage at level 100 and 1019 at 220; a Champion's
+    Champion Hit goes 1160 -> 1816. Verify against real Mage play before acting:
+    the measurement is single-target and ignores both AoE (Magma Burn 620 radius,
+    Tornado 1400, Zuly Storm 1570) and the caster's much larger MP pool.
+  * The undocumented CON tax described above -- a design question, not a defect.
+
+Method note, learned the hard way here: this harness is reliable for "how does
+this formula behave" and unreliable for "is this class fine". Its stat allocator
+does not play like a person, and a per-monster auto-attack metric misrepresents
+a caster. Treat its class-level verdicts as hypotheses to check against play.
