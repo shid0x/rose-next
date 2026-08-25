@@ -1,8 +1,11 @@
 # Endgame balance: where the drift actually comes from
 
-Status: analysis only, nothing changed. Every number below is reproducible with
-`python scripts/balance-sim.py` (see that file's docstring for the player/monster
-model and its known biases). Written 2026-08-24.
+Status: analysis written 2026-08-24. Step 1 of the plan below (flat -> percentage
+buffs and passives, plus the server-side prerequisite fix) was implemented on
+2026-08-25 -- see "What was actually done" at the end. Steps 2-5 are open.
+
+Every number below is reproducible with `python scripts/balance-sim.py` (see that
+file's docstring for the player/monster model and its known biases).
 
 ## The question
 
@@ -294,3 +297,58 @@ Deliberately not recommended:
   unaffected by that assumption, the absolute seconds are.
 - Only the PVM branches are ported. PvP has its own formulas and its own damage
   caps (25-45% of the defender's max HP) and was not analysed.
+
+## What was actually done (2026-08-25)
+
+Step 1 only. Two parts.
+
+**A prerequisite bug fix, in `src/`.** `CCal::Get_SkillAdjustVALUE` took the
+percentage term off the target's *current* stat, which already includes the
+running buff, while `StatusEffects::IsEnableApplay` rejects a recast only when it
+is weaker. A percentage buff therefore compounded on every recast and settled at
+`rate/(1-rate)` instead of `rate`: a declared +30% delivered +43%, +50%
+delivered +100%, and anything at or above 100% grew until the `(short)` cast
+overflowed. This was live for the handful of rate-based rows the data already
+had (Fire Ring, Freezing, Mild and the event buffs) and would have applied to
+every converted row.
+
+The fix adds `Get_BaseAbilityValue` -- server `CObjCHAR`/`CObjAVT`, client
+`CObjCHAR`/`CObjUSER` -- returning the pre-buff value for ATK, HIT, DEF, RES,
+AVOID, CRIT, SPEED, ATK_SPD, MAX_HP and MAX_MP, and falling through to the
+existing accessor otherwise. It also removes a client/server disagreement: the
+client already used unbuffed `stats.attack_power` / `stats.hit_rate` while the
+server used the buffed `total_attack_power()` / `total_hit_rate()`, so the two
+sides disagreed on a percentage's magnitude whenever a buff was already running.
+
+Note this adds virtual functions to `CObjCHAR`, the base of every character
+object on both sides. That is a vtable-layout change in a widely-included header,
+so it needs a **clean rebuild** of `client` and `sho_gameserver`, not an
+incremental one -- see the "class-layout change" note in the build guidance.
+Passives never had the bug: their rate is applied to a base that each `Cal_*`
+recomputes from scratch, and `InitPassiveSkill` rebuilds from zero on load.
+
+**The data conversion**, via `scripts/convert-buffs-to-percent.py` (idempotent,
+sidecar, `--dry-run` / `--verify` / `--restore`). 460 cells across 410 rows,
+anchored so each percentage reproduces what the flat value was worth at level
+100, with a 1.25x boost on self-reachable effects (all passives, plus self buffs
+with no area of effect) and no boost on party-facing ones. The script's docstring
+carries the full reasoning and the list of what was deliberately left flat --
+heals (AT_HP resolves to *current* HP), HIT (the accuracy cliff means a
+percentage is a nerf to the builds that need it most), movement speed, base-stat
+passives, harmful states, and single-rank GM/event rows.
+
+Measured outcome, solo, own passives and self-buffs only, swings per kill:
+
+| | lv 60 | lv 100 | lv 160 | lv 200 | lv 220 |
+|---|---:|---:|---:|---:|---:|
+| Champion, flat (before) | 9 | 21 | 36 | 65 | 85 |
+| Champion, converted | 12 | 18 | 21 | 30 | 37 |
+
+Roughly neutral at the anchor, slightly weaker below it, and about 2.2-2.4x
+shorter fights at 200+. It compresses the level 60 -> 220 ratio from 9.4x to
+about 3.1x. It is worth roughly 2x of the ~5x that would fully flatten the curve,
+which is why step 2 (monster HP) still matters.
+
+Untouched by this and still true: the Raider sits at a 7% land rate from level
+140 onward and needs ~660 swings per kill at 220 even fully converted. No damage
+or defence change reaches that; it is the accuracy cliff, step 4.

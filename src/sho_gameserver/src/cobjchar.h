@@ -227,6 +227,11 @@ public:
     virtual int Get_GiveEXP() = 0;
     virtual void Add_EXP(int iExp, bool bApplyStamina = true) { ; /* nop */ }
     virtual int Get_AbilityValue(WORD wType) = 0;
+    /// Value of a stat *before* duration buffs are folded in. Only percentage
+    /// skill effects want this -- taking a percentage of the already-buffed stat
+    /// makes the buff compound with itself on every recast. Defaults to the
+    /// current value for object types that carry no buffs worth distinguishing.
+    virtual int Get_BaseAbilityValue(WORD wType) { return Get_AbilityValue(wType); }
 
     virtual int Get_EXP() { return 0; }
     virtual int Get_JOB() { return 0; }

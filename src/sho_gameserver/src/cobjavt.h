@@ -164,6 +164,8 @@ public:
 
     int Get_GiveEXP() { return 1; }
     int Get_AbilityValue(WORD wType);
+    /// Pre-buff value of a stat; see the definition for why percentages need it.
+    int Get_BaseAbilityValue(WORD wType) override;
 
     int Get_HP() { return GetCur_HP(); } // 생명력
     int Get_MP() { return GetCur_MP(); }

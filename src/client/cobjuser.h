@@ -139,6 +139,36 @@ public:
     /// 지속형의 변경수치 적용을 위해서 현재 적용되어있는 능력수치( 패시브 스킬 포함 )
     /*override*/ int Get_DefaultAbilityValue(int iType) { return GetCur_AbilityValue(iType); }
 
+    /// Pre-buff stat values, mirroring CObjAVT::Get_BaseAbilityValue on the
+    /// server. GetCur_* folds in m_EndurancePack for DEF/RES/AVOID/CRIT/MaxHP,
+    /// which is right for display but wrong as the base of a percentage.
+    /*override*/ int Get_BaseAbilityValue(int iType) {
+        switch (iType) {
+            case AT_ATK:
+                return this->stats.attack_power;
+            case AT_HIT:
+                return this->stats.hit_rate;
+            case AT_DEF:
+                return GetDef_DEF();
+            case AT_RES:
+                return GetDef_RES();
+            case AT_AVOID:
+                return GetDef_AVOID();
+            case AT_CRITICAL:
+                return GetDef_CRITICAL();
+            case AT_SPEED:
+                return this->stats.move_speed;
+            case AT_ATK_SPD:
+                return this->stats.attack_speed;
+            case AT_MAX_HP:
+                return GetDef_MaxHP();
+            case AT_MAX_MP:
+                return GetDef_MaxMP();
+            default:
+                return GetCur_AbilityValue(iType);
+        }
+    }
+
     /*override*/ int Proc(void);
 
     /// <

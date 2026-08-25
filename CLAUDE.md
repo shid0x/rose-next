@@ -236,6 +236,51 @@ When creating items from explicit type/id pairs, use the type/id initializer ins
 
 Use-item class `322` is a package box: the value in `LIST_USEITEM.STB` `ADD_DATA_VALUE` selects a server-side reward package. Unknown package IDs should fail without consuming the box so missing package mappings are visible and recoverable.
 
+### Buffs And Passives Are Percentage-Based
+
+`LIST_SKILL.STB` carries every ability effect in two columns: a **flat** value
+(`SKILL_INCREASE_ABILITY_VALUE`, game col 22/25) and a **percentage**
+(`SKILL_CHANGE_ABILITY_RATE`, col 23/26). Our buffs and passives now use the
+percentage column — flat values were sized for a level-100 cap and decayed to
+irrelevance by level 240 (Power Support's +70 ATK is 19% of a level-100
+character and 7% of a level-240 one). Converted by
+`scripts/convert-buffs-to-percent.py` (idempotent, sidecar,
+`--dry-run`/`--verify`/`--restore`); its docstring is the record of what changed
+and what was deliberately left flat.
+
+Things that will bite:
+
+- **A percentage must be taken off the *pre-buff* stat.** `Get_SkillAdjustVALUE`
+  calls `Get_BaseAbilityValue`, not `Get_AbilityValue`/`Get_DefaultAbilityValue`.
+  The current-value accessors already include the running buff, and
+  `StatusEffects::IsEnableApplay` rejects a recast only when it is *weaker*, so a
+  percentage off the current value compounds on every recast and settles at
+  `rate/(1-rate)` — a declared +30% delivered +43%, +50% delivered +100%, and
+  >=100% grew until the `(short)` cast overflowed. Keep the server
+  (`CObjAVT::Get_BaseAbilityValue`) and client (`CObjUSER::Get_BaseAbilityValue`)
+  lists in sync or the two sides disagree on a buff's magnitude.
+- **The two columns follow opposite rules.** Passives are either/or
+  (`InitPassiveSkill` / `Skill_LEARN` do `if (RATE) … else FLAT`, so a non-zero
+  rate makes the flat value dead data); buffs are additive
+  (`Get_SkillAdjustVALUE` sums both terms, so a leftover flat applies *as well*).
+  Always zero the flat column when writing a rate.
+- **Heals must stay flat.** `Get_SkillAdjustVALUE` resolves `AT_HP`/`AT_MP` to
+  *current* HP/MP, so a percentage heal scales with what you have left — useless
+  exactly when you need it. `AT_MAX_HP` is the one that means max HP.
+- **HIT is deliberately still flat.** Accuracy is a cliff (see the level-gate
+  section below), and a percentage hands *less* HIT to the low-CON builds already
+  pinned at the 7% floor.
+- Passives are re-derived from the table on load (`InitPassiveSkill` rebuilds
+  from zero), so a data change needs only a server restart, no migration.
+- `Get_BaseAbilityValue` is **virtual on `CObjCHAR`**, the base of every character
+  object on both sides. Touching it is a vtable-layout change in a widely
+  included header — clean-rebuild `client` and `sho_gameserver`, never
+  incremental (see the class-layout warning under Common Pitfalls).
+
+Full measurements and the rest of the balance plan are in
+[doc/balance-analysis.md](doc/balance-analysis.md); `scripts/balance-sim.py`
+re-derives every number in it against the live STBs.
+
 ### Monster Balance And The Level Gate
 
 Combat math lives in `src/common/calculation.cpp` (server-only, behind `#ifdef __SERVER`). Two properties dominate how hard content feels, and neither is obvious from the numbers in `LIST_NPC.STB`:

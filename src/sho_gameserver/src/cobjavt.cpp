@@ -407,6 +407,49 @@ CObjAVT::SubCur_FUEL(short nValue) {
     }
 }
 
+//-------------------------------------------------------------------------------------------------
+/// Unbuffed value of a stat, for percentage-based skill effects.
+///
+/// Get_AbilityValue returns the *current* stat, which already includes whatever
+/// duration buff is running (total_attack_power() adds m_IngSTATUS.Adj_APOWER(),
+/// Get_DEF() adds Adj_DPOWER(), and so on). Feeding that back into
+/// CCal::Get_SkillAdjustVALUE's percentage term makes a buff compound with
+/// itself: IsEnableApplay only rejects a recast that is *weaker*, so re-casting
+/// a percentage buff keeps growing it until it settles at rate/(1-rate) --
+/// a declared +30% delivers +43%, +50% delivers +100%, and >=100% runs away
+/// until the (short) cast in Get_SkillAdjustVALUE overflows.
+///
+/// Percentages therefore have to be taken off the pre-buff stat. The client
+/// mirrors this in CObjUSER::Get_BaseAbilityValue; keep the two in sync, or the
+/// magnitude the client displays drifts from the one the server applies.
+int
+CObjAVT::Get_BaseAbilityValue(WORD wType) {
+    switch (wType) {
+        case AT_ATK:
+            return this->stats.attack_power;
+        case AT_HIT:
+            return this->stats.hit_rate;
+        case AT_DEF:
+            return this->GetOri_DEF();
+        case AT_RES:
+            return this->GetOri_RES();
+        case AT_AVOID:
+            return this->GetOri_AVOID();
+        case AT_CRITICAL:
+            return this->GetOri_CRITICAL();
+        case AT_SPEED:
+            return this->stats.move_speed;
+        case AT_ATK_SPD:
+            return this->stats.attack_speed;
+        case AT_MAX_HP:
+            return this->GetOri_MaxHP();
+        case AT_MAX_MP:
+            return this->GetOri_MaxMP();
+        default:
+            return this->Get_AbilityValue(wType);
+    }
+}
+
 int
 CObjAVT::Get_AbilityValue(WORD wType) {
     switch (wType) {

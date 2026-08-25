@@ -674,6 +674,13 @@ public:
     /// 지속형의 변경수치 적용을 위해서 현재 적용되어있는 능력수치( 패시브 스킬 포함 )
     virtual int Get_DefaultAbilityValue(int iType) { return 1; };
 
+    /// Value of a stat *before* duration buffs are folded in. Percentage skill
+    /// effects must use this: taking a percentage of the already-buffed stat
+    /// makes a buff compound with itself on every recast. Mirrors the server's
+    /// CObjAVT::Get_BaseAbilityValue -- keep the two in sync or the magnitude
+    /// shown here drifts from the one the server actually applies.
+    virtual int Get_BaseAbilityValue(int iType) { return Get_DefaultAbilityValue(iType); }
+
     ///
     /// 루프를 돌리는 상태의 경우라도 이 플래그의 상태에따라 모션 리셋( STOP, MOVE... )
     ///

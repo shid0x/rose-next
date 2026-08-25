@@ -773,15 +773,21 @@ int
 CCal::Get_SkillAdjustVALUE(CObjCHAR* pCHAR, short nSkillIDX, short nCol, int iSpellerINT) {
     int iAbilityValue;
 
-#ifndef __SERVER
+    // The percentage term must be taken off the target's *pre-buff* stat.
+    // Get_AbilityValue / Get_DefaultAbilityValue return the current value, which
+    // already includes the running buff, and StatusEffects::IsEnableApplay only
+    // rejects a recast that is weaker -- so a percentage taken off the current
+    // value compounds on every recast and settles at rate/(1-rate) instead of
+    // rate. A declared +30% delivered +43%, +50% delivered +100%, and anything
+    // at or above 100% grew until the (short) cast below overflowed.
+    //
     // Heal results are broadcast to nearby clients, so pCHAR can be any character
-    // type (remote players are CObjAVT, not CObjUSER). Get_DefaultAbilityValue is
-    // virtual on CObjCHAR; the CObjUSER override forwards to GetCur_AbilityValue.
-    iAbilityValue = pCHAR->Get_DefaultAbilityValue(SKILL_INCREASE_ABILITY(nSkillIDX, nCol));
-#else
-    iAbilityValue = pCHAR->Get_AbilityValue(SKILL_INCREASE_ABILITY(nSkillIDX, nCol));
-#endif
+    // type (remote players are CObjAVT, not CObjUSER). Get_BaseAbilityValue is
+    // virtual on CObjCHAR and falls back to the current value for types that
+    // carry no buffs worth distinguishing.
+    iAbilityValue = pCHAR->Get_BaseAbilityValue(SKILL_INCREASE_ABILITY(nSkillIDX, nCol));
 
+    // The flat term is independent of the target's stats, so it is unaffected.
     return (short)(iAbilityValue * SKILL_CHANGE_ABILITY_RATE(nSkillIDX, nCol) / 100.f
         + SKILL_INCREASE_ABILITY_VALUE(nSkillIDX, nCol) * (iSpellerINT + 300) / 315.f);
 }
