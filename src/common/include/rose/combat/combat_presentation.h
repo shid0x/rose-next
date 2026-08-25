@@ -168,6 +168,21 @@ public:
         return false;
     }
 
+    // Is this exact event still queued? Used by the attacker side to tell "my
+    // confirmed swing has not been presented yet" from "the pending-swing id is
+    // stale because the hit frame already consumed it".
+    bool has_event(uint32_t event_id) const {
+        if (event_id == 0) {
+            return false;
+        }
+        for (const auto& event: m_events) {
+            if (event.event_id == event_id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool has_pending_damage() const {
         for (const auto& event: m_events) {
             if (event.damage_value > 0 || event.lethal) {

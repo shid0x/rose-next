@@ -207,6 +207,7 @@ CObjCHAR::StartConfirmedCombatSwing(int iServerTarget,
         m_bPendingCombatSwingProjectile =
             event.presentation_kind == Rose::Combat::DamagePresentationKind::ProjectileImpact;
         m_bPendingCombatSwingProjectileSpawned = false;
+        m_dwPendingCombatSwingTime = g_GameDATA.GetGameTime();
     } else {
         ClearPendingCombatSwingPresentation();
     }
@@ -240,6 +241,50 @@ CObjCHAR::MarkPendingCombatSwingProjectileSpawned() {
     m_bPendingCombatSwingProjectileSpawned = true;
 }
 
+bool
+CObjCHAR::HasUnconsumedConfirmedSwing() {
+    if (m_dwPendingCombatSwingEventId == 0 || m_iPendingCombatSwingDefenderIndex == 0) {
+        return false;
+    }
+
+    // A projectile swing's timing belongs to the bullet, not to the attack motion,
+    // so interrupting the motion costs it nothing.
+    if (m_bPendingCombatSwingProjectile) {
+        return false;
+    }
+
+    // The attack motion is the presentation vehicle. Once it is gone there is no
+    // hit frame left to protect -- the orphan sweep in Proc() resolves that case.
+    if (!(this->Get_STATE() & CS_BIT_ATTACK)) {
+        return false;
+    }
+
+    // The pending id is only cleared through ClearPendingCombatSwingPresentation,
+    // so confirm against the defender's queue rather than trusting it alone.
+    CObjCHAR* pDefender = g_pObjMGR->Get_CharOBJ(m_iPendingCombatSwingDefenderIndex, false);
+    return pDefender && pDefender->HasQueuedCombatDamageEvent(m_dwPendingCombatSwingEventId);
+}
+
+void
+CObjCHAR::ResolveOwedHitReaction() {
+    if (!m_bOwedHitReaction) {
+        return;
+    }
+
+    m_bOwedHitReaction = false;
+
+    // Same gates as the original flinch site: a corpse does not react, a mounted
+    // rider's motion is driven by its cart, and CS_BIT_INT2 states (casting, skill
+    // action) suppress the hit motion outright.
+    if (this->Get_HP() <= DEAD_HP || this->GetPetMode() > 0
+        || (this->Get_STATE() & CS_BIT_INT2)) {
+        return;
+    }
+
+    this->Set_MOTION(this->GetANI_Hit());
+    this->Set_STATE(CS_HIT);
+}
+
 void
 CObjCHAR::ClearPendingCombatSwingPresentation(uint32_t eventId) {
     if (eventId != 0 && m_dwPendingCombatSwingEventId != eventId) {
@@ -250,6 +295,11 @@ CObjCHAR::ClearPendingCombatSwingPresentation(uint32_t eventId) {
     m_iPendingCombatSwingDefenderIndex = 0;
     m_bPendingCombatSwingProjectile = false;
     m_bPendingCombatSwingProjectileSpawned = false;
+    m_dwPendingCombatSwingTime = 0;
+
+    // The swing is settled (presented at its hit frame, or discarded). Anything
+    // that was waiting on it can run now -- including a flinch we held back.
+    ResolveOwedHitReaction();
 }
 
 void
@@ -362,6 +412,8 @@ CObjCHAR::CObjCHAR(): m_EndurancePack(this), m_ChangeActionMode(this), m_ObjVibr
     m_iPendingCombatSwingDefenderIndex = 0;
     m_bPendingCombatSwingProjectile = false;
     m_bPendingCombatSwingProjectileSpawned = false;
+    m_dwPendingCombatSwingTime = 0;
+    m_bOwedHitReaction = false;
     m_iPendingMountedAttackTarget = 0;
     m_dwPendingMountedAttackTime = 0;
 
@@ -1498,6 +1550,13 @@ CObjCHAR::Dead() {
         g_pAVATAR->DrainQueuedCombatDamageFromAttacker(this);
     }
 
+    // A corpse owes nothing: drop the swing bookkeeping so the orphan sweep in
+    // Proc() does not chase an event the drain above already took, and clear the
+    // owed flinch *before* clearing the swing -- ClearPendingCombatSwingPresentation
+    // would otherwise try to play it, and HP is still above DEAD_HP right here.
+    m_bOwedHitReaction = false;
+    ClearPendingCombatSwingPresentation();
+
     //----------------------------------------------------------------------------------------------------
     /// 아바타가 죽을경우
     //----------------------------------------------------------------------------------------------------
@@ -2370,8 +2429,29 @@ CObjCHAR::ApplyPresentedCombatFeedback(CObjCHAR* pAtkOBJ,
 
     if (pAtkOBJ && (Damage.m_wDamage & DMG_BIT_HITTED)) {
         if (this->GetPetMode() <= 0 && !(this->Get_STATE() & CS_BIT_INT2)) {
-            this->Set_MOTION(this->GetANI_Hit());
-            this->Set_STATE(CS_HIT);
+            // Do not cancel an attack motion that still owes a hit frame. The server
+            // applies a swing's damage at frame 0 of that motion (Start_ATTACK ->
+            // Attack_START) and has already sent it; the motion is only the client's
+            // vehicle for *presenting* it. Replacing it here orphaned the queued
+            // event, which left the defender's HP bar a full swing behind, kept
+            // has_pending_damage() latched true (gating off both reconciliation
+            // paths), and eventually dumped the backlog into an unrelated hit.
+            //
+            // The flinch is owed, not dropped: ClearPendingCombatSwingPresentation
+            // plays it as soon as the swing resolves, so the stagger still reads,
+            // just after the blow it was already committed to lands.
+            if (HasUnconsumedConfirmedSwing()) {
+                m_bOwedHitReaction = true;
+                LogString(LOG_DEBUG_,
+                    "CombatTrace hit reaction deferred behind confirmed swing: target %d attacker %d event %u defender %d\n",
+                    this->Get_INDEX(),
+                    pAtkOBJ->Get_INDEX(),
+                    m_dwPendingCombatSwingEventId,
+                    m_iPendingCombatSwingDefenderIndex);
+            } else {
+                this->Set_MOTION(this->GetANI_Hit());
+                this->Set_STATE(CS_HIT);
+            }
         }
     }
 }
@@ -2799,6 +2879,9 @@ CObjCHAR::ClearAllDamage() {
     m_CombatDamageQueue.clear();
     m_iPendingCombatHPCorrection = 0;
     ClearPendingAuthoritativeDeath();
+    // Death / revive resets combat presentation wholesale; a flinch deferred behind
+    // a swing that no longer exists must not survive into the next life.
+    m_bOwedHitReaction = false;
 }
 
 //--------------------------------------------------------------------------------
@@ -3679,6 +3762,31 @@ CObjCHAR::Proc(void) {
         && (dwCurrentTime - m_dwPendingAuthoritativeDeathTime)
             >= kPendingAuthoritativeDeathTimeoutMs) {
         PresentPendingAuthoritativeDeath(NULL, "pending death timeout");
+    }
+
+    // Orphan sweep. A confirmed swing is presented at the attacker's hit frame, so
+    // if the attack motion is destroyed before it gets there (stop / move / target
+    // change / death, or a flinch that slipped past the deferral above) nothing
+    // will ever consume the event the server already applied. A lingering entry
+    // keeps has_pending_damage() true, which gates off BOTH reconciliation paths,
+    // so the defender's bar silently drifts behind until something else folds it in.
+    // Resolve it through the same path sleep/faint uses.
+    //
+    // The grace window matters: StartConfirmedCombatSwing queues the event and then
+    // calls SetCMD_ATTACK, which pushes onto m_CommandQueue instead of applying when
+    // CanApplyCommand() is false (the attacker is casting). During that window the
+    // attack motion legitimately does not exist yet, and cancelling would throw away
+    // a swing that is about to be presented normally.
+    // (m_dwPendingCombatSwingTime is stamped whenever the event id is set, so the
+    // id being non-zero is the only liveness check needed -- do not also test the
+    // stamp against 0, which is a legitimate tick value.)
+    static const DWORD kOrphanedSwingGraceMs = 1000;
+    if (m_dwPendingCombatSwingEventId != 0
+        && !(m_bPendingCombatSwingProjectile && m_bPendingCombatSwingProjectileSpawned)
+        && !(this->Get_STATE() & CS_BIT_ATTACK)
+        && this->Get_COMMAND() != CMD_ATTACK
+        && (dwCurrentTime - m_dwPendingCombatSwingTime) >= kOrphanedSwingGraceMs) {
+        CancelInterruptedCombatSwingPresentation("swing motion cancelled");
     }
 
     // Slow attack motions (cart / castle gear weapons, low attack speed) put the

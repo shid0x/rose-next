@@ -550,6 +550,118 @@ struct ProjectileSkillHarness {
         payloads.clear();
     }
 };
+
+// Mirrors the attacker-side swing bookkeeping in CObjCHAR and the two rules that
+// keep a confirmed swing's presentation attached to its own hit frame:
+//   A -- a hit reaction must not cancel an attack motion that still owes a hit
+//        frame (the server applied that damage at frame 0 and already sent it);
+//        the flinch is deferred, not dropped.
+//   B -- a swing whose motion is gone anyway must be resolved, never left to
+//        orphan in the defender's queue where it latches has_pending_damage().
+struct FlinchHarness {
+    static const uint32_t kAttacker = 7;
+    static const uint32_t kGraceMs = 1000;
+
+    CombatPresentationQueue defender_queue;
+    int defender_visible_hp = 100;
+    int digits = 0;
+    int flinches = 0;
+
+    uint32_t pending_event = 0;
+    bool pending_projectile = false;
+    bool projectile_spawned = false;
+    uint32_t pending_time = 0;
+    bool owed_flinch = false;
+
+    bool in_attack_state = false;   // CS_BIT_ATTACK
+    bool in_attack_command = false; // CMD_ATTACK
+
+    void start_confirmed_swing(uint32_t id, int damage, uint32_t now_ms,
+        bool projectile = false) {
+        DamageEvent e = event(id, kAttacker, damage, defender_visible_hp - damage);
+        e.presentation_kind = projectile ? DamagePresentationKind::ProjectileImpact
+                                         : DamagePresentationKind::MeleeHitFrame;
+        defender_queue.push(e);
+        pending_event = id;
+        pending_projectile = projectile;
+        projectile_spawned = false;
+        pending_time = now_ms;
+        in_attack_state = true;
+        in_attack_command = true;
+    }
+
+    bool has_unconsumed_confirmed_swing() const {
+        if (pending_event == 0 || pending_projectile || !in_attack_state) {
+            return false;
+        }
+        return defender_queue.has_event(pending_event);
+    }
+
+    void resolve_owed_flinch() {
+        if (!owed_flinch) {
+            return;
+        }
+        owed_flinch = false;
+        ++flinches;
+        in_attack_state = false; // CS_HIT does not carry CS_BIT_ATTACK
+    }
+
+    void clear_pending_swing() {
+        pending_event = 0;
+        pending_projectile = false;
+        projectile_spawned = false;
+        pending_time = 0;
+        resolve_owed_flinch();
+    }
+
+    // The attacker is damaged while mid-swing.
+    void take_hit_reaction() {
+        if (has_unconsumed_confirmed_swing()) {
+            owed_flinch = true;
+            return;
+        }
+        ++flinches;
+        in_attack_state = false;
+    }
+
+    // The attacker's attack motion reaches its hit frame.
+    PresentationResult hit_frame() {
+        DamageEvent out;
+        if (!defender_queue.pop_for_attacker(kAttacker, out)) {
+            return PresentationResult::NoEvent;
+        }
+        clear_pending_swing();
+        defender_visible_hp -= out.damage_value;
+        ++digits;
+        return CombatPresentationQueue::result_for(out);
+    }
+
+    // Anything that destroys the attack motion without reaching a hit frame.
+    void cancel_attack_motion() {
+        in_attack_state = false;
+        in_attack_command = false;
+    }
+
+    // CObjCHAR::Proc orphan sweep.
+    void proc(uint32_t now_ms) {
+        if (pending_event == 0) {
+            return;
+        }
+        if (pending_projectile && projectile_spawned) {
+            return;
+        }
+        if (in_attack_state || in_attack_command) {
+            return;
+        }
+        if ((now_ms - pending_time) < kGraceMs) {
+            return;
+        }
+        const uint32_t id = pending_event;
+        clear_pending_swing();
+        DamageEvent discarded;
+        defender_queue.discard_event(id, &discarded);
+    }
+};
 }
 
 int
@@ -1514,6 +1626,68 @@ main() {
         queue.push(deadHpOnly);
         expect(queue.has_lethal_pending(kDeadHP),
             "hp_after at or below dead HP counts even without the lethal flag");
+    }
+
+    {
+        // A -- the flinch waits for the swing it interrupted.
+        FlinchHarness h;
+        h.start_confirmed_swing(1, 30, 0);
+        h.take_hit_reaction();
+        expect(h.flinches == 0, "a hit reaction must not cancel a swing that still owes a hit frame");
+        expect(h.owed_flinch, "the flinch is deferred, not dropped");
+        expect(h.in_attack_state, "the attack motion survives so its hit frame can still fire");
+
+        expect(h.hit_frame() == PresentationResult::PresentedDamage,
+            "the confirmed swing still presents at its own hit frame");
+        expect(h.defender_visible_hp == 70, "and the defender's bar moves with that digit");
+        expect(h.digits == 1, "exactly one digit for one swing");
+        expect(h.flinches == 1, "the deferred flinch plays once the swing resolves");
+        expect(!h.owed_flinch, "and is not owed twice");
+        expect(h.defender_queue.size() == 0, "nothing orphans behind");
+    }
+
+    {
+        // A -- with no swing in flight the flinch is immediate, as before.
+        FlinchHarness h;
+        h.in_attack_state = true;
+        h.take_hit_reaction();
+        expect(h.flinches == 1, "a hit reaction with no confirmed swing pending still flinches now");
+        expect(!h.in_attack_state, "and it does cancel the attack motion");
+    }
+
+    {
+        // A -- a projectile swing is owned by the bullet, so the motion is free.
+        FlinchHarness h;
+        h.start_confirmed_swing(1, 30, 0, /*projectile=*/true);
+        h.take_hit_reaction();
+        expect(h.flinches == 1, "a projectile swing does not hold the flinch back");
+        expect(h.defender_queue.has_event(1), "its damage stays queued for the bullet impact");
+    }
+
+    {
+        // B -- a swing whose motion is destroyed is resolved, not orphaned.
+        FlinchHarness h;
+        h.start_confirmed_swing(1, 30, 0);
+        h.cancel_attack_motion();
+
+        h.proc(500);
+        expect(h.defender_queue.has_event(1),
+            "inside the grace window the swing is left alone -- SetCMD_ATTACK may still be queued");
+
+        h.proc(1000);
+        expect(!h.defender_queue.has_event(1), "past the grace window the orphan is resolved");
+        expect(h.pending_event == 0, "and the attacker stops tracking it");
+        expect(h.digits == 0, "resolving an orphan is silent -- no digit is invented");
+    }
+
+    {
+        // B -- a swing still waiting on a deferred SetCMD_ATTACK is not swept.
+        FlinchHarness h;
+        h.start_confirmed_swing(1, 30, 0);
+        h.in_attack_state = false; // command queued while casting; motion not started yet
+        h.proc(5000);
+        expect(h.defender_queue.has_event(1),
+            "an attacker still holding CMD_ATTACK keeps its swing, however long the wait");
     }
 
     std::cout << "combat_presenter_tests passed\n";

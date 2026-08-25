@@ -311,8 +311,16 @@ public:
         return eventId != 0 && m_dwPendingCombatSwingEventId == eventId;
     }
     bool IsPresentedDead() const;
+    /// Does this attacker still owe a hit frame for a confirmed melee swing the
+    /// server already applied? True from the moment the swing is queued until the
+    /// defender presents (or discards) that exact event. Projectile swings are
+    /// excluded -- the bullet owns their timing, not the attack motion.
+    bool HasUnconsumedConfirmedSwing();
     void ClearPendingCombatSwingPresentation(uint32_t eventId = 0);
     void CancelInterruptedCombatSwingPresentation(const char* reason);
+    /// Play a hit reaction that was deferred so an in-flight confirmed swing could
+    /// reach its hit frame first. No-op when nothing is owed.
+    void ResolveOwedHitReaction();
     /*override*/ bool Attack_START(CObjCHAR* pTarget);
     /*override*/ bool Skill_START(CObjCHAR* pTarget);
     /*override*/ bool Casting_START(CObjCHAR* pTarget);
@@ -496,6 +504,9 @@ private:
     Rose::Combat::CombatPresentationQueue m_CombatDamageQueue;
 
 public:
+    bool HasQueuedCombatDamageEvent(uint32_t eventId) const {
+        return m_CombatDamageQueue.has_event(eventId);
+    }
     void PushCombatDamageEvent(const Rose::Combat::DamageEvent& event);
     Rose::Combat::PresentationResult PopCombatDamageEvent(int iAttacker, Rose::Combat::DamageEvent& event);
     Rose::Combat::PresentationResult PresentImmediateCombatDamage(CObjCHAR* pAtkOBJ);
@@ -845,6 +856,14 @@ protected:
     int m_iPendingCombatSwingDefenderIndex;
     bool m_bPendingCombatSwingProjectile;
     bool m_bPendingCombatSwingProjectileSpawned;
+    /// Tick when the confirmed swing was recorded. SetCMD_ATTACK can defer the
+    /// attack command into m_CommandQueue (CanApplyCommand() is false while the
+    /// attacker is casting), so the attack motion does not necessarily exist yet
+    /// -- the orphan sweep in Proc() waits out this grace before cancelling.
+    DWORD m_dwPendingCombatSwingTime;
+    /// A hit reaction was suppressed so an in-flight confirmed swing could reach
+    /// its hit frame; play it once that swing resolves.
+    bool m_bOwedHitReaction;
     int m_AruaAddMoveSpeed; /// 아루아 여신상태 일경우 증가되는 이동속도
     int m_iPendingMountedAttackTarget; /// Pending mounted attack target while command propagation catches up
     DWORD m_dwPendingMountedAttackTime; /// Timestamp of pending mounted attack
