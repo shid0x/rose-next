@@ -316,6 +316,10 @@ public:
     /// defender presents (or discards) that exact event. Projectile swings are
     /// excluded -- the bullet owns their timing, not the attack motion.
     bool HasUnconsumedConfirmedSwing();
+    /// The object that actually plays a confirmed swing's attack motion. Mounted
+    /// combat splits one swing across two objects, so anything asking "is the
+    /// attack motion still alive?" must ask this instead of the tracker.
+    CObjCHAR* GetCombatSwingMotionOBJ();
     void ClearPendingCombatSwingPresentation(uint32_t eventId = 0);
     void CancelInterruptedCombatSwingPresentation(const char* reason);
     /// Play a hit reaction that was deferred so an in-flight confirmed swing could

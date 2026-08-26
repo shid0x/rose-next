@@ -261,7 +261,9 @@ CObjCHAR::HasUnconsumedConfirmedSwing() {
 
     // The attack motion is the presentation vehicle. Once it is gone there is no
     // hit frame left to protect -- the orphan sweep in Proc() resolves that case.
-    if (!(this->Get_STATE() & CS_BIT_ATTACK)) {
+    // Mounted swings are tracked here but played by the mount, so read the motion
+    // state off the object that owns it (see GetCombatSwingMotionOBJ).
+    if (!(this->GetCombatSwingMotionOBJ()->Get_STATE() & CS_BIT_ATTACK)) {
         return false;
     }
 
@@ -294,8 +296,40 @@ CObjCHAR::ResolveOwedHitReaction() {
     this->Set_STATE(CS_HIT);
 }
 
+// Mounted combat splits a single confirmed swing across two client objects.
+// canonical_client_attacker_index() keys the queued damage event to the cart /
+// castle gear, because that is what plays the attack motion and runs the hit
+// frame; StartConfirmedCombatSwing records the pending swing on the *rider*,
+// because that is the object recv_combat_swing resolves the attacker to. The
+// rider's own SetCMD_ATTACK returns early into SetCMD_PET_ATTACK, so while
+// mounted it never enters CMD_ATTACK and never carries CS_BIT_ATTACK -- reading
+// the rider's motion state to decide whether a swing is still live always says
+// "dead". Ask the mount instead.
+CObjCHAR*
+CObjCHAR::GetCombatSwingMotionOBJ() {
+    if (this->GetPetMode() >= 0 && this->IsUSER() && m_pObjCART) {
+        return m_pObjCART;
+    }
+
+    return this;
+}
+
 void
 CObjCHAR::ClearPendingCombatSwingPresentation(uint32_t eventId) {
+    // The presentation paths (Hitted(), and the queue-keyed present/discard
+    // helpers) resolve the attacker from the event key, which for a mounted swing
+    // is the mount -- but the pending swing is tracked on the rider. Forward, or
+    // the rider's id stays set after its swing was consumed and the Proc() orphan
+    // sweep fires on an event that no longer exists. The eventId argument keeps
+    // this from clobbering a newer swing; a mount is never itself a tracker, so
+    // the recursion is one level deep.
+    if (this->IsPET()) {
+        CObjCHAR* pRider = ((CObjCART*)this)->GetParent();
+        if (pRider) {
+            pRider->ClearPendingCombatSwingPresentation(eventId);
+        }
+    }
+
     if (eventId != 0 && m_dwPendingCombatSwingEventId != eventId) {
         return;
     }
@@ -3773,13 +3807,22 @@ CObjCHAR::Proc(void) {
     // (m_dwPendingCombatSwingTime is stamped whenever the event id is set, so the
     // id being non-zero is the only liveness check needed -- do not also test the
     // stamp against 0, which is a legitimate tick value.)
+    //
+    // The motion state must be read off GetCombatSwingMotionOBJ(), not off `this`:
+    // a mounted rider tracks the swing but never plays it, so testing the rider
+    // cancelled *every* mounted swing at the grace boundary. Castle gear hit
+    // frames land at 0.70-1.17 s (51-frame motions, action points at frames
+    // 21-35), straddling the 1000 ms window -- which is why it presented as
+    // intermittent phantom swings rather than as no mounted damage at all.
     static const DWORD kOrphanedSwingGraceMs = 1000;
     if (m_dwPendingCombatSwingEventId != 0
         && !(m_bPendingCombatSwingProjectile && m_bPendingCombatSwingProjectileSpawned)
-        && !(this->Get_STATE() & CS_BIT_ATTACK)
-        && this->Get_COMMAND() != CMD_ATTACK
         && (dwCurrentTime - m_dwPendingCombatSwingTime) >= kOrphanedSwingGraceMs) {
-        CancelInterruptedCombatSwingPresentation("swing motion cancelled");
+        CObjCHAR* pSwingMotionOBJ = this->GetCombatSwingMotionOBJ();
+        if (!(pSwingMotionOBJ->Get_STATE() & CS_BIT_ATTACK)
+            && pSwingMotionOBJ->Get_COMMAND() != CMD_ATTACK) {
+            CancelInterruptedCombatSwingPresentation("swing motion cancelled");
+        }
     }
 
     // Slow attack motions (cart / castle gear weapons, low attack speed) put the

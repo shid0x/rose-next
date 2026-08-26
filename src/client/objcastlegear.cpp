@@ -17,8 +17,13 @@ CObjCastleGear::GetANI_Move() {
 }
 int
 CObjCastleGear::GetANI_Attack() {
-    return PAT_RELATIVE_MOTION_POS(m_nPartItemIDX[RIDE_PART_BODY]) + CASTLE_GEAR_ANI_ATTACK01
-        + RANDOM(3);
+    // The server only ever simulates PAT_ANI_ATTACK (= ATTACK01), so rolling the
+    // motion here desyncs the hit frame from the swing the server timed. All three
+    // castle-gear attack motions are 51 frames, but their action points sit at
+    // frames 21-35 -- up to 0.47 s of jitter with no server counterpart. On foot
+    // the same RANDOM(3) is invisible because its variants land within ~2 frames
+    // of each other; CObjCART::GetANI_Attack already has it disabled.
+    return PAT_RELATIVE_MOTION_POS(m_nPartItemIDX[RIDE_PART_BODY]) + CASTLE_GEAR_ANI_ATTACK01;
 }
 int
 CObjCastleGear::GetANI_Die() {
