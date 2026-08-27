@@ -852,8 +852,24 @@ CItem::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                 STR_RIDE_PART_VER,
                 PAT_ITEM_PART_VER(sItem.GetItemNO())));
 
-            /// AddItemDefaultBottomText( sItem, ToolTip );2004/7/30 - 현재 설명을 보이려고 할때
-            /// 에러남.
+            /// Description. The original call was commented out on 2004/7/30 with
+            /// "errors out when trying to show the description", and stayed out for
+            /// twenty years -- so a ride part was the one item type whose description
+            /// never rendered in any tooltip mode, however complete its STL entry was.
+            /// The crash it was working around is gone: GetItemDesc returned NULL on a
+            /// failed lookup back then, and AddWrappedString dereferenced it. Today
+            /// GetItemDesc returns m_strNull on failure and AddWrappedString returns
+            /// early on NULL *and* on "", so a part with no description adds no line
+            /// rather than an empty one.
+            ///
+            /// AddItemPatDesc, not AddItemDefaultBottomText: the latter also emits a
+            /// Weight row, which no ride-part tooltip has ever shown.
+            ///
+            /// Gated on bIsDetail to match every other item type -- this whole branch
+            /// previously ignored the flag, which is why holding RMB extended a weapon
+            /// tooltip but did nothing at all on a cart part.
+            if (bIsDetail)
+                AddItemPatDesc(sItem, ToolTip);
             break;
         }
         default:
