@@ -23,6 +23,38 @@ using namespace Rose::Common;
 
 // #define	__CS_TARGET_LIST
 
+// Offsets added to CObjAVT::m_nPatAniROW (= PAT_RELATIVE_MOTION_POS of the ride
+// body item) to index TYPE_MOTION.STB. **Only 0-2 correspond to anything in the
+// mounted motion tables** -- the rest of this enum describes a layout the data
+// does not have. Measured against the shipped STBs:
+//
+//   castle gear (base row 311)     cart (base row 281)
+//     +0 stop                        +0 stop
+//     +1 walk                        +1 move
+//     +2 attack01                    +2 attack01
+//     +3 attack02                    +3 car_stop_01   <-- not an attack
+//     +4 attack03                    +4 car_stop_01   <-- not an attack
+//     +5 (empty)                     +5.. (empty)
+//     +6 stop
+//     +7/+8 (empty)
+//
+// So PAT_ANI_DIE resolves to castlegear01_attack02.ZMO on a gear and to the idle
+// motion on a cart; there is no mounted death motion in the data at all (the
+// client's own CASTLE_GEAR_ANI_DIE = 5 lands on the empty row, and mounted death
+// is presented by destroying the cart, not by animating it). Renumbering this is
+// therefore not a fix -- there is no correct value.
+//
+// It is currently inert, and the reasons are worth knowing before "fixing" it:
+// SetCMD_DIE only stores the motion, CMD_DIE returns from Proc() whether or not
+// the interrupt guard fired first, and **the server never runs action frames** --
+// ProcMotionFrame just advances a counter, ActionEVENT has no callers, and damage
+// is applied at Attack_START (frame 0). The attack action points inside that
+// wrong death motion are dead data here. If anything ever starts timing off the
+// mounted death motion, revisit this.
+//
+// PAT_ANI_CASTING / PAT_ANI_SKILL are never used for mounts either: CObjAVT
+// deliberately routes GetANI_Casting/GetANI_Skill through SKILL_ANI_* instead
+// (carts do not cast; the rider plays the motion).
 enum enumRIDE_ANI {
     PAT_ANI_STOP1 = 0,
     PAT_ANI_MOVE,

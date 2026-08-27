@@ -379,6 +379,11 @@ CObjCART::GetANI_Move() {
 }
 int
 CObjCART::GetANI_Attack() {
+    // Do not re-enable the RANDOM(3). The cart's motion rows +3/+4 (CART_ANI_ATTACK02
+    // / _ATTACK03) hold car_stop_01.ZMO, not attacks -- rolling them would play the
+    // idle motion as a swing one time in three. The castle gear's +3/+4 *are* real
+    // attack motions, which is why the same roll survived there until it started
+    // desyncing hit frames; see CObjCastleGear::GetANI_Attack.
     return PAT_RELATIVE_MOTION_POS(m_nPartItemIDX[RIDE_PART_BODY])
         + CART_ANI_ATTACK01; /*+ RANDOM(3);*/
 }
