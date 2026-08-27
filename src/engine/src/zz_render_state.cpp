@@ -59,6 +59,13 @@ zz_render_state::zz_render_state(void) :
 	mipmap_filter(ZZ_TEXF_LINEAR),
 	min_filter(ZZ_TEXF_ANISOTROPIC),
 	mag_filter(ZZ_TEXF_LINEAR),
+	// Was the one member here with no initializer, so it held garbage until
+	// data/SCRIPTS/INIT.LUA's setMipmapLevel(3) ran. That happens at line 33,
+	// before the setDisplayQualityLevel() at line 45 that snapshots
+	// initial_state, so nothing reads the garbage today -- but that is a
+	// line-ordering guarantee inside a data file. 3 is what INIT.LUA sets,
+	// so this changes no behaviour; it only removes the dependency.
+	mipmap_level(3),
 	use_object_sorting(false),
 	use_polygon_sorting(true),
 	vertex_shader_version(0),
