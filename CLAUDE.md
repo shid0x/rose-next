@@ -102,8 +102,12 @@ scripts/                 # PowerShell build/dev scripts
 
 ## Code Conventions
 
-- C++ formatting: clang-format (run `python scripts/format_code.py`)
-- `.clang-format-ignore` for exclusions
+- C++ formatting: **do not run clang-format over the tree.** `.clang-format` /
+  `.clang-format-ignore` are inherited from the original team and the checked-in code no
+  longer matches what current clang-format produces (VS2019's 12.0.0 rewrites ~4x more
+  lines than a typical change touches, burying real diffs in churn). Match the style of
+  the surrounding code by hand instead. The `scripts/format_code.py` driver was removed
+  for this reason; the config files are kept only so editors have something to read.
 - Rust: standard `cargo fmt`
 - Prefix conventions: `C` for classes (CItem, CObjCHAR), `m_` for members, `g_` for globals
 - Server packet handlers: `Recv_cli_*` / `Send_gsv_*` naming
