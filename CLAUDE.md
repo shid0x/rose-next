@@ -294,14 +294,20 @@ Things that will bite:
   `D3DRS_DEPTHBIAS` takes a float bit-pattern, so its `int` parameter turns any small
   value into a denormal ~= 0. Do not reach for it to paper over a z-fight.
 
-Which assets were affected, and how to find them again: the failure needs two mesh
-parts of one object stacked closer than the depth resolution. Scanning every
-`LIST_*.ZSC` for part pairs whose world AABBs overlap widely on two axes and by less
-than 25 cm on the third finds **70 of 14618 map objects** — shop signs, statues, and
-the `road01`/`road01top` overlay pairs, whose naming convention is itself the tell.
-Junon Polis leads with 20. Before blaming the renderer for a similar artefact, check
-whether the object is one of those; and after any `import-*.py` that appends ZSC
-objects, a new stacked pair is a new candidate.
+Which assets were affected: the failure needs two mesh parts of one object stacked
+closer than the depth resolution. The recognisable family is shop signs, statues, and
+the `road01`/`road01top` overlay pairs — that naming convention is the real tell, and
+Junon Polis has the most of them.
+
+A one-off scan for part pairs whose world AABBs overlap widely on two axes and by
+under 25 cm on the third flagged 70 of the 14618 map objects. **Treat that as
+corroboration for why only a few assets showed the artefact, not as a predictor**, and
+do not rebuild it as a tool: an AABB overlap is not a surface separation (the boxes of
+a concave part overlap where the surfaces do not), the thresholds were chosen to fit
+the reported case rather than derived, and at 24 bits the separation that still fights
+is under ~0.3 cm at any distance we draw — two orders of magnitude below what that
+scan measured. If a similar artefact ever survives the format check in the log,
+measure real mesh-surface separation; the AABB proxy will mislead you.
 
 To confirm a suspected z-fight from data alone, with no rebuild:
 `scripts/set-camera-near-plane.py` raises the near plane across all six `LIST_CAMERA`
