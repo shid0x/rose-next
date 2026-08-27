@@ -55,6 +55,10 @@ FIELD_ZSC_REL = r"3DDATA\ITEM\LIST_FieldITEM.ZSC"
 # holding the new item number as its object index.
 # The col count is a tripwire: if our table ever gains a column the row we build
 # would be the wrong width, and appending it would silently shift every field.
+# The prefix must be the one that table's *own* keys already use -- read it off
+# the file, never infer it from the table name. LIST_JEWEL's keys are LJEW; this
+# entry said LJEM (which is LIST_JEMITEM's prefix), so an imported jewel would
+# have been given a key nothing looks up and shipped with no name at all.
 TYPES = {
     "weapon":   (8, r"3DDATA\STB\LIST_WEAPON.STB",   (r"3DDATA\WEAPON\LIST_WEAPON.ZSC",),
                  r"3DDATA\STB\LIST_WEAPON_S.STL",   "LWEA", 46),
@@ -81,9 +85,9 @@ TYPES = {
     "useitem":  (10, r"3DDATA\STB\LIST_USEITEM.STB",  (),
                  r"3DDATA\STB\LIST_USEITEM_S.STL",  "LUSE", 28),
     "jewel":    (7, r"3DDATA\STB\LIST_JEWEL.STB",     (),
-                 r"3DDATA\STB\LIST_JEWEL_S.STL",    "LJEM", 34),
+                 r"3DDATA\STB\LIST_JEWEL_S.STL",    "LJEW", 35),
     "natural":  (12, r"3DDATA\STB\LIST_NATURAL.STB",  (),
-                 r"3DDATA\STB\LIST_NATURAL_S.STL",  "LNAT", 30),
+                 r"3DDATA\STB\LIST_NATURAL_S.STL",  "LNAT", 19),
 }
 
 # ---------------------------------------------------------------- STB
