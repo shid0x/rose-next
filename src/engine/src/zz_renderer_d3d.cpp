@@ -78,7 +78,9 @@ typedef struct
 #define RENDERTARGET_FORMAT16 D3DFMT_R5G6B5 // D3DFMT_R5G6B5 // D3DFMT_A4R4G4B4, D3DFMT_R5G6B5 
 #define BACKBUFFER_FORMAT32 D3DFMT_A8R8G8B8
 #define BACKBUFFER_FORMAT16 D3DFMT_R5G6B5 // Most cards does not support D3DFMT_R5G6B5 backbuffer.
-#define DEPTH_STENCIL_FORMAT D3DFMT_D16 // D3DFMT_D24S8
+// Fallback only. initialize() probes for a 24-bit format and overwrites
+// depthstencil_format; D16 is what we land on when the driver refuses both.
+#define DEPTH_STENCIL_FORMAT D3DFMT_D16
 #define ZZ_USECACHE // whether use shader/texture caching mechanism
 
 vec3 * shadowmap_pixels = NULL; // for shadowmap
@@ -749,11 +751,76 @@ bool zz_renderer_d3d::initialize ()
 		ZZ_LOG("r_d3d: not support 32format rendertarget texture.\n");
 	}
 
-	// multi-sample check
+	// Depth-stencil format. This was hardcoded to D3DFMT_D16, and with our 1 m
+	// near plane (LIST_CAMERA column 5) a 16-bit buffer resolves only 15 cm at
+	// 100 m and 61 cm at 200 m. That is coarse enough to merge a decal part and
+	// the surface it is mounted on into one depth bucket, which reads in-game as
+	// black bands crawling over distant map objects and resolving as you walk in.
+	// 70 of the 14618 objects in the ZSC tables stack parts closely enough to hit
+	// it -- shop signs, statues, and the road/roadtop overlay pairs.
+	//
+	// 24 bits is 256x finer, which pushes the onset past the far plane for any
+	// realistic mounting gap. Note the *near* plane is what matters: resolvable
+	// separation is z^2*(f-n)/(n*f*2^bits), and with f >> n that is z^2/(n*2^bits),
+	// so pulling the far plane in would buy almost nothing.
+	//
+	// Nothing in the engine touches the stencil buffer (no stencil render states,
+	// and Clear() never passes D3DCLEAR_STENCIL), so D24X8 is as good as D24S8.
+	// Both are tried because driver support for the two is not identical.
+	//
+	// Either of these forces the legacy 16-bit buffer, for A/B testing:
+	//   rose-next.ini   ->  [VIDEO]  DEPTH24=0
+	//   environment     ->  ROSE_NO_DEPTH24=1
+	{
+		bool allow_depth24 = true;
+
+		if (::GetPrivateProfileIntA("VIDEO", "DEPTH24", 1, "./rose-next.ini") == 0) {
+			allow_depth24 = false;
+			ZZ_LOG("r_d3d: rose-next.ini [VIDEO] DEPTH24=0. forcing 16-bit depth.\n");
+		}
+		if (::GetEnvironmentVariableA("ROSE_NO_DEPTH24", NULL, 0) != 0) {
+			allow_depth24 = false;
+			ZZ_LOG("r_d3d: ROSE_NO_DEPTH24 set. forcing 16-bit depth.\n");
+		}
+
+		const D3DFORMAT candidates[3] = { D3DFMT_D24S8, D3DFMT_D24X8, D3DFMT_D16 };
+		const int first = allow_depth24 ? 0 : 2;
+
+		// D16 is universally supported, so this initial value only survives if the
+		// loop finds nothing at all -- in which case device creation fails anyway.
+		depthstencil_format = D3DFMT_D16;
+
+		for (int i = first; i < 3; ++i) {
+			if (SUCCEEDED(d3d->CheckDeviceFormat(adapter_ordinal, d3d_dev_type,
+					check_adapter_format, D3DUSAGE_DEPTHSTENCIL,
+					D3DRTYPE_SURFACE, candidates[i])) &&
+				SUCCEEDED(d3d->CheckDepthStencilMatch(adapter_ordinal, d3d_dev_type,
+					check_adapter_format, backbuffer_format, candidates[i])))
+			{
+				depthstencil_format = candidates[i];
+				break;
+			}
+		}
+
+		ZZ_LOG("r_d3d: depth-stencil format = %d (D16=%d, D24X8=%d, D24S8=%d)\n",
+			depthstencil_format, D3DFMT_D16, D3DFMT_D24X8, D3DFMT_D24S8);
+	}
+
+	// multi-sample check. The render target and the depth surface must *both*
+	// support the sample type. Checking only the backbuffer can leave FSAA enabled
+	// against a depth format that cannot do it, which fails device creation rather
+	// than degrading -- only reachable now that the format is not a hardcoded D16.
 	if (FAILED(d3d->CheckDeviceMultiSampleType(
 		adapter_ordinal,
 		d3d_dev_type,
 		backbuffer_format,
+		!state.use_fullscreen,
+		(D3DMULTISAMPLE_TYPE)state.fsaa_type,
+		NULL)) ||
+		FAILED(d3d->CheckDeviceMultiSampleType(
+		adapter_ordinal,
+		d3d_dev_type,
+		depthstencil_format,
 		!state.use_fullscreen,
 		(D3DMULTISAMPLE_TYPE)state.fsaa_type,
 		NULL)))
@@ -1321,7 +1388,7 @@ bool zz_renderer_d3d::restore_device_objects ()
 		if (FAILED(hr = d3d_device->CreateDepthStencilSurface(
 			state.buffer_width,
 			state.buffer_height,
-			DEPTH_STENCIL_FORMAT,
+			depthstencil_format, // the negotiated format, not the D16 fallback
 			D3DMULTISAMPLE_NONE , // multisample type
 			0, // MultisampleQuality
 			FALSE,

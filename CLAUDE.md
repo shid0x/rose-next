@@ -147,6 +147,7 @@ Consequences worth knowing before touching rendering:
 - **Fullscreen is borderless by default** — a windowed device covering the monitor, so nothing ever hands display-mode ownership back and forth. The legacy exclusive device is `[VIDEO] EXCLUSIVE_FULLSCREEN=1` (or `ROSE_EXCLUSIVE_FULLSCREEN=1`); it produced brief full-screen black flashes mid-game that borderless removes by construction. In borderless the backbuffer is **always** the monitor size — anything else is stretched by D3D and drifts UI hit-testing.
 - **`_fill_fullscreen_mode_ex()`'s `D3DDISPLAYMODEEX` must mirror the present parameters exactly** (`Format` = `BackBufferFormat` even though that is `A8R8G8B8`, `RefreshRate` = `FullScreen_RefreshRateInHz` even when that is 0). The runtime cross-checks them and returns `D3DERR_INVALIDCALL` — and the fallback ladder then hands back a working Ex device via plain `CreateDevice`, so **only the log tells you**. Read `error.txt` after any device-creation change.
 - Force the legacy path for A/B testing with `[VIDEO] D3D9EX=0` in `rose-next.ini` or `ROSE_NO_D3D9EX=1` in the environment — and confirm via the log, since a toggle that silently does nothing gives a false negative.
+- The **depth-stencil format is negotiated at device creation**, not fixed — see "Depth Buffer Precision" below before touching format selection in `initialize()`.
 
 Vsync is the **only** frame cap in the engine (there is no software limiter); `[VIDEO] VSYNC=0` uncaps. Full design notes, the D3DX9 upgrade rationale, the rejected `FLIPEX` work and the remaining gaps are in [doc/d3d9ex-migration.md](doc/d3d9ex-migration.md).
 
@@ -249,6 +250,67 @@ signature per file, ranks objects whose geometry escapes their stored box, flags
 that are corruptly *over*sized, and reports missing mesh files. Run it after any
 `import-*.py` that appends ZSC objects. Full record in
 [doc/zsc-bounding-boxes.md](doc/zsc-bounding-boxes.md).
+
+### Depth Buffer Precision (Engine)
+
+The device used a **16-bit depth buffer** (`D3DFMT_D16`, hardcoded), and the avatar
+camera's near plane is **1 m** against a far plane of 800 m (`LIST_CAMERA` columns 5
+and 6, multiplied by 100 into cm by `ApplyCameraOption`, then by `ZZ_SCALE_IN` into
+engine metres). Resolvable depth separation is `z^2*(f-n)/(n*f*2^bits)`, which at 16
+bits is 3.8 cm at 50 m, 15 cm at 100 m and **61 cm at 200 m** — so any two surfaces
+mounted closer than that collapsed into one depth bucket and z-fought. On screen it
+read as black bands crawling across a distant object and resolving cleanly as you
+walked in, because the loser of the fight is usually an unlit interior or backside.
+It did not reproduce in the xadet map editor, which is XNA and defaults to Depth24.
+
+`initialize()` now probes `D24S8 -> D24X8 -> D16` with `CheckDeviceFormat` +
+`CheckDepthStencilMatch` and stores the winner in `depthstencil_format`. 24 bits is
+256x finer, which pushes the onset past the far plane for any realistic mounting gap.
+
+Things that will bite:
+
+- **The near plane is the whole story; the far plane is nearly irrelevant.** With
+  `f >> n` the expression collapses to `z^2/(n*2^bits)`. Pulling the far plane from
+  800 m in to 250 m changes precision by 0.4%; raising the near plane from 1 m to 5 m
+  improves it 5x. Reach for `n` or for bit depth, never for `f`.
+- **Only the log tells you which format you got.** `r_d3d: depth-stencil format = N`
+  — 75 is D24S8, 77 is D24X8, 80 is the old D16. A probe that silently falls back
+  looks exactly like a fix that did not work. Same trap as the D3D9Ex toggle.
+- `DEPTH_STENCIL_FORMAT` is now only the fallback seed. Every consumer reads the
+  member `depthstencil_format`, including the offscreen z-surface in
+  `restore_device_objects()` — that site used the macro directly and would otherwise
+  have silently disagreed with the device.
+- The FSAA check validates the sample type against the **backbuffer and the depth
+  format**. Checking only the backbuffer was harmless while the depth format was a
+  constant and is not once it varies: a mismatch fails device creation outright
+  rather than degrading to no FSAA.
+- Nothing in the engine touches the stencil buffer (no stencil render states, `Clear`
+  never passes `D3DCLEAR_STENCIL`), so D24X8 is as good as D24S8. Both are probed
+  because driver support for the two is not identical.
+- Force the old buffer for A/B testing with `[VIDEO] DEPTH24=0` in `rose-next.ini` or
+  `ROSE_NO_DEPTH24=1` in the environment — and confirm via the log.
+- There is **no depth bias anywhere**. `zz_renderer_d3d::set_depthbias` is declared
+  and defined but never called, and would not work if it were: D3D9's
+  `D3DRS_DEPTHBIAS` takes a float bit-pattern, so its `int` parameter turns any small
+  value into a denormal ~= 0. Do not reach for it to paper over a z-fight.
+
+Which assets were affected, and how to find them again: the failure needs two mesh
+parts of one object stacked closer than the depth resolution. Scanning every
+`LIST_*.ZSC` for part pairs whose world AABBs overlap widely on two axes and by less
+than 25 cm on the third finds **70 of 14618 map objects** — shop signs, statues, and
+the `road01`/`road01top` overlay pairs, whose naming convention is itself the tell.
+Junon Polis leads with 20. Before blaming the renderer for a similar artefact, check
+whether the object is one of those; and after any `import-*.py` that appends ZSC
+objects, a new stacked pair is a new candidate.
+
+To confirm a suspected z-fight from data alone, with no rebuild:
+`scripts/set-camera-near-plane.py` raises the near plane across all six `LIST_CAMERA`
+rows (`--dry-run` / `--verify` / `--restore`). Precision scales with `n` but onset
+*distance* only with `sqrt(n)`, so 1 -> 5 moves the artefact out ~2.2x rather than
+removing it — a partial retreat is the confirming signal, not a weak result. The
+follow camera's minimum distance is 1.0 m, so a 5 m near plane clips the avatar at
+full zoom-in; that is expected, not a second bug. It writes no sidecar next to the
+STB on purpose, since `pack.rs` would bake one into the `.vfs`.
 
 ### Missing Assets Must Degrade, Not Kill (Engine/VFS)
 
