@@ -1331,28 +1331,57 @@ CMAP_PATCH::MakeAABBFromObject(CGameOBJ* pObject,
     float fMax[3] = {-1000000.0f, -1000000.0f, -1000000.0f};
 
     CMODEL<CFixedPART>* pModel = NULL;
+    CObjFIXED* pFixed = NULL;
 
     /// 각 타입별로 해당 모델데이터를 기반으로 바운딩박스 정보를 얻어온다.
     switch (pObject->Get_TYPE()) {
         case OBJ_MORPH: {
-
+            /// CObjMORPH is not a CObjFIXED and has never contributed to the patch
+            /// AABB. Left alone deliberately.
         } break;
         case OBJ_GROUND: {
             CObjTREE* pTree = (CObjTREE*)pObject;
+            pFixed = pTree;
             pModel = g_DATA.m_ModelDECO.GetMODEL(pTree->m_nTreeIdx);
         } break;
         case OBJ_CNST: {
             CObjCNST* pCnst = (CObjCNST*)pObject;
+            pFixed = pCnst;
             pModel = g_DATA.m_ModelCNST.GetMODEL(pCnst->m_nCnstIdx);
 
         } break;
         case OBJ_EVENTOBJECT: {
             CObjFixedEvent* pCnst = (CObjFixedEvent*)pObject;
+            pFixed = pCnst;
             pModel = g_DATA.m_ModelEvent.GetMODEL(pCnst->m_nTreeIdx);
         } break;
     }
 
-    if (pModel) {
+    /// Derive the cull bound from the geometry we are actually going to render.
+    ///
+    /// The alternative -- pModel->m_BBMin/m_BBMax, the box cached in the ZSC --
+    /// is broken data: whatever tool wrote those files scaled only the X axis
+    /// into world units (cm) and left Y and Z in mesh units (m), so every stored
+    /// box is 100x too thin and 100x too short. Muris' canyon walls registered
+    /// as a 336m x 4m x 1.1m ribbon lying on the ground instead of a
+    /// 336m x 396m x 114m wall; rotating the camera pushed the ribbon out of the
+    /// frustum and RemoveFromScene() deleted the whole wall while it filled the
+    /// screen. 222 of the 1388 map objects in data/ under-cover by more than 20m,
+    /// the worst by 970m, so this is not one bad asset.
+    ///
+    /// The engine builds its bounding volume from the real mesh min/max, which
+    /// loadMesh() reads out of the ZMS header eagerly -- independent of lazy
+    /// geometry loading -- so this is valid at map-load time, before the object
+    /// has ever been inserted into the scene.
+    bool bHaveBOX = false;
+
+    if (pFixed) {
+        bHaveBOX = pFixed->GetWorldMinMax(fMin, fMax);
+    }
+
+    /// Fall back to the cached box rather than registering nothing, so an object
+    /// whose nodes could not be built behaves exactly as it did before.
+    if (!bHaveBOX && pModel) {
 
         D3DXMATRIX t_m, r_m, s_m, object_m;
 
@@ -1363,6 +1392,10 @@ CMAP_PATCH::MakeAABBFromObject(CGameOBJ* pObject,
         object_m = (s_m * r_m * t_m);
 
         TransformOBB2AABB(pModel->m_BBMin, pModel->m_BBMax, &object_m, fMin, fMax);
+        bHaveBOX = true;
+    }
+
+    if (bHaveBOX) {
 
         if (fMin[0] < m_AABBMin.x)
             m_AABBMin.x = fMin[0];

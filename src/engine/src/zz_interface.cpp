@@ -957,6 +957,42 @@ int setObbox ( HNODE hVisible,
 	return 1;
 }
 
+ZZ_DLL
+int getVisibleWorldMinMax ( HNODE hVisible, float fMin_Out[3], float fMax_Out[3] )
+{
+	CHECK_INTERFACE(getVisibleWorldMinMax);
+
+	zz_visible * visible = reinterpret_cast<zz_visible *>(hVisible);
+	if (!visible) return 0;
+
+	// Rebuilds the bounding volume from the node's own runits and recurses into
+	// children, then unions the result into minmax. Early-outs when the volume is
+	// already valid, so this is cheap to call. The scene_refresh() inside is a
+	// no-op while the node is not in the scene, which is the state during map load.
+	visible->update_bvolume();
+
+	if (!visible->is_valid_bvolume()) return 0;
+
+	const vec3 * minmax = visible->get_minmax();
+	if (!minmax) return 0;
+
+	// A node with no bounding volume degenerates to its own position, which is
+	// useless as a bound. Report failure so the caller can fall back rather than
+	// silently registering a point.
+	if ((minmax[0].x == minmax[1].x) &&
+		(minmax[0].y == minmax[1].y) &&
+		(minmax[0].z == minmax[1].z))
+	{
+		return 0;
+	}
+
+	for (int i = 0; i < 3; ++i) {
+		fMin_Out[i] = ZZ_SCALE_OUT*minmax[0][i];
+		fMax_Out[i] = ZZ_SCALE_OUT*minmax[1][i];
+	}
+	return 1;
+}
+
 ZZ_SCRIPT
 HNODE loadMorpher ( ZSTRING pMorpherName,
 				  HNODE hMesh,

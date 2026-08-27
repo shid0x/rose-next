@@ -537,6 +537,18 @@ int setObbox (
 	float HalfLengthZ
 );
 
+/// 비져블의 월드 공간 바운딩 박스를 얻는다.
+/// 자식 노드까지 포함한 실제 지오메트리(메쉬 min/max)에서 계산된 값이며,
+/// 클라이언트 좌표계(cm)로 변환되어 리턴된다.
+/// 주의: 노드가 씬에 들어가 있지 않아도 유효하다. 메쉬의 min/max 는 loadMesh() 시점에
+///       ZMS 헤더에서 즉시 읽히므로, 지오메트리 지연 로딩과 무관하게 사용할 수 있다.
+/// @param hVisible 비져블 핸들
+/// @param fMin_Out 월드 최소 좌표가 저장된다
+/// @param fMax_Out 월드 최대 좌표가 저장된다
+/// @return         성공하면 1, 바운딩 볼륨이 없거나 부피가 0이면 0
+ZZ_DLL
+int getVisibleWorldMinMax ( HNODE hVisible, float fMin_Out[3], float fMax_Out[3] );
+
 /// 모퍼(버텍스 애니메이션이 되는 객체)를 로드한다.
 /// @param pMorpherName 등록할 모퍼 이름
 /// @param hMesh        메쉬 핸들

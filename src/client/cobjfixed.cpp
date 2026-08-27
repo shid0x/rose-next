@@ -205,6 +205,27 @@ CObjFIXED::Scale(D3DVECTOR& Scale) {
 }
 
 //-------------------------------------------------------------------------------------------------
+bool
+CObjFIXED::GetWorldMinMax(float fMin_Out[3], float fMax_Out[3]) {
+    if (!m_pMODEL || !m_pHNODES)
+        return false;
+
+    if (m_pMODEL->m_nRootPART < 0 || m_pMODEL->m_nRootPART >= m_pMODEL->m_nPartCNT)
+        return false;
+
+    HNODE hRoot = m_pHNODES[m_pMODEL->m_nRootPART];
+    if (!hRoot)
+        return false;
+
+    /// The root subtree is exactly what InsertToScene() hands to the engine, so
+    /// its world AABB is the bound of the geometry we actually draw. Every
+    /// LIST_CNST_*/LIST_DECO_* object has a single root part, so nothing is
+    /// missed here -- the multi-root models are all character equipment tables,
+    /// which are built from CCharPART and never reach this path.
+    return (::getVisibleWorldMinMax(hRoot, fMin_Out, fMax_Out) != 0);
+}
+
+//-------------------------------------------------------------------------------------------------
 void
 CObjFIXED::Rotate(D3DXQUATERNION& Rotate) {
     if (m_pMODEL->m_nRootPART >= 0) {

@@ -389,8 +389,17 @@ CPatchManager::Update_VisiblePatchManager(short nMappingX, short nMappingY) {
 
         bool bNear = true;
         if (have_camera) {
-            const float dx = pPATCH->m_AABBMin.x - camera_eye[0];
-            const float dy = pPATCH->m_AABBMin.y - camera_eye[1];
+            /// Measure to the patch's own terrain footprint, not to its object
+            /// AABB. m_AABBMin starts at +1e8 and is only ever lowered by
+            /// objects, so an object-less patch read as infinitely far; and now
+            /// that the object AABB comes from real geometry, one large object
+            /// drags the min corner hundreds of metres away from the patch we
+            /// are actually deciding to insert. m_aabb is that 10m cell and is
+            /// always valid.
+            const float dx =
+                (0.5f * (pPATCH->m_aabb.x[0] + pPATCH->m_aabb.x[1])) - camera_eye[0];
+            const float dy =
+                (0.5f * (pPATCH->m_aabb.y[0] + pPATCH->m_aabb.y[1])) - camera_eye[1];
             bNear = ((dx * dx + dy * dy) <= near_radius_square);
         }
 
