@@ -155,6 +155,21 @@ Zone changes (`CGameStateWarp` → `CTERRAIN::LoadZONE` / `FreeZONE`) and per-fr
   ```
   With no `data.idx` present it prints `SKIP` and returns 0, so it is safe to run unconditionally after a build. Verified to fail loudly: reintroducing the old `Tell()` (returning `vftell` instead of `m_lLogicalPos`) trips 147k assertions immediately.
 
+**Frame-hitch campaign, 2026-08-28 — where it ended up**
+
+Worst frame on a fixed Muris walking route, measured with `[VIDEO] FRAME_SPIKE_LOG_MS`:
+
+| | worst frame | spikes >20 ms |
+|---|---|---|
+| start | 139.6 ms | 17 |
+| + motion parser bulk-read | 120.5 ms | ~13 |
+| + DDS mip chains shipped | 30.7 ms | 5 |
+| + mesh read buffering, mips corrected | **21.9 ms** | **2** |
+
+Three separate causes, none of them the streaming dials everyone reaches for first, and each found only by narrowing the measurement one level at a time. Both remaining spikes sit ~4x the 5 ms average and neither has a dominant phase; the largest single identifiable cost left is `g_pTerrain->SetCenterPosition()` at **9.3 ms** (`logic[terr=9.3]` with `flush=2.6`), which is pure streaming bookkeeping and loads nothing.
+
+Method note worth keeping: every round of this overturned the previous round's conclusion. The streaming log blamed terrain; the frame log said `netin`; the packet timer said spawn; the spawn timer said motion loading; the motion split said the file parse, not I/O. **Do not act on the first phase that looks large** — split it until the thing you are looking at has one cause.
+
 **Chunk-display hitch — the resolved picture**
 
 The felt "stutter when new terrain appears" was never chunk file I/O (`MapIO` load is ~2-3 ms). It was resource creation forced at first render, and it had **two independent causes** that needed opposite fixes. Measured lead time (frames between a node being queued and force-flushed) is what separates them — see `getLoadPathCount(4/5)`.
