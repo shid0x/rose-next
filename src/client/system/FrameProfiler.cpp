@@ -52,6 +52,7 @@ struct SpikeSnapshot {
     unsigned short pkt_worst_type;
     int spawn_count;
     double spawn_step[SPAWN_STEP_COUNT];
+    double terrain_step[TERRAIN_STEP_COUNT];
 };
 SpikeSnapshot s_worst;
 bool s_worst_valid = false;
@@ -68,6 +69,9 @@ unsigned short s_pkt_worst_type = 0;
 /// their time went. Fed by NoteSpawn/NoteSpawnStep from CObjCHAR::CreateCHAR.
 int s_spawn_count = 0;
 double s_spawn_step[SPAWN_STEP_COUNT];
+
+/// Per-frame terrain sub-pass detail. Fed from CPatchManager.
+double s_terrain_step[TERRAIN_STEP_COUNT];
 
 /// Engine immediate-flush counters, sampled by CaptureFlushStats() while they are
 /// still valid. See the header for why EndFrame() cannot read them itself.
@@ -164,6 +168,7 @@ void EmitSpike(const SpikeSnapshot& s, int others) {
              "spawn[n={} skel={:.1f} mot={:.1f} load={:.1f} parts={:.1f} "
              "bone={:.1f} rest={:.1f}] | "
              "logic[obj={:.1f} terr={:.1f} fx={:.1f} uiupd={:.1f}] | "
+             "terr[cull={:.1f} ins={:.1f} prox={:.1f} type={:.1f} del={:.1f}] | "
              "flush={} | tex[n={} read={:.1f} create={:.1f}] | others={}",
         s.frame_ms,
         s.avg_ms,
@@ -193,6 +198,11 @@ void EmitSpike(const SpikeSnapshot& s, int others) {
         s.slot[SLOT_LOGIC_TERRAIN],
         s.slot[SLOT_LOGIC_EFFECTS],
         s.slot[SLOT_LOGIC_UIUPD],
+        s.terrain_step[TERRAIN_CULL],
+        s.terrain_step[TERRAIN_INSERT],
+        s.terrain_step[TERRAIN_PROXIMITY],
+        s.terrain_step[TERRAIN_TYPE],
+        s.terrain_step[TERRAIN_DELETE],
         s.flush_sampled
             ? fmt::format("{:.1f}ms/{}n [terrain={} mesh={} tex={} mat={} other={}]",
                   s.flush_ms,
@@ -240,6 +250,8 @@ void NoteSpike(double frame_ms, double frame_accounted, DWORD now) {
     s_worst.spawn_count = s_spawn_count;
     for (int i = 0; i < SPAWN_STEP_COUNT; ++i)
         s_worst.spawn_step[i] = s_spawn_step[i];
+    for (int i = 0; i < TERRAIN_STEP_COUNT; ++i)
+        s_worst.terrain_step[i] = s_terrain_step[i];
     s_worst_valid = true;
 }
 
@@ -274,6 +286,8 @@ void BeginFrame() {
     s_spawn_count = 0;
     for (int i = 0; i < SPAWN_STEP_COUNT; ++i)
         s_spawn_step[i] = 0.0;
+    for (int i = 0; i < TERRAIN_STEP_COUNT; ++i)
+        s_terrain_step[i] = 0.0;
     s_frame_start = Now();
 }
 
@@ -311,6 +325,12 @@ void NoteSpawnStep(SpawnStep step, double ms) {
     if (step < 0 || step >= SPAWN_STEP_COUNT)
         return;
     s_spawn_step[step] += ms;
+}
+
+void NoteTerrainStep(TerrainStep step, double ms) {
+    if (step < 0 || step >= TERRAIN_STEP_COUNT)
+        return;
+    s_terrain_step[step] += ms;
 }
 
 void NotePacket(unsigned short type, double ms) {

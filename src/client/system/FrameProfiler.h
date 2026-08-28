@@ -150,6 +150,23 @@ enum SpawnStep {
 void NoteSpawnStep(SpawnStep step, double ms);
 void NoteSpawn();
 
+/// Sub-passes of CPatchManager::Update_VisiblePatchManager, accumulated per frame.
+///
+/// SetCenterPosition is the largest single cost left after the motion, mipmap and
+/// mesh fixes -- 9.3 ms on a frame whose flush was 2.6 ms, so it is bookkeeping,
+/// not loading. It is also not simply insert cost: one frame measured terr=9.5
+/// with flush=0 and no inserts at all. Splitting it is the only way to tell the
+/// quadtree walk apart from the proximity pass apart from the teardown scan.
+enum TerrainStep {
+    TERRAIN_CULL = 0,  // CalculateViewFrustumCulling: quadtree frustum walk
+    TERRAIN_INSERT,    // the frustum insert loop over m_nSubPATCH
+    TERRAIN_PROXIMITY, // Update_VisiblePatch: proximity keep-alive ring
+    TERRAIN_TYPE,      // SetPatchType + ExecutePatchTpye
+    TERRAIN_DELETE,    // Delete_UnvisiblePatch
+    TERRAIN_STEP_COUNT
+};
+void NoteTerrainStep(TerrainStep step, double ms);
+
 /// Smoothed values from the last completed window. Safe to call at any time.
 float GetMs(Slot slot);
 float GetTotalMs();

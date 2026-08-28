@@ -5,6 +5,7 @@
 #include "game.h"
 #include "ccamera.h"
 #include "cclientstorage.h"
+#include "system/FrameProfiler.h"
 
 CPatchManager::CPatchManager(void) {
     ZeroMemory(m_ppPATCH, sizeof(m_ppPATCH));
@@ -357,7 +358,19 @@ CPatchManager::Update_VisiblePatchManager(short nMappingX, short nMappingY) {
 
     /// 실제로 엔진에서 사용될 패치들을 등록..
 
+    /// Sub-pass timing for the frame-spike log. This function is the whole of
+    /// logic[terr=], which was the largest single cost left after the motion,
+    /// mipmap and mesh fixes. Inert unless [VIDEO] FRAME_SPIKE_LOG_MS is set.
+    const bool bTimeTerr = FrameProfiler::IsSpikeLogEnabled();
+    LARGE_INTEGER qpfT, t0, t1;
+    if (bTimeTerr) {
+        ::QueryPerformanceFrequency(&qpfT);
+        ::QueryPerformanceCounter(&t0);
+    }
+    #define ZZ_NOTE_TERR(step)                                                                if (bTimeTerr) {                                                                          ::QueryPerformanceCounter(&t1);                                                       FrameProfiler::NoteTerrainStep(FrameProfiler::step,                                       (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)qpfT.QuadPart);            t0 = t1;                                                                          }
+
     CalculateViewFrustumCulling();
+    ZZ_NOTE_TERR(TERRAIN_CULL);
 
     float camera_eye[3] = {0.0f, 0.0f, 0.0f};
     bool have_camera = false;
@@ -422,15 +435,21 @@ CPatchManager::Update_VisiblePatchManager(short nMappingX, short nMappingY) {
         this->Insert_VisiblePatch(m_CameraPATCH[i]);
         m_CameraPATCH[i]->PlaySOUND();
     }
+    ZZ_NOTE_TERR(TERRAIN_INSERT);
 
     /// Proximity keep-alive — see Update_VisiblePatch comment. Runs after the
     /// frustum pass so already-visible patches are frame-stamped and skipped.
     Update_VisiblePatch(nMappingX, nMappingY);
+    ZZ_NOTE_TERR(TERRAIN_PROXIMITY);
 
     SetPatchType();
     ExecutePatchTpye();
+    ZZ_NOTE_TERR(TERRAIN_TYPE);
 
     Delete_UnvisiblePatch();
+    ZZ_NOTE_TERR(TERRAIN_DELETE);
+
+    #undef ZZ_NOTE_TERR
 }
 
 //----------------------------------------------------------------------------------------------------
