@@ -164,9 +164,17 @@ Worst frame on a fixed Muris walking route, measured with `[VIDEO] FRAME_SPIKE_L
 | start | 139.6 ms | 17 |
 | + motion parser bulk-read | 120.5 ms | ~13 |
 | + DDS mip chains shipped | 30.7 ms | 5 |
-| + mesh read buffering, mips corrected | **21.9 ms** | **2** |
+| + mesh read buffering, mips corrected | 21.9 ms | 2 |
+| final (warm cache) | **none over 20 ms** | **0** |
 
 Three separate causes, none of them the streaming dials everyone reaches for first, and each found only by narrowing the measurement one level at a time. Both remaining spikes sit ~4x the 5 ms average and neither has a dominant phase; the largest single identifiable cost left is `g_pTerrain->SetCenterPosition()` at **9.3 ms** (`logic[terr=9.3]` with `flush=2.6`), which is pure streaming bookkeeping and loads nothing.
+
+**`SetCenterPosition` turned out to be the map-cell read, not patch bookkeeping.** Two samples of `logic[terr=9.3]` / `[terr=9.5]` sent me to split `Update_VisiblePatchManager` into five passes; that found nothing, because the expensive work is on the boundary-crossing path (`AddOneMap`, `AddMAP`, `ReOrginazationPatch`) which only runs when the player enters a new map cell. Instrumenting *that* showed the cost is `AddOneMap` — the map cell disk read, at 1.3-7.5 ms, which the `MapIO:` row had been reporting as `last map load` all along. It is already throttled to one per 150 ms (`kMinMapLoadIntervalMs`) and no longer pushes a frame over 20 ms now that everything around it is cheap. Nothing to fix; it is inherent I/O, already paced.
+
+Two measurement traps this campaign hit, both worth remembering:
+
+- **An intermittent cost needs the intermittent path instrumented.** Wrapping the every-frame function found `terr=0.1` with all five sub-passes at 0.0 and looked like the problem had vanished.
+- **A cold OS page cache inflates `tex[read=]` roughly tenfold** (0.0-0.8 ms warm, 5.4-5.8 ms cold) and with it every frame total. The first run after a re-bake is not comparable with anything. `MAP_PREFETCH` warms map chunks but not textures.
 
 Method note worth keeping: every round of this overturned the previous round's conclusion. The streaming log blamed terrain; the frame log said `netin`; the packet timer said spawn; the spawn timer said motion loading; the motion split said the file parse, not I/O. **Do not act on the first phase that looks large** — split it until the thing you are looking at has one cause.
 
