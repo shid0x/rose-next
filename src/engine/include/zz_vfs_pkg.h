@@ -158,6 +158,7 @@
 #endif
 
 #include "zz_log.h"
+#include <string.h> // memcpy, for zz_vfs_pkg_buffered
 #include <iostream>
 #include <fstream>
 using namespace std;
@@ -306,6 +307,98 @@ inline uint32 zz_vfs_pkg::read ()
 inline int zz_vfs_pkg::seek (long offset, zz_vfs_seek origin)
 {
 	return vfseek(fp_, offset, origin);
+}
+
+
+//--------------------------------------------------------------------------------
+// zz_vfs_pkg_buffered:
+// A zz_vfs_pkg that reads the whole file once and serves every subsequent read
+// from memory.
+//
+// Every zz_vfs read_* helper bottoms out in zz_vfs_pkg::read_, which calls
+// vftell and then vfread -- both __stdcall exports of triggervfs.dll -- behind a
+// virtual dispatch. That is two cross-DLL calls per field. Parsers that read a
+// record at a time are fine; parsers that read a float at a time are not, and
+// zz_mesh_tool reads an index plus a vec3 per vertex, per stream. The same shape
+// cost 10-26 ms per motion in zz_motion::load before that one was rewritten.
+//
+// Deliberately a drop-in: read_ and seek are the only virtuals overridden, so a
+// caller switches by changing the declared type and not one line of parsing.
+// zz_motion::load solved the same problem by restructuring, which is fine when a
+// format is a flat table; this suits zz_mesh_tool's three ~300-line readers,
+// where restructuring is all risk and no extra benefit.
+//
+// Falls back to unbuffered reads when vfgetdata cannot hand over a whole-file
+// pointer -- a loose file on disk during development, say -- so behaviour is
+// never worse than before.
+//--------------------------------------------------------------------------------
+class zz_vfs_pkg_buffered : public zz_vfs_pkg {
+protected:
+	const char * buf_; // whole-file pointer owned by TriggerVFS, valid until close()
+	uint32 buf_size_;
+	uint32 buf_pos_;
+
+	virtual uint32 read_ (char * buf, uint32 size);
+
+public:
+	zz_vfs_pkg_buffered (zz_vfs_pkg_system * pkg_system_in = NULL)
+		: zz_vfs_pkg(pkg_system_in), buf_(NULL), buf_size_(0), buf_pos_(0) {}
+
+	bool open (const char * filename, const zz_vfs_mode mode = ZZ_VFS_READ);
+	bool close ();
+	virtual int seek (long offset, zz_vfs_seek origin);
+};
+
+inline bool zz_vfs_pkg_buffered::open (const char * filename, const zz_vfs_mode mode)
+{
+	buf_ = NULL;
+	buf_size_ = 0;
+	buf_pos_ = 0;
+
+	if (!zz_vfs_pkg::open(filename, mode)) return false;
+	if (mode != ZZ_VFS_READ) return true; // only reads are buffered
+
+	const uint32 size = zz_vfs_pkg::read(); // vfgetdata: zero-copy whole-file pointer
+	const char * data = reinterpret_cast<const char *>(get_data());
+	if (size > 0 && data) {
+		buf_ = data;
+		buf_size_ = size;
+	}
+	return true;
+}
+
+inline bool zz_vfs_pkg_buffered::close ()
+{
+	buf_ = NULL;
+	buf_size_ = 0;
+	buf_pos_ = 0;
+	return zz_vfs_pkg::close();
+}
+
+inline uint32 zz_vfs_pkg_buffered::read_ (char * buf, uint32 size)
+{
+	if (!buf_) return zz_vfs_pkg::read_(buf, size); // unbuffered: exactly as before
+	if (buf_pos_ >= buf_size_) return 0; // EOF, which the caller turns into a status
+	const uint32 avail = buf_size_ - buf_pos_;
+	const uint32 n = (size < avail) ? size : avail;
+	memcpy(buf, buf_ + buf_pos_, n);
+	buf_pos_ += n;
+	return n;
+}
+
+inline int zz_vfs_pkg_buffered::seek (long offset, zz_vfs_seek origin)
+{
+	if (!buf_) return zz_vfs_pkg::seek(offset, origin);
+
+	long target;
+	if (origin == ZZ_VFS_SEEK_SET) target = offset;
+	else if (origin == ZZ_VFS_SEEK_END) target = (long)buf_size_ + offset;
+	else target = (long)buf_pos_ + offset;
+
+	if (target < 0) target = 0;
+	if (target > (long)buf_size_) target = (long)buf_size_;
+	buf_pos_ = (uint32)target;
+	return 0;
 }
 
 #endif // ZZ_USE_TRIGGERVFS

@@ -138,6 +138,32 @@ def target_format(h):
     return None
 
 
+def is_excluded(path):
+    """Textures that must never be given a mip chain, with the reason.
+
+    Object lightmaps are a **gutterless atlas**: each map-object part owns one
+    cell of a shared texture and SetLightMap addresses it with a UV transform, so
+    there is no padding between cells and a filter that knows nothing about the
+    grid blends a part's lighting into its neighbours'. The root CLAUDE.md spells
+    this out and says a full chain is unsafe for them.
+
+    Shipping a chain makes that reachable in a way it was not before. The engine
+    caps loads at 3 levels (INIT.LUA setMipmapLevel(3)), but the levels now come
+    from texconv's default FANT filter, whose support reaches past one texel,
+    rather than from D3DX's strict 2x2 box -- so more of the neighbouring cell
+    bleeds in. A lightmap multiplies into object colour, so the symptom is a dark
+    wash that appears at distance and vanishes as you walk in. Which is exactly
+    what was reported after the first run of this script.
+
+    These are 32-512 px textures and contribute almost nothing to load cost, so
+    there is no reason to take the risk.
+    """
+    u = str(path).upper()
+    if "LIGHTMAP" in u:
+        return "object lightmap atlas (gutterless, must not be mipped)"
+    return None
+
+
 def collect(root):
     """Every DDS under root with no mip chain, plus a tally of what was skipped."""
     todo = []
@@ -151,6 +177,10 @@ def collect(root):
             continue
         if h.mips > 1:
             skipped["already has mips"] += 1
+            continue
+        why = is_excluded(p)
+        if why:
+            skipped[why] += 1
             continue
         if h.caps2 & (DDSCAPS2_CUBEMAP | DDSCAPS2_VOLUME):
             skipped["cubemap/volume"] += 1
@@ -215,7 +245,10 @@ def verify_converted(touched):
     return bad
 
 
-def restore():
+def restore(only_excluded=False):
+    """Put originals back. only_excluded limits it to files the current rules say
+    should never have been converted, which is how a bad exclusion is corrected
+    without undoing the whole pass."""
     if not BACKUP.is_dir():
         print("no backups at %s" % BACKUP)
         return 1
@@ -224,10 +257,15 @@ def restore():
         if not b.is_file():
             continue
         target = DATA / b.relative_to(BACKUP)
+        if only_excluded and not is_excluded(target):
+            continue
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(b.read_bytes())
         n += 1
-    print("restored %d file(s) from %s" % (n, BACKUP))
+    scope = "excluded " if only_excluded else ""
+    print("restored %d %sfile(s) from %s" % (n, scope, BACKUP))
+    if only_excluded and n:
+        print("re-bake the VFS for this to reach the client")
     return 0
 
 
@@ -239,13 +277,16 @@ def main():
     ap.add_argument("--verify", action="store_true",
                     help="only check that no DDS under data/ is missing a mip chain")
     ap.add_argument("--restore", action="store_true",
-                    help="put the pre-conversion originals back")
+                    help="put every pre-conversion original back")
+    ap.add_argument("--restore-excluded", action="store_true",
+                    help="put back only the files the current exclusion rules say "
+                         "should never have been converted")
     ap.add_argument("--subdir", default=None,
                     help="limit to a subtree of data/, e.g. 3DDATA/TERRAIN")
     args = ap.parse_args()
 
-    if args.restore:
-        return restore()
+    if args.restore or args.restore_excluded:
+        return restore(only_excluded=args.restore_excluded)
 
     if not DATA.is_dir():
         print("no data/ directory at %s" % DATA)

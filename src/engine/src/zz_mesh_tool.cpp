@@ -161,7 +161,9 @@ bool zz_mesh_tool::load_mesh_6 ( const char * file_name, zz_mesh * mesh, bool te
 	if (text_mode) return false; // Currently, does not support text mode for performance.
 
 	int version = 0;
-	zz_vfs_pkg mesh_file;
+	// Buffered: the per-vertex reads below would otherwise each cost two
+	// cross-DLL calls into triggervfs. See zz_vfs_pkg_buffered.
+	zz_vfs_pkg_buffered mesh_file;
 	
 	if (!mesh_file.open(file_name, zz_vfs::ZZ_VFS_READ)) {
 		ZZ_LOG("mesh_tool: load_mesh(%s) failed. cannot open file\n", file_name);
@@ -484,7 +486,9 @@ bool zz_mesh_tool::load_mesh_8 ( const char * file_name, zz_mesh * mesh, bool te
 	if (text_mode) return false; // Currently, does not support text mode for performance.
 
 	int version = 0;
-	zz_vfs_pkg mesh_file;
+	// Buffered: the per-vertex reads below would otherwise each cost two
+	// cross-DLL calls into triggervfs. See zz_vfs_pkg_buffered.
+	zz_vfs_pkg_buffered mesh_file;
 	
 	if (!mesh_file.open(file_name, zz_vfs::ZZ_VFS_READ)) {
 		ZZ_LOG("mesh_tool: load_mesh(%s) failed. cannot open file\n", file_name);
