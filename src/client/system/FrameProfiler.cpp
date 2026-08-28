@@ -44,11 +44,20 @@ struct SpikeSnapshot {
     float flush_ms;
     int flush_count;
     int flush_kind[kFlushKindCount];
+    int pkt_count;
+    double pkt_worst_ms;
+    unsigned short pkt_worst_type;
 };
 SpikeSnapshot s_worst;
 bool s_worst_valid = false;
 int s_window_spikes = 0;
 DWORD s_window_start = 0;
+
+/// Per-frame packet-drain detail: how many packets were handled, and the single
+/// worst one. Fed by NotePacket() from CNetwork::Proc.
+int s_pkt_count = 0;
+double s_pkt_worst_ms = 0.0;
+unsigned short s_pkt_worst_type = 0;
 
 /// Engine immediate-flush counters, sampled by CaptureFlushStats() while they are
 /// still valid. See the header for why EndFrame() cannot read them itself.
@@ -138,6 +147,7 @@ void EmitSpike(const SpikeSnapshot& s, int others) {
              "netin={:.1f} logic={:.1f} scnupd={:.1f} shadow={:.1f} render={:.1f} "
              "ui={:.1f} present={:.1f} oth={:.1f} | "
              "netin[msg={:.1f} gdat={:.1f} pkt={:.1f} inp={:.1f}] | "
+             "pkt[n={} worst=0x{:04x}/{:.1f}ms] | "
              "logic[obj={:.1f} terr={:.1f} fx={:.1f} uiupd={:.1f}] | "
              "flush={} | others={}",
         s.frame_ms,
@@ -154,6 +164,9 @@ void EmitSpike(const SpikeSnapshot& s, int others) {
         s.slot[SLOT_NETIN_GAMEDATA],
         s.slot[SLOT_NETIN_PACKET],
         s.slot[SLOT_NETIN_INPUT],
+        s.pkt_count,
+        s.pkt_worst_type,
+        s.pkt_worst_ms,
         s.slot[SLOT_LOGIC_OBJPROC],
         s.slot[SLOT_LOGIC_TERRAIN],
         s.slot[SLOT_LOGIC_EFFECTS],
@@ -193,6 +206,9 @@ void NoteSpike(double frame_ms, double frame_accounted, DWORD now) {
     s_worst.flush_count = s_flush_count;
     for (int i = 0; i < kFlushKindCount; ++i)
         s_worst.flush_kind[i] = s_flush_kind[i];
+    s_worst.pkt_count = s_pkt_count;
+    s_worst.pkt_worst_ms = s_pkt_worst_ms;
+    s_worst.pkt_worst_type = s_pkt_worst_type;
     s_worst_valid = true;
 }
 
@@ -218,6 +234,9 @@ void BeginFrame() {
     s_flush_count = 0;
     for (int i = 0; i < kFlushKindCount; ++i)
         s_flush_kind[i] = 0;
+    s_pkt_count = 0;
+    s_pkt_worst_ms = 0.0;
+    s_pkt_worst_type = 0;
     s_frame_start = Now();
 }
 
@@ -241,6 +260,18 @@ void End(Slot slot) {
 
 void SetSpikeLogMs(unsigned int ms) {
     s_spike_log_ms = ms;
+}
+
+bool IsSpikeLogEnabled() {
+    return s_spike_log_ms > 0;
+}
+
+void NotePacket(unsigned short type, double ms) {
+    ++s_pkt_count;
+    if (ms > s_pkt_worst_ms) {
+        s_pkt_worst_ms = ms;
+        s_pkt_worst_type = type;
+    }
 }
 
 void CaptureFlushStats() {

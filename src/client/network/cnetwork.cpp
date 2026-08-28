@@ -7,6 +7,7 @@
 #include "Game.h"
 #include "../Interface/ExternalUI/ExternalUILobby.h"
 #include "../System/CGame.h"
+#include "../System/FrameProfiler.h"
 #include "CSocketWND.h"
 #include "../gameproc/LiveCheck.h"
 
@@ -554,9 +555,49 @@ CNetwork::Proc_ZonePacket() {
 }
 
 //-------------------------------------------------------------------------------------------------
+namespace {
+
+/// Times one packet's handling for the frame-spike log.
+///
+/// RAII rather than a matched pair of calls because both drain loops `continue`
+/// out of the switch in a dozen places, and a missed end-call would silently
+/// attribute one packet's cost to the next.
+///
+/// Inert unless [VIDEO] FRAME_SPIKE_LOG_MS is set -- the drain can run hundreds
+/// of packets in a frame and instrumentation should not be a tax on shipping
+/// builds.
+struct PacketTimeScope {
+    unsigned short m_type;
+    bool m_active;
+    LARGE_INTEGER m_start;
+
+    explicit PacketTimeScope(unsigned short type)
+        : m_type(type), m_active(FrameProfiler::IsSpikeLogEnabled()) {
+        if (m_active)
+            ::QueryPerformanceCounter(&m_start);
+    }
+
+    ~PacketTimeScope() {
+        if (!m_active)
+            return;
+        LARGE_INTEGER end, freq;
+        ::QueryPerformanceCounter(&end);
+        ::QueryPerformanceFrequency(&freq);
+        if (freq.QuadPart == 0)
+            return;
+        const double ms =
+            (double)(end.QuadPart - m_start.QuadPart) * 1000.0 / (double)freq.QuadPart;
+        FrameProfiler::NotePacket(m_type, ms);
+    }
+};
+
+} // namespace
+
+//-------------------------------------------------------------------------------------------------
 void
 CNetwork::Proc() {
     while (m_WorldSOCKET.Peek_Packet(m_pRecvPacket, true)) {
+        PacketTimeScope packet_timer(m_pRecvPacket->m_HEADER.m_wType);
         this->recv_packet(m_pRecvPacket);
 
         switch (m_pRecvPacket->m_HEADER.m_wType) {
@@ -695,6 +736,7 @@ CNetwork::Proc() {
     }
 
     while (m_ZoneSOCKET.Peek_Packet(m_pRecvPacket, true)) {
+        PacketTimeScope packet_timer(m_pRecvPacket->m_HEADER.m_wType);
         this->recv_packet(m_pRecvPacket);
 
         switch (m_pRecvPacket->m_HEADER.m_wType) {

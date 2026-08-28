@@ -112,6 +112,21 @@ void SetSpikeLogMs(unsigned int ms);
 /// work" are different findings and printing the second for the first is a lie.
 void CaptureFlushStats();
 
+/// True when FRAME_SPIKE_LOG_MS is non-zero. Call sites that would pay for
+/// instrumentation (a timer around every packet, say) check this first so the
+/// diagnostic costs nothing when it is off.
+bool IsSpikeLogEnabled();
+
+/// Record the cost of handling one received packet.
+///
+/// netin split down to `pkt` (g_pNet->Proc) and stopped there, which named the
+/// phase but not the work: the drain is a `while (Peek_Packet)` loop that runs
+/// every handler synchronously, so one expensive handler and a thousand cheap
+/// ones look identical from outside. The spike line reports the count and the
+/// single worst packet type, which is what distinguishes "too many packets" from
+/// "one packet does something enormous".
+void NotePacket(unsigned short type, double ms);
+
 /// Smoothed values from the last completed window. Safe to call at any time.
 float GetMs(Slot slot);
 float GetTotalMs();
