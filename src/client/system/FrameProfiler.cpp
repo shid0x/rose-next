@@ -44,6 +44,8 @@ struct SpikeSnapshot {
     float flush_ms;
     int flush_count;
     int flush_kind[kFlushKindCount];
+    float mgr_update_ms;
+    float frame_sleep_ms;
     float tex_read_ms;
     float tex_create_ms;
     int tex_count;
@@ -170,6 +172,7 @@ void EmitSpike(const SpikeSnapshot& s, int others) {
              "logic[obj={:.1f} terr={:.1f} fx={:.1f} uiupd={:.1f}] | "
              "terr[cull={:.1f} ins={:.1f} prox={:.1f} type={:.1f} del={:.1f} "
              "mapload={:.1f} addmap={:.1f} reorg={:.1f}] | "
+             "present[end={:.1f} swap={:.1f} mgr={:.1f} slp={:.1f}] | "
              "flush={} | tex[n={} read={:.1f} create={:.1f}] | others={}",
         s.frame_ms,
         s.avg_ms,
@@ -207,6 +210,10 @@ void EmitSpike(const SpikeSnapshot& s, int others) {
         s.terrain_step[TERRAIN_MAPLOAD],
         s.terrain_step[TERRAIN_ADDMAP],
         s.terrain_step[TERRAIN_REORG],
+        s.slot[SLOT_PRESENT_ENDSCENE],
+        s.slot[SLOT_PRESENT_SWAP],
+        s.mgr_update_ms,
+        s.frame_sleep_ms,
         s.flush_sampled
             ? fmt::format("{:.1f}ms/{}n [terrain={} mesh={} tex={} mat={} other={}]",
                   s.flush_ms,
@@ -245,6 +252,10 @@ void NoteSpike(double frame_ms, double frame_accounted, DWORD now) {
     s_worst.flush_count = s_flush_count;
     for (int i = 0; i < kFlushKindCount; ++i)
         s_worst.flush_kind[i] = s_flush_kind[i];
+    // Read straight from the engine: sleep() runs once per frame and has already
+    // happened by EndFrame, so "last" is this frame's.
+    s_worst.mgr_update_ms = ::getLastManagerUpdateUsec() / 1000.0f;
+    s_worst.frame_sleep_ms = ::getLastFrameSleepUsec() / 1000.0f;
     s_worst.tex_read_ms = s_tex_read_ms;
     s_worst.tex_create_ms = s_tex_create_ms;
     s_worst.tex_count = s_tex_count;

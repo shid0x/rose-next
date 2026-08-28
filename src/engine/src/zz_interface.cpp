@@ -5528,6 +5528,23 @@ int getUseDelayedLoad ( void )
 }
 
 /// iKind: 0 terrain, 1 mesh, 2 texture, 3 material, 4 other.
+extern int zz_system_get_last_manager_update_usec ();
+extern int zz_system_get_last_frame_sleep_usec ();
+
+ZZ_SCRIPT
+int getLastManagerUpdateUsec ( void )
+{
+	CHECK_INTERFACE(getLastManagerUpdateUsec);
+	return zz_system_get_last_manager_update_usec();
+}
+
+ZZ_SCRIPT
+int getLastFrameSleepUsec ( void )
+{
+	CHECK_INTERFACE(getLastFrameSleepUsec);
+	return zz_system_get_last_frame_sleep_usec();
+}
+
 ZZ_SCRIPT
 int getTextureLoadReadUsec ( void )
 {

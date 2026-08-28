@@ -71,6 +71,14 @@ enum Slot {
     SLOT_NETIN_PACKET,    // g_pNet->Proc() -- drains the whole packet queue
     SLOT_NETIN_INPUT,     // ProcInput() -- input dispatch
 
+    /// Breakdown *within* SLOT_PRESENT. `present` is not GPU wait alone:
+    /// swapBuffers() calls zz_system::sleep(), which runs the resource amortiser
+    /// (manager_update) and the software frame cap (::Sleep) before returning.
+    /// Frames measured at present=13 ms with flush=0, shadow=0.1 and render=0.4
+    /// had nothing for the GPU to be behind on, which is what prompted the split.
+    SLOT_PRESENT_ENDSCENE, // ::endScene()
+    SLOT_PRESENT_SWAP,     // ::swapBuffers() -- includes sleep(), see above
+
     SLOT_COUNT,
 
     /// First sub-slot; everything from here up is a breakdown, not a phase.

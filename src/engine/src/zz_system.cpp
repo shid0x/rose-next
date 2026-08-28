@@ -627,6 +627,27 @@ int zz_system::manager_update (int time_to_update)
 	return int(1000*(double(diff)/ticks_per_second));;
 }
 
+// Per-frame split of what zz_system::sleep() actually does, for the client's
+// frame-spike log. Both land inside the client's SLOT_PRESENT bracket, because
+// swapBuffers() calls sleep() -- so "present" has never been GPU wait alone:
+// manager_update() is the resource amortiser running in the frame's tail, and
+// ::Sleep() is the software frame cap. Reported as "last" rather than
+// accumulated because sleep() runs exactly once per frame.
+static int s_last_manager_update_usec = 0;
+static int s_last_frame_sleep_usec = 0;
+
+int zz_system_get_last_manager_update_usec () { return s_last_manager_update_usec; }
+int zz_system_get_last_frame_sleep_usec () { return s_last_frame_sleep_usec; }
+
+static int zz_sleep_now_usec ()
+{
+	LARGE_INTEGER t, f;
+	::QueryPerformanceCounter(&t);
+	::QueryPerformanceFrequency(&f);
+	if (f.QuadPart == 0) return 0;
+	return (int)((double)t.QuadPart * 1000000.0 / (double)f.QuadPart);
+}
+
 // Wait if we exceed maximum frame rate.
 void zz_system::sleep ()
 {
@@ -652,6 +673,7 @@ void zz_system::sleep ()
 
 	// flush resources conserving min framerate
 	//ZZ_LOG("system: wait_flush(current(%dms) + surplus(%dms))\n", int(current_swap_msec), int(last_sleep_time_msec));
+	const int mgr_t0 = zz_sleep_now_usec();
 	if (last_sleep_time_msec > min_update_msec) {
 		int time_to_update = last_sleep_time_msec;
 		int manager_update_msec = manager_update(time_to_update); // apply just half
@@ -663,6 +685,8 @@ void zz_system::sleep ()
 		//manager_update(0); // initialize accumulated time of manager. it does not update anything.
 		manager_update(min_update_msec); // minimum update
 	}
+	s_last_manager_update_usec = zz_sleep_now_usec() - mgr_t0;
+	const int sleepcall_t0 = zz_sleep_now_usec();
 	
 	last_sleep_time_msec = int(max_swap_msec - current_swap_msec);
 	if (last_sleep_time_msec > 0) { // sleep conserving max framerate
@@ -676,6 +700,8 @@ void zz_system::sleep ()
 	else {
 		::Sleep(1); // minimum sleep
 	}
+
+	s_last_frame_sleep_usec = zz_sleep_now_usec() - sleepcall_t0;
 
 	// End of frame. The client's debug HUD is drawn during Render_GameMENU, which
 	// runs before swapBuffers() -> sleep(), so it has already sampled this frame's

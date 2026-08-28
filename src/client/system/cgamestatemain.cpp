@@ -206,8 +206,14 @@ CGameStateMain::Update(bool bLostFocus) {
 
             /// D3D9 buffers commands, so waiting for the GPU surfaces here.
             FrameProfiler::Begin(FrameProfiler::SLOT_PRESENT);
+            FrameProfiler::Begin(FrameProfiler::SLOT_PRESENT_ENDSCENE);
             ::endScene();
+            FrameProfiler::End(FrameProfiler::SLOT_PRESENT_ENDSCENE);
+            /// swapBuffers() also runs zz_system::sleep(), i.e. the resource
+            /// amortiser and the software frame cap -- see the present[] group.
+            FrameProfiler::Begin(FrameProfiler::SLOT_PRESENT_SWAP);
             ::swapBuffers();
+            FrameProfiler::End(FrameProfiler::SLOT_PRESENT_SWAP);
             FrameProfiler::End(FrameProfiler::SLOT_PRESENT);
         }
     } else {

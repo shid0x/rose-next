@@ -1855,6 +1855,16 @@ int getImmediateFlushRecentCount ( void );
 ZZ_SCRIPT
 int getImmediateFlushRecentAgeMs ( void );
 
+/// What zz_system::sleep() spent this frame. Both land inside the client's
+/// SLOT_PRESENT bracket, because swapBuffers() calls sleep() -- so `present` has
+/// never been GPU wait alone. manager_update is the resource amortiser running in
+/// the frame's tail; frame_sleep is the software frame cap's ::Sleep().
+ZZ_SCRIPT
+int getLastManagerUpdateUsec ( void );
+
+ZZ_SCRIPT
+int getLastFrameSleepUsec ( void );
+
 /// Inside this frame's texture flushes: microseconds spent reading the files,
 /// microseconds spent in D3DXCreateTextureFromFileInMemoryEx, and how many
 /// textures were loaded. Reset per frame alongside the other flush counters.
