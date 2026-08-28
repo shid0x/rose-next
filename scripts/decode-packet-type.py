@@ -64,7 +64,10 @@ def main():
                                                      errors="replace").splitlines():
             if "Frame spike:" in line:
                 m = WORST.search(line)
-                if m:
+                # 0x0000 is the "no packets this frame" sentinel, not a type.
+                # Annotating it matches every zero-valued constant in the header
+                # and buries the real lines in noise.
+                if m and int(m.group(1), 16) != 0:
                     tid = int(m.group(1), 16)
                     line += f"    <- worst packet: {name_for(table, tid)}"
             print(line)

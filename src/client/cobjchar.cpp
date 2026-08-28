@@ -9,6 +9,7 @@
 #include "IO_Event.h"
 #include "CViewMSG.h"
 #include "Network\CNetwork.h"
+#include "System/FrameProfiler.h"
 #include "calculation.h"
 #include "Game_FUNC.h"
 #include "Interface/CUIMediator.h"
@@ -1273,15 +1274,53 @@ CObjCHAR::CreateCHAR(char* szName,
     if (pMODEL == NULL || nCharPartCNT <= 0)
         return false;
 
-    if (this->LoadModelNODE(szName)) {
+    /// Spawn-step timing for the frame-spike log. A single GSV_NPC_CHAR /
+    /// GSV_MOB_CHAR packet measured 5-27 ms and this is where that time goes;
+    /// which of the four steps dominates decides whether the fix is warming the
+    /// asset ahead of time or making the per-instance work cheaper.
+    /// Inert unless [VIDEO] FRAME_SPIKE_LOG_MS is set.
+    const bool bTimeSpawn = FrameProfiler::IsSpikeLogEnabled();
+    LARGE_INTEGER qpf, t0, t1;
+    if (bTimeSpawn) {
+        ::QueryPerformanceFrequency(&qpf);
+        FrameProfiler::NoteSpawn();
+        ::QueryPerformanceCounter(&t0);
+    }
+    const bool bModelNode = this->LoadModelNODE(szName);
+    if (bTimeSpawn) {
+        ::QueryPerformanceCounter(&t1);
+        FrameProfiler::NoteSpawnStep(FrameProfiler::SPAWN_MODELNODE,
+            (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)qpf.QuadPart);
+        t0 = t1;
+    }
+
+    if (bModelNode) {
         this->CreatePARTS(szName);
+        if (bTimeSpawn) {
+            ::QueryPerformanceCounter(&t1);
+            FrameProfiler::NoteSpawnStep(FrameProfiler::SPAWN_PARTS,
+                (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)qpf.QuadPart);
+            t0 = t1;
+        }
 
         m_ppBoneEFFECT = m_pCharMODEL->CreateBoneEFFECT(m_hNodeMODEL, this);
+        if (bTimeSpawn) {
+            ::QueryPerformanceCounter(&t1);
+            FrameProfiler::NoteSpawnStep(FrameProfiler::SPAWN_BONEFX,
+                (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)qpf.QuadPart);
+            t0 = t1;
+        }
+
         this->InsertToScene();
 
         this->SetCMD_STOP();
 
         DropFromSky(Position.x, Position.y);
+        if (bTimeSpawn) {
+            ::QueryPerformanceCounter(&t1);
+            FrameProfiler::NoteSpawnStep(FrameProfiler::SPAWN_REST,
+                (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)qpf.QuadPart);
+        }
         return true;
     }
 

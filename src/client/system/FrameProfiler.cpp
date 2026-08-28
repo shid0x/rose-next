@@ -47,6 +47,8 @@ struct SpikeSnapshot {
     int pkt_count;
     double pkt_worst_ms;
     unsigned short pkt_worst_type;
+    int spawn_count;
+    double spawn_step[SPAWN_STEP_COUNT];
 };
 SpikeSnapshot s_worst;
 bool s_worst_valid = false;
@@ -58,6 +60,11 @@ DWORD s_window_start = 0;
 int s_pkt_count = 0;
 double s_pkt_worst_ms = 0.0;
 unsigned short s_pkt_worst_type = 0;
+
+/// Per-frame character-spawn detail: how many CreateCHAR calls ran and where
+/// their time went. Fed by NoteSpawn/NoteSpawnStep from CObjCHAR::CreateCHAR.
+int s_spawn_count = 0;
+double s_spawn_step[SPAWN_STEP_COUNT];
 
 /// Engine immediate-flush counters, sampled by CaptureFlushStats() while they are
 /// still valid. See the header for why EndFrame() cannot read them itself.
@@ -148,6 +155,7 @@ void EmitSpike(const SpikeSnapshot& s, int others) {
              "ui={:.1f} present={:.1f} oth={:.1f} | "
              "netin[msg={:.1f} gdat={:.1f} pkt={:.1f} inp={:.1f}] | "
              "pkt[n={} worst=0x{:04x}/{:.1f}ms] | "
+             "spawn[n={} mdl={:.1f} parts={:.1f} bone={:.1f} rest={:.1f}] | "
              "logic[obj={:.1f} terr={:.1f} fx={:.1f} uiupd={:.1f}] | "
              "flush={} | others={}",
         s.frame_ms,
@@ -167,6 +175,11 @@ void EmitSpike(const SpikeSnapshot& s, int others) {
         s.pkt_count,
         s.pkt_worst_type,
         s.pkt_worst_ms,
+        s.spawn_count,
+        s.spawn_step[SPAWN_MODELNODE],
+        s.spawn_step[SPAWN_PARTS],
+        s.spawn_step[SPAWN_BONEFX],
+        s.spawn_step[SPAWN_REST],
         s.slot[SLOT_LOGIC_OBJPROC],
         s.slot[SLOT_LOGIC_TERRAIN],
         s.slot[SLOT_LOGIC_EFFECTS],
@@ -209,6 +222,9 @@ void NoteSpike(double frame_ms, double frame_accounted, DWORD now) {
     s_worst.pkt_count = s_pkt_count;
     s_worst.pkt_worst_ms = s_pkt_worst_ms;
     s_worst.pkt_worst_type = s_pkt_worst_type;
+    s_worst.spawn_count = s_spawn_count;
+    for (int i = 0; i < SPAWN_STEP_COUNT; ++i)
+        s_worst.spawn_step[i] = s_spawn_step[i];
     s_worst_valid = true;
 }
 
@@ -237,6 +253,9 @@ void BeginFrame() {
     s_pkt_count = 0;
     s_pkt_worst_ms = 0.0;
     s_pkt_worst_type = 0;
+    s_spawn_count = 0;
+    for (int i = 0; i < SPAWN_STEP_COUNT; ++i)
+        s_spawn_step[i] = 0.0;
     s_frame_start = Now();
 }
 
@@ -264,6 +283,16 @@ void SetSpikeLogMs(unsigned int ms) {
 
 bool IsSpikeLogEnabled() {
     return s_spike_log_ms > 0;
+}
+
+void NoteSpawn() {
+    ++s_spawn_count;
+}
+
+void NoteSpawnStep(SpawnStep step, double ms) {
+    if (step < 0 || step >= SPAWN_STEP_COUNT)
+        return;
+    s_spawn_step[step] += ms;
 }
 
 void NotePacket(unsigned short type, double ms) {

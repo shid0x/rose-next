@@ -127,6 +127,23 @@ bool IsSpikeLogEnabled();
 /// "one packet does something enormous".
 void NotePacket(unsigned short type, double ms);
 
+/// Steps of one CObjCHAR::CreateCHAR, accumulated per frame.
+///
+/// GSV_NPC_CHAR / GSV_MOB_CHAR handlers measured at 5-27 ms for a single packet,
+/// and a spawn is four unrelated jobs (skeleton + motion + model node, body
+/// parts, bone effects, scene insert). Which one dominates decides the fix:
+/// a per-type first-load cost wants the asset warmed ahead of time, a per-
+/// instance cost wants the work itself made cheaper.
+enum SpawnStep {
+    SPAWN_MODELNODE = 0, // Get_SKELETON + Get_MOTION(0) + loadModel
+    SPAWN_PARTS,         // CreatePARTS: meshes and materials for every body part
+    SPAWN_BONEFX,        // CreateBoneEFFECT
+    SPAWN_REST,          // InsertToScene, SetCMD_STOP, DropFromSky
+    SPAWN_STEP_COUNT
+};
+void NoteSpawnStep(SpawnStep step, double ms);
+void NoteSpawn();
+
 /// Smoothed values from the last completed window. Safe to call at any time.
 float GetMs(Slot slot);
 float GetTotalMs();
