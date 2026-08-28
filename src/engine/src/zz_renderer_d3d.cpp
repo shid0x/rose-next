@@ -4399,9 +4399,27 @@ zz_handle zz_renderer_d3d::download_texture (zz_texture * tex)
 	::QueryPerformanceCounter(&tex_t2);
 	if (tex_qpf.QuadPart != 0) {
 		const double to_usec = 1000000.0 / (double)tex_qpf.QuadPart;
+		const int create_usec = (int)((double)(tex_t2.QuadPart - tex_t1.QuadPart) * to_usec);
 		zz_manager::add_texture_load_time(
 			(int)((double)(tex_t1.QuadPart - tex_t0.QuadPart) * to_usec),
-			(int)((double)(tex_t2.QuadPart - tex_t1.QuadPart) * to_usec));
+			create_usec);
+
+		// Name the expensive ones. Texture create measured between 0.20 ms and
+		// 11.13 ms each in the same session, so it is not a fixed overhead -- and
+		// the engine's own note above says a 512x512 DXT1 costs 0.729 ms at
+		// miplevel 1 but 57 ms at miplevel 2, i.e. the cost is D3DX *generating*
+		// mips rather than copying the file's. src_mips is therefore the field
+		// that matters: a file with no chain of its own has to have one built,
+		// which for a DXT source means decompress, filter, recompress.
+		//
+		// Threshold-gated so this only fires for loads worth naming.
+		if (create_usec >= 2000) {
+			ZZ_LOG("r_d3d: slow texture create %.1f ms (%s) %ux%u src_mips=%u "
+				"req_mips=%d filter=%d fmt=%d\n",
+				create_usec / 1000.0f, texture_path, read_width, read_height,
+				image_info.MipLevels, miplevels, use_filter ? 1 : 0,
+				(int)texture_loading_format);
+		}
 	}
 
 	_count_pool_creation(_stat_created_texture, (int)pool);
