@@ -62,6 +62,15 @@ enum Slot {
     SLOT_LOGIC_EFFECTS,   // effect list, bullets, SFX manager
     SLOT_LOGIC_UIUPD,     // g_UIMed.Update()
 
+    /// Breakdown *within* SLOT_NETINPUT, same overlapping rule as the logic group.
+    /// Added because netin turned out to be one of the largest spike phases in
+    /// practice (201 ms on a solo server) while being four unrelated jobs sharing
+    /// one bracket -- which named a phase without naming a cause.
+    SLOT_NETIN_MSG,       // g_pCApp->GetMessage() -- Win32 message pump
+    SLOT_NETIN_GAMEDATA,  // g_GameDATA.Update()
+    SLOT_NETIN_PACKET,    // g_pNet->Proc() -- drains the whole packet queue
+    SLOT_NETIN_INPUT,     // ProcInput() -- input dispatch
+
     SLOT_COUNT,
 
     /// First sub-slot; everything from here up is a breakdown, not a phase.
@@ -84,6 +93,12 @@ void EndFrame();
 /// This is deliberately separate from [VIDEO] STREAM_SPIKE_LOG_MS, which triggers on
 /// immediate-flush time alone: that one is silent for any hitch the streaming path did
 /// not cause, and a silent diagnostic is indistinguishable from a healthy frame.
+///
+/// Spikes are rate-limited, and the limiter keeps the **worst** frame of each window
+/// rather than the first. That distinction is not cosmetic: the first implementation
+/// kept the first and counted the rest, and in the very first capture it reported a
+/// 24 ms frame while discarding a >=104 ms one that landed 250 ms later. A hitch log
+/// that drops the biggest hitch is worse than none, because it looks like evidence.
 void SetSpikeLogMs(unsigned int ms);
 
 /// Sample the engine's per-frame immediate-flush counters into the current frame, so a

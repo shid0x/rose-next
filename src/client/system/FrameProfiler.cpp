@@ -21,14 +21,34 @@ bool s_slot_open[SLOT_COUNT];
 
 /// Spike log state. Threshold 0 means the whole feature is inert.
 unsigned int s_spike_log_ms = 0;
-DWORD s_spike_last_tick = 0;
-int s_spike_suppressed = 0;
 
 /// Mirrors zz_manager::FLUSH_KIND_COUNT (terrain, mesh, texture, material, other).
 /// Deliberately a local copy rather than a shared constant: the engine's enum is
 /// the authority, and getImmediateFlushKind() bounds-checks its argument, so a
 /// kind added there goes unreported here instead of reading past the array.
 const int kFlushKindCount = 5;
+
+/// The held candidate for the current rate-limit window.
+///
+/// The limiter keeps the **worst** frame of a window, not the first. Keeping the
+/// first is the obvious implementation and it is actively misleading: the first
+/// capture with this tool reported a 24 ms frame and discarded a >=104 ms one that
+/// arrived 250 ms later, so the log's headline number was the *least* interesting
+/// frame in the burst. Emission is therefore deferred to the end of the window.
+struct SpikeSnapshot {
+    double frame_ms;
+    double accounted;
+    double slot[SLOT_COUNT];
+    float avg_ms;
+    bool flush_sampled;
+    float flush_ms;
+    int flush_count;
+    int flush_kind[kFlushKindCount];
+};
+SpikeSnapshot s_worst;
+bool s_worst_valid = false;
+int s_window_spikes = 0;
+DWORD s_window_start = 0;
 
 /// Engine immediate-flush counters, sampled by CaptureFlushStats() while they are
 /// still valid. See the header for why EndFrame() cannot read them itself.
@@ -39,10 +59,10 @@ int s_flush_kind[kFlushKindCount];
 
 /// Emitting a line costs a formatted log record and an FFI crossing, which is
 /// itself long enough to matter on a frame that is already late. A hitch worth
-/// investigating is not a 130 Hz event, so one line per 250 ms is plenty -- and
-/// the suppressed count is carried into the next line rather than dropped, so a
-/// burst still reports its true size.
-const DWORD kSpikeLogMinIntervalMs = 250;
+/// investigating is not a 130 Hz event, so one line per 250 ms is plenty. The
+/// window's other spikes are reported as a count, so a burst still states its
+/// true size rather than looking like a single event.
+const DWORD kSpikeLogWindowMs = 250;
 
 LONGLONG s_frame_start = 0;
 double s_frame_accum = 0.0;
@@ -72,77 +92,108 @@ inline double ToMs(LONGLONG ticks) {
 /// Read it in three steps:
 ///
 ///   1. Which phase is large? That is the answer, and the rest is detail.
-///        netin   - packet drain / window messages / input. A spawn burst or a
-///                  large inventory update lands here.
-///        logic   - client game logic; use the logic[...] breakdown to split it.
+///        netin   - window messages, packet drain, input. Split further by the
+///                  netin[...] group: msg = the Win32 pump, gdat = g_GameDATA.Update,
+///                  pkt = g_pNet->Proc draining the queue (packet handlers run
+///                  synchronously in here, so a zone change is charged to it),
+///                  inp = ProcInput.
+///        logic   - client game logic; split further by the logic[...] group.
 ///        scnupd  - engine scene update: transforms, culling, skeletal animation.
 ///                  Scales with visible object count; no rendering change touches it.
 ///        shadow  - beginScene(), which runs the whole shadow-map pass, and is also
-///                  where the immediate resource flush happens -- so check flush=
-///                  before blaming the shadow pass itself.
-///        render  - draw submission. High means CPU-bound on draw calls.
+///                  where much of the immediate resource flush happens -- so check
+///                  flush= before blaming the shadow pass itself.
+///        render  - draw submission. High means CPU-bound on draw calls, unless
+///                  flush= accounts for it: flushes land here too.
 ///        present - endScene() + swapBuffers(). This is where waiting for the GPU
 ///                  surfaces, because D3D9 buffers commands. With VSYNC=1 it is also
 ///                  where the frame-rate cap is paid, so it is expected to be large
 ///                  and is only interesting when a *spike* lands in it.
-///        oth     - inside the frame but outside every bracket. A large `oth` means
-///                  the phases do not cover the cost and the brackets need extending;
-///                  it is a real finding, not noise.
+///        oth     - inside the frame but outside every bracket. Large in states other
+///                  than CGameStateMain (nothing fills slots there), which is why
+///                  zone-load frames report almost everything in oth. In-game it is a
+///                  real finding: work no bracket covers.
 ///
 ///   2. Is flush= large? Then it is the streaming path, already covered by
 ///      [VIDEO] STREAM_SPIKE_LOG_MS and tuned with TERRAIN_INSERTS_PER_FRAME /
-///      LOAD_BUDGET_US. `flush=unsampled` means the frame never reached the sample
-///      point (lost focus, or the scene did not begin) -- not that flushing was free.
+///      LOAD_BUDGET_US. It is a whole-frame total spread across scnupd, shadow and
+///      render, so it says streaming was involved without saying which phase carried
+///      it -- and it can legitimately exceed any single phase. `flush=unsampled`
+///      means the frame never reached the sample point (lost focus, or the scene did
+///      not begin) -- not that flushing was free.
 ///
 ///   3. Compare against avg=, the last published window mean. A 40 ms frame against
 ///      an 8 ms average is a hitch; against a 35 ms average it is just a slow scene,
 ///      and the fix is throughput, not spike-hunting. It reads 0.0 until the first
 ///      30-frame window has completed, which only affects the opening frames.
 ///
+/// `others=N` is how many further frames crossed the threshold inside the same 250 ms
+/// window. This line is the worst of them, not the first -- see SpikeSnapshot.
+///
 /// Zone-in and the first frames after a warp are legitimately enormous. Expect a
 /// cluster there and judge steady-state play instead.
 ///
-void LogSpike(double frame_ms, double frame_accounted) {
-    const DWORD now = ::GetTickCount();
-    if ((DWORD)(now - s_spike_last_tick) < kSpikeLogMinIntervalMs) {
-        ++s_spike_suppressed;
-        return;
-    }
-    s_spike_last_tick = now;
-
-    const int suppressed = s_spike_suppressed;
-    s_spike_suppressed = 0;
-
+void EmitSpike(const SpikeSnapshot& s, int others) {
     LOG_INFO("Frame spike: {:.1f} ms (avg {:.1f}) | "
              "netin={:.1f} logic={:.1f} scnupd={:.1f} shadow={:.1f} render={:.1f} "
              "ui={:.1f} present={:.1f} oth={:.1f} | "
+             "netin[msg={:.1f} gdat={:.1f} pkt={:.1f} inp={:.1f}] | "
              "logic[obj={:.1f} terr={:.1f} fx={:.1f} uiupd={:.1f}] | "
-             "flush={} | suppressed={}",
-        frame_ms,
-        s_published_total,
-        s_slot_frame[SLOT_NETINPUT],
-        s_slot_frame[SLOT_LOGIC],
-        s_slot_frame[SLOT_SCENE_UPDATE],
-        s_slot_frame[SLOT_SHADOW],
-        s_slot_frame[SLOT_RENDER],
-        s_slot_frame[SLOT_UI],
-        s_slot_frame[SLOT_PRESENT],
-        frame_ms - frame_accounted,
-        s_slot_frame[SLOT_LOGIC_OBJPROC],
-        s_slot_frame[SLOT_LOGIC_TERRAIN],
-        s_slot_frame[SLOT_LOGIC_EFFECTS],
-        s_slot_frame[SLOT_LOGIC_UIUPD],
-        s_flush_sampled
+             "flush={} | others={}",
+        s.frame_ms,
+        s.avg_ms,
+        s.slot[SLOT_NETINPUT],
+        s.slot[SLOT_LOGIC],
+        s.slot[SLOT_SCENE_UPDATE],
+        s.slot[SLOT_SHADOW],
+        s.slot[SLOT_RENDER],
+        s.slot[SLOT_UI],
+        s.slot[SLOT_PRESENT],
+        s.frame_ms - s.accounted,
+        s.slot[SLOT_NETIN_MSG],
+        s.slot[SLOT_NETIN_GAMEDATA],
+        s.slot[SLOT_NETIN_PACKET],
+        s.slot[SLOT_NETIN_INPUT],
+        s.slot[SLOT_LOGIC_OBJPROC],
+        s.slot[SLOT_LOGIC_TERRAIN],
+        s.slot[SLOT_LOGIC_EFFECTS],
+        s.slot[SLOT_LOGIC_UIUPD],
+        s.flush_sampled
             ? fmt::format("{:.1f}ms/{}n [terrain={} mesh={} tex={} mat={} other={}]",
-                  s_flush_ms,
-                  s_flush_count,
-                  s_flush_kind[0],
-                  s_flush_kind[1],
-                  s_flush_kind[2],
-                  s_flush_kind[3],
-                  s_flush_kind[4])
+                  s.flush_ms,
+                  s.flush_count,
+                  s.flush_kind[0],
+                  s.flush_kind[1],
+                  s.flush_kind[2],
+                  s.flush_kind[3],
+                  s.flush_kind[4])
             : std::string("unsampled"),
-        suppressed);
+        others);
+}
+
+/// Hold this frame if it is the worst of the current window, opening a new window
+/// when none is running.
+void NoteSpike(double frame_ms, double frame_accounted, DWORD now) {
+    if (!s_worst_valid) {
+        s_window_start = now;
+        s_window_spikes = 0;
+    }
+    ++s_window_spikes;
+
+    if (s_worst_valid && frame_ms <= s_worst.frame_ms)
+        return;
+
+    s_worst.frame_ms = frame_ms;
+    s_worst.accounted = frame_accounted;
+    for (int i = 0; i < SLOT_COUNT; ++i)
+        s_worst.slot[i] = s_slot_frame[i];
+    s_worst.avg_ms = s_published_total;
+    s_worst.flush_sampled = s_flush_sampled;
+    s_worst.flush_ms = s_flush_ms;
+    s_worst.flush_count = s_flush_count;
+    for (int i = 0; i < kFlushKindCount; ++i)
+        s_worst.flush_kind[i] = s_flush_kind[i];
+    s_worst_valid = true;
 }
 
 } // namespace
@@ -223,8 +274,18 @@ void EndFrame() {
             frame_accounted += s_slot_frame[i];
     }
 
-    if (s_spike_log_ms > 0 && frame_ms >= (double)s_spike_log_ms)
-        LogSpike(frame_ms, frame_accounted);
+    if (s_spike_log_ms > 0) {
+        const DWORD now = ::GetTickCount();
+        if (frame_ms >= (double)s_spike_log_ms)
+            NoteSpike(frame_ms, frame_accounted, now);
+        // Checked every frame, not only on spikes: the held candidate must still be
+        // emitted once the window closes even if nothing further crosses the
+        // threshold, which is the common case for an isolated hitch.
+        if (s_worst_valid && (DWORD)(now - s_window_start) >= kSpikeLogWindowMs) {
+            EmitSpike(s_worst, s_window_spikes - 1);
+            s_worst_valid = false;
+        }
+    }
 
     if (s_frames < kWindowFrames)
         return;

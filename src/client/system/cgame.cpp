@@ -221,13 +221,27 @@ CGame::GameLoop() {
         /// `oth` on the HUD instead of vanishing from the measurement entirely.
         FrameProfiler::BeginFrame();
 
+        /// netin is four unrelated jobs, and measurement put whole-frame spikes of
+        /// 48-201 ms inside it with zero streaming activity -- so the sub-brackets
+        /// are what turn "it was netin" into a cause. Packet handlers run
+        /// synchronously inside g_pNet->Proc(), so anything a packet triggers
+        /// (a zone change, a large inventory update) is charged to `pkt`.
         FrameProfiler::Begin(FrameProfiler::SLOT_NETINPUT);
+        FrameProfiler::Begin(FrameProfiler::SLOT_NETIN_MSG);
         bool bLostFocus = g_pCApp->GetMessage();
+        FrameProfiler::End(FrameProfiler::SLOT_NETIN_MSG);
 
+        FrameProfiler::Begin(FrameProfiler::SLOT_NETIN_GAMEDATA);
         g_GameDATA.Update();
+        FrameProfiler::End(FrameProfiler::SLOT_NETIN_GAMEDATA);
 
+        FrameProfiler::Begin(FrameProfiler::SLOT_NETIN_PACKET);
         g_pNet->Proc();
+        FrameProfiler::End(FrameProfiler::SLOT_NETIN_PACKET);
+
+        FrameProfiler::Begin(FrameProfiler::SLOT_NETIN_INPUT);
         ProcInput();
+        FrameProfiler::End(FrameProfiler::SLOT_NETIN_INPUT);
         FrameProfiler::End(FrameProfiler::SLOT_NETINPUT);
 
         this->active_state->Update(bLostFocus);
