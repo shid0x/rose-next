@@ -125,6 +125,17 @@ CClientStorage::Load() {
     m_VideoOption.stream_spike_log_ms =
         GetPrivateProfileInt("VIDEO", "STREAM_SPIKE_LOG_MS", 0, g_szIniFileName);
 
+    /// Whole-frame spike diagnostic, OFF by default. STREAM_SPIKE_LOG_MS above
+    /// only fires when the immediate-flush path is what cost the time, so a
+    /// hitch from any other phase -- packet drain, object Proc, the shadow pass,
+    /// a GPU stall in Present -- produces no log line whatsoever and reads
+    /// exactly like a smooth frame. This one triggers on total frame time and
+    /// prints that frame's own phase split, which is what turns "it hitched
+    /// somewhere in Junon" into a named phase. 20 is a reasonable starting
+    /// threshold at 60 fps (a doubled frame); lower it to catch smaller stutters.
+    m_VideoOption.frame_spike_log_ms =
+        GetPrivateProfileInt("VIDEO", "FRAME_SPIKE_LOG_MS", 0, g_szIniFileName);
+
     m_SoundOption.iBgmVolume =
         GetPrivateProfileInt("SOUND", "BGMVOLUME", DEFAULT_BGM_VOLUME, g_szIniFileName);
     m_SoundOption.iEffectVolume =
@@ -252,6 +263,9 @@ CClientStorage::Save() {
 
     itoa(m_VideoOption.stream_spike_log_ms, szTemp, 10);
     WritePrivateProfileString("VIDEO", "STREAM_SPIKE_LOG_MS", szTemp, g_szIniFileName);
+
+    itoa(m_VideoOption.frame_spike_log_ms, szTemp, 10);
+    WritePrivateProfileString("VIDEO", "FRAME_SPIKE_LOG_MS", szTemp, g_szIniFileName);
 
     // Sound
     itoa(m_SoundOption.iBgmVolume, szTemp, 10);

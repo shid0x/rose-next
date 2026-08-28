@@ -188,6 +188,22 @@ CGameStateMain::Update(bool bLostFocus) {
             this->render_dev_ui();
             FrameProfiler::End(FrameProfiler::SLOT_UI);
 
+            /// Sample the immediate-flush counters for the frame-spike log while
+            /// they are still valid: swapBuffers() -> zz_system::sleep() rolls
+            /// them over at end of frame, and FrameProfiler::EndFrame() runs
+            /// after that, so this cannot be deferred into the profiler itself.
+            ///
+            /// Sampled here, at the end of everything that can force a load, so
+            /// the figure is a whole-frame total. Flushes are spread across three
+            /// phases -- the octree's within-50 m distance pass in updateSceneEx()
+            /// (scnupd), zz_terrain_block::before_render() under beginScene()
+            /// (shadow), and the render itself -- so a large flush= says streaming
+            /// was involved without saying which phase carried it. Read it against
+            /// the phase values rather than instead of them.
+            ///
+            /// No-ops unless [VIDEO] FRAME_SPIKE_LOG_MS is set.
+            FrameProfiler::CaptureFlushStats();
+
             /// D3D9 buffers commands, so waiting for the GPU surfaces here.
             FrameProfiler::Begin(FrameProfiler::SLOT_PRESENT);
             ::endScene();

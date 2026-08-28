@@ -269,6 +269,7 @@ hand and are useful when developing or diagnosing:
 | `[VIDEO] LOAD_BUDGET_US` | Default `2000`. Microseconds per frame the engine may spend pre-loading resources. `0` = legacy behaviour. See below. |
 | `[VIDEO] MAP_PREFETCH` | Default `1`. Background thread that warms the OS file cache for map chunks before they are read. `0` disables it. |
 | `[VIDEO] STREAM_SPIKE_LOG_MS` | Default `0` (off). Diagnostic: log a `client.log` line for every frame spending ≥ this many ms loading resources. `4` is a good value when hunting a hitch. |
+| `[VIDEO] FRAME_SPIKE_LOG_MS` | Default `0` (off). Diagnostic: log a `client.log` line for every frame whose **total** time is ≥ this many ms, with the phase breakdown. `20` is a good starting value at 60 fps. Catches the hitches `STREAM_SPIKE_LOG_MS` cannot see. |
 
 Three environment variables override the INI, which is handy for one-off runs:
 
@@ -340,8 +341,46 @@ hardware, so a 350 KB texture was assumed to need 350 ms and got postponed for
 ~70 frames, then loaded urgently at the worst possible moment. This paces that
 work on actual measured time instead. `0` restores the old behaviour.
 
-**Diagnosing a hitch.** Set `STREAM_SPIKE_LOG_MS=4` and play; every frame that
-spends ≥ 4 ms loading writes a line to `client.log`:
+**Diagnosing a hitch.** There are two spike logs, and they answer different
+questions. Start with the frame one, because it tells you whether streaming is
+even involved.
+
+**`FRAME_SPIKE_LOG_MS`** triggers on *total frame time* and reports where the
+milliseconds went. Set it to `20` (a doubled frame at 60 fps) and play; every
+frame over the threshold writes one line to `client.log`:
+
+```
+Frame spike: 47.3 ms (avg 8.1) | netin=0.3 logic=2.1 scnupd=1.2 shadow=31.9
+render=8.4 ui=1.1 present=1.9 oth=0.4 | logic[obj=1.4 terr=0.2 fx=0.3 uiupd=0.1]
+| flush=30.2ms/258n [terrain=255 mesh=0 tex=3 mat=0 other=0] | suppressed=0
+```
+
+Read it in this order:
+
+1. **Which phase is large?** That is the answer. `netin` = packet drain (a spawn
+   burst lands here), `logic` = game logic (split further by the `logic[...]`
+   group), `scnupd` = engine transforms/culling/animation, `shadow` =
+   `beginScene()` and the shadow-map pass, `render` = draw submission, `present`
+   = waiting for the GPU, `oth` = inside the frame but outside every bracket.
+2. **Is `flush=` large?** Then it is the streaming path and the two dials above
+   apply. If it is small while a phase is large, the hitch is *not* streaming and
+   no amount of `TERRAIN_INSERTS_PER_FRAME` tuning will move it. Note `flush=` is
+   a whole-frame total spread across `scnupd`, `shadow` and `render`, so it tells
+   you streaming was involved without telling you which phase paid for it.
+3. **Compare with `avg=`**, the recent frame-time mean. 40 ms against an 8 ms
+   average is a hitch; 40 ms against a 35 ms average is just a slow scene, and
+   the fix is throughput rather than spike-hunting.
+
+`present` is expected to be large with `VSYNC=1` — that is where the frame cap is
+paid — so run with `VSYNC=0` while hunting, otherwise every phase's real cost is
+masked by the wait. `suppressed=N` reports spikes dropped by the 250 ms rate
+limit, so a burst still tells you its true size. `flush=unsampled` means the
+frame never reached the sample point (lost focus, or the scene did not begin) —
+it does not mean flushing was free.
+
+**`STREAM_SPIKE_LOG_MS`** is the narrower one: it triggers only on time spent
+force-loading resources, so it is silent for any hitch streaming did not cause.
+Set it to `4` and it writes:
 
 ```
 Flush spike: 25.3 ms over 259 nodes [terrain=255 mesh=0 tex=4 ...] leadavg=1 ...
@@ -351,11 +390,17 @@ Flush spike: 25.3 ms over 259 nodes [terrain=255 mesh=0 tex=4 ...] leadavg=1 ...
 work sat waiting before it was needed — says which knob applies: **~1 frame**
 means it was needed immediately, so lower `TERRAIN_INSERTS_PER_FRAME`;
 **hundreds of frames** means the pre-loader had time and wasted it, so raise
-`LOAD_BUDGET_US`. Turn the log back off (`0`) afterwards — it is chatty.
+`LOAD_BUDGET_US`.
 
-The in-game debug HUD (`D` with GM rights) also carries `MapIO:` and `Flush:`
-rows for live values, and `/perfreset` re-zeroes the peak counters, which
-otherwise saturate during zone-in and then tell you nothing.
+Turn both back off (`0`) afterwards — they are chatty. Zone-in and the first
+frames after a warp are legitimately enormous, so expect a cluster there and
+judge steady-state play instead.
+
+The in-game debug HUD (`D` with GM rights) also carries `MapIO:`, `Flush:` and
+`Time:` rows for live values, and `/perfreset` re-zeroes the peak counters, which
+otherwise saturate during zone-in and then tell you nothing. The HUD's `Time:`
+row is a 30-frame average with a `max` column — the frame spike log exists
+because a single bad frame survives one window there and is then gone.
 
 ### Connecting to a server
 

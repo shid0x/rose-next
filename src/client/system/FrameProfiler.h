@@ -36,6 +36,12 @@
 /// reads a completed window rather than a single noisy frame. `max` is the worst single
 /// frame total in that window -- hitches hide in the average.
 ///
+/// That averaging is also why the spike log below exists. A hitch is one frame; it shows
+/// up as `max` for a single 30-frame window and is then gone, which is unreadable while
+/// playing and unrecoverable afterwards. SetSpikeLogMs() writes that frame's *own* phase
+/// split to client.log, so a stutter names the phase that caused it instead of leaving
+/// you to reproduce it while staring at a HUD row.
+///
 namespace FrameProfiler {
 
 enum Slot {
@@ -71,6 +77,25 @@ void End(Slot slot);
 
 /// Call once at the very end of the frame.
 void EndFrame();
+
+/// Threshold in ms for the whole-frame spike log, from [VIDEO] FRAME_SPIKE_LOG_MS.
+/// 0 (the default) disables it entirely -- no sampling, no formatting, no cost.
+///
+/// This is deliberately separate from [VIDEO] STREAM_SPIKE_LOG_MS, which triggers on
+/// immediate-flush time alone: that one is silent for any hitch the streaming path did
+/// not cause, and a silent diagnostic is indistinguishable from a healthy frame.
+void SetSpikeLogMs(unsigned int ms);
+
+/// Sample the engine's per-frame immediate-flush counters into the current frame, so a
+/// logged spike can say in one line whether the streaming path was responsible.
+///
+/// MUST be called after the scene has rendered and BEFORE swapBuffers(). The engine rolls
+/// those counters over in zz_system::sleep(), which swapBuffers() calls -- so sampling
+/// them from EndFrame(), which runs later still, would record a clean zero on precisely
+/// the spike frames this log exists to explain. Frames where it is not called are
+/// reported as `flush=unsampled` rather than as zero, because "no data" and "no flush
+/// work" are different findings and printing the second for the first is a lie.
+void CaptureFlushStats();
 
 /// Smoothed values from the last completed window. Safe to call at any time.
 float GetMs(Slot slot);

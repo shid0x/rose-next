@@ -6,6 +6,7 @@
 #include "Util/VFSManager.h"
 #include "CClientStorage.h"
 #include "System/CGame.h"
+#include "System/FrameProfiler.h"
 #include "Interface/ExternalUI/CLogin.h"
 
 #include "Util/CheckHack.h"
@@ -61,6 +62,16 @@ Init_DEVICE(void) {
     // which already cost one inconclusive test round.
     LOG_INFO("Engine load budget: {} us/frame ([VIDEO] LOAD_BUDGET_US, 0 = legacy pacing)",
         ::getLoadBudgetPerFrameUsec());
+
+    // Whole-frame hitch log. Hand-edited key with no options-screen control, so
+    // reading it once here is enough. Logged for the same reason as the budget
+    // above: a diagnostic that is silently off looks exactly like a session with
+    // no hitches in it.
+    FrameProfiler::SetSpikeLogMs(g_ClientStorage.GetFrameSpikeLogMs());
+    if (g_ClientStorage.GetFrameSpikeLogMs() > 0) {
+        LOG_INFO("Frame spike log: ON, threshold {} ms ([VIDEO] FRAME_SPIKE_LOG_MS)",
+            g_ClientStorage.GetFrameSpikeLogMs());
+    }
 
     t_OptionResolution Resolution = g_ClientStorage.GetResolution();
     ::setDisplayQualityLevel(c_iPeformances[g_ClientStorage.GetVideoPerformance()]);

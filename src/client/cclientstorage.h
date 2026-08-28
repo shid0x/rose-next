@@ -41,6 +41,13 @@ struct t_OptionVideo {
     // 0 = off (default). Diagnostic only -- it writes a line per qualifying
     // frame, so it is not something to leave on during normal play.
     UINT stream_spike_log_ms;
+    // Threshold in ms for the "Frame spike:" whole-frame diagnostic in
+    // client.log. 0 = off (default). Distinct from stream_spike_log_ms above:
+    // that one only fires when the *streaming* path is what cost the time, so a
+    // hitch from any other phase writes nothing at all and is indistinguishable
+    // from a smooth frame. This one triggers on total frame time and reports the
+    // phase split, so it catches the hitches the streaming log cannot see.
+    UINT frame_spike_log_ms;
 };
 
 struct t_OptionSound {
@@ -152,6 +159,7 @@ public:
     UINT GetLoadBudgetUs() { return m_VideoOption.load_budget_us; }
     UINT GetTerrainInsertsPerFrame() { return m_VideoOption.terrain_inserts_per_frame; }
     UINT GetStreamSpikeLogMs() { return m_VideoOption.stream_spike_log_ms; }
+    UINT GetFrameSpikeLogMs() { return m_VideoOption.frame_spike_log_ms; }
     ///*********************************************************************/
     /// Sound
     void SetSoundOption(t_OptionSound& option);
