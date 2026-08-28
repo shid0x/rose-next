@@ -48,6 +48,18 @@ struct t_OptionVideo {
     // from a smooth frame. This one triggers on total frame time and reports the
     // phase split, so it catches the hitches the streaming log cannot see.
     UINT frame_spike_log_ms;
+    // Framerate cap, applied via the engine's setFramerateRange. 0 (default)
+    // leaves INIT.LUA's setFramerateRange(15, 1000) alone, i.e. uncapped, so the
+    // setting is opt-in and the default behaviour is byte-identical to before.
+    //
+    // Worth having because vsync was previously the *only* way to cap: the
+    // engine's own limiter exists but INIT.LUA disables it by asking for 1000.
+    // And a cap matters more here than in most engines -- the resource amortiser
+    // gets a fixed slice per frame, so its lead time is wall-clock, and a higher
+    // framerate means less time to load ahead. Measured: `flush` (work forced at
+    // render because the amortiser lost the race) is 2.6-6.7 ms uncapped at
+    // ~300 fps versus 0.0-1.5 ms at 60.
+    UINT max_fps;
 };
 
 struct t_OptionSound {
@@ -160,6 +172,7 @@ public:
     UINT GetTerrainInsertsPerFrame() { return m_VideoOption.terrain_inserts_per_frame; }
     UINT GetStreamSpikeLogMs() { return m_VideoOption.stream_spike_log_ms; }
     UINT GetFrameSpikeLogMs() { return m_VideoOption.frame_spike_log_ms; }
+    UINT GetMaxFps() { return m_VideoOption.max_fps; }
     ///*********************************************************************/
     /// Sound
     void SetSoundOption(t_OptionSound& option);

@@ -136,6 +136,17 @@ CClientStorage::Load() {
     m_VideoOption.frame_spike_log_ms =
         GetPrivateProfileInt("VIDEO", "FRAME_SPIKE_LOG_MS", 0, g_szIniFileName);
 
+    /// Framerate cap. 0 = leave INIT.LUA's setFramerateRange(15, 1000) alone.
+    /// Clamped rather than trusted: a stray MAX_FPS=1 would otherwise make the
+    /// game unplayable with no obvious cause, and the engine asserts on <= 0.
+    m_VideoOption.max_fps = GetPrivateProfileInt("VIDEO", "MAX_FPS", 0, g_szIniFileName);
+    if (m_VideoOption.max_fps != 0) {
+        if (m_VideoOption.max_fps < 20)
+            m_VideoOption.max_fps = 20;
+        else if (m_VideoOption.max_fps > 1000)
+            m_VideoOption.max_fps = 1000;
+    }
+
     m_SoundOption.iBgmVolume =
         GetPrivateProfileInt("SOUND", "BGMVOLUME", DEFAULT_BGM_VOLUME, g_szIniFileName);
     m_SoundOption.iEffectVolume =
@@ -266,6 +277,9 @@ CClientStorage::Save() {
 
     itoa(m_VideoOption.frame_spike_log_ms, szTemp, 10);
     WritePrivateProfileString("VIDEO", "FRAME_SPIKE_LOG_MS", szTemp, g_szIniFileName);
+
+    itoa(m_VideoOption.max_fps, szTemp, 10);
+    WritePrivateProfileString("VIDEO", "MAX_FPS", szTemp, g_szIniFileName);
 
     // Sound
     itoa(m_SoundOption.iBgmVolume, szTemp, 10);

@@ -260,7 +260,8 @@ hand and are useful when developing or diagnosing:
 | Key | Effect |
 | --- | --- |
 | `[VIDEO] D3D9EX=0` | Force the legacy D3D9 path instead of 9Ex. For A/B testing. |
-| `[VIDEO] VSYNC=0` | Uncap the framerate. Vsync is the **only** frame cap — there is no software limiter. |
+| `[VIDEO] VSYNC=0` | Disable vsync. |
+| `[VIDEO] MAX_FPS` | Default `0` (no cap). Caps the framerate via the engine's own limiter, independently of vsync. Clamped to 20–1000. **Worth setting even on fast hardware** — see below. |
 | `[VIDEO] RMLUI=1` | Enable the RmlUi UI layer. `/dps` then opens the RmlUi damage meter instead of the legacy one. |
 | `[VIDEO] FULLSCREEN` | `1` = fullscreen, `0` = windowed. Written by the in-game options screen. Windowed is the only resizable mode. |
 | `[VIDEO] EXCLUSIVE_FULLSCREEN` | *Which kind* of fullscreen `FULLSCREEN=1` gives you: `0` (default) = **borderless**, `1` = legacy exclusive. See below. |
@@ -310,6 +311,39 @@ Confirm which one you actually got from `error.txt`:
 ```
 screen: mode=borderless size=1920x1080 (ini FULLSCREEN=1, EXCLUSIVE_FULLSCREEN=0)
 ```
+
+#### Framerate: why a cap can make the game *smoother*
+
+`[VIDEO] MAX_FPS` exists because vsync used to be the only way to limit the
+framerate — the engine has its own limiter, but `data/SCRIPTS/INIT.LUA` asks for
+a maximum of 1000, which disables it in practice.
+
+Capping matters more here than in most engines. The resource amortiser loads
+ahead of what the renderer will need, and it gets a slice of each frame — so its
+lead time is measured in **wall clock**, not frames. Run at 300 fps and frames
+are 3.3 ms apart, so it loses the race and the renderer force-loads instead;
+run at 60 and they are 16.7 ms apart and it comfortably wins. Measured on the
+same route:
+
+| | frame budget | forced at render (`flush`) | amortised (`mgr`) |
+| --- | --- | --- | --- |
+| uncapped, ~300 fps | 3.3 ms | **2.6–6.7 ms** | ~0 |
+| 60 Hz vsync | 16.7 ms | **0.0–1.5 ms** | 4–5 ms |
+
+So a higher framerate makes *streaming* worse, which is the opposite of the
+usual intuition. Practical guidance:
+
+- **60–75 Hz display:** vsync on. Validated — no vsync interval missed on the
+  test route.
+- **120–144 Hz:** vsync still paces fine (CPU cost is 3–5 ms against a 6.9–8.3 ms
+  budget) but lead time halves, so chunk arrivals are more likely to hitch.
+  If you see that, `MAX_FPS=90` or similar will help more than any streaming dial.
+- **VRR (G-Sync/FreeSync):** the usual advice — cap a few Hz below refresh.
+
+The limiter is `::Sleep()`-based (`zz_system::sleep`), so the cap is approximate
+and lands slightly *under* the target, and it can only ever add delay — it cannot
+rescue a frame that is already late. Confirm it took effect in `client.log`:
+`Framerate cap: 144 fps ([VIDEO] MAX_FPS)`.
 
 #### Streaming and hitch tuning
 

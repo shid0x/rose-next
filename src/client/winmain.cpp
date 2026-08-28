@@ -73,6 +73,24 @@ Init_DEVICE(void) {
             g_ClientStorage.GetFrameSpikeLogMs());
     }
 
+    // Framerate cap. Applied after doScript for the same reason as the load
+    // budget above: INIT.LUA line 39 calls setFramerateRange(15, 1000), so
+    // anything set before it is overwritten. 0 leaves that alone.
+    //
+    // The engine's limiter is ::Sleep()-based (zz_system::sleep), so the cap is
+    // approximate and lands slightly under the target -- Sleep(n) waits at least
+    // n ms. It also only ever *adds* delay, so it cannot help a frame that is
+    // already late.
+    //
+    // min_framerate stays at INIT.LUA's 15: it feeds min_swap_msec, which sizes
+    // the amortiser's per-frame allowance, and is not a framerate cap.
+    if (g_ClientStorage.GetMaxFps() > 0) {
+        ::setFramerateRange(15, (int)g_ClientStorage.GetMaxFps());
+        LOG_INFO("Framerate cap: {} fps ([VIDEO] MAX_FPS)", g_ClientStorage.GetMaxFps());
+    } else {
+        LOG_INFO("Framerate cap: none ([VIDEO] MAX_FPS=0; INIT.LUA sets max 1000)");
+    }
+
     t_OptionResolution Resolution = g_ClientStorage.GetResolution();
     ::setDisplayQualityLevel(c_iPeformances[g_ClientStorage.GetVideoPerformance()]);
     t_OptionVideo Video;
