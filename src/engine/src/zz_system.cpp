@@ -756,24 +756,39 @@ void zz_system::sleep ()
 				::SwitchToThread(); // stay polite without costing a millisecond
 			}
 			else {
+				// Advance to the first grid point still ahead of us, skipping any
+				// we already missed, then wait for it. Frame durations are
+				// therefore always a whole number of intervals.
+				//
+				// This is the part that makes a heavy scene look like vsync
+				// instead of like a broken cap. Advancing by exactly one interval
+				// (the obvious version) leaves the deadline in the past after an
+				// overrun, so the frame is not paced at all and the *next* one
+				// gets a short sleep to compensate: 20.0, 13.3, 16.7 -- correct on
+				// average, uneven on screen, and it is the unevenness the eye
+				// objects to. Vsync never compensates; it only ever waits for the
+				// next scanout, giving 33.3, 16.7, 16.7. So do that.
+				//
+				// The cost is the same one double-buffered vsync pays: a scene
+				// that consistently overruns the interval settles at half the cap
+				// rather than hovering just under it. That is the trade being made
+				// deliberately -- a frame limiter exists for smoothness, and a
+				// player who wants the throughput back can raise MAX_FPS.
+				while (s_next_frame_deadline <= now) {
+					s_next_frame_deadline += interval;
+				}
+
 				const LONGLONG remaining = s_next_frame_deadline - now;
-				if (remaining > 0) {
-					if (remaining > spin_margin) {
-						const int sleep_ms =
-							(int)(((remaining - spin_margin) * 1000LL) / qpf);
-						if (sleep_ms > 0) {
-							::Sleep(sleep_ms);
-						}
-					}
-					while (zz_sleep_now_ticks() < s_next_frame_deadline) {
-						::YieldProcessor();
+				if (remaining > spin_margin) {
+					const int sleep_ms =
+						(int)(((remaining - spin_margin) * 1000LL) / qpf);
+					if (sleep_ms > 0) {
+						::Sleep(sleep_ms);
 					}
 				}
-				else {
-					// Already late; never sleep on top of that.
-					::SwitchToThread();
+				while (zz_sleep_now_ticks() < s_next_frame_deadline) {
+					::YieldProcessor();
 				}
-				s_next_frame_deadline += interval;
 			}
 		}
 		else {
