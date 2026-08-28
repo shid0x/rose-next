@@ -636,6 +636,11 @@ int zz_system::manager_update (int time_to_update)
 static int s_last_manager_update_usec = 0;
 static int s_last_frame_sleep_usec = 0;
 
+// Absolute time the next frame is due, in QPC ticks. 0 = pacing not started.
+// Absolute rather than per-frame so that a frame which overruns is absorbed by
+// the next one instead of permanently shifting the cadence.
+static LONGLONG s_next_frame_deadline = 0;
+
 int zz_system_get_last_manager_update_usec () { return s_last_manager_update_usec; }
 int zz_system_get_last_frame_sleep_usec () { return s_last_frame_sleep_usec; }
 
@@ -700,30 +705,86 @@ void zz_system::sleep ()
 	s_last_manager_update_usec = zz_sleep_ticks_to_usec(zz_sleep_now_ticks() - mgr_t0);
 	const LONGLONG sleepcall_t0 = zz_sleep_now_ticks();
 	
-	last_sleep_time_msec = int(max_swap_msec - current_swap_msec);
-	if (last_sleep_time_msec > 0) { // sleep conserving max framerate
-		//ZZ_LOG("system: sleep() sleep(%dms)\n", last_sleep_time_msec);
-		const bool do_not_exceed_max_framerate = true;
-		if (!do_not_exceed_max_framerate) {
-			last_sleep_time_msec = ZZ_MIN(last_sleep_time_msec, max_sleep_msec);
+	// Frame pacing.
+	//
+	// This used to be `Sleep(int(max_swap_msec - current_swap_msec))`, which is
+	// three separate sources of jitter stacked on each other:
+	//
+	//   * int() truncation discarded up to 1 ms of the target every frame;
+	//   * Sleep(n) waits *at least* n ms, overshooting by up to ~1 ms even with
+	//     timeBeginPeriod(1) active;
+	//   * nothing tracked where the frame was *due*, so each frame recomputed its
+	//     own sleep from its own workload and errors were never corrected.
+	//
+	// At a 60 fps cap that produced frames of 15.8-17.4 ms averaging a perfect
+	// 16.67. The counter reads 60 and the motion looks wrong, because the display
+	// scans out on its own fixed clock and frames land at a drifting phase against
+	// it -- some shown for one refresh, some for two. Two near-identical unlocked
+	// clocks beat slowly, which is the irregularity the eye is worst at ignoring.
+	//
+	// So: pace against an absolute deadline instead. Errors self-correct because
+	// the deadline advances by exactly one interval regardless of what any single
+	// frame did. Sleep covers all but the last millisecond and a short spin covers
+	// the remainder, which is what buys sub-millisecond accuracy -- Sleep alone
+	// cannot, at any timer resolution.
+	//
+	// This does NOT make a capped framerate equal to vsync on a matched-refresh
+	// display: pacing accuracy is not phase lock, and only vsync ties presentation
+	// to scanout. It is for VRR panels, for integer divisors of a high refresh
+	// (72 on 144, not 60 on 144), and for holding down heat where there is
+	// headroom to spare.
+	const int max_framerate = get_rs()->max_framerate;
+	if (max_framerate > 0) {
+		LARGE_INTEGER qpf_li;
+		::QueryPerformanceFrequency(&qpf_li);
+		const LONGLONG qpf = qpf_li.QuadPart;
+		const LONGLONG interval = (qpf > 0) ? (qpf / max_framerate) : 0;
+
+		if (interval > 0) {
+			// Leave this much for the spin. Sleep undershoots deliberately: an
+			// overshoot cannot be taken back, a spin can be cut short.
+			const LONGLONG spin_margin = qpf / 1000; // 1 ms
+			// If we fall further behind than this, catching up would mean running
+			// several frames with no pacing at all -- a burst that looks worse than
+			// the stall that caused it. Resync instead. A zone load lands here.
+			const LONGLONG resync_slack = interval * 3;
+
+			LONGLONG now = zz_sleep_now_ticks();
+
+			if (s_next_frame_deadline == 0 || (now - s_next_frame_deadline) > resync_slack) {
+				s_next_frame_deadline = now + interval;
+				::SwitchToThread(); // stay polite without costing a millisecond
+			}
+			else {
+				const LONGLONG remaining = s_next_frame_deadline - now;
+				if (remaining > 0) {
+					if (remaining > spin_margin) {
+						const int sleep_ms =
+							(int)(((remaining - spin_margin) * 1000LL) / qpf);
+						if (sleep_ms > 0) {
+							::Sleep(sleep_ms);
+						}
+					}
+					while (zz_sleep_now_ticks() < s_next_frame_deadline) {
+						::YieldProcessor();
+					}
+				}
+				else {
+					// Already late; never sleep on top of that.
+					::SwitchToThread();
+				}
+				s_next_frame_deadline += interval;
+			}
 		}
-		::Sleep(last_sleep_time_msec);
+		else {
+			::SwitchToThread();
+		}
 	}
 	else {
-		// Already past the frame budget, so this branch fires on essentially every
-		// frame once setFramerateRange(15, 1000) makes max_swap_msec 1 ms.
-		//
-		// It used to ::Sleep(1), which measured 1.4-1.5 ms of wall clock on every
-		// frame against a 4-6 ms average -- roughly a third of the frame spent
-		// sleeping *because we were already late*, which is backwards. The intent
-		// was only to avoid pegging a core, and SwitchToThread does that at no
-		// cost: it yields to another ready thread on this processor if there is
-		// one, and returns immediately if there is not.
-		//
-		// Measured with present[end/swap/mgr/slp]: real Present is 0.2-0.4 ms, so
-		// `present` was never GPU wait -- it was this plus the resource amortiser.
 		::SwitchToThread();
 	}
+	(void)max_swap_msec;   // superseded by the deadline above; kept for the log line
+	(void)max_sleep_msec;
 
 	s_last_frame_sleep_usec = zz_sleep_ticks_to_usec(zz_sleep_now_ticks() - sleepcall_t0);
 
