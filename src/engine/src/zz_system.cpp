@@ -639,13 +639,25 @@ static int s_last_frame_sleep_usec = 0;
 int zz_system_get_last_manager_update_usec () { return s_last_manager_update_usec; }
 int zz_system_get_last_frame_sleep_usec () { return s_last_frame_sleep_usec; }
 
-static int zz_sleep_now_usec ()
+// Raw QPC ticks. Deliberately NOT microseconds-since-boot: converting the
+// absolute counter to usec and storing it in an int overflows int32 after about
+// 36 minutes of uptime, after which two consecutive calls saturate to the same
+// value and every delta reads exactly 0. That shipped once, and the giveaway was
+// slp=0.0 on a path whose ::Sleep(1) is unconditional -- an impossible reading,
+// which is the only reason it was caught. Convert the *delta*, never the clock.
+static LONGLONG zz_sleep_now_ticks ()
 {
-	LARGE_INTEGER t, f;
+	LARGE_INTEGER t;
 	::QueryPerformanceCounter(&t);
+	return t.QuadPart;
+}
+
+static int zz_sleep_ticks_to_usec (LONGLONG ticks)
+{
+	LARGE_INTEGER f;
 	::QueryPerformanceFrequency(&f);
 	if (f.QuadPart == 0) return 0;
-	return (int)((double)t.QuadPart * 1000000.0 / (double)f.QuadPart);
+	return (int)((double)ticks * 1000000.0 / (double)f.QuadPart);
 }
 
 // Wait if we exceed maximum frame rate.
@@ -673,7 +685,7 @@ void zz_system::sleep ()
 
 	// flush resources conserving min framerate
 	//ZZ_LOG("system: wait_flush(current(%dms) + surplus(%dms))\n", int(current_swap_msec), int(last_sleep_time_msec));
-	const int mgr_t0 = zz_sleep_now_usec();
+	const LONGLONG mgr_t0 = zz_sleep_now_ticks();
 	if (last_sleep_time_msec > min_update_msec) {
 		int time_to_update = last_sleep_time_msec;
 		int manager_update_msec = manager_update(time_to_update); // apply just half
@@ -685,8 +697,8 @@ void zz_system::sleep ()
 		//manager_update(0); // initialize accumulated time of manager. it does not update anything.
 		manager_update(min_update_msec); // minimum update
 	}
-	s_last_manager_update_usec = zz_sleep_now_usec() - mgr_t0;
-	const int sleepcall_t0 = zz_sleep_now_usec();
+	s_last_manager_update_usec = zz_sleep_ticks_to_usec(zz_sleep_now_ticks() - mgr_t0);
+	const LONGLONG sleepcall_t0 = zz_sleep_now_ticks();
 	
 	last_sleep_time_msec = int(max_swap_msec - current_swap_msec);
 	if (last_sleep_time_msec > 0) { // sleep conserving max framerate
@@ -701,7 +713,7 @@ void zz_system::sleep ()
 		::Sleep(1); // minimum sleep
 	}
 
-	s_last_frame_sleep_usec = zz_sleep_now_usec() - sleepcall_t0;
+	s_last_frame_sleep_usec = zz_sleep_ticks_to_usec(zz_sleep_now_ticks() - sleepcall_t0);
 
 	// End of frame. The client's debug HUD is drawn during Render_GameMENU, which
 	// runs before swapBuffers() -> sleep(), so it has already sampled this frame's
