@@ -24,6 +24,7 @@
 #include "zz_mesh.h"
 #include "zz_autolock.h"
 #include "zz_vfs_pkg.h"
+#include "zz_fast_reader.h"
 
 using namespace std;
 
@@ -58,6 +59,32 @@ bool zz_motion::unload ()
 	ZZ_SAFE_DELETE_ARRAY(channels);
 
 	return true;
+}
+
+// Bytes one channel contributes to a single frame record. Mirrors the channel
+// class chosen when the header is read, and returns 0 for a type load() does not
+// know -- which is how an unknown type is still rejected now that the frame loop
+// no longer discovers it by falling off the end of an if/else chain.
+static uint32 zz_motion_channel_frame_size (uint32 channel_type)
+{
+	switch (channel_type) {
+		case ZZ_CTYPE_ALPHA:
+		case ZZ_CTYPE_TEXTUREANIM:
+		case ZZ_CTYPE_SCALE:
+			return sizeof(float);       // zz_channel_x
+		case ZZ_CTYPE_UV0:
+		case ZZ_CTYPE_UV1:
+		case ZZ_CTYPE_UV2:
+		case ZZ_CTYPE_UV3:
+			return sizeof(float) * 2;   // zz_channel_xy
+		case ZZ_CTYPE_POSITION:
+		case ZZ_CTYPE_NORMAL:
+			return sizeof(float) * 3;   // zz_channel_position
+		case ZZ_CTYPE_ROTATION:
+			return sizeof(float) * 4;   // zz_channel_rotation
+		default:
+			return 0;
+	}
 }
 
 bool zz_motion::load (const char * file_name, float scale_in_load)
@@ -193,51 +220,106 @@ bool zz_motion::load (const char * file_name, float scale_in_load)
 	mat4 newTM = mat4_id;
 	mat4 relativeTM = mat4_id;
 
+	// The frame section is a fixed-size record per channel repeated once per
+	// frame, so its exact size is known here and the whole thing can be read in
+	// one call.
+	//
+	// It used to be read field by field. Every zz_vfs read_float bottoms out in
+	// zz_vfs_pkg::read_, which calls vftell and then vfread -- both __stdcall
+	// exports of triggervfs.dll -- behind a virtual dispatch, so a single float
+	// cost two cross-DLL calls. A 30-bone, 200-frame motion is ~24,000 floats,
+	// and that is where character spawn hitches came from: the load runs inline
+	// inside the GSV_NPC_CHAR / GSV_MOB_CHAR handler (motions have load_weight 0,
+	// so they never reach the amortiser), and measured 10-26 ms per new NPC type.
+	//
+	// The per-frame is_a() calls went with it. is_a walks the type chain, the
+	// if/else tried up to four types per channel per frame, and the answer is
+	// fixed at load time -- channel_type is already stored, and update_mesh below
+	// has always switched on it.
+	uint32 frame_stride = 0;
+	for (channel_index = 0; channel_index < num_channels; ++channel_index) {
+		const uint32 field_size = zz_motion_channel_frame_size(channels[channel_index]->channel_type);
+		if (field_size == 0) {
+			ZZ_LOG("motion: load(%s) failed. invalid channel type\n", file_name);
+			return false; // no_channel_type error
+		}
+		frame_stride += field_size;
+	}
+
+	// Padded, not strict: see zz_fast_reader::load_padded. The old field-by-field
+	// reader could not fail on a short file, and turning a truncated motion into a
+	// character that will not spawn would be a worse bug than the one being fixed.
+	const uint32 frame_bytes = frame_stride * num_frames;
+	uint32 frame_bytes_read = 0;
+	zz_fast_reader frames;
+	if (!frames.load_padded(motion_file, frame_bytes, frame_bytes_read)) {
+		ZZ_LOG("motion: load(%s) failed. out of memory for %u frame bytes\n",
+			file_name, frame_bytes);
+		return false;
+	}
+	if (frame_bytes_read < frame_bytes) {
+		ZZ_LOG("motion: load(%s) frame section truncated (%u of %u bytes); "
+			"remainder zero-filled\n", file_name, frame_bytes_read, frame_bytes);
+	}
+
 	// read every frame info
 	for (frame_index = 0; frame_index < uint32(num_frames); ++frame_index) {
 		frame_number = frame_index; // currently, do not specify frame number
 		// read every channel info
-		
+
 		for (channel_index = 0; channel_index < num_channels; ++channel_index) {
-			if (channels[channel_index]->is_a(ZZ_RUNTIME_TYPE(zz_channel_x))) {
-				motion_file.read_float(x_data);
-				channels[channel_index]->set_by_frame(frame_number, (void *)&x_data);
-				//ZZ_LOG("motion: load(%s), frame(%d), channel(%d), x_data(%f)\n",
-				//	file_name,
-				//	frame_index,
-				//	channel_index,
-				//	x_data);
-			}
-			else if (channels[channel_index]->is_a(ZZ_RUNTIME_TYPE(zz_channel_xy))) {
-				motion_file.read_float2(xy_data.vec_array);
-				channels[channel_index]->set_by_frame(frame_number, (void *)&xy_data);
-				//ZZ_LOG("motion: load(%s), frame(%d), channel(%d), x_data(%f:%f)\n",
-				//		file_name,
-				//		frame_index,
-				//		channel_index,
-				//		xy_data.x, xy_data.y);
-			}
-			else if (channels[channel_index]->is_a(ZZ_RUNTIME_TYPE(zz_channel_position))) {
-				motion_file.read_float3(position_data.vec_array);
-				position_data.x *= scale_in_load;
-				position_data.y *= scale_in_load;
-				position_data.z *= scale_in_load;
+			zz_channel * const channel = channels[channel_index];
 
-				position_data.x = ZZ_XFORM_IN(position_data.x);
-				position_data.y = ZZ_XFORM_IN(position_data.y);
-				position_data.z = ZZ_XFORM_IN(position_data.z);
+			switch (channel->channel_type) {
+				case ZZ_CTYPE_ALPHA:
+				case ZZ_CTYPE_TEXTUREANIM:
+				case ZZ_CTYPE_SCALE: // zz_channel_x
+					frames.read_float(x_data);
+					channel->set_by_frame(frame_number, (void *)&x_data);
+					break;
 
-				channels[channel_index]->set_by_frame(frame_number, (void *)&position_data);
-			}
-			else if (channels[channel_index]->is_a(ZZ_RUNTIME_TYPE(zz_channel_rotation))) {
-				motion_file.read_float(rotation_data.w);
-				motion_file.read_float(rotation_data.x);
-				motion_file.read_float(rotation_data.y);
-				motion_file.read_float(rotation_data.z);
-				channels[channel_index]->set_by_frame(frame_number, (void *)&rotation_data);
-			}
-			else {
-				return false; // no_such_channel_type error
+				case ZZ_CTYPE_UV0:
+				case ZZ_CTYPE_UV1:
+				case ZZ_CTYPE_UV2:
+				case ZZ_CTYPE_UV3: // zz_channel_xy
+					frames.read_float(xy_data.x);
+					frames.read_float(xy_data.y);
+					channel->set_by_frame(frame_number, (void *)&xy_data);
+					break;
+
+				case ZZ_CTYPE_POSITION:
+				case ZZ_CTYPE_NORMAL: // zz_channel_position
+					// NORMAL shares the position channel class, and therefore has
+					// always been scaled and transformed like a position. Odd, but
+					// preserved deliberately -- this is a speed change, not a
+					// behaviour change.
+					frames.read_float(position_data.x);
+					frames.read_float(position_data.y);
+					frames.read_float(position_data.z);
+					position_data.x *= scale_in_load;
+					position_data.y *= scale_in_load;
+					position_data.z *= scale_in_load;
+
+					position_data.x = ZZ_XFORM_IN(position_data.x);
+					position_data.y = ZZ_XFORM_IN(position_data.y);
+					position_data.z = ZZ_XFORM_IN(position_data.z);
+
+					channel->set_by_frame(frame_number, (void *)&position_data);
+					break;
+
+				case ZZ_CTYPE_ROTATION: // zz_channel_rotation
+					// File order is w,x,y,z; quat is laid out x,y,z,w. Read the
+					// components one at a time rather than as a block -- a bulk
+					// copy into the quat would silently rotate every bone.
+					frames.read_float(rotation_data.w);
+					frames.read_float(rotation_data.x);
+					frames.read_float(rotation_data.y);
+					frames.read_float(rotation_data.z);
+					channel->set_by_frame(frame_number, (void *)&rotation_data);
+					break;
+
+				default:
+					return false; // no_such_channel_type error
 			}
 		}
 
