@@ -122,8 +122,19 @@ public:
 		int worst_usec;
 		int worst_count;
 		uint64 recent_stamp_ms;
+		// Inside a texture flush: file read vs D3DXCreateTextureFromFileInMemoryEx.
+		// Lives here rather than in the renderer because these loads happen during
+		// the flush and this struct is already reset once per frame -- and because
+		// the motion hunt showed that "the flush is slow" is not an answer until
+		// you know which half of it. Under D3D9Ex textures cannot go in
+		// D3DPOOL_MANAGED, so D3DX has to stage through SYSTEMMEM and copy to a
+		// DEFAULT texture; if the create half dominates, that is the reason.
+		int texture_read_usec;
+		int texture_create_usec;
+		int texture_load_count;
 	};
 	static const flush_stats& get_flush_stats () { return s_flush_stats; }
+	static void add_texture_load_time (int read_usec, int create_usec);
 	static void reset_flush_stats_frame ();
 	static void reset_flush_stats_all ();
 	flush_kind classify_flush_kind () const;

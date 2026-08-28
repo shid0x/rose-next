@@ -5529,6 +5529,27 @@ int getUseDelayedLoad ( void )
 
 /// iKind: 0 terrain, 1 mesh, 2 texture, 3 material, 4 other.
 ZZ_SCRIPT
+int getTextureLoadReadUsec ( void )
+{
+	CHECK_INTERFACE(getTextureLoadReadUsec);
+	return zz_manager::get_flush_stats().texture_read_usec;
+}
+
+ZZ_SCRIPT
+int getTextureLoadCreateUsec ( void )
+{
+	CHECK_INTERFACE(getTextureLoadCreateUsec);
+	return zz_manager::get_flush_stats().texture_create_usec;
+}
+
+ZZ_SCRIPT
+int getTextureLoadCount ( void )
+{
+	CHECK_INTERFACE(getTextureLoadCount);
+	return zz_manager::get_flush_stats().texture_load_count;
+}
+
+ZZ_SCRIPT
 int getImmediateFlushKind ( int iKind )
 {
 	CHECK_INTERFACE(getImmediateFlushKind);

@@ -44,6 +44,9 @@ struct SpikeSnapshot {
     float flush_ms;
     int flush_count;
     int flush_kind[kFlushKindCount];
+    float tex_read_ms;
+    float tex_create_ms;
+    int tex_count;
     int pkt_count;
     double pkt_worst_ms;
     unsigned short pkt_worst_type;
@@ -72,6 +75,9 @@ bool s_flush_sampled = false;
 float s_flush_ms = 0.0f;
 int s_flush_count = 0;
 int s_flush_kind[kFlushKindCount];
+float s_tex_read_ms = 0.0f;
+float s_tex_create_ms = 0.0f;
+int s_tex_count = 0;
 
 /// Emitting a line costs a formatted log record and an FFI crossing, which is
 /// itself long enough to matter on a frame that is already late. A hitch worth
@@ -158,7 +164,7 @@ void EmitSpike(const SpikeSnapshot& s, int others) {
              "spawn[n={} skel={:.1f} mot={:.1f} load={:.1f} parts={:.1f} "
              "bone={:.1f} rest={:.1f}] | "
              "logic[obj={:.1f} terr={:.1f} fx={:.1f} uiupd={:.1f}] | "
-             "flush={} | others={}",
+             "flush={} | tex[n={} read={:.1f} create={:.1f}] | others={}",
         s.frame_ms,
         s.avg_ms,
         s.slot[SLOT_NETINPUT],
@@ -197,6 +203,9 @@ void EmitSpike(const SpikeSnapshot& s, int others) {
                   s.flush_kind[3],
                   s.flush_kind[4])
             : std::string("unsampled"),
+        s.tex_count,
+        s.tex_read_ms,
+        s.tex_create_ms,
         others);
 }
 
@@ -222,6 +231,9 @@ void NoteSpike(double frame_ms, double frame_accounted, DWORD now) {
     s_worst.flush_count = s_flush_count;
     for (int i = 0; i < kFlushKindCount; ++i)
         s_worst.flush_kind[i] = s_flush_kind[i];
+    s_worst.tex_read_ms = s_tex_read_ms;
+    s_worst.tex_create_ms = s_tex_create_ms;
+    s_worst.tex_count = s_tex_count;
     s_worst.pkt_count = s_pkt_count;
     s_worst.pkt_worst_ms = s_pkt_worst_ms;
     s_worst.pkt_worst_type = s_pkt_worst_type;
@@ -253,6 +265,9 @@ void BeginFrame() {
     s_flush_count = 0;
     for (int i = 0; i < kFlushKindCount; ++i)
         s_flush_kind[i] = 0;
+    s_tex_read_ms = 0.0f;
+    s_tex_create_ms = 0.0f;
+    s_tex_count = 0;
     s_pkt_count = 0;
     s_pkt_worst_ms = 0.0;
     s_pkt_worst_type = 0;
@@ -313,6 +328,9 @@ void CaptureFlushStats() {
     s_flush_count = ::getImmediateFlushCount();
     for (int i = 0; i < kFlushKindCount; ++i)
         s_flush_kind[i] = ::getImmediateFlushKind(i);
+    s_tex_read_ms = ::getTextureLoadReadUsec() / 1000.0f;
+    s_tex_create_ms = ::getTextureLoadCreateUsec() / 1000.0f;
+    s_tex_count = ::getTextureLoadCount();
     s_flush_sampled = true;
 }
 

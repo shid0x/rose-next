@@ -1855,6 +1855,18 @@ int getImmediateFlushRecentCount ( void );
 ZZ_SCRIPT
 int getImmediateFlushRecentAgeMs ( void );
 
+/// Inside this frame's texture flushes: microseconds spent reading the files,
+/// microseconds spent in D3DXCreateTextureFromFileInMemoryEx, and how many
+/// textures were loaded. Reset per frame alongside the other flush counters.
+ZZ_SCRIPT
+int getTextureLoadReadUsec ( void );
+
+ZZ_SCRIPT
+int getTextureLoadCreateUsec ( void );
+
+ZZ_SCRIPT
+int getTextureLoadCount ( void );
+
 /// Per-frame flush count broken down by owning manager.
 /// iKind: 0 terrain, 1 mesh, 2 texture, 3 material, 4 other.
 ZZ_SCRIPT

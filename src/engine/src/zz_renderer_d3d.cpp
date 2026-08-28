@@ -4233,6 +4233,14 @@ zz_handle zz_renderer_d3d::download_texture (zz_texture * tex)
 	uint32 size;
 	void * data = NULL;
 
+	// Split the two halves of a texture load for the frame-spike log. Textures are
+	// what remains of the chunk-display hitch once character spawn was fixed, and
+	// "the flush is slow" is not an actionable answer until the read and the
+	// D3DX create are separated.
+	LARGE_INTEGER tex_qpf, tex_t0, tex_t1, tex_t2;
+	::QueryPerformanceFrequency(&tex_qpf);
+	::QueryPerformanceCounter(&tex_t0);
+
 #ifdef USE_VFS_THREAD_TEXTURE_LOADING
 	// vfs_thread: read by worker thread
 	zz_vfs_thread::zz_item_it vfs_handle = tex->get_file_handle();
@@ -4260,6 +4268,8 @@ zz_handle zz_renderer_d3d::download_texture (zz_texture * tex)
 		ZZ_LOG("r_d3d: download_texture(%s) failed. file not found\n", texture_path);
 		return ZZ_HANDLE_NULL;
 	}
+
+	::QueryPerformanceCounter(&tex_t1);
 
 	// get image info
 	static D3DXIMAGE_INFO image_info;
@@ -4385,6 +4395,14 @@ zz_handle zz_renderer_d3d::download_texture (zz_texture * tex)
 		return ZZ_HANDLE_NULL;
 	}
 	//ZZ_PROFILER_END(Pdownload_texture);
+
+	::QueryPerformanceCounter(&tex_t2);
+	if (tex_qpf.QuadPart != 0) {
+		const double to_usec = 1000000.0 / (double)tex_qpf.QuadPart;
+		zz_manager::add_texture_load_time(
+			(int)((double)(tex_t1.QuadPart - tex_t0.QuadPart) * to_usec),
+			(int)((double)(tex_t2.QuadPart - tex_t1.QuadPart) * to_usec));
+	}
 
 	_count_pool_creation(_stat_created_texture, (int)pool);
 

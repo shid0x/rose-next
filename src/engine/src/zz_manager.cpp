@@ -542,6 +542,13 @@ static uint64 zz_flush_now_ms ()
 	return ticks * 1000 / zz_system::ticks_per_second;
 }
 
+void zz_manager::add_texture_load_time (int read_usec, int create_usec)
+{
+	s_flush_stats.texture_read_usec += read_usec;
+	s_flush_stats.texture_create_usec += create_usec;
+	++s_flush_stats.texture_load_count;
+}
+
 void zz_manager::reset_flush_stats_frame ()
 {
 	const uint64 now_ms = zz_flush_now_ms();
@@ -574,6 +581,9 @@ void zz_manager::reset_flush_stats_frame ()
 	s_flush_stats.age_sum = 0;
 	s_flush_stats.age_samples = 0;
 	s_flush_stats.age_max = 0;
+	s_flush_stats.texture_read_usec = 0;
+	s_flush_stats.texture_create_usec = 0;
+	s_flush_stats.texture_load_count = 0;
 
 	++s_frame_counter;
 	for (int i = 0; i < FLUSH_KIND_COUNT; ++i) {
