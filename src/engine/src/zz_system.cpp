@@ -710,7 +710,19 @@ void zz_system::sleep ()
 		::Sleep(last_sleep_time_msec);
 	}
 	else {
-		::Sleep(1); // minimum sleep
+		// Already past the frame budget, so this branch fires on essentially every
+		// frame once setFramerateRange(15, 1000) makes max_swap_msec 1 ms.
+		//
+		// It used to ::Sleep(1), which measured 1.4-1.5 ms of wall clock on every
+		// frame against a 4-6 ms average -- roughly a third of the frame spent
+		// sleeping *because we were already late*, which is backwards. The intent
+		// was only to avoid pegging a core, and SwitchToThread does that at no
+		// cost: it yields to another ready thread on this processor if there is
+		// one, and returns immediately if there is not.
+		//
+		// Measured with present[end/swap/mgr/slp]: real Present is 0.2-0.4 ms, so
+		// `present` was never GPU wait -- it was this plus the resource amortiser.
+		::SwitchToThread();
 	}
 
 	s_last_frame_sleep_usec = zz_sleep_ticks_to_usec(zz_sleep_now_ticks() - sleepcall_t0);
