@@ -165,7 +165,10 @@ Worst frame on a fixed Muris walking route, measured with `[VIDEO] FRAME_SPIKE_L
 | + motion parser bulk-read | 120.5 ms | ~13 |
 | + DDS mip chains shipped | 30.7 ms | 5 |
 | + mesh read buffering, mips corrected | 21.9 ms | 2 |
-| final (warm cache) | **none over 20 ms** | **0** |
+| final (warm cache) | none over 20 ms | 0 |
+| **validated at 60 Hz, vsync on** | **21.4 ms, no interval missed** | **3** |
+
+At 60 Hz the same route reports `avg` of exactly **16.7 ms** on every spike, and the worst frame is 21.4 ms with nothing approaching 33.3. A single genuinely missed interval in a 30-frame window would move the average to 17.3, so the 20.6–21.4 ms readings are profiler/present-queue jitter rather than dropped frames. `flush` is **0.0–1.5 ms** because `manager_update` gets `frame_ms²` as its allowance and at 16.7 ms frames that is enough to pre-load almost everything — 4–5 ms of useful loading per frame in the idle time, and essentially nothing force-flushed at render. The streaming design works as intended once the frame has room.
 
 Three separate causes, none of them the streaming dials everyone reaches for first, and each found only by narrowing the measurement one level at a time. Both remaining spikes sit ~4x the 5 ms average and neither has a dominant phase; the largest single identifiable cost left is `g_pTerrain->SetCenterPosition()` at **9.3 ms** (`logic[terr=9.3]` with `flush=2.6`), which is pure streaming bookkeeping and loads nothing.
 
