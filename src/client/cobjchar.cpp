@@ -1204,18 +1204,46 @@ CObjCHAR::DeletePARTS(bool bDelEFFECT) {
 
 bool
 CObjCHAR::LoadModelNODE(char* szName) {
+    /// Three steps, timed separately for the frame-spike log because they have
+    /// different fixes: the skeleton and motion are lazy per-type file loads that
+    /// could be warmed before the spawn, while loadModel is per-instance engine
+    /// work that warming cannot touch. Inert unless FRAME_SPIKE_LOG_MS is set.
+    const bool bTimeStep = FrameProfiler::IsSpikeLogEnabled();
+    LARGE_INTEGER qpfStep, tStep0, tStep1;
+    if (bTimeStep) {
+        ::QueryPerformanceFrequency(&qpfStep);
+        ::QueryPerformanceCounter(&tStep0);
+    }
     HNODE hSkel = this->Get_SKELETON();
+    if (bTimeStep) {
+        ::QueryPerformanceCounter(&tStep1);
+        FrameProfiler::NoteSpawnStep(FrameProfiler::SPAWN_SKEL,
+            (double)(tStep1.QuadPart - tStep0.QuadPart) * 1000.0 / (double)qpfStep.QuadPart);
+        tStep0 = tStep1;
+    }
     if (hSkel == NULL) {
         LogString(LOG_DEBUG_, "failed creat char.. SKEL == NULL !! \n");
         return false;
     }
 
-    if (!this->Set_CurMOTION(this->Get_MOTION(0))) { // default stop motion ..
+    const bool bMotionOk = this->Set_CurMOTION(this->Get_MOTION(0)); // default stop motion ..
+    if (bTimeStep) {
+        ::QueryPerformanceCounter(&tStep1);
+        FrameProfiler::NoteSpawnStep(FrameProfiler::SPAWN_MOTION,
+            (double)(tStep1.QuadPart - tStep0.QuadPart) * 1000.0 / (double)qpfStep.QuadPart);
+        tStep0 = tStep1;
+    }
+    if (!bMotionOk) {
         LogString(LOG_DEBUG_, "failed creat char.. MOTION == NULL !! \n");
         return false;
     }
 
     m_hNodeMODEL = ::loadModel(szName, hSkel, this->Get_ZMOTION(), 1.0f);
+    if (bTimeStep) {
+        ::QueryPerformanceCounter(&tStep1);
+        FrameProfiler::NoteSpawnStep(FrameProfiler::SPAWN_LOADMODEL,
+            (double)(tStep1.QuadPart - tStep0.QuadPart) * 1000.0 / (double)qpfStep.QuadPart);
+    }
     if (m_hNodeMODEL) {
         ::setCollisionLevel(m_hNodeMODEL, 4);
 
@@ -1276,23 +1304,19 @@ CObjCHAR::CreateCHAR(char* szName,
 
     /// Spawn-step timing for the frame-spike log. A single GSV_NPC_CHAR /
     /// GSV_MOB_CHAR packet measured 5-27 ms and this is where that time goes;
-    /// which of the four steps dominates decides whether the fix is warming the
-    /// asset ahead of time or making the per-instance work cheaper.
+    /// which step dominates decides whether the fix is warming the asset ahead of
+    /// time or making the per-instance work cheaper.
     /// Inert unless [VIDEO] FRAME_SPIKE_LOG_MS is set.
     const bool bTimeSpawn = FrameProfiler::IsSpikeLogEnabled();
     LARGE_INTEGER qpf, t0, t1;
     if (bTimeSpawn) {
         ::QueryPerformanceFrequency(&qpf);
         FrameProfiler::NoteSpawn();
-        ::QueryPerformanceCounter(&t0);
     }
+    /// LoadModelNODE times its own three sub-steps.
     const bool bModelNode = this->LoadModelNODE(szName);
-    if (bTimeSpawn) {
-        ::QueryPerformanceCounter(&t1);
-        FrameProfiler::NoteSpawnStep(FrameProfiler::SPAWN_MODELNODE,
-            (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)qpf.QuadPart);
-        t0 = t1;
-    }
+    if (bTimeSpawn)
+        ::QueryPerformanceCounter(&t0);
 
     if (bModelNode) {
         this->CreatePARTS(szName);

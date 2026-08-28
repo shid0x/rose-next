@@ -134,11 +134,17 @@ void NotePacket(unsigned short type, double ms);
 /// parts, bone effects, scene insert). Which one dominates decides the fix:
 /// a per-type first-load cost wants the asset warmed ahead of time, a per-
 /// instance cost wants the work itself made cheaper.
+/// Measurement put ~90% of a spawn in LoadModelNODE, so that step is split
+/// again: whether the time is the two lazy file loads or the engine node build
+/// decides the fix. A per-type file load can be warmed ahead of the spawn; a
+/// per-instance engine cost cannot, and warming would be wasted work.
 enum SpawnStep {
-    SPAWN_MODELNODE = 0, // Get_SKELETON + Get_MOTION(0) + loadModel
-    SPAWN_PARTS,         // CreatePARTS: meshes and materials for every body part
-    SPAWN_BONEFX,        // CreateBoneEFFECT
-    SPAWN_REST,          // InsertToScene, SetCMD_STOP, DropFromSky
+    SPAWN_SKEL = 0,   // Get_SKELETON(): lazy ZMD load, per type
+    SPAWN_MOTION,     // Get_MOTION(0) + Set_CurMOTION: lazy ZMO load, per type
+    SPAWN_LOADMODEL,  // ::loadModel(): engine model node, per instance
+    SPAWN_PARTS,      // CreatePARTS: meshes and materials for every body part
+    SPAWN_BONEFX,     // CreateBoneEFFECT
+    SPAWN_REST,       // InsertToScene, SetCMD_STOP, DropFromSky
     SPAWN_STEP_COUNT
 };
 void NoteSpawnStep(SpawnStep step, double ms);

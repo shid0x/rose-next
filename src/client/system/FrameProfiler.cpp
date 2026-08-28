@@ -155,7 +155,8 @@ void EmitSpike(const SpikeSnapshot& s, int others) {
              "ui={:.1f} present={:.1f} oth={:.1f} | "
              "netin[msg={:.1f} gdat={:.1f} pkt={:.1f} inp={:.1f}] | "
              "pkt[n={} worst=0x{:04x}/{:.1f}ms] | "
-             "spawn[n={} mdl={:.1f} parts={:.1f} bone={:.1f} rest={:.1f}] | "
+             "spawn[n={} skel={:.1f} mot={:.1f} load={:.1f} parts={:.1f} "
+             "bone={:.1f} rest={:.1f}] | "
              "logic[obj={:.1f} terr={:.1f} fx={:.1f} uiupd={:.1f}] | "
              "flush={} | others={}",
         s.frame_ms,
@@ -176,7 +177,9 @@ void EmitSpike(const SpikeSnapshot& s, int others) {
         s.pkt_worst_type,
         s.pkt_worst_ms,
         s.spawn_count,
-        s.spawn_step[SPAWN_MODELNODE],
+        s.spawn_step[SPAWN_SKEL],
+        s.spawn_step[SPAWN_MOTION],
+        s.spawn_step[SPAWN_LOADMODEL],
         s.spawn_step[SPAWN_PARTS],
         s.spawn_step[SPAWN_BONEFX],
         s.spawn_step[SPAWN_REST],
