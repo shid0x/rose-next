@@ -312,33 +312,35 @@ Confirm which one you actually got from `error.txt`:
 screen: mode=borderless size=1920x1080 (ini FULLSCREEN=1, EXCLUSIVE_FULLSCREEN=0)
 ```
 
-#### Framerate: why a cap can make the game *smoother*
+#### Framerate: vsync, `MAX_FPS`, and a claim that did not survive testing
 
 `[VIDEO] MAX_FPS` exists because vsync used to be the only way to limit the
 framerate — the engine has its own limiter, but `data/SCRIPTS/INIT.LUA` asks for
-a maximum of 1000, which disables it in practice.
+a maximum of 1000, which disables it in practice. Use it if you want a cap
+without vsync's added latency, or on a VRR display where the usual advice is to
+cap a few Hz below refresh.
 
-Capping matters more here than in most engines. The resource amortiser loads
-ahead of what the renderer will need, and it gets a slice of each frame — so its
-lead time is measured in **wall clock**, not frames. Run at 300 fps and frames
-are 3.3 ms apart, so it loses the race and the renderer force-loads instead;
-run at 60 and they are 16.7 ms apart and it comfortably wins. Measured on the
-same route:
+**It does not appear to affect streaming, contrary to what this section first
+claimed.** The theory was that the resource amortiser loads ahead in wall-clock
+time, so a higher framerate would leave it less room and force more loading onto
+the render path. Measured on the same route, at the same chunk arrival
+(`[mesh=7 tex=9]`), warm cache, same log threshold:
 
-| | frame budget | forced at render (`flush`) | amortised (`mgr`) |
-| --- | --- | --- | --- |
-| uncapped, ~300 fps | 3.3 ms | **2.6–6.7 ms** | ~0 |
-| 60 Hz vsync | 16.7 ms | **0.0–1.5 ms** | 4–5 ms |
+| config | frame budget | `flush` (work forced at render) |
+| --- | --- | --- |
+| uncapped, ~300 fps | 3.3 ms | 3.8 / 4.1 / 5.0 ms |
+| capped, 144 fps | 6.9 ms | 4.0 ms |
 
-So a higher framerate makes *streaming* worse, which is the opposite of the
-usual intuition. Practical guidance:
+No difference. The earlier claim rested on a 60 Hz run that appeared to show
+`flush` of 0.0–1.5 ms, but **that run used `FRAME_SPIKE_LOG_MS=20` while the
+others used 15** — and at 60 Hz a frame carrying 4 ms of flush totals only ~17 ms,
+so it was never logged. The comparison was selection bias, not a result.
 
-- **60–75 Hz display:** vsync on. Validated — no vsync interval missed on the
-  test route.
-- **120–144 Hz:** vsync still paces fine (CPU cost is 3–5 ms against a 6.9–8.3 ms
-  budget) but lead time halves, so chunk arrivals are more likely to hitch.
-  If you see that, `MAX_FPS=90` or similar will help more than any streaming dial.
-- **VRR (G-Sync/FreeSync):** the usual advice — cap a few Hz below refresh.
+If you want to settle it, compare with **`STREAM_SPIKE_LOG_MS`** instead: it
+triggers on flush time rather than total frame time, so it is independent of
+framerate and of whether vsync pins every frame to the refresh interval. A
+total-frame-time threshold cannot compare streaming across framerates, which is
+the trap above.
 
 The limiter is `::Sleep()`-based (`zz_system::sleep`), so the cap is approximate
 and lands slightly *under* the target, and it can only ever add delay — it cannot
