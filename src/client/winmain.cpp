@@ -84,9 +84,27 @@ Init_DEVICE(void) {
     //
     // min_framerate stays at INIT.LUA's 15: it feeds min_swap_msec, which sizes
     // the amortiser's per-frame allowance, and is not a framerate cap.
-    if (g_ClientStorage.GetMaxFps() > 0) {
+    //
+    // Ignored while vsync is on, and that guard is load-bearing rather than
+    // tidiness. Present already blocks until scanout, so the frame ends exactly
+    // on the limiter's deadline; the limiter then sees itself as one tick late,
+    // advances to the *next* grid point and waits a further full interval. A cap
+    // equal to the refresh rate would silently halve the framerate. A limiter is
+    // an alternative to vsync, not a companion to it. VSYNC is read from the INI
+    // directly because the renderer reads it that way too (zz_renderer_d3d), not
+    // through CClientStorage, and it defaults to on.
+    // Literal path, as zz_renderer_d3d does for the same key: g_szIniFileName is a
+    // namespace-scope const in cclientstorage.cpp and therefore has internal
+    // linkage, so it is not reachable from here.
+    const bool vsync_on =
+        (::GetPrivateProfileIntA("VIDEO", "VSYNC", 1, "./rose-next.ini") != 0);
+    if (g_ClientStorage.GetMaxFps() > 0 && !vsync_on) {
         ::setFramerateRange(15, (int)g_ClientStorage.GetMaxFps());
         LOG_INFO("Framerate cap: {} fps ([VIDEO] MAX_FPS)", g_ClientStorage.GetMaxFps());
+    } else if (g_ClientStorage.GetMaxFps() > 0) {
+        LOG_INFO("Framerate cap: {} fps IGNORED -- vsync is on and paces the frame "
+                 "already; set [VIDEO] VSYNC=0 to use MAX_FPS",
+            g_ClientStorage.GetMaxFps());
     } else {
         LOG_INFO("Framerate cap: none ([VIDEO] MAX_FPS=0; INIT.LUA sets max 1000)");
     }

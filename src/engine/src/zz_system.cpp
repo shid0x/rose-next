@@ -740,7 +740,13 @@ void zz_system::sleep ()
 		const LONGLONG qpf = qpf_li.QuadPart;
 		const LONGLONG interval = (qpf > 0) ? (qpf / max_framerate) : 0;
 
-		if (interval > 0) {
+		// INIT.LUA asks for max_framerate 1000, which means "no limit", not "pace to
+		// 1000 fps". Pacing an interval this short is all cost and no benefit: the
+		// target is unreachable, and every frame would spin out its remainder for
+		// nothing. Anything at or under two spin margins (>= 500 fps) is treated as
+		// uncapped, which keeps the MAX_FPS=0 default byte-for-byte what it was.
+		const bool paced = (interval > (qpf / 500));
+		if (interval > 0 && paced) {
 			// Leave this much for the spin. Sleep undershoots deliberately: an
 			// overshoot cannot be taken back, a spin can be cut short.
 			const LONGLONG spin_margin = qpf / 1000; // 1 ms
