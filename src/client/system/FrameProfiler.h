@@ -163,6 +163,14 @@ enum TerrainStep {
     TERRAIN_PROXIMITY, // Update_VisiblePatch: proximity keep-alive ring
     TERRAIN_TYPE,      // SetPatchType + ExecutePatchTpye
     TERRAIN_DELETE,    // Delete_UnvisiblePatch
+    /// The boundary-crossing path. These run only when the player moves into a
+    /// new map cell, which is exactly why the first split missed them: it wrapped
+    /// Update_VisiblePatchManager only, and every spike in that capture read
+    /// terr=0.1 with all five sub-passes at 0.0. An intermittent cost needs the
+    /// intermittent path instrumented.
+    TERRAIN_MAPLOAD,   // AddOneMap: one queued map cell read from disk
+    TERRAIN_ADDMAP,    // DeferSubMAP + AddMAP on a map-slot rotation
+    TERRAIN_REORG,     // ReOrginazationPatch: 9 maps x 16x16 SetPATCH calls
     TERRAIN_STEP_COUNT
 };
 void NoteTerrainStep(TerrainStep step, double ms);

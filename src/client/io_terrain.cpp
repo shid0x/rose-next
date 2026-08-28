@@ -10,6 +10,7 @@
 #include "IO_Event.h"
 #include "CCamera.h"
 #include "System/CGame.h"
+#include "System/FrameProfiler.h"
 #include "Network\CNetwork.h"
 #include "Util\\VFSManager.h"
 #include "interface/dlgs/CMinimapDlg.h"
@@ -4031,6 +4032,7 @@ CTERRAIN::SetCenterPosition(float fWorldX, float fWorldY) {
                 pOneMapData->m_nCenterY,
                 pOneMapData->m_nUpdateIndex);
             const float fLoadMs = load_timer.ElapsedMs();
+            FrameProfiler::NoteTerrainStep(FrameProfiler::TERRAIN_MAPLOAD, fLoadMs);
             s_MapIoStats.m_fLastLoadMs = fLoadMs;
             if (fLoadMs > s_MapIoStats.m_fWorstLoadMs) {
                 s_MapIoStats.m_fWorstLoadMs = fLoadMs;
@@ -4100,6 +4102,8 @@ CTERRAIN::SetCenterPosition(float fWorldX, float fWorldY) {
         //----------------------------------------------------------------------------------------------------
         /// Sub map (deferred: see DeferSubMAP comment above).
         //----------------------------------------------------------------------------------------------------
+        CStopwatch addmap_timer;
+
         DeferSubMAP(wUpdateFLAG);
 
         m_nCenterMapXIDX = nZoneMapX;
@@ -4109,6 +4113,8 @@ CTERRAIN::SetCenterPosition(float fWorldX, float fWorldY) {
         /// Add map
         //----------------------------------------------------------------------------------------------------
         AddMAP(nZoneMapX, nZoneMapY, wUpdateFLAG, true, false);
+        FrameProfiler::NoteTerrainStep(FrameProfiler::TERRAIN_ADDMAP,
+            addmap_timer.ElapsedMs());
 
         /// 패치 재구성
         bPatchOrganizing = true;
@@ -4124,7 +4130,10 @@ CTERRAIN::SetCenterPosition(float fWorldX, float fWorldY) {
         /// moment a map slot rotates. Refresh before the proximity pass
         /// dereferences it. See m_bPatchIndexDirty comment in io_terrain.h.
         if (m_bPatchIndexDirty) {
+            CStopwatch reorg_timer;
             ReOrginazationPatch(nZoneMapX, nZoneMapY);
+            FrameProfiler::NoteTerrainStep(FrameProfiler::TERRAIN_REORG,
+                reorg_timer.ElapsedMs());
             m_bPatchIndexDirty = false;
         }
 

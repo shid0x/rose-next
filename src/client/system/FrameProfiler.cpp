@@ -168,7 +168,8 @@ void EmitSpike(const SpikeSnapshot& s, int others) {
              "spawn[n={} skel={:.1f} mot={:.1f} load={:.1f} parts={:.1f} "
              "bone={:.1f} rest={:.1f}] | "
              "logic[obj={:.1f} terr={:.1f} fx={:.1f} uiupd={:.1f}] | "
-             "terr[cull={:.1f} ins={:.1f} prox={:.1f} type={:.1f} del={:.1f}] | "
+             "terr[cull={:.1f} ins={:.1f} prox={:.1f} type={:.1f} del={:.1f} "
+             "mapload={:.1f} addmap={:.1f} reorg={:.1f}] | "
              "flush={} | tex[n={} read={:.1f} create={:.1f}] | others={}",
         s.frame_ms,
         s.avg_ms,
@@ -203,6 +204,9 @@ void EmitSpike(const SpikeSnapshot& s, int others) {
         s.terrain_step[TERRAIN_PROXIMITY],
         s.terrain_step[TERRAIN_TYPE],
         s.terrain_step[TERRAIN_DELETE],
+        s.terrain_step[TERRAIN_MAPLOAD],
+        s.terrain_step[TERRAIN_ADDMAP],
+        s.terrain_step[TERRAIN_REORG],
         s.flush_sampled
             ? fmt::format("{:.1f}ms/{}n [terrain={} mesh={} tex={} mat={} other={}]",
                   s.flush_ms,
