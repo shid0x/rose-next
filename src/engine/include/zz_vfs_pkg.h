@@ -324,54 +324,72 @@ inline int zz_vfs_pkg::seek (long offset, zz_vfs_seek origin)
 //
 // Deliberately a drop-in: read_ and seek are the only virtuals overridden, so a
 // caller switches by changing the declared type and not one line of parsing.
-// zz_motion::load solved the same problem by restructuring, which is fine when a
-// format is a flat table; this suits zz_mesh_tool's three ~300-line readers,
-// where restructuring is all risk and no extra benefit.
 //
-// Falls back to unbuffered reads when vfgetdata cannot hand over a whole-file
-// pointer -- a loose file on disk during development, say -- so behaviour is
-// never worse than before.
+// It owns its buffer and fills it with one ordinary read.
+//
+// DO NOT "optimise" this into vfgetdata(), which looks like a free whole-file
+// pointer and is a trap: it returns `pVFH->pData + pVFH->iAllocOffset` with no
+// null check, while vfread checks pData precisely because it is legitimately
+// NULL for a handle whose data was never preloaded. For such a handle vfgetdata
+// hands back a small **non-NULL** garbage pointer that sails through any sanity
+// test and faults on first use. That was tried, and the client died a second
+// after the window appeared, with error.txt still showing the previous session
+// because the engine log is buffered.
 //--------------------------------------------------------------------------------
 class zz_vfs_pkg_buffered : public zz_vfs_pkg {
 protected:
-	const char * buf_; // whole-file pointer owned by TriggerVFS, valid until close()
+	char * buf_; // owned
 	uint32 buf_size_;
 	uint32 buf_pos_;
 
+	void free_buffer ();
 	virtual uint32 read_ (char * buf, uint32 size);
 
 public:
 	zz_vfs_pkg_buffered (zz_vfs_pkg_system * pkg_system_in = NULL)
 		: zz_vfs_pkg(pkg_system_in), buf_(NULL), buf_size_(0), buf_pos_(0) {}
+	~zz_vfs_pkg_buffered () { free_buffer(); }
 
 	bool open (const char * filename, const zz_vfs_mode mode = ZZ_VFS_READ);
 	bool close ();
 	virtual int seek (long offset, zz_vfs_seek origin);
 };
 
-inline bool zz_vfs_pkg_buffered::open (const char * filename, const zz_vfs_mode mode)
+inline void zz_vfs_pkg_buffered::free_buffer ()
 {
-	buf_ = NULL;
+	ZZ_SAFE_DELETE_ARRAY(buf_);
 	buf_size_ = 0;
 	buf_pos_ = 0;
+}
+
+inline bool zz_vfs_pkg_buffered::open (const char * filename, const zz_vfs_mode mode)
+{
+	free_buffer();
 
 	if (!zz_vfs_pkg::open(filename, mode)) return false;
 	if (mode != ZZ_VFS_READ) return true; // only reads are buffered
 
-	const uint32 size = zz_vfs_pkg::read(); // vfgetdata: zero-copy whole-file pointer
-	const char * data = reinterpret_cast<const char *>(get_data());
-	if (size > 0 && data) {
-		buf_ = data;
-		buf_size_ = size;
+	const uint32 size = zz_vfs_pkg::get_size();
+	if (size == 0) return true; // nothing to buffer; reads fall through
+
+	buf_ = zz_new char[size];
+	if (!buf_) return true; // out of memory: stay unbuffered rather than fail the open
+
+	// One ordinary read through the normal path, so this makes no assumption
+	// about how the handle was opened.
+	const uint32 got = zz_vfs_pkg::read_(buf_, size);
+	if (got == 0) {
+		free_buffer(); // could not fill it; behave exactly as before
+		return true;
 	}
+	buf_size_ = got; // a short read is still worth buffering, and bounds every access
+	buf_pos_ = 0;
 	return true;
 }
 
 inline bool zz_vfs_pkg_buffered::close ()
 {
-	buf_ = NULL;
-	buf_size_ = 0;
-	buf_pos_ = 0;
+	free_buffer();
 	return zz_vfs_pkg::close();
 }
 
