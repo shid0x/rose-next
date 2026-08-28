@@ -176,6 +176,10 @@ Two measurement traps this campaign hit, both worth remembering:
 - **An intermittent cost needs the intermittent path instrumented.** Wrapping the every-frame function found `terr=0.1` with all five sub-passes at 0.0 and looked like the problem had vanished.
 - **A cold OS page cache inflates `tex[read=]` roughly tenfold** (0.0-0.8 ms warm, 5.4-5.8 ms cold) and with it every frame total. The first run after a re-bake is not comparable with anything. `MAP_PREFETCH` warms map chunks but not textures.
 
+**Measure at the framerate players will actually see.** The whole campaign was run with `VSYNC=0` at 200-330 fps, which is right for *diagnosis* — it exposes CPU cost that a vsync wait would otherwise hide inside `present`. It is wrong for *judging severity*: at 60 Hz the budget is 16.67 ms, so a 17.7 ms frame drops one interval and a 40.8 ms frame drops three, while the same frames look minor against a 3.3 ms average. Validate with `VSYNC=1`.
+
+With vsync on, read the spike log differently: every in-budget frame measures ~16.7 ms because the wait sits inside `present`, so totals cluster at 16.7 / 33.3 / 50 and a `FRAME_SPIKE_LOG_MS` of **20** catches exactly the frames that missed an interval. A large `present` there is the vsync wait and is expected — check `present[mgr= slp=]` before reading anything into it. The amortiser also gets a *bigger* per-frame allowance at 60 fps (`manager_update` is handed `frame_ms²`), so streaming is better amortised than the uncapped numbers suggest; the uncapped measurements are pessimistic for streaming and accurate for CPU spikes.
+
 Method note worth keeping: every round of this overturned the previous round's conclusion. The streaming log blamed terrain; the frame log said `netin`; the packet timer said spawn; the spawn timer said motion loading; the motion split said the file parse, not I/O. **Do not act on the first phase that looks large** — split it until the thing you are looking at has one cause.
 
 **Chunk-display hitch — the resolved picture**
