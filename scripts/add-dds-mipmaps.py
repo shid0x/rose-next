@@ -52,6 +52,25 @@ TRAPS
   filtering only *hidden* entries -- there is no extension filter -- so a .bak
   left beside a texture gets baked into the .vfs. They go to
   build/dds-mipmap-backup/ instead.
+- **-nowic is mandatory, and this one shipped a visible bug before it was found.**
+  texconv filters through the Windows Imaging Component by default, and WIC
+  darkens RGB badly when downsampling these textures -- measured at 36% on a
+  terrain tile and 71% on an NPC body, with the alpha channel untouched. Only the
+  lower mips are affected, so on screen it is a black wash that appears at
+  distance and clears as you walk in. -if TRIANGLE also happens to avoid it, but
+  only because WIC has no triangle filter and silently falls back to the same
+  code path; -nowic is the flag that actually says what is meant. -if BOX on top
+  matches what D3DX generated at runtime before any of this, keeping the visual
+  result as close to the old behaviour as possible.
+- **DirectXTex's own mip generator is power-of-two only** and returns
+  E_FAIL [mipmaps] otherwise, so NPOT textures are skipped. No loss: they are
+  minimaps, UI resources and effect strips, and the engine forces miplevels=1 for
+  image textures regardless (zz_renderer_d3d download_texture, get_for_image()).
+- **--verify samples decoded mip brightness, not just its presence.** The first
+  version of this script checked dimensions, format and mip count, passed
+  cleanly, and shipped chains that were 36-71% too dark. "The mips exist" and
+  "the mips are correct" are different claims, and a verifier that cannot fail
+  the actual defect is decoration. Needs Pillow; it says so when it cannot check.
 - **Re-encoding a DXT file is lossy.** The top level is decompressed and
   recompressed, so the result is not bit-identical to the original. BC1/2/3
   endpoint selection is near-idempotent in practice, but this is why --restore
@@ -138,6 +157,10 @@ def target_format(h):
     return None
 
 
+def is_pow2(v):
+    return v > 0 and (v & (v - 1)) == 0
+
+
 def is_excluded(path):
     """Textures that must never be given a mip chain, with the reason.
 
@@ -188,6 +211,16 @@ def collect(root):
         if h.width < 2 or h.height < 2:
             skipped["too small to mip"] += 1
             continue
+        if not (is_pow2(h.width) and is_pow2(h.height)):
+            # DirectXTex's own mip generator (which -nowic selects, and which we
+            # need because WIC darkens the result) only handles power-of-two
+            # sizes; it returns E_FAIL [mipmaps] otherwise. No loss: every NPOT
+            # texture here is a minimap, a UI resource or an effect strip, and the
+            # engine forces miplevels=1 for image textures anyway
+            # (zz_renderer_d3d download_texture, tex->get_for_image()). They are
+            # drawn at 1:1 and loaded once.
+            skipped["non-power-of-two (UI/minimap, never mipped)"] += 1
+            continue
         fmt = target_format(h)
         if fmt is None:
             skipped["unrecognised pixel format"] += 1
@@ -217,8 +250,23 @@ def convert(todo, dry_run):
             if not b.exists():
                 b.write_bytes(p.read_bytes())
 
-        cmd = [str(TEXCONV), "-nologo", "-y", "-dx9", "-m", "0",
-               "-f", fmt, "-o", str(out_dir)] + [str(p) for p in paths]
+        # -nowic and -if BOX are both load-bearing:
+        #
+        #   -nowic  texconv filters through the Windows Imaging Component by
+        #           default, and WIC darkens RGB badly when it downsamples these
+        #           textures -- measured at 36% on a terrain tile and 71% on an
+        #           NPC body, with the alpha channel untouched. On screen that is
+        #           a black wash that appears at distance and clears as you walk
+        #           in, because only the lower mips are affected. Forcing
+        #           DirectXTex's own filters reproduces mip0's brightness exactly.
+        #           (-if TRIANGLE also works, but only because WIC has no triangle
+        #           filter and it silently falls back to the same code path.)
+        #   -if BOX a strict 2x2 box is what D3DX generated at runtime before any
+        #           of this, so it keeps the visual result as close to the old
+        #           behaviour as possible. This is a load-time fix, not a
+        #           re-authoring.
+        cmd = [str(TEXCONV), "-nologo", "-y", "-dx9", "-m", "0", "-nowic",
+               "-if", "BOX", "-f", fmt, "-o", str(out_dir)] + [str(p) for p in paths]
         proc = subprocess.run(cmd, capture_output=True, text=True)
         if proc.returncode != 0:
             failed.append((rel, fmt, (proc.stdout or proc.stderr).strip()[:200]))
@@ -226,6 +274,80 @@ def convert(todo, dry_run):
         converted += len(paths)
         print("  %3d file(s) -> %-16s %s" % (len(paths), fmt, rel))
     return converted, failed
+
+
+def mip_mean_rgb(path, level, blk):
+    """Mean RGB of one mip level, by rebuilding it as a standalone single-level DDS.
+
+    Needs Pillow. Returns None if it is unavailable or the level cannot be read.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    import io as _io
+    try:
+        d = open(path, "rb").read()
+    except OSError:
+        return None
+    if len(d) < 128:
+        return None
+    head = bytearray(d[:128])
+    flags = struct.unpack_from("<I", head, 8)[0]
+    h, w = struct.unpack_from("<II", d, 12)
+    off = 128
+    for lv in range(level + 1):
+        lw, lh = max(1, w >> lv), max(1, h >> lv)
+        sz = max(1, (lw + 3) // 4) * max(1, (lh + 3) // 4) * blk
+        if off + sz > len(d):
+            return None
+        if lv == level:
+            hh = bytearray(head)
+            struct.pack_into("<II", hh, 12, lh, lw)
+            struct.pack_into("<I", hh, 28, 1)
+            struct.pack_into("<I", hh, 8, flags & ~DDSD_MIPMAPCOUNT)
+            struct.pack_into("<I", hh, 20, sz)
+            try:
+                im = Image.open(_io.BytesIO(bytes(hh) + d[off:off + sz])).convert("RGBA")
+            except Exception:
+                return None
+            px = im.load()
+            total = 0
+            for y in range(lh):
+                for x in range(lw):
+                    r, g, b, _a = px[x, y]
+                    total += r + g + b
+            return total / (lw * lh * 3.0)
+        off += sz
+    return None
+
+
+def verify_brightness(touched, sample=40):
+    """Compare mip0 and mip1 mean RGB on a sample of converted files.
+
+    This exists because the first version of this script checked only that a mip
+    chain was *present* -- right dimensions, right format, DX9 header -- and
+    shipped chains whose RGB was 36-71% too dark, because texconv filters through
+    WIC by default. "The mips exist" and "the mips are correct" are different
+    claims and only the second one matters. A verifier that cannot fail the actual
+    defect is decoration.
+    """
+    bad = []
+    checked = 0
+    step = max(1, len(touched) // sample)
+    for p, h, _fmt in touched[::step]:
+        if not (h.pf_flags & DDPF_FOURCC):
+            continue  # only the block formats are laid out predictably enough
+        blk = 8 if h.fourcc == b"DXT1" else 16
+        m0 = mip_mean_rgb(p, 0, blk)
+        m1 = mip_mean_rgb(p, 1, blk)
+        if m0 is None or m1 is None:
+            continue
+        checked += 1
+        if m0 > 1.0 and (1.0 - m1 / m0) > 0.15:
+            bad.append((p, "mip1 is %.0f%% darker than mip0 (%.0f vs %.0f)"
+                        % (100.0 * (1.0 - m1 / m0), m1, m0)))
+    return bad, checked
 
 
 def verify_converted(touched):
@@ -312,6 +434,28 @@ def main():
         print("      %-16s %5d" % (fmt, n))
 
     if args.verify:
+        conv = []
+        if BACKUP.is_dir():
+            for b in sorted(BACKUP.rglob("*")):
+                if not b.is_file() or b.suffix.upper() != ".DDS":
+                    continue
+                cur = DATA / b.relative_to(BACKUP)
+                h = read_header(cur)
+                if h is not None and h.mips > 1:
+                    conv.append((cur, h, None))
+        dark, checked = verify_brightness(conv)
+        if dark:
+            print("\nFAIL: generated mips are too dark on %d of %d sampled file(s)"
+                  % (len(dark), checked))
+            for pp, why in dark[:10]:
+                print("   %-52s %s" % (pp.relative_to(DATA), why))
+            return 1
+        if checked:
+            print("  brightness checked on            %5d sampled converted file(s)"
+                  % checked)
+        elif conv:
+            print("  brightness NOT checked (install Pillow to enable it)")
+
         if todo:
             print("\nFAIL: %d file(s) still have no mip chain" % len(todo))
             for p, _h, _f in todo[:20]:
@@ -344,8 +488,22 @@ def main():
         print("\nrun with --restore to put the originals back")
         return 1
 
+    dark, checked = verify_brightness(todo)
+    if dark:
+        print("\nVERIFY FAILED: generated mips are too dark on %d of %d sampled file(s):"
+              % (len(dark), checked))
+        for p, why in dark[:10]:
+            print("   %-52s %s" % (p.relative_to(DATA), why))
+        print("\nrun with --restore to put the originals back")
+        return 1
+
     print("verified: all %d file(s) now carry a mip chain, "
           "with unchanged dimensions and a DX9 header" % len(todo))
+    if checked:
+        print("verified: mip brightness matches mip0 on %d sampled file(s)" % checked)
+    else:
+        print("NOTE: mip brightness was NOT sampled (no block-format files in this "
+              "batch, or Pillow missing) -- run --verify to check the whole set")
     print("\nRe-bake the VFS, then check rose*.vfs against the 2 GB limit.")
     return 0 if not failed else 1
 
