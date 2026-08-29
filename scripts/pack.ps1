@@ -1,10 +1,28 @@
 param (
     [string]$in = (Join-Path (Join-Path $PSScriptRoot "..") "data"),
     [string]$out = (Join-Path (Join-Path $PSScriptRoot "..") "Exes"),
-    [string]$pipeline = (Join-Path (Join-Path (Join-Path $PSScriptRoot "..") "Exes") "pipeline.exe")
+    # Prefer the freshly built packer over the copy in Exes/. This default used to
+    # be Exes/pipeline.exe unconditionally, and that copy silently went four
+    # months stale: every bake ran a packer built before the 2 GB rollover existed,
+    # which is why rose.vfs sailed past the split threshold with no rose_2.vfs and
+    # the guard looked broken when it was simply not present in the binary. A tool
+    # that is quietly out of date is worse than a missing one.
+    [string]$pipeline = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $pipeline) {
+    $root = (Join-Path $PSScriptRoot "..")
+    $built = (Join-Path (Join-Path (Join-Path $root "bin") "release") "pipeline.exe")
+    $vendored = (Join-Path (Join-Path $root "Exes") "pipeline.exe")
+    if (Test-Path $built -PathType Leaf) {
+        $pipeline = $built
+    } else {
+        $pipeline = $vendored
+        Write-Warning "Using $vendored -- build the pipeline (just build release) for the current packer."
+    }
+}
 
 $input_dir = (Resolve-Path $in).Path
 
@@ -29,6 +47,7 @@ try {
     Set-Content -Path $manifest_path -Value "# Temporary manifest for direct VFS packing from data/" -NoNewline
 
     Write-Host "Packing VFS from $input_dir to $output_dir"
+    Write-Host "  packer: $pipeline  (built $((Get-Item $pipeline).LastWriteTime))"
     if (Test-Path $stdout_log) {
         Remove-Item -LiteralPath $stdout_log
     }
@@ -59,7 +78,23 @@ try {
     }
 
     Write-Host "Created $(Join-Path $output_dir 'data.idx')"
-    Write-Host "Created $(Join-Path $output_dir 'rose.vfs')"
+    Get-ChildItem -Path $output_dir -Filter "rose*.vfs" | ForEach-Object {
+        Write-Host ("Created {0} ({1:N2} GB)" -f $_.FullName, ($_.Length / 1e9))
+    }
+
+    # Verify every bake, rather than relying on anyone remembering to. The .vfs
+    # offset field is 32 bits: past 4 GB entries become unaddressable and the
+    # client reads garbage with no error anywhere near the cause.
+    $verify = (Join-Path $PSScriptRoot "verify-vfs.py")
+    if (Test-Path $verify -PathType Leaf) {
+        Write-Host ""
+        & python $verify $output_dir
+        if ($LASTEXITCODE -ne 0) {
+            throw "verify-vfs.py FAILED -- do not deploy this archive."
+        }
+    } else {
+        Write-Warning "verify-vfs.py not found; archive NOT verified."
+    }
 }
 finally {
     Remove-Item -LiteralPath $manifest_path -ErrorAction SilentlyContinue
