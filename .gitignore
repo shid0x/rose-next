@@ -1,5 +1,12 @@
 /[Bb]in/
 /[Bb]uild/
+# Building a .vcxproj standalone leaves $(SolutionDir) unresolved, so its
+# output lands in src/<project>/build/ instead of the root build/. The rule
+# above is root-anchored and does not catch that, so a later `git add -A`
+# sweeps .obj/.pdb into the tree -- and the root .gitattributes then mangles
+# them as text. Not anchored globally because the reference dumps under
+# "iRose Community/" have tracked paths containing build/.
+src/*/build/
 /[Dd]ist/
 /[Dd]ev/
 /[Ll]ib/
