@@ -545,8 +545,16 @@ CRecvPACKET::Recv_wsv_CHAR_LIST() {
         return;
     }
 
+    /// This handler runs synchronously inside the packet drain and has
+    /// measured ~230-265 ms, the largest single packet cost in the client. It
+    /// does three unrelated things and the frame log can only see the total, so
+    /// each is timed separately -- guessing which one it is has been wrong
+    /// twice already in this subsystem.
+    const DWORD t0 = timeGetTime();
+
     CSelectAvata* pSelectAvata = (CSelectAvata*)g_EUILobby.GetEUI(EUI_SELECT_AVATA);
     pSelectAvata->RecvAvataList(m_pRecvPacket);
+    const DWORD t1 = timeGetTime();
 
     g_EUILobby.CloseWaitAvataListDlg();
 
@@ -554,6 +562,10 @@ CRecvPACKET::Recv_wsv_CHAR_LIST() {
         CGame::GetInstance().ChangeState(CGame::GS_PREPARESELECTAVATAR);
     else
         CGame::GetInstance().ChangeState(CGame::GS_SELECTAVATAR);
+    const DWORD t2 = timeGetTime();
+
+    LOG_INFO("CharList: total {} ms [avatarlist={} changestate={}]",
+        (unsigned)(t2 - t0), (unsigned)(t1 - t0), (unsigned)(t2 - t1));
 }
 
 bool

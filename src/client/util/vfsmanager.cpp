@@ -1,3 +1,4 @@
+#include "rose/common/log.h"
 #include "stdafx.h"
 
 #include "VFSManager.h"
@@ -147,20 +148,38 @@ CVFSManager::load_stb(STBDATA& stb, const std::filesystem::path& path) {
         return false;
     }
 
+    /// Split read from parse. STB loading measured ~72-87 ms per MB at the
+    /// character-select stall -- 13 MB/s to walk length-prefixed strings that
+    /// are already in memory, which is two orders of magnitude off. The inner
+    /// loop (reserve + move-construct per cell) does not explain it, so the two
+    /// halves are timed separately rather than guessed at again.
+    const DWORD t0 = ::timeGetTime();
+
     if (!fs->ReadToMemory()) {
         return false;
     }
 
     std::byte* ptr = reinterpret_cast<std::byte*>(fs->GetData());
-    std::vector<std::byte> data(ptr, ptr + fs->GetSize());
+    const size_t byte_count = fs->GetSize();
+    std::vector<std::byte> data(ptr, ptr + byte_count);
 
     fs->ReleaseData();
     fs->CloseFile();
     this->ReturnToManager(fs);
+    const DWORD t1 = ::timeGetTime();
 
     BinaryReader b;
     if (!b.open(std::move(data))) {
         return false;
     }
-    return stb.load(std::move(b));
+    const bool ok = stb.load(std::move(b));
+    const DWORD t2 = ::timeGetTime();
+
+    if ((t2 - t0) >= 3) {
+        LOG_INFO("STB: {} ms [read={} parse={}] {:.0f} KB {}x{} ({})",
+            (unsigned)(t2 - t0), (unsigned)(t1 - t0), (unsigned)(t2 - t1),
+            byte_count / 1024.0, (unsigned)stb.row_count, (unsigned)stb.col_count,
+            filepath.c_str());
+    }
+    return ok;
 }

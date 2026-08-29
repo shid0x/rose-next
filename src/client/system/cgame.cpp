@@ -490,15 +490,23 @@ CGame::Load_BasicDATA2() {
 
     m_bLoadedBasicData2 = true;
 
+    /// Timed in four groups because this is on the character-select critical
+    /// path and the whole handler measured ~240 ms. LIST_SKILL alone is 1.38 MB
+    /// of the 3.15 MB loaded here, so it is the first suspect -- but 3.15 MB
+    /// taking 240 ms would be ~13 MB/s, which is far too slow to be I/O and
+    /// wants confirming rather than assuming.
     DWORD dwStartTime = timeGetTime();
     g_SkillList.LoadSkillTable("3DData\\STB\\LIST_SKILL.STB");
+    const DWORD t_skill = timeGetTime();
 
     CVFSManager& vfs = CVFSManager::GetSingleton();
 
     // NPC
     vfs.load_stb(g_TblNPC, NPC_STB);
     g_MOBandNPC.Load_MOBorNPC("3DDATA\\NPC\\LIST_NPC.CHR");
+    const DWORD t_npc = timeGetTime();
     g_QuestList.LoadQuestTable("3DDATA\\STB\\LIST_QUEST.STB", "3DDATA\\STB\\LIST_QuestDATA.STB");
+    const DWORD t_quest = timeGetTime();
 
     // Items
     vfs.load_stb(g_TblFACEITEM, FACE_ITEM_STB);
@@ -530,6 +538,14 @@ CGame::Load_BasicDATA2() {
     g_pTblSTBs[ITEM_TYPE_NATURAL] = &g_TblNATUAL;
     g_pTblSTBs[ITEM_TYPE_QUEST] = &g_TblQUESTITEM;
     g_pTblSTBs[ITEM_TYPE_RIDE_PART] = &g_PatITEM;
+
+    const DWORD t_items = timeGetTime();
+    LOG_INFO("BasicData2: total {} ms [skill={} npc={} quest={} items={}]",
+        (unsigned)(t_items - dwStartTime),
+        (unsigned)(t_skill - dwStartTime),
+        (unsigned)(t_npc - t_skill),
+        (unsigned)(t_quest - t_npc),
+        (unsigned)(t_items - t_quest));
 
     return true;
 }
