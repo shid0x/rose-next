@@ -141,11 +141,22 @@ CClientStorage::Load() {
     /// game unplayable with no obvious cause, and the engine asserts on <= 0.
     m_VideoOption.max_fps = GetPrivateProfileInt("VIDEO", "MAX_FPS", 0, g_szIniFileName);
 
-    /// Zone-load cache warming, off by default. Clamped: the whole archive is
-    /// under 2 GB, and warming more than a few hundred MB competes with the game's
-    /// own working set for RAM without warming anything it will actually touch.
+    /// Zone-load cache warming, ON by default at 300 MB. Measured cold-cache on
+    /// a five-zone route, warming on vs off: in-game texture reads went from
+    /// 0.503 ms each to 0.135-0.142, a 3.7x improvement reproduced across two
+    /// runs, with frames over 20 ms dropping from 10 to 6. 300 MB covers every
+    /// zone we ship (Junon, the largest, needs 283 MB).
+    ///
+    /// Note this buys nothing at the zone *transition* itself -- measured 0.475
+    /// vs 0.445, i.e. identical. The warm starts in LoadZONE, the same moment
+    /// that zone's own texture burst does, so it cannot get ahead of it. The
+    /// gain is entirely in the streaming that happens once you are walking
+    /// around. Do not reach for warming to shorten a loading screen.
+    ///
+    /// Clamped: warming more than a few hundred MB competes with the game's own
+    /// working set for RAM without warming anything it will actually touch.
     m_VideoOption.cache_warm_mb =
-        GetPrivateProfileInt("VIDEO", "CACHE_WARM_MB", 0, g_szIniFileName);
+        GetPrivateProfileInt("VIDEO", "CACHE_WARM_MB", 300, g_szIniFileName);
     if (m_VideoOption.cache_warm_mb > 1024)
         m_VideoOption.cache_warm_mb = 1024;
     if (m_VideoOption.max_fps != 0) {
