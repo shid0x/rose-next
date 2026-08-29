@@ -47,7 +47,23 @@ try {
     Set-Content -Path $manifest_path -Value "# Temporary manifest for direct VFS packing from data/" -NoNewline
 
     Write-Host "Packing VFS from $input_dir to $output_dir"
-    Write-Host "  packer: $pipeline  (built $((Get-Item $pipeline).LastWriteTime))"
+    $packer_built = (Get-Item $pipeline).LastWriteTime
+    Write-Host "  packer: $pipeline  (built $packer_built)"
+
+    # Is the packer older than its own source? Baking assets does not need a
+    # rebuild -- only a change under src/pipeline does -- but nobody should have
+    # to remember that, and "the tool is quietly out of date" is exactly how the
+    # 2 GB rollover went four months without ever running. Check, do not rely on
+    # discipline.
+    $packer_src = (Join-Path (Join-Path $PSScriptRoot "..") "src\pipeline")
+    if (Test-Path $packer_src) {
+        $newest = Get-ChildItem $packer_src -Recurse -File -Include *.rs, *.toml -ErrorAction SilentlyContinue |
+                  Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($newest -and $newest.LastWriteTime -gt $packer_built) {
+            Write-Warning ("The packer is OLDER than its source: {0} changed {1}." -f $newest.Name, $newest.LastWriteTime)
+            Write-Warning "Run 'just build release' (or cargo build --release) before baking."
+        }
+    }
     if (Test-Path $stdout_log) {
         Remove-Item -LiteralPath $stdout_log
     }
