@@ -241,6 +241,10 @@ public:
         /// NPC/MOTION on every zone change would be pure waste.
         m_WarmQueue.clear();
         m_WarmCursor = 0;
+        /// Fresh budget for the zone being entered. Groups already warmed stay
+        /// in m_WarmedPrefixes and are not redone, so this only ever pays for
+        /// content the new zone actually introduces.
+        m_nWarmBytesZone = 0;
         LeaveCriticalSection(&m_cs);
         SetEvent(m_hEvent);
     }
@@ -258,6 +262,7 @@ private:
         m_nFilesSatisfied(0),
         m_WarmBudgetBytes(0),
         m_nWarmBytes(0),
+        m_nWarmBytesZone(0),
         m_nWarmFiles(0),
         m_WarmCursor(0),
         m_bNamesBuilt(false) {}
@@ -469,7 +474,7 @@ private:
         unsigned long generation = 0;
         EnterCriticalSection(&m_cs);
         const bool stop = m_bStop;
-        const bool over_budget = (m_nWarmBytes >= m_WarmBudgetBytes);
+        const bool over_budget = (m_nWarmBytesZone >= m_WarmBudgetBytes);
         if (!stop && !over_budget && !m_WarmQueue.empty()) {
             prefix = m_WarmQueue.front();
             generation = m_Generation;
@@ -484,15 +489,15 @@ private:
                 m_WarmQueue.clear();
                 m_WarmCursor = 0;
                 const unsigned int files = m_nWarmFiles;
-                const double mb = m_nWarmBytes / 1048576.0;
+                const double mb = m_nWarmBytesZone / 1048576.0;
                 LeaveCriticalSection(&m_cs);
                 /// Truncating silently would look identical to warming
                 /// everything, and the default budget lands close enough to the
                 /// full set that the difference matters.
                 if (had_work) {
-                    LOG_INFO("Cache warm: budget reached, {} group(s) skipped "
-                             "({} file(s), {:.1f} MB, budget {:.0f} MB -- raise "
-                             "[VIDEO] CACHE_WARM_MB to cover more)",
+                    LOG_INFO("Cache warm: zone budget reached, {} group(s) skipped "
+                             "({} file(s) this session, {:.1f} MB this zone, budget "
+                             "{:.0f} MB -- raise [VIDEO] CACHE_WARM_MB to cover more)",
                         (unsigned)skipped, files, mb,
                         m_WarmBudgetBytes / 1048576.0);
                 }
@@ -539,6 +544,7 @@ private:
 
         EnterCriticalSection(&m_cs);
         m_nWarmBytes += bytes;
+        m_nWarmBytesZone += bytes;
         m_nWarmFiles += did;
         if (cancelled) {
             /// Leave the prefix queued and rewind. OnZoneChanged clears the queue
@@ -556,9 +562,10 @@ private:
             m_WarmedPrefixes.insert(prefix);
             m_WarmQueue.pop_front();
             m_WarmCursor = 0;
-            LOG_INFO("Cache warm: {} done ({} file(s), {:.1f} MB total, budget {:.0f} MB)",
-                prefix.c_str(), m_nWarmFiles, m_nWarmBytes / 1048576.0,
-                m_WarmBudgetBytes / 1048576.0);
+            LOG_INFO("Cache warm: {} done ({} file(s), {:.1f} MB this zone of "
+                     "{:.0f} MB budget, {:.1f} MB this session)",
+                prefix.c_str(), m_nWarmFiles, m_nWarmBytesZone / 1048576.0,
+                m_WarmBudgetBytes / 1048576.0, m_nWarmBytes / 1048576.0);
         }
         const bool more = !m_WarmQueue.empty();
         LeaveCriticalSection(&m_cs);
@@ -676,6 +683,11 @@ private:
     /// cannot starve each other; see DoWarmSlice.
     unsigned __int64 m_WarmBudgetBytes;
     unsigned __int64 m_nWarmBytes;
+    /// Bytes warmed since the last zone change. The budget is charged against
+    /// THIS, not the session total: a session-lifetime cap spends everything on
+    /// the first zone and leaves later ones unwarmed, which is the opposite of
+    /// what a per-loading-screen budget is for.
+    unsigned __int64 m_nWarmBytesZone;
     unsigned int m_nWarmFiles;
     std::deque<std::string> m_WarmQueue;   // prefixes still to warm
     std::set<std::string> m_WarmedPrefixes; // done this session, never redone
