@@ -60,6 +60,17 @@ struct t_OptionVideo {
     // render because the amortiser lost the race) is 2.6-6.7 ms uncapped at
     // ~300 fps versus 0.0-1.5 ms at 60.
     UINT max_fps;
+    // Megabytes of the .vfs to pull into the OS page cache during a zone load,
+    // on the prefetch worker. 0 (default) = off.
+    //
+    // A chunk arrival costs ~37 ms on a cold cache and ~17.5 ms warm -- measured
+    // on the same frame, same route -- because the streamed object meshes and
+    // textures fault in from disk the first time a zone is visited. A loading
+    // screen is ~1.6 s of otherwise idle disk, so this trades time the player is
+    // already waiting for time they are not.
+    //
+    // Only helps the first visit to a zone per session; once warm it stays warm.
+    UINT cache_warm_mb;
 };
 
 struct t_OptionSound {
@@ -173,6 +184,7 @@ public:
     UINT GetStreamSpikeLogMs() { return m_VideoOption.stream_spike_log_ms; }
     UINT GetFrameSpikeLogMs() { return m_VideoOption.frame_spike_log_ms; }
     UINT GetMaxFps() { return m_VideoOption.max_fps; }
+    UINT GetCacheWarmMb() { return m_VideoOption.cache_warm_mb; }
     ///*********************************************************************/
     /// Sound
     void SetSoundOption(t_OptionSound& option);

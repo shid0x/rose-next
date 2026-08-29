@@ -287,6 +287,21 @@ Result, same route: texture create went from **100.1 ms to 1.5 ms** for a compar
 - `oth` = total minus the bracketed phases. A large `oth` is a real finding — work inside the frame that no bracket covers — not measurement noise.
 - Streaming diagnostics use `LOG_INFO`, **not `LogString`**. `LogString` reports every line as `Debug` regardless of its `LOG_NORMAL`/`LOG_DEBUG_` argument (`log.h`'s `OutputString` hardcodes it), and the client initialises the logger at `Info` — so a `LogString` diagnostic never reaches `client.log`. Anything you add that needs to be readable must use the `LOG_*` macros.
 - Logs around `LoadZONE` / `FreeZONE` report queued-load and dirty-map counts; they must return to 0 after zone teardown.
+**Loading-screen cache warming (`[VIDEO] CACHE_WARM_MB`, 0 = off, the default)**
+
+A zone load leaves the OS page cache cold for everything that zone has not touched yet, and a cold cache inflates `tex[read=]` roughly 10x (0.0-0.8 ms warm vs 5.4-5.8 cold). Warming reads whole groups of archive files start to finish on the prefetcher's worker thread while the loading screen is up, purely so the *first* in-game access to any of them costs no disk read.
+
+Four groups are queued per zone, zone-specific first: `3DDATA\TERRAIN\TILES\<area>`, `3DDATA\<area>`, then the shared `3DDATA\NPC` and `3DDATA\MOTION`. `<area>` is the continent directory taken from the zone's own map path (`ZONE_FILE()`'s third component), not a table, so a new continent needs no code change. Junon warms 5989 files / 279 MB.
+
+Things that will bite:
+
+- **It shares the map-cell prefetcher's worker thread but is a separate feature with a separate switch, and conflating the two silently disables it.** The warm loop originally used `ShouldProcessGeneration`, which tests `m_bEnabled` — the `MAP_PREFETCH` flag, off by default. Warming therefore aborted on its very first candidate name and logged `done (0 file(s))`, which reads as "nothing matched" rather than "never ran". Use `ShouldContinueWarm`, which tests stop + generation only.
+- **Map cells always win.** `DoWarmSlice` runs only when the map-cell queue is empty, does at most 24 files, and returns to re-check the queue — so a cell queued mid-warm waits one slice, not a whole group. Getting that backwards would turn a first-visit optimisation into a permanent regression.
+- **Completing a scan and being cancelled mid-scan are different, and `m_WarmedPrefixes` is never cleared.** Marking a cancelled prefix as warmed retires it for the session having read nothing. Startup crosses several zones in quick succession (`FreeZONE(0)` -> `FreeZONE(4)` -> the real one), each bumping the generation, so *every* group got retired instantly.
+- **The budget truncates silently unless you say so.** Junon lands at 279 MB against a 300 MB budget, i.e. one more group would be dropped; exhaustion now logs which groups were skipped.
+- **A page-cache warm has no number of its own.** Its effect shows up as `MapIO`/`Flush` going down, never as a metric that says "warming worked". The `Warm:` HUD row reports files/MB read this session so you can tell it ran at all — cumulative, since a warmed group is deliberately never redone.
+- Verify the group contents independently of the client by parsing `data.idx` directly; the per-group counts printed at startup should match a prefix count over the FAT exactly (213 / 1949 / 1784 / 2043 for Junon). That is what proved the reader was pulling the intended set rather than merely running.
+
 - If post-warp hitches come back, check queue sizes first. If free-look hitches come back, check whether the proximity pass is still running (`Update_VisiblePatch` called from `Update_VisiblePatchManager`) and whether `m_bPatchIndexDirty` is being refreshed.
 
 ## Bone-Attached Particle Budgeting

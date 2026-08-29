@@ -140,6 +140,14 @@ CClientStorage::Load() {
     /// Clamped rather than trusted: a stray MAX_FPS=1 would otherwise make the
     /// game unplayable with no obvious cause, and the engine asserts on <= 0.
     m_VideoOption.max_fps = GetPrivateProfileInt("VIDEO", "MAX_FPS", 0, g_szIniFileName);
+
+    /// Zone-load cache warming, off by default. Clamped: the whole archive is
+    /// under 2 GB, and warming more than a few hundred MB competes with the game's
+    /// own working set for RAM without warming anything it will actually touch.
+    m_VideoOption.cache_warm_mb =
+        GetPrivateProfileInt("VIDEO", "CACHE_WARM_MB", 0, g_szIniFileName);
+    if (m_VideoOption.cache_warm_mb > 1024)
+        m_VideoOption.cache_warm_mb = 1024;
     if (m_VideoOption.max_fps != 0) {
         if (m_VideoOption.max_fps < 20)
             m_VideoOption.max_fps = 20;
@@ -280,6 +288,9 @@ CClientStorage::Save() {
 
     itoa(m_VideoOption.max_fps, szTemp, 10);
     WritePrivateProfileString("VIDEO", "MAX_FPS", szTemp, g_szIniFileName);
+
+    itoa(m_VideoOption.cache_warm_mb, szTemp, 10);
+    WritePrivateProfileString("VIDEO", "CACHE_WARM_MB", szTemp, g_szIniFileName);
 
     // Sound
     itoa(m_SoundOption.iBgmVolume, szTemp, 10);

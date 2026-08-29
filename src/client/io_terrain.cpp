@@ -183,6 +183,52 @@ public:
         LeaveCriticalSection(&m_cs);
     }
 
+    /// Warm the bulk assets a zone streams in, on the same worker, during the
+    /// loading screen.
+    ///
+    /// The map-cell queue always wins: warming only runs when that queue is
+    /// empty, and every slice re-checks it. Warming is bulk work for later, a
+    /// map cell is needed now, and getting that backwards would turn a
+    /// first-visit optimisation into a permanent regression.
+    ///
+    /// `area` is the continent directory (ELDEON, JUNON, ORO...), taken from the
+    /// zone's own map path rather than a table, so a new continent needs no code
+    /// change.
+    void RequestZoneWarm(const char* area) {
+        if (m_WarmBudgetBytes == 0)
+            return;
+        EnsureStarted();
+
+        EnterCriticalSection(&m_cs);
+        // Zone-specific first: these are what this zone will actually stream.
+        // Shared groups follow, and are skipped once warmed since they do not
+        // change between zones.
+        if (area && *area) {
+            QueueWarmPrefix(std::string("3DDATA\\TERRAIN\\TILES\\") + area);
+            QueueWarmPrefix(std::string("3DDATA\\") + area);
+        }
+        QueueWarmPrefix("3DDATA\\NPC");
+        QueueWarmPrefix("3DDATA\\MOTION");
+        LeaveCriticalSection(&m_cs);
+        SetEvent(m_hEvent);
+    }
+
+    void SetWarmBudgetMb(unsigned int mb) {
+        m_WarmBudgetBytes = (unsigned __int64)mb * 1024u * 1024u;
+    }
+
+    void GetWarmStats(unsigned int& files, unsigned __int64& bytes) {
+        if (!m_bStarted) {
+            files = 0;
+            bytes = 0;
+            return;
+        }
+        EnterCriticalSection(&m_cs);
+        files = m_nWarmFiles;
+        bytes = m_nWarmBytes;
+        LeaveCriticalSection(&m_cs);
+    }
+
     void OnZoneChanged() {
         if (!m_bStarted)
             return;
@@ -190,6 +236,11 @@ public:
         ++m_Generation;
         m_Queue.clear();
         m_Seen.clear();
+        /// Abandon warming for the zone being left. m_WarmedPrefixes is NOT
+        /// cleared: a group warmed once stays warm in the OS cache, and redoing
+        /// NPC/MOTION on every zone change would be pure waste.
+        m_WarmQueue.clear();
+        m_WarmCursor = 0;
         LeaveCriticalSection(&m_cs);
         SetEvent(m_hEvent);
     }
@@ -204,7 +255,12 @@ private:
         m_bEnabled(false),
         m_Generation(0),
         m_nFilesAttempted(0),
-        m_nFilesSatisfied(0) {}
+        m_nFilesSatisfied(0),
+        m_WarmBudgetBytes(0),
+        m_nWarmBytes(0),
+        m_nWarmFiles(0),
+        m_WarmCursor(0),
+        m_bNamesBuilt(false) {}
 
     ~CMapFilePrefetcher() {
         if (!m_bStarted)
@@ -274,6 +330,71 @@ private:
         return 0;
     }
 
+    /// Caller must hold m_cs.
+    void QueueWarmPrefix(const std::string& prefix) {
+        if (m_WarmedPrefixes.find(prefix) != m_WarmedPrefixes.end())
+            return;
+        for (size_t i = 0; i < m_WarmQueue.size(); ++i) {
+            if (m_WarmQueue[i] == prefix)
+                return;
+        }
+        m_WarmQueue.push_back(prefix);
+    }
+
+    /// Snapshot every filename in the archive, once, on the worker thread.
+    ///
+    /// VGetFileNames writes with strcpy and ignores its nMax argument, so the
+    /// buffers must be sized for the longest name rather than for what we asked
+    /// for. The longest in the shipped archive is 80 characters; 512 leaves a
+    /// wide margin and still costs only ~16 MB transiently.
+    void EnsureNameList() {
+        if (m_bNamesBuilt)
+            return;
+        m_bNamesBuilt = true; // one attempt, success or not
+        if (!m_hVFS)
+            return;
+
+        const int total = VGetTotFileCount(m_hVFS);
+        if (total <= 0)
+            return;
+
+        const int kVfsNameMax = 260;
+        const int vfs_count = VGetVfsCount(m_hVFS);
+        if (vfs_count <= 0)
+            return;
+
+        std::vector<char*> vfs_names(vfs_count, NULL);
+        std::vector<char> vfs_store((size_t)vfs_count * kVfsNameMax, 0);
+        for (int i = 0; i < vfs_count; ++i)
+            vfs_names[i] = &vfs_store[(size_t)i * kVfsNameMax];
+        const int got_vfs = VGetVfsNames(m_hVFS, &vfs_names[0], vfs_count, kVfsNameMax);
+
+        const int kNameMax = 512;
+        std::vector<char*> ptrs(total, NULL);
+        std::vector<char> store((size_t)total * kNameMax, 0);
+        for (int i = 0; i < total; ++i)
+            ptrs[i] = &store[(size_t)i * kNameMax];
+
+        for (int v = 0; v < got_vfs; ++v) {
+            const int got = VGetFileNames(m_hVFS, vfs_names[v], &ptrs[0], total, kNameMax);
+            for (int i = 0; i < got; ++i) {
+                m_Names.push_back(std::string(ptrs[i]));
+            }
+        }
+        LOG_INFO("Cache warm: indexed {} file name(s) from {} archive(s)",
+            (unsigned)m_Names.size(), got_vfs);
+    }
+
+    static bool StartsWithNoCase(const std::string& s, const std::string& prefix) {
+        if (s.size() < prefix.size())
+            return false;
+        for (size_t i = 0; i < prefix.size(); ++i) {
+            if (toupper((unsigned char)s[i]) != toupper((unsigned char)prefix[i]))
+                return false;
+        }
+        return true;
+    }
+
     /// Every file CMAP::Load touches for one map cell, in the order it reads them.
     ///
     /// The base path already ends in "<x>_<64-y>" (CTERRAIN::GetMapFILE), and
@@ -337,6 +458,129 @@ private:
         return true;
     }
 
+    /// Warm up to kWarmFilesPerSlice files from the front prefix.
+    ///
+    /// Returns true while there is more to do. Small slices are the whole point:
+    /// they bound how long a newly queued map cell waits behind bulk work.
+    bool DoWarmSlice(char* buf, size_t buf_size) {
+        enum { kWarmFilesPerSlice = 24 };
+
+        std::string prefix;
+        unsigned long generation = 0;
+        EnterCriticalSection(&m_cs);
+        const bool stop = m_bStop;
+        const bool over_budget = (m_nWarmBytes >= m_WarmBudgetBytes);
+        if (!stop && !over_budget && !m_WarmQueue.empty()) {
+            prefix = m_WarmQueue.front();
+            generation = m_Generation;
+        }
+        LeaveCriticalSection(&m_cs);
+
+        if (stop || prefix.empty()) {
+            if (over_budget) {
+                EnterCriticalSection(&m_cs);
+                const size_t skipped = m_WarmQueue.size();
+                const bool had_work = (skipped > 0);
+                m_WarmQueue.clear();
+                m_WarmCursor = 0;
+                const unsigned int files = m_nWarmFiles;
+                const double mb = m_nWarmBytes / 1048576.0;
+                LeaveCriticalSection(&m_cs);
+                /// Truncating silently would look identical to warming
+                /// everything, and the default budget lands close enough to the
+                /// full set that the difference matters.
+                if (had_work) {
+                    LOG_INFO("Cache warm: budget reached, {} group(s) skipped "
+                             "({} file(s), {:.1f} MB, budget {:.0f} MB -- raise "
+                             "[VIDEO] CACHE_WARM_MB to cover more)",
+                        (unsigned)skipped, files, mb,
+                        m_WarmBudgetBytes / 1048576.0);
+                }
+            }
+            return false;
+        }
+
+        EnsureNameList();
+        if (m_Names.empty()) {
+            EnterCriticalSection(&m_cs);
+            m_WarmQueue.clear();
+            LeaveCriticalSection(&m_cs);
+            return false;
+        }
+
+        unsigned int did = 0;
+        unsigned __int64 bytes = 0;
+        size_t i = m_WarmCursor;
+        bool aborted = false;
+        for (; i < m_Names.size() && did < kWarmFilesPerSlice; ++i) {
+            if (!StartsWithNoCase(m_Names[i], prefix))
+                continue;
+            /// Re-check only when there is real work about to happen. A
+            /// non-matching prefix scans all 32k names, and taking the critical
+            /// section once per name to decide nothing costs more than the scan.
+            if (!ShouldContinueWarm(generation)) {
+                aborted = true;
+                break;
+            }
+            bytes += WarmOneFileCounted(m_Names[i], buf, buf_size);
+            ++did;
+        }
+        m_WarmCursor = i;
+
+        /// Completing the scan and being cancelled mid-scan are NOT the same
+        /// thing, and conflating them is a silent no-op: a cancelled prefix would
+        /// be recorded in m_WarmedPrefixes, which is never cleared, so it would
+        /// never be retried. Startup crosses several zones in quick succession
+        /// (FreeZONE(0) -> FreeZONE(4) -> the real one), each bumping the
+        /// generation, so every prefix got marked done having warmed nothing --
+        /// the log said "done" four times and read 0 files every time.
+        const bool cancelled = aborted || !ShouldContinueWarm(generation);
+        const bool completed = !cancelled && (i >= m_Names.size());
+
+        EnterCriticalSection(&m_cs);
+        m_nWarmBytes += bytes;
+        m_nWarmFiles += did;
+        if (cancelled) {
+            /// Leave the prefix queued and rewind. OnZoneChanged clears the queue
+            /// anyway; if it did not, the next request re-queues from the start.
+            m_WarmCursor = 0;
+            /// Report partial work, otherwise a warm that is always cancelled --
+            /// which is exactly what the login screen's rapid zone changes do --
+            /// is indistinguishable from one that never reads anything.
+            if (did > 0) {
+                LOG_INFO("Cache warm: {} cancelled after {} file(s) ({:.1f} MB so far)",
+                    prefix.c_str(), m_nWarmFiles, m_nWarmBytes / 1048576.0);
+            }
+        }
+        if (completed && !m_WarmQueue.empty() && m_WarmQueue.front() == prefix) {
+            m_WarmedPrefixes.insert(prefix);
+            m_WarmQueue.pop_front();
+            m_WarmCursor = 0;
+            LOG_INFO("Cache warm: {} done ({} file(s), {:.1f} MB total, budget {:.0f} MB)",
+                prefix.c_str(), m_nWarmFiles, m_nWarmBytes / 1048576.0,
+                m_WarmBudgetBytes / 1048576.0);
+        }
+        const bool more = !m_WarmQueue.empty();
+        LeaveCriticalSection(&m_cs);
+        return more;
+    }
+
+    /// Like WarmOneFile, but reports how many bytes it actually pulled in.
+    unsigned __int64 WarmOneFileCounted(const std::string& path, char* buf, size_t buf_size) {
+        unsigned __int64 total = 0;
+        if (m_hVFS) {
+            VFileHandle* vf = VOpenFile(path.c_str(), m_hVFS);
+            if (vf) {
+                size_t n;
+                while ((n = vfread(buf, 1, buf_size, vf)) > 0) {
+                    total += n;
+                }
+                VCloseFile(vf);
+            }
+        }
+        return total;
+    }
+
     void Run() {
         char buf[32 * 1024];
         std::vector<std::string> paths;
@@ -358,8 +602,15 @@ private:
                 }
                 LeaveCriticalSection(&m_cs);
 
-                if (!have_item)
+                if (!have_item) {
+                    /// Map-cell queue is empty, so spend a slice on bulk warming
+                    /// and then go round again -- which re-checks the queue, so a
+                    /// map cell that arrives mid-warm is picked up within one
+                    /// slice rather than after the whole group.
+                    if (DoWarmSlice(buf, sizeof(buf)))
+                        continue;
                     break;
+                }
 
                 if (!ShouldProcessGeneration(item.generation))
                     continue;
@@ -392,6 +643,21 @@ private:
         return should_process;
     }
 
+    /// Same generation/stop test, but WITHOUT m_bEnabled.
+    ///
+    /// m_bEnabled is the map-cell prefetcher's own switch ([VIDEO] MAP_PREFETCH).
+    /// Cache warming is a separate feature with a separate switch
+    /// ([VIDEO] CACHE_WARM_MB) that happens to share this worker thread, so
+    /// gating it on m_bEnabled made it silently do nothing whenever prefetch was
+    /// off -- which is the default. The symptom was a warm that aborted on its
+    /// very first candidate name and reported "done (0 file(s))".
+    bool ShouldContinueWarm(unsigned long generation) {
+        EnterCriticalSection(&m_cs);
+        const bool go = !m_bStop && generation == m_Generation;
+        LeaveCriticalSection(&m_cs);
+        return go;
+    }
+
     HANDLE m_hThread;
     HANDLE m_hEvent;
     /// Private to the worker after EnsureStarted(); never shared with the engine.
@@ -405,6 +671,17 @@ private:
     unsigned long m_Generation;
     unsigned int m_nFilesAttempted;
     unsigned int m_nFilesSatisfied;
+
+    /// Zone-load cache warming. Separate queue from the map-cell one so the two
+    /// cannot starve each other; see DoWarmSlice.
+    unsigned __int64 m_WarmBudgetBytes;
+    unsigned __int64 m_nWarmBytes;
+    unsigned int m_nWarmFiles;
+    std::deque<std::string> m_WarmQueue;   // prefixes still to warm
+    std::set<std::string> m_WarmedPrefixes; // done this session, never redone
+    size_t m_WarmCursor;                   // position within the front prefix
+    bool m_bNamesBuilt;
+    std::vector<std::string> m_Names;      // every filename in the archive
 };
 
 } // namespace
@@ -2901,6 +3178,44 @@ CTERRAIN::LoadZONE(short nZoneNO, bool bPlayBGM) {
 
     m_nZoneNO = nZoneNO;
 
+    /// Kick off cache warming for this zone's bulk assets while the loading
+    /// screen is up. The continent is the third component of the .ZON path
+    /// ("3DDATA\MAPS\<CONTINENT>\..."), read from the path rather than a table so a
+    /// new continent needs no code change here. No-op unless
+    /// [VIDEO] CACHE_WARM_MB is set.
+    {
+        /// Read the budget here rather than at state entry: CGameStateMain::Enter
+        /// runs *after* the zone has loaded, so setting it there would miss the
+        /// first zone entirely -- the one visit that most needs warming.
+        static bool s_logged_warm_setting = false;
+        const unsigned int warm_mb = g_ClientStorage.GetCacheWarmMb();
+        CMapFilePrefetcher::Get().SetWarmBudgetMb(warm_mb);
+        if (!s_logged_warm_setting) {
+            s_logged_warm_setting = true;
+            if (warm_mb > 0) {
+                LOG_INFO("Cache warm: ON, budget {} MB ([VIDEO] CACHE_WARM_MB)", warm_mb);
+            } else {
+                LOG_INFO("Cache warm: off ([VIDEO] CACHE_WARM_MB=0)");
+            }
+        }
+
+        const char* zone_path = ZONE_FILE(m_nZoneNO);
+        if (zone_path) {
+            std::string zp(zone_path);
+            for (size_t i = 0; i < zp.size(); ++i) {
+                if (zp[i] == '/')
+                    zp[i] = '\\';
+            }
+            size_t a = zp.find('\\');
+            size_t b = (a == std::string::npos) ? a : zp.find('\\', a + 1);
+            size_t c = (b == std::string::npos) ? b : zp.find('\\', b + 1);
+            if (b != std::string::npos && c != std::string::npos && c > b + 1) {
+                const std::string area = zp.substr(b + 1, c - b - 1);
+                CMapFilePrefetcher::Get().RequestZoneWarm(area.c_str());
+            }
+        }
+    }
+
     int iCount, iType, iOffset;
 
     iCount = CUtil::ExtractFileName(NULL, ZONE_FILE(m_nZoneNO));
@@ -3003,6 +3318,16 @@ CTERRAIN::FreeZONE() {
         (unsigned int)m_DirtyMapList.size(),
         this->IsMapPrefetchEnabled() ? "on" : "off",
         this->GetPrefetchQueueDepth());
+}
+
+void
+CTERRAIN::SetCacheWarmMb(unsigned int mb) {
+    CMapFilePrefetcher::Get().SetWarmBudgetMb(mb);
+}
+
+void
+CTERRAIN::GetCacheWarmStats(unsigned int& files, unsigned __int64& bytes) {
+    CMapFilePrefetcher::Get().GetWarmStats(files, bytes);
 }
 
 void

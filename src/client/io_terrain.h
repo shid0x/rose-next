@@ -549,6 +549,9 @@ public:
     void FreeZONE();
     bool InitZONE(float fCenterX, float fCenterY);
     void SetMapPrefetchEnabled(bool enabled);
+    /// Zone-load cache warming budget, from [VIDEO] CACHE_WARM_MB. 0 = off.
+    void SetCacheWarmMb(unsigned int mb);
+    void GetCacheWarmStats(unsigned int& files, unsigned __int64& bytes);
     bool IsMapPrefetchEnabled() const;
     unsigned int GetQueuedMapLoadCount() const;
     unsigned int GetDirtyMapCount() const;

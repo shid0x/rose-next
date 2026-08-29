@@ -519,6 +519,26 @@ CGameStateMain::Render_GameMENU() {
             mapio.m_nLoadCount);
         nRowY += kDebugRowStride;
 
+        /// Loading-screen cache warming ([VIDEO] CACHE_WARM_MB, 0 = off).
+        /// files/MB are cumulative for the session, since a group already warmed
+        /// is deliberately never redone. This is a *page cache* warm: it makes
+        /// the first visit to an asset cost no disk read, so its effect shows up
+        /// in MapIO/Flush going down, never in a number of its own.
+        {
+            unsigned int warm_files = 0;
+            unsigned __int64 warm_bytes = 0;
+            g_pTerrain->GetCacheWarmStats(warm_files, warm_bytes);
+            ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
+                false,
+                kDebugX,
+                nRowY,
+                g_dwYELLOW,
+                "Warm: files=%u  %.1f MB",
+                warm_files,
+                warm_bytes / 1048576.0);
+            nRowY += kDebugRowStride;
+        }
+
         /// Per-frame scene-toggle activity. ins/rem = CMAP_PATCH
         /// InsertToScene/RemoveFromScene calls this frame; resPatch =
         /// patches currently held in-scene (grace + proximity + frustum).
