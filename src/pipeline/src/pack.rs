@@ -99,7 +99,11 @@ pub fn pack(matches: &ArgMatches) -> Result<(), PipelineError> {
     //
     // The cap is deliberately below 2 GiB: the check runs *before* writing, and
     // a single file can be large, so the margin absorbs the biggest asset.
-    const VFS_MAX_BYTES: u64 = 1_900_000_000;
+    // 4 GB minus a margin. The .vfs stores file offsets in a 32-bit field which
+    // triggervfs now reads as UNSIGNED (it was signed, which capped this at 2 GB
+    // and corrupted silently past it). The margin absorbs the largest single
+    // asset, since the check runs before the file is written.
+    const VFS_MAX_BYTES: u64 = 4_200_000_000;
 
     let vfs_name_for = |index: usize| -> String {
         if index == 0 {
@@ -241,10 +245,10 @@ pub fn pack(matches: &ArgMatches) -> Result<(), PipelineError> {
             // Belt and braces: the rollover above should make this unreachable,
             // but a silent truncation here corrupts the archive in a way that is
             // extremely hard to trace back (see VFS_MAX_BYTES). Fail loudly.
-            if cur_offset > i32::MAX as u64 || input_size > i32::MAX as usize {
+            if cur_offset > u32::MAX as u64 || input_size > i32::MAX as usize {
                 return Err(PipelineError::Message(format!(
                     "vfs offset overflow packing {} (offset {}, size {}): the .vfs \
-                     format stores 32-bit signed offsets. This is a bug in the \
+                     format stores 32-bit unsigned offsets, 4 GB is the ceiling. A bug in the \
                      rollover logic.",
                     input_path.display(),
                     cur_offset,
@@ -257,7 +261,12 @@ pub fn pack(matches: &ArgMatches) -> Result<(), PipelineError> {
 
             let mut vfs_file_metadata = VfsFileMetadata::new();
             vfs_file_metadata.filepath = PathBuf::from(relative_path_upper);
-            vfs_file_metadata.offset = cur_offset as i32;
+            // Bit-preserving on purpose: roselib's field is i32 and writes with
+            // write_i32, but triggervfs reads those same 4 bytes as unsigned. An
+            // offset above 2 GB is stored as a negative i32 whose bytes are the
+            // correct u32. Do not turn this into a checked conversion -- it would
+            // reject exactly the offsets this exists to support.
+            vfs_file_metadata.offset = (cur_offset as u32) as i32;
             vfs_file_metadata.size = input_size as i32;
             vfs_file_metadata.block_size = input_size as i32;
             vfs_file_metadata.version = 1;

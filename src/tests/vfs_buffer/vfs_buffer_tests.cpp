@@ -246,10 +246,98 @@ const char* kFiles[] = {
     "3DDATA\\MAPS\\JUNON\\JG01\\32_32\\32_32_PlaneLightingMap.dds", // 350 KB, > buffer
 };
 
+/// Reads an archive built by scripts/make-oversize-vfs.py and checks the bytes
+/// against a pattern it re-derives itself.
+///
+/// This exists because the offset field in the .vfs was widened from signed to
+/// unsigned to lift the archive ceiling from 2 GB to 4 GB, and that change
+/// cannot be trusted on inspection: past 2 GB a signed read does not fail, it
+/// silently returns the wrong bytes. Comparing the buffered reader against raw
+/// vfread (what the rest of this file does) would not catch it either -- both go
+/// through the same offset arithmetic and would be wrong together. So the
+/// expected content is regenerated here from the file's *name*, independently of
+/// anything the VFS says.
+int
+BigArchiveTest(const char* dir, const char* mode) {
+    if (!::SetCurrentDirectoryA(dir)) {
+        printf("could not enter %s\n", dir);
+        return 2;
+    }
+    // Both modes matter and they take completely different code paths: the
+    // client opens "r" (plain fseek/fread) while the engine opens "mr"
+    // (CreateFileMapping + MapViewOfFile). The 2 GB ceiling bit them
+    // differently -- fseek truncates a 64-bit offset, MapViewOfFile takes the
+    // offset as a DWORD and was fine once the field stopped being signed -- so
+    // testing one proves nothing about the other.
+    printf("\n-- mode \"%s\" --\n", mode);
+    VHANDLE hVFS = ::OpenVFS("data.idx", mode);
+    if (!hVFS) {
+        printf("FAIL: could not open data.idx in %s (mode %s)\n", dir, mode);
+        return 1;
+    }
+
+    static const char* kBig[] = {
+        "3DDATA\\TEST\\LOW.DAT",
+        "3DDATA\\TEST\\NEAR.DAT",
+        "3DDATA\\TEST\\HIGH.DAT",
+        "3DDATA\\TEST\\HIGHEST.DAT",
+    };
+
+    for (int i = 0; i < 4; ++i) {
+        const char* name = kBig[i];
+        VFileHandle* vf = ::VOpenFile(name, hVFS);
+        if (!vf) {
+            Check(false, name);
+            printf("  FAIL: %s could not be opened\n", name);
+            continue;
+        }
+        const size_t size = ::vfgetsize(vf);
+        std::vector<unsigned char> got(size ? size : 1, 0);
+        const size_t read = ::vfread(&got[0], 1, size, vf);
+        ::VCloseFile(vf);
+
+        // Same derivation as the generator: seed from the name, then
+        // byte i = (i * 31 + seed) & 0xFF.
+        unsigned int seed = 0;
+        for (const char* c = name; *c; ++c) {
+            seed = seed * 131u + (unsigned char)*c;
+        }
+        seed &= 0xFFu;
+
+        bool ok = (read == size);
+        for (size_t b = 0; ok && b < size; ++b) {
+            if (got[b] != (unsigned char)((b * 31u + seed) & 0xFFu)) {
+                printf("  FAIL: %s wrong byte at %u: got %u\n",
+                    name, (unsigned)b, (unsigned)got[b]);
+                ok = false;
+            }
+        }
+        Check(ok, name);
+        if (ok) {
+            printf("  ok: %-28s %u bytes verified\n", name, (unsigned)size);
+        }
+    }
+
+    ::CloseVFS(hVFS);
+    if (g_failures == 0) {
+        printf("\nbig-archive test passed (%d checks) -- offsets past 2 GB read correctly\n",
+            g_checks);
+        return 0;
+    }
+    printf("\nbig-archive test FAILED: %d of %d checks\n", g_failures, g_checks);
+    return 1;
+}
+
 } // namespace
 
 int
 main(int argc, char** argv) {
+    if (argc > 2 && !strcmp(argv[1], "--bigtest")) {
+        int rc = BigArchiveTest(argv[2], "r");
+        int rc2 = BigArchiveTest(argv[2], "mr");
+        return (rc || rc2) ? 1 : 0;
+    }
+
     /// Optional game-directory argument; otherwise use the working directory.
     /// CVFS resolves the .vfs path relative to the CWD, so we must actually
     /// chdir rather than just pass a longer name.

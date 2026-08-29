@@ -364,9 +364,16 @@ CVFS::__ReadFileEntry(void) {
         return false;
 
     /// 파일 앞으로 이동
-    long lMaxOffset = 0;
+    // 64-bit: __fseek returns ftell(), a 32-bit long, which for an archive over
+    // 2 GB returns -1 or a wrapped value. That would make the sanity check below
+    // reject a perfectly good archive, and the client would then find no files at
+    // all with nothing in the log pointing at the size.
+    __int64 lMaxOffset = 0;
     if (m_hFile != INVALID_HANDLE_VALUE) // Memory Mapped IO 가 아니면 파일의 크기를 조사한다
-        lMaxOffset = __fseek(m_fp, 0, SEEK_END);
+    {
+        _fseeki64(m_fp, 0, SEEK_END);
+        lMaxOffset = _ftelli64(m_fp);
+    }
 
     fseek(m_fpFAT, m_lEntryStart, SEEK_SET);
     fread((void*)&m_dwNum, sizeof(DWORD), 1, m_fpFAT); /// 갯수를 읽는다
@@ -379,7 +386,7 @@ CVFS::__ReadFileEntry(void) {
         return false;
 
     // Memory Mapped IO 가 아니면 범위를 체크한다
-    if (m_hFile != INVALID_HANDLE_VALUE && m_lStartOffset > lMaxOffset)
+    if (m_hFile != INVALID_HANDLE_VALUE && (__int64)m_lStartOffset > lMaxOffset)
         return false;
 
     for (unsigned int i = 0; i < m_dwNum; i++) {

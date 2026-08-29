@@ -435,19 +435,27 @@ size_t __stdcall vfread(void* buffer, size_t size, size_t count, VFileHandle* pV
     size_t stReaded = 0; /// 한 바이트씩 읽을었때 실제로 읽힌 바이트수
     size_t stItems = 0; /// 읽혀진 항목수
 
-    long lOffset = pVFH->lStartOff + pVFH->lCurrentOffset;
+    // 64-bit: lStartOff may now exceed 2 GB. As a signed long this overflowed and
+    // the read landed at a negative offset, which fseek rejects -- the caller got
+    // a buffer full of whatever it had initialised, i.e. zeros. Silent wrong data,
+    // not an error.
+    const __int64 lOffset = (__int64)pVFH->lStartOff + (__int64)pVFH->lCurrentOffset;
 
     CVFS_Manager* pVFS = (CVFS_Manager*)pVFH->hVFS;
 
     /// 이 파일의 끝은 초과하는지 확인한다
-    long lToWhere = pVFH->lStartOff + pVFH->lCurrentOffset + stReadSize;
-    if (lToWhere >= (signed)(pVFH->lEndOff))
-        stReadSize = pVFH->lEndOff - (pVFH->lStartOff + pVFH->lCurrentOffset);
+    // The (signed) cast here was the other half of the bug: it forced the
+    // end-of-file comparison back into signed 32-bit, so for an archive past 2 GB
+    // the clamp either fired when it should not or not at all.
+    const __int64 lToWhere = lOffset + (__int64)stReadSize;
+    if (lToWhere >= (__int64)pVFH->lEndOff)
+        stReadSize = (size_t)((__int64)pVFH->lEndOff - lOffset);
     if (pVFH->pData) {
         stReaded = sizeof(BYTE) * stReadSize;
         memcpy(buffer, pVFH->pData + pVFH->iAllocOffset + pVFH->lCurrentOffset, stReaded);
     } else {
-        fseek(pVFH->fp, lOffset, SEEK_SET);
+        // _fseeki64: fseek takes a 32-bit long and cannot reach past 2 GB.
+        _fseeki64(pVFH->fp, lOffset, SEEK_SET);
         stReaded = fread(buffer, sizeof(BYTE), stReadSize, pVFH->fp);
     }
 #ifdef _ENCRYPTION
@@ -555,49 +563,63 @@ void* __stdcall vfgetdata(size_t* psize, VFileHandle* pVFH) {
  */
 int __stdcall vfseek(VFileHandle* pVFH, long offset, int origin) {
     int iRet = 0;
-    long lOffset = 0;
+
+    // 64-bit signed throughout, even though the stored offsets are 32-bit
+    // unsigned. Both properties are load-bearing now that an archive may exceed
+    // 2 GB:
+    //
+    //   * unsigned storage is what allows an offset above 2 GB at all;
+    //   * signed 64-bit arithmetic is what keeps the clamps below correct. In
+    //     32-bit unsigned, `lStartOff + offset` with a negative offset wraps to
+    //     a huge value and the `< lStartOff` underflow guard silently fails --
+    //     the seek would land past the end of the file instead of being clamped
+    //     to its start. Widening cannot overflow: the maximum is under 4 GB.
+    const __int64 lStart = (__int64)pVFH->lStartOff;
+    const __int64 lEnd = (__int64)pVFH->lEndOff;
+    __int64 lOffset = 0;
 
     /// 이 파일의 범위를 절대로 넘지 못하게 해야 한다.
     switch (origin) {
         case VFSEEK_SET:
             /// 새롭게 정한 값이 상한 하한을 넘지 못하도록
-            lOffset = pVFH->lStartOff + offset;
-            if (lOffset < pVFH->lStartOff) {
-                lOffset = pVFH->lStartOff;
+            lOffset = lStart + offset;
+            if (lOffset < lStart) {
+                lOffset = lStart;
             }
-            if (lOffset > pVFH->lEndOff) {
-                lOffset = pVFH->lEndOff;
+            if (lOffset > lEnd) {
+                lOffset = lEnd;
             }
-            pVFH->lCurrentOffset = lOffset - pVFH->lStartOff;
+            pVFH->lCurrentOffset = (DWORD)(lOffset - lStart);
             break;
 
         case VFSEEK_CUR:
-            lOffset = pVFH->lStartOff + pVFH->lCurrentOffset + offset;
-            if (lOffset < pVFH->lStartOff) {
-                lOffset = pVFH->lStartOff;
+            lOffset = lStart + (__int64)pVFH->lCurrentOffset + offset;
+            if (lOffset < lStart) {
+                lOffset = lStart;
             }
-            if (lOffset > pVFH->lEndOff) {
-                lOffset = pVFH->lEndOff;
+            if (lOffset > lEnd) {
+                lOffset = lEnd;
             }
-            pVFH->lCurrentOffset = lOffset - pVFH->lStartOff;
+            pVFH->lCurrentOffset = (DWORD)(lOffset - lStart);
             break;
 
         case VFSEEK_END:
-            lOffset = pVFH->lEndOff + offset;
-            if (lOffset < pVFH->lStartOff) {
-                lOffset = pVFH->lStartOff;
+            lOffset = lEnd + offset;
+            if (lOffset < lStart) {
+                lOffset = lStart;
             }
-            if (lOffset > pVFH->lEndOff) {
-                lOffset = pVFH->lEndOff;
+            if (lOffset > lEnd) {
+                lOffset = lEnd;
             }
-            pVFH->lCurrentOffset = lOffset - pVFH->lStartOff;
+            pVFH->lCurrentOffset = (DWORD)(lOffset - lStart);
             break;
     }
 
     CVFS_Manager* pVFS = (CVFS_Manager*)pVFH->hVFS;
 
     if (!pVFS) { // 일반 파일일 경우
-        iRet = fseek(pVFH->fp, lOffset, SEEK_SET); /// 실제로 fseek 수행
+        // _fseeki64: lOffset is now 64-bit, and fseek's long would truncate it.
+        iRet = _fseeki64(pVFH->fp, lOffset, SEEK_SET); /// 실제로 fseek 수행
     }
 
     return iRet;

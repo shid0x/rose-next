@@ -29,7 +29,15 @@ typedef void(__stdcall* VCALLBACK_CLEARBLANKALL)(int);
 /// 파일엔트리를 저장하고. 이 파일은 vfs파일 앞부분에 있음
 struct FileEntry {
     std::string sFileName; /// 파일이름; 길이:문자열(NULL포함) 형태로 저장됨
-    long lFileOffset; /// 파일오프셋
+    // UNSIGNED, deliberately. The on-disk field is the same 4 bytes; only the
+    // interpretation changed. As a signed long this capped the archive at 2 GB:
+    // anything stored past 2,147,483,647 read back negative, the client seeked to
+    // garbage, and the symptom (a Lua parse error in INIT.LUA at startup) pointed
+    // nowhere near the cause. Unsigned doubles the ceiling to 4 GB for free --
+    // MapViewOfFile already takes the offset as a DWORD low + DWORD high pair.
+    // Arithmetic on this MUST widen to __int64 before comparing or subtracting;
+    // see vfseek.
+    DWORD lFileOffset; /// 파일오프셋
     long lFileLength; /// 파일이 차지하고 있는 실제 길이
     long lBlockSize; /// 차지하고 있는 블륵의 크기			(2003.11.19 추가)
     BYTE cDeleted; /// 삭제여부: 0 = 삭제 안 됨. 1 = 삭제	(2003.11.19 추가)
@@ -56,8 +64,8 @@ struct VFileHandle {
     char* pData; // Memory Mapped IO data
     int iAllocOffset; // pData + iAllocOffset = Read Data Address
     std::string sFileName; /// 현재 오픈한 파일이름. vfs파일내의 파일이름.
-    long lStartOff; /// 현재파일의 시작 Offset
-    long lEndOff; /// 현재파일의 마지막 Offset. dwEndOff + 1 이 End Of File 이다.
+    DWORD lStartOff; /// 현재파일의 시작 Offset (unsigned: may exceed 2 GB)
+    DWORD lEndOff; /// 현재파일의 마지막 Offset. dwEndOff + 1 이 End Of File 이다.
     long lCurrentOffset; /// 현재 File Indicator Offset. 자기의 Start 오프셋 기준으로
     BYTE btFileType; /// 0 = Packed File , 1 = Normal File outside
     BYTE btEncrypted; // 0 = normal data , 1 = data encryption used
