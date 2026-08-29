@@ -61,5 +61,9 @@ alias gs := gameserver
 create-account email password access="0":
     pwsh -File {{SCRIPTS}}/create-account.ps1 -Email "{{email}}" -Password "{{password}}" -AccessLevel {{access}}
 
+# Drop the OS file cache so the next client run reads from disk (needs elevation)
+purge-cache:
+    pwsh -File {{SCRIPTS}}/purge-page-cache.ps1
+
 # Create distribution
 # TODO: Refactor dist script
