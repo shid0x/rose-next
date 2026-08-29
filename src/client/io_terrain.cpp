@@ -194,15 +194,23 @@ public:
     /// `area` is the continent directory (ELDEON, JUNON, ORO...), taken from the
     /// zone's own map path rather than a table, so a new continent needs no code
     /// change.
-    void RequestZoneWarm(const char* area) {
+    void RequestZoneWarm(const char* area, const char* zone_dir) {
         if (m_WarmBudgetBytes == 0)
             return;
         EnsureStarted();
 
         EnterCriticalSection(&m_cs);
-        // Zone-specific first: these are what this zone will actually stream.
-        // Shared groups follow, and are skipped once warmed since they do not
-        // change between zones.
+        /// The zone's own map directory goes first, because it is what the
+        /// client reads *immediately* on entry and it is small -- a per-zone dir
+        /// is 18 MB at the median and 67 MB at the worst. 3DDATA\MAPS holds
+        /// 5562 DDS files totalling 1017 MB, far more than any other tree, so
+        /// warming the continent wholesale would blow the budget on content for
+        /// zones the player is not in; warming this one directory is precise.
+        if (zone_dir && *zone_dir) {
+            QueueWarmPrefix(zone_dir);
+        }
+        // Then the rest of what this zone will stream. Shared groups follow, and
+        // are skipped once warmed since they do not change between zones.
         if (area && *area) {
             QueueWarmPrefix(std::string("3DDATA\\TERRAIN\\TILES\\") + area);
             QueueWarmPrefix(std::string("3DDATA\\") + area);
@@ -3191,10 +3199,11 @@ CTERRAIN::LoadZONE(short nZoneNO, bool bPlayBGM) {
     m_nZoneNO = nZoneNO;
 
     /// Kick off cache warming for this zone's bulk assets while the loading
-    /// screen is up. The continent is the third component of the .ZON path
-    /// ("3DDATA\MAPS\<CONTINENT>\..."), read from the path rather than a table so a
-    /// new continent needs no code change here. No-op unless
-    /// [VIDEO] CACHE_WARM_MB is set.
+    /// screen is up. Both groups come from the .ZON path
+    /// ("3DDATA\MAPS\<CONTINENT>\<ZONE>\<zone>.ZON") rather than a table, so
+    /// a new continent or zone needs no code change here: the continent is its
+    /// third component and the zone's own asset directory is its parent path.
+    /// No-op unless [VIDEO] CACHE_WARM_MB is set.
     {
         /// Read the budget here rather than at state entry: CGameStateMain::Enter
         /// runs *after* the zone has loaded, so setting it there would miss the
@@ -3223,7 +3232,16 @@ CTERRAIN::LoadZONE(short nZoneNO, bool bPlayBGM) {
             size_t c = (b == std::string::npos) ? b : zp.find('\\', b + 1);
             if (b != std::string::npos && c != std::string::npos && c > b + 1) {
                 const std::string area = zp.substr(b + 1, c - b - 1);
-                CMapFilePrefetcher::Get().RequestZoneWarm(area.c_str());
+                /// The .ZON sits in the zone's own directory, so its parent path
+                /// is exactly the per-zone asset group -- no table needed, and it
+                /// stays correct for zones added later.
+                std::string zone_dir;
+                const size_t slash = zp.find_last_of('\\');
+                if (slash != std::string::npos && slash > c) {
+                    zone_dir = zp.substr(0, slash);
+                }
+                CMapFilePrefetcher::Get().RequestZoneWarm(area.c_str(),
+                    zone_dir.c_str());
             }
         }
     }

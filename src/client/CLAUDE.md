@@ -291,7 +291,9 @@ Result, same route: texture create went from **100.1 ms to 1.5 ms** for a compar
 
 A zone load leaves the OS page cache cold for everything that zone has not touched yet, and a cold cache inflates `tex[read=]` roughly 10x (0.0-0.8 ms warm vs 5.4-5.8 cold). Warming reads whole groups of archive files start to finish on the prefetcher's worker thread while the loading screen is up, purely so the *first* in-game access to any of them costs no disk read.
 
-Four groups are queued per zone, zone-specific first: `3DDATA\TERRAIN\TILES\<area>`, `3DDATA\<area>`, then the shared `3DDATA\NPC` and `3DDATA\MOTION`. `<area>` is the continent directory taken from the zone's own map path (`ZONE_FILE()`'s third component), not a table, so a new continent needs no code change. Junon warms 5989 files / 279 MB.
+**The zone's own map directory is the one that matters most.** A five-zone cold-cache run showed every in-game frame at 8-20 ms, but each zone *transition* spent 45-88 ms reading 130-211 textures -- 0.2-0.65 ms each against 0.04-0.3 ms for in-game batches, i.e. reading cold. The cause was a gap in what was warmed: `3DDATA\MAPS` holds **5562 DDS files totalling 1017 MB**, more than every other tree combined, and none of it was covered. Warming a whole continent is not the answer either (Junon alone is 423 MB, most of it zones the player is not in); the zone's own directory is 18 MB at the median and 67 MB at the worst, so it is queued first and costs almost nothing. It comes from the `.ZON` path's parent, so new zones need no code change.
+
+Five groups are queued per zone, most zone-specific first: the zone's own `3DDATA\MAPS\<continent>\<zone>`, then `3DDATA\TERRAIN\TILES\<area>`, `3DDATA\<area>`, and finally the shared `3DDATA\NPC` and `3DDATA\MOTION`. `<area>` is the continent directory taken from the zone's own map path (`ZONE_FILE()`'s third component), not a table, so a new continent needs no code change. Junon warms 5989 files / 279 MB.
 
 Things that will bite:
 
