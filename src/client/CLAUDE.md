@@ -324,6 +324,14 @@ Things that will bite:
 
 - If post-warp hitches come back, check queue sizes first. If free-look hitches come back, check whether the proximity pass is still running (`Update_VisiblePatch` called from `Update_VisiblePatchManager`) and whether `m_bPatchIndexDirty` is being refreshed.
 
+## Overhead Name Drawing (`CNameBox`)
+
+Names are drawn inside the sprite batch that `CGameStateMain::Render_GameMENU` opens around `g_pViewMSG->Draw()`, so `drawFont`'s `bUseSprite` argument must be **true** there. The `false` overload takes a branch that calls `begin_sprite` itself and asserts no batch is active (`zz_font_d3d.cpp:165`); calling it inside the batch corrupts the sprite state and the damage shows up later as an unrelated `sprite_began()` assert at `zz_font_d3d.cpp:312`. Debug probes using the screen-coordinate overload are therefore not safe here.
+
+**A boxed `drawFont` rect must sit *above* the transform origin.** `DrawMyName` drew the player's name into `{0, 0, 115, 14}` -- below the origin, over the gauge -- and produced no glyphs at all, despite a reached call site, a non-empty name, white colour, a valid font handle, a correct transform and a measured text extent (14px) that fits the rect. Every one of those was verified by tracing before the cause was found. The non-sprite overload rendered the same string fine, so neither the font nor the string was at fault. `DrawMobName` and `DrawAvatarName`'s no-gauge branch both use a rect *above* the origin (`{..., -18, ..., 0}`) with an explicit `setTransformSprite`, and both work; `DrawMyName` now matches them, which is why the player's name sits above the bar rather than inside it.
+
+**The underlying rule is not understood** -- the fix matches a working call site rather than explaining why a below-origin rect yields nothing in that batch. `DrawAvatarName`'s gauge branch still draws into `{0, 0, ...}` and is presumably affected the same way; it is hard to notice because it only shows for other players. If this bites again, that is the thread to pull.
+
 ## Bone-Attached Particle Budgeting
 
 Character model bone effects created by `CCharMODEL::CreateBoneEFFECT` are passive cosmetic effects and are registered with `CBoneEffectBudget` (`BoneEffectBudget.cpp/h`) using owner, NPC id, bone index, and effect hash. Registration is intentionally narrow: do not add skill particles, hit effects, bullets, terrain/weather effects, weapon effects, or general `g_pEffectLIST` effects to `BoneFx`.

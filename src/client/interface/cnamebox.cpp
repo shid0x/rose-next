@@ -547,8 +547,35 @@ CNameBox::DrawMyName(float x, float y, float z, CObjCHAR* pCharOBJ, bool bTarget
         IMAGE_RES_UI,
         CResourceMgr::GetInstance()->GetImageNID(IMAGE_RES_UI, "UI00_GUAGE_RED_AVATAR"));
 
-    RECT rt = {0, 0, iWidthGuage, iHeightGuage};
-    ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL_OUTLINE], true, &rt, dwColor, DT_CENTER, pName);
+    /// Drawn with the same pattern as DrawMobName, which is the only one
+    /// proven to work inside this sprite batch: an explicit setTransformSprite,
+    /// and a rect *above* the transform origin.
+    ///
+    /// The original code drew into {0, 0, 115, 14} -- below the origin, over the
+    /// gauge -- relying on the transform left behind by CTDrawImpl::Draw. That
+    /// produced no glyphs at all despite a valid font, a non-empty name, white
+    /// colour, a sane transform and a measured extent (14px) that fits the rect.
+    /// A probe using the non-sprite drawFont overload rendered the same string
+    /// fine, so the string and font were never the problem; only the boxed
+    /// sprite path failed. Matching the working call site is the fix; the name
+    /// now sits above the bar, which is also how mob and other-player names are
+    /// drawn, so the UI is more consistent than before.
+    SIZE nameSize = getFontTextExtent(g_GameDATA.m_hFONT[FONT_NORMAL_OUTLINE], pName);
+
+    D3DXMATRIX matName;
+    D3DXMatrixTranslation(&matName, fGuageDrawX, fGuageDrawY, z);
+    ::setTransformSprite(matName);
+
+    RECT rt = {iWidthGuage / 2 - nameSize.cx / 2 - 5,
+        -18,
+        iWidthGuage / 2 + nameSize.cx / 2 + 5,
+        0};
+    ::drawFont(g_GameDATA.m_hFONT[FONT_NORMAL_OUTLINE],
+        true,
+        &rt,
+        dwColor,
+        DT_CENTER,
+        pName);
 
     //---------------------------------------------------------------------------------------------
     /// 클랜에 소속되어 있다면..
