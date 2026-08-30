@@ -143,7 +143,14 @@ CObjAI::Start_ATTACK(CObjCHAR* pTarget) {
     _ASSERT(m_iServerTarget == g_pObjMGR->Get_ServerObjectIndex(m_iActiveObject));
 
     if (Attack_START(pTarget)) {
-        this->Set_MOTION(this->GetANI_Attack(), 0, this->Get_fAttackSPEED(), true);
+        // Repeat count 0 -- Set_MOTION's default -- is the engine's "loop forever",
+        // and that loop is what animates swings the server never sent. A remote
+        // attacker gets exactly one play per confirmed swing; the local player's own
+        // attacks keep the legacy self-looping motion. See CanStartConfirmedSwing().
+        const int iAttackRepeatCNT =
+            static_cast<CObjCHAR*>(this)->IsLocalAvatarAttacker() ? 0 : 1;
+        this->Set_MOTION(
+            this->GetANI_Attack(), 0, this->Get_fAttackSPEED(), true, iAttackRepeatCNT);
 
 #if defined(_DEBUG) && !defined(__SERVER)
         if (m_pCurMOTION->m_nActionPointCNT <= 0) {
@@ -1488,6 +1495,41 @@ CObjAI::ProcCMD_PICK_ITEM() {
 ///
 //--------------------------------------------------------------------------------
 
+/// May this attacker start another swing animation?
+///
+/// Client attack motions are self-repeating *and* self-looping: ProcCMD_ATTACK
+/// re-arms Start_ATTACK every time the motion ends, and the motion is attached
+/// with repeat count 0 so the engine loops it forever regardless, which is why the
+/// repeat count above is part of this fix and skipping the re-arm alone is not. For a
+/// attacker that is pure invention -- every real swing arrives as a CombatSwing
+/// packet, and a swing with no packet behind it reaches a hit frame with an empty
+/// queue, which presents nothing at all: no digit, no effect, no sound. The server
+/// also goes silent for the whole of a chase (its re-close through Start_MOVE
+/// broadcasts nothing), so "keep swinging until told otherwise" is exactly wrong
+/// there.
+///
+/// Those invented swings are also what desyncs the monster, which is the part that
+/// took three attempts to see. An attack motion freezes movement (CS_BIT_INT), so
+/// every phantom swing holds our copy still for a full motion while the server's
+/// copy keeps running after the player. Measured over one chase: our copy of a
+/// monster ended up 15.4 m from where the server had it, while the server's own
+/// position agreed with our avatar to within attack range the entire time. The
+/// drift is a *consequence* of this loop -- do not reach for a position snap,
+/// which teleports the monster onto the player and reads far worse.
+///
+/// The local avatar and its mount keep the old behaviour: their attack command is
+/// player-driven through g_CommandFilter and starts before any round-trip.
+static bool
+CanStartConfirmedSwing(CObjAI* pAI) {
+    CObjCHAR* pOBJ = static_cast<CObjCHAR*>(pAI);
+
+    if (pOBJ->IsLocalAvatarAttacker()) {
+        return true;
+    }
+
+    return pOBJ->GetTrackedCombatSwingEventId() != 0;
+}
+
 int
 CObjAI::ProcCMD_ATTACK() {
 //-------------------------------------------------------------------------------
@@ -1513,6 +1555,33 @@ CObjAI::ProcCMD_ATTACK() {
                 }
 
                 // ������ ���� ���� !!!
+                if (!CanStartConfirmedSwing(this)) {
+                    // No server-authorised swing behind this one. Drop the attack
+                    // state so the next tick runs the move branch -- which is what
+                    // the server is doing -- instead of inventing another swing.
+                    //
+                    // CS_STOP also clears CS_BIT_CHK, and that part is load-bearing:
+                    // ProcMotionFrame walks m_iCurMotionFRAME -> iFrame itself and
+                    // the completion branch resets m_iCurMotionFRAME to 0, so a
+                    // motion left holding its last frame with frame checking still
+                    // on re-fires every action point on the following tick.
+                    //
+                    // The motion is deliberately NOT replaced. Swapping in
+                    // GetANI_Stop() here was tried and reverted twice: the attacker
+                    // visibly freezes and then slides across the terrain to catch
+                    // up, because the move branch drives position from the next tick
+                    // while the idle motion is still attached. The repeat count of 1
+                    // above is what stops the loop; nothing else needs to.
+                    //
+                    // Attack_END() is called by hand because Set_MOTION's prologue
+                    // normally fires it and we are deliberately not calling
+                    // Set_MOTION -- without it m_bAttackSTART, the weapon trail and
+                    // the attack-speed animatable rate all stay latched.
+                    m_wState = CS_STOP;
+                    static_cast<CObjCHAR*>(this)->Attack_END();
+                    return 1;
+                }
+
                 this->Start_ATTACK(pTarget);
             }
 
@@ -1522,7 +1591,9 @@ CObjAI::ProcCMD_ATTACK() {
         /// Ÿ������ �̵�...
         if (this->Goto_TARGET(pTarget, this->Get_AttackRange())) {
             // ���� ������ ���� ���� !!!
-            this->Start_ATTACK(pTarget);
+            if (CanStartConfirmedSwing(this)) {
+                this->Start_ATTACK(pTarget);
+            }
         } else {
             if (!(Get_STATE() & CS_BIT_MOV)) {
                 this->Start_MOVE(this->adjusted_move_speed);

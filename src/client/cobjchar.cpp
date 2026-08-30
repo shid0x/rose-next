@@ -195,6 +195,36 @@ CObjCHAR::SetCombatAttackIntent(int iServerTarget, WORD wSrvDIST, const D3DVECTO
     this->SetCMD_MOVE(wSrvDIST, PosGOTO, iServerTarget);
 }
 
+uint32_t
+CObjCHAR::GetTrackedCombatSwingEventId() {
+    if (m_dwPendingCombatSwingEventId != 0) {
+        return m_dwPendingCombatSwingEventId;
+    }
+
+    if (this->IsPET()) {
+        CObjCHAR* pRider = ((CObjCART*)this)->GetParent();
+        if (pRider) {
+            return pRider->GetPendingCombatSwingEventId();
+        }
+    }
+
+    return 0;
+}
+
+bool
+CObjCHAR::IsLocalAvatarAttacker() {
+    if (this == (CObjCHAR*)g_pAVATAR) {
+        return true;
+    }
+
+    if (this->IsPET()) {
+        CObjCHAR* pRider = ((CObjCART*)this)->GetParent();
+        return pRider && pRider == (CObjCHAR*)g_pAVATAR;
+    }
+
+    return false;
+}
+
 void
 CObjCHAR::StartConfirmedCombatSwing(int iServerTarget,
     WORD wSrvDIST,

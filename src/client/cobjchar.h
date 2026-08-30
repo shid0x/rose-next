@@ -310,6 +310,16 @@ public:
     bool HasPendingCombatSwingEvent(uint32_t eventId) const {
         return eventId != 0 && m_dwPendingCombatSwingEventId == eventId;
     }
+    uint32_t GetPendingCombatSwingEventId() const { return m_dwPendingCombatSwingEventId; }
+    /// The confirmed swing this object owes a hit frame for, following the mounted
+    /// split: a cart / castle gear plays the attack motion while the rider tracks
+    /// the swing (see GetCombatSwingMotionOBJ).
+    uint32_t GetTrackedCombatSwingEventId();
+    /// Is this attacker the local player's own -- the avatar itself, or the cart /
+    /// castle gear it is riding? Those keep the legacy self-repeating attack
+    /// animation, because their attack command is player-driven and starts before
+    /// any server round-trip. Everything else animates one swing per server swing.
+    bool IsLocalAvatarAttacker();
     bool IsPresentedDead() const;
     /// Does this attacker still owe a hit frame for a confirmed melee swing the
     /// server already applied? True from the moment the swing is queued until the
