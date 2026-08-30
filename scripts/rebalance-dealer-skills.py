@@ -1,14 +1,20 @@
-"""Make the Dealer's attack skills worth casting instead of auto-attacking.
+"""Retune the Dealer's three low-tier attack skills. Two profiles, switchable.
 
-The report
-----------
+    python scripts/rebalance-dealer-skills.py --profile parity   # balance-first
+    python scripts/rebalance-dealer-skills.py --profile burst    # feel-first
+    python scripts/rebalance-dealer-skills.py --restore          # back to vanilla
+
+Switching profiles is safe and direct -- the sidecar always holds the *vanilla*
+values, so `--profile burst` while `parity` is applied restores and re-applies in
+one step. Nothing is cumulative.
+
+The report that started this
+----------------------------
 A level 50-55 Dealer with Twin Shot 4, Power Gun Shot 3 and Gun Smash 2 finds
-that auto-attacking out-values every one of them. Measured against the real
-formulas (`scripts/balance-sim.py` ports them), that is true, and there are
-three separate reasons.
-
-**SKILL_POWER is not one of them.** The Dealer's power curves sit right on the
-band every other physical base class occupies:
+auto-attacking out-values all three. Replaying the real formulas against the
+STBs (`scripts/balance-sim.py` ports them), that is true, for three reasons --
+and SKILL_POWER is not one of them. The Dealer's power curves already sit on the
+same band as every other physical base class:
 
     Heavy Attack   (Soldier)  30->100   cd 6.0->6.6s   MP 10->30
     Aim Shot       (Hawker)   30->100   cd 6.0->6.8s   MP 10->30
@@ -17,76 +23,103 @@ band every other physical base class occupies:
     Double Attack  (Sol+Hwk)  40-> 90   cd 5.4->3.6s   MP 20->38
     Twin Shot      (Dealer)   40-> 90   cd 6.0->5.2s   MP 20->38
 
-1. **Power Gun Shot's cooldown is a genuine outlier.** It is the slowest tier-1
-   single-target attack skill in the game, 17-30% longer than the Soldier and
-   Hawker skills that carry the same power and the same MP cost. Nothing
-   compensates for it.
+1. **Power Gun Shot's cooldown is a genuine outlier** -- the slowest tier-1
+   attack skill in the game, 17-30% longer than the Soldier and Hawker skills
+   carrying the same power and the same MP cost, with nothing compensating.
 
 2. **The Dealer has no fast two-hit skill.** Twin Shot is byte-identical to the
-   Hawker's Double Shot -- but Soldier *and* Hawker also get Double Attack
-   (cd 5.4->3.6s on the same 40->90 power). The Dealer only got the slow
-   variant, so at rank 10 it fires every 5.2s where everyone else fires every
-   3.6s for identical damage.
+   Hawker's Double Shot, but Soldier *and* Hawker also get Double Attack
+   (5.4->3.6s on the same 40->90 power). The Dealer only got the slow variant.
 
-3. **The Dealer's own kit devalues its skills, and no other class has this
-   problem.** Combat Mastery (AT_PSV_ATK_SPD_GUN, +15% at rank 20) and Union
-   Weapon (AT_ATK_SPD, +53% at rank 10) pump auto-attack and do exactly nothing
-   for skills on a fixed cooldown. Measured at level 52 vs a median field
-   monster, the DPS uplift of casting on cooldown over pure auto-attacking:
+3. **The Dealer's own kit devalues its skills, uniquely.** Combat Mastery
+   (AT_PSV_ATK_SPD_GUN, +15% at rank 20) and Union Weapon (AT_ATK_SPD, +53% at
+   rank 10) pump auto-attack and do nothing for a fixed cooldown. At level 52
+   Power Gun Shot's DPS uplift over pure auto-attacking falls from +21.8% to
+   +10.3% once Union Weapon is up. Investing in the class identity halves what
+   its attack skills are worth.
 
-                        no buffs    Union Weapon 10
-       Power Gun Shot     +21.8%          +10.3%
-       Twin Shot          +40.7%          +23.3%
-       Smash Gun          +23.7%          +14.0%
+Underneath all three: MP, not cooldown, is the binding constraint at that level.
+Standing regen is `(GetAdd_RecoverMP() + (CON+40)/6)/6` per 2s (`cobjavt.cpp`)
+-- about 90 MP/min for a level-52 Dealer against a 280 MP pool, while casting on
+cooldown costs several times that. Auto-attack is free, so auto-attacking really
+was the correct play. **Both profiles therefore raise damage per MP.** Cutting
+cooldowns alone would have made the felt problem worse.
 
-   Investing in the class identity halves what its attack skills are worth.
+Profile: parity (balance-first)
+-------------------------------
+Brings the Dealer level with its peers and stops there.
 
-Not fixed here: MP is the real binding constraint at that level. Standing regen
-is `(GetAdd_RecoverMP() + (CON+40)/6)/6` per 2s (cobjavt.cpp) -- about 90 MP/min
-for a level-52 Dealer against a 280 MP pool, while casting all three on cooldown
-costs ~530 MP/min. You go dry in ~38 seconds. That is why *shortening cooldowns
-alone would make the felt problem worse*, and why this pass raises SKILL_POWER
-(which improves damage per MP) rather than only cutting cooldowns. Fixing MP
-sustainability is a separate, cross-class decision.
+    Power Gun Shot  power 35->100 => 45->135   cd 7.0-7.8s => 5.6-6.0s
+    Twin Shot       power unchanged            cd 6.0-5.2s => 5.4-3.6s
+    Smash Gun       power 60->140 => 75->175   cd 9.0s     => 8.4s
+    MP              untouched
 
-What this changes
------------------
-    Power Gun Shot  power 35->100  =>  45->135   cooldown 7.0->7.8s => 5.6->6.0s
-    Twin Shot       power unchanged            cooldown 6.0->5.2s => 5.4->3.6s
-    Smash Gun       power 60->140  =>  75->175  cooldown 9.0s flat => 8.4s flat
+Twin Shot's cooldown curve is copied verbatim from Double Attack and Power Gun
+Shot's from Power Attack, so both are pure parity. At level 52 rank 4 the DPS
+uplift over auto-attack goes +24.6% -> +42.3%, +41.7% -> +50.3% and
++29.1% -> +39.0%, against peer references of +34.5%, +50.1% and +27.3%.
 
-Twin Shot's new cooldown curve is copied verbatim from Double Attack, so that
-change is pure parity. Power Gun Shot's is copied from Power Attack. MP costs
-are deliberately untouched, so every point of added power is a straight gain in
-damage per MP.
+Profile: burst (feel-first)
+---------------------------
+Deliberately *not* balanced. Big satisfying hits on longer cooldowns, with the
+three skills given distinct roles instead of being three similar buttons:
 
-Measured result (level 52, rank 4, median lv52 field monster; DPS uplift over
-pure auto-attack, with the same peer skills computed against the same attacker):
+    Twin Shot       filler   power  50->220   cd 5.4->4.4s    MP 12->26
+    Power Gun Shot  nuke     power  80->460   cd 10.0->8.4s   MP 10->30
+    Smash Gun       slam     power 150->900   cd 16.0->13.0s  MP 25->50
 
-                        before   after     peer reference
-       Power Gun Shot   +24.6%   +42.3%    Power Attack  +34.5%
-       Twin Shot        +41.7%   +50.3%    Double Attack +50.1%
-       Smash Gun        +29.1%   +39.0%    Leap Attack   +27.3%
+Smash Gun keeps its 300 (3 m) range on purpose -- that is the risk, and it now
+carries the reward to match. At level 52 rank 4 it hits for about half a field
+monster's HP in one button.
 
-Power Gun Shot and Smash Gun land slightly above their nearest peer on purpose
--- that is the reason-3 correction. Twin Shot lands exactly on Double Attack,
-which is all it was ever supposed to be. The ordering holds from level 52 to
-240; the Dealer's own higher-tier skills stay clearly ahead (Sniping Shot 330,
-Aim Point 240), so nothing is made redundant.
+Measured at level 52 (median field monster, HP 1428, auto-attack 55/swing):
 
-The percentages explode at level 240 for every skill in the table, Dealer and
-peer alike, because auto-attack collapses against the normal-attack level gate
-there. That is the endgame problem recorded in doc/balance-analysis.md, not
-something this pass introduces.
+    rank 4              damage   x auto   % mob HP    cd     dmg/MP
+    Twin Shot              271      4.9        19%   5.0s      15.9
+    Power Gun Shot         405      7.4        28%   9.4s      23.8
+    Smash Gun              714     13.0        50%  15.0s      21.6
 
-Idempotent: records the original values in a sidecar so a second run is a no-op
-and --restore can put them back. --dry-run and --verify are available.
+The escalation is the point: a cheap filler, a real nuke, and a commitment. Note
+damage-per-MP *rises* with the tier, so the big buttons are also the efficient
+ones -- and roughly doubles versus the parity profile, which makes the burst
+profile the more MP-sustainable of the two despite the bigger numbers.
 
-Usage:
-    python scripts/rebalance-dealer-skills.py --dry-run
-    python scripts/rebalance-dealer-skills.py
-    python scripts/rebalance-dealer-skills.py --verify
-    python scripts/rebalance-dealer-skills.py --restore
+Cooldowns stay well inside one fight. Time-to-kill on auto-attacks alone is ~24s
+at level 52 and only grows with level, so even Smash Gun's 15s lands 1.6 times
+per monster; nothing here is a dead button. Cooldowns shorten with rank rather
+than lengthening (retail had Power Gun Shot getting *slower* as you invested in
+it), so ranking up always feels like a gain.
+
+Things worth knowing before changing these numbers
+--------------------------------------------------
+* **SKILL_ANI_HIT_COUNT (col 70) is deliberately untouched.** Raising Twin
+  Shot's 2 hits to 3 would multiply damage directly (`wHitCNT` multiplies in
+  `Get_SkillDAMAGE`) but the client consumes exactly one queued DamageEvent per
+  hit frame of the motion. A count the animation cannot service orphans an
+  event, which is the failure mode the whole combat-presentation machinery in
+  the client CLAUDE.md exists to handle. Not a tuning knob.
+* **AoE is not available on these skills.** `SKILL_SCOPE` (col 8) only spreads
+  the *status effect* for SKILL_TYPE 3 (`Skill_ChangeIngSTATUS`); AoE *damage*
+  goes through `Skill_DamageToAROUND`, which only types 7 and 17 reach. Giving
+  Smash Gun a splash would mean changing its skill type, which changes the
+  client casting flow too -- a feature, not a data tweak.
+* **Cooldowns here are independent.** `SKILL_RELOAD_TYPE` (col 27) is 0 for all
+  three, and the group timer `m_dwLastSkillGroupSpeelTIME` is written in three
+  places in `gs_user.cpp` and never read, so group cooldowns are inert. The real
+  gate is per hotbar slot (`m_dwLastSkillSpellTIME[slot]`).
+* **PVP is separately capped** at 45% of the defender's max HP inside
+  `Get_SkillDAMAGE`, so no power value here can make PVP a one-shot.
+* `scripts/balance-sim.py`'s gear model picks a req-level-0 "Knight Killer"
+  (weapon ATK 179) for every level under 40, so its sub-40 numbers are junk and
+  the low-rank values above were never validated against a real early character.
+  The rank-1 floors are set conservatively for that reason.
+* `balance-sim.py` has **no port of the `default:` branch** of `Get_SkillDAMAGE`
+  (SKILL_DAMAGE_TYPE 0), which is what Twin Shot, Double Attack and Double Shot
+  all use. It was ported ad hoc for this work; port it again if you need it.
+
+Idempotent: records the vanilla values in a sidecar, so re-running the active
+profile is a no-op and --restore always returns to vanilla. --dry-run and
+--verify are available. data/ is gitignored, so this file is the only record.
 """
 import argparse
 import importlib.util
@@ -100,26 +133,35 @@ SKILL_STB = os.path.join(ROOT, "data", "3DDATA", "STB", "LIST_SKILL.STB")
 SIDECAR = os.path.join(ROOT, "data", "3DDATA", "STB", "LIST_SKILL.dealer-skills.json")
 
 # Game column indices, from src/common/io_skill.h.
-COL_NAME = 0          # internal name, English, not the displayed one
-COL_LEVEL = 2         # SKILL_LEVEL, the rank within the family
-COL_POWER = 9         # SKILL_POWER
-COL_MP = 17           # SKILL_USE_VALUE(s, 0), reported only
-COL_RELOAD = 20       # SKILL_RELOAD_TIME, x 0.2s (io_skill.cpp: x200 - 100 ms)
+COL_NAME = 0        # internal name, English, not the displayed one
+COL_LEVEL = 2       # SKILL_LEVEL, the rank within the family
+COL_POWER = 9       # SKILL_POWER
+COL_MP = 17         # SKILL_USE_VALUE(s, 0)
+COL_RELOAD = 20     # SKILL_RELOAD_TIME, x 0.2s (io_skill.cpp: x200 - 100 ms)
 
-# base row -> (expected name, new power per rank, new reload per rank).
-# `None` leaves that column untouched. Ranks are rows base .. base+9.
-PLAN = {
-    2201: ("Power Gun Shot",
-           [45, 55, 65, 75, 85, 95, 105, 115, 125, 135],
-           [28, 28, 28, 28, 29, 29, 29, 29, 30, 30]),      # = Power Attack (1501)
-    2221: ("Twin Shot",
-           None,
-           [27, 26, 25, 24, 23, 22, 21, 20, 19, 18]),      # = Double Attack (321/1541)
-    2281: ("Smash Gun",
-           [75, 86, 97, 108, 119, 130, 141, 152, 163, 175],
-           [42] * 10),
-}
+WRITTEN = (COL_POWER, COL_RELOAD, COL_MP)   # order matches the sidecar tuples
 RANKS = 10
+FAMILIES = {2201: "Power Gun Shot", 2221: "Twin Shot", 2281: "Smash Gun"}
+
+
+def lin(a, b, n=RANKS):
+    """Linear rank-1..rank-n ramp, rounded. Readable curves beat hand-tuned ones."""
+    return [round(a + (b - a) * k / (n - 1)) for k in range(n)]
+
+
+# profile -> base row -> (power, reload, mp); None leaves that column vanilla.
+PROFILES = {
+    "parity": {
+        2201: (lin(45, 135), [28, 28, 28, 28, 29, 29, 29, 29, 30, 30], None),
+        2221: (None, [27, 26, 25, 24, 23, 22, 21, 20, 19, 18], None),
+        2281: ([75, 86, 97, 108, 119, 130, 141, 152, 163, 175], [42] * 10, None),
+    },
+    "burst": {
+        2201: (lin(80, 460), lin(50, 42), lin(10, 30)),
+        2221: (lin(50, 220), lin(27, 22), lin(12, 26)),
+        2281: (lin(150, 900), lin(80, 65), lin(25, 50)),
+    },
+}
 
 
 def load_stb_module():
@@ -142,20 +184,17 @@ def gi(stb, r, c):
     return int(v) if v.lstrip(b"-").isdigit() else 0
 
 
-def row_name(stb, r):
-    return stb.get(r, COL_NAME).decode("latin-1", "replace").strip()
-
-
-def rows_for(stb, base, expect):
+def rows_for(stb, base):
     """The ten rank rows of one family, checked against what we expect to find.
 
     Guards against a data change having shifted the table under us: a silent
     write to the wrong ten rows would be very hard to notice afterwards.
     """
+    expect = FAMILIES[base]
     out = []
     for n in range(RANKS):
         r = base + n
-        got = row_name(stb, r)
+        got = stb.get(r, COL_NAME).decode("latin-1", "replace").strip()
         if got != expect:
             sys.exit(f"row {r}: expected {expect!r}, found {got!r} -- "
                      f"LIST_SKILL.STB has moved; refusing to write")
@@ -166,21 +205,79 @@ def rows_for(stb, base, expect):
     return out
 
 
-def expected_state(stb):
-    """Target value per (row, column), derived from PLAN.
+def read_sidecar(stb):
+    """(profile, {row: (power, reload, mp)}) of vanilla values, or (None, {}).
 
-    Both apply and verify read this, so the two cannot drift apart.
+    Understands the v1 sidecar (a flat row -> [power, reload] map, always the
+    parity profile, which never touched MP -- so MP on disk is still vanilla).
     """
+    if not os.path.exists(SIDECAR):
+        return None, {}
+    with open(SIDECAR, encoding="utf-8") as fh:
+        raw = json.load(fh)
+    if "profile" in raw:
+        return raw["profile"], {int(k): tuple(v) for k, v in raw["rows"].items()}
+    rows = {int(k): (v[0], v[1], gi(stb, int(k), COL_MP)) for k, v in raw.items()}
+    return "parity", rows
+
+
+def write_sidecar(profile, rows):
+    with open(SIDECAR, "w", encoding="utf-8") as fh:
+        json.dump({"profile": profile,
+                   "rows": {str(k): list(v) for k, v in sorted(rows.items())}},
+                  fh, indent=1)
+
+
+def target_state(stb, profile):
+    """{row: (power, reload, mp)} the named profile should produce.
+
+    Vanilla values fill in wherever a profile leaves a column alone, so apply
+    and verify read the identical map and cannot drift apart.
+    """
+    _, vanilla = read_sidecar(stb)
     want = {}
-    for base, (expect, powers, reloads) in PLAN.items():
-        for n, r in enumerate(rows_for(stb, base, expect)):
-            want[r] = (powers[n] if powers else None,
-                       reloads[n] if reloads else None)
+    for base, curves in PROFILES[profile].items():
+        for n, r in enumerate(rows_for(stb, base)):
+            base_vals = vanilla.get(r) or tuple(gi(stb, r, c) for c in WRITTEN)
+            want[r] = tuple(curve[n] if curve else base_vals[i]
+                            for i, curve in enumerate(curves))
     return want
+
+
+def apply_values(stb, values):
+    for r, vals in values.items():
+        for c, v in zip(WRITTEN, vals):
+            stb.set(r, c, str(v))
+
+
+def save(stb):
+    with open(SKILL_STB, "wb") as fh:
+        fh.write(stb.to_bytes())
+
+
+def show(stb, want, vanilla):
+    """Print every rank as vanilla -> target, grouped by family."""
+    for base in sorted(PROFILES["burst"]):
+        rows = rows_for(stb, base)
+        print(f"\n{FAMILIES[base]}  (rows {rows[0]}-{rows[-1]})")
+        print(f"  {'rank':>5}{'power':>16}{'cooldown s':>20}{'MP':>14}")
+        for n, r in enumerate(rows):
+            was = vanilla.get(r) or tuple(gi(stb, r, c) for c in WRITTEN)
+            new = want[r]
+            cells = []
+            for i, (w, v) in enumerate(zip(was, new)):
+                if i == 1:      # reload column, shown in seconds
+                    w, v = w * 0.2, v * 0.2
+                    cells.append(f"{w:.1f} -> {v:.1f}" if w != v else f"{w:.1f} =")
+                else:
+                    cells.append(f"{w} -> {v}" if w != v else f"{w} =")
+            print(f"  {n + 1:>5}{cells[0]:>16}{cells[1]:>20}{cells[2]:>14}")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--profile", choices=sorted(PROFILES),
+                    help="which tuning to apply; switching is safe and direct")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--restore", action="store_true")
@@ -188,78 +285,69 @@ def main():
 
     oro = load_stb_module()
     stb = oro.Stb(SKILL_STB)
-
-    saved = {}
-    if os.path.exists(SIDECAR):
-        with open(SIDECAR, encoding="utf-8") as fh:
-            saved = {int(k): v for k, v in json.load(fh).items()}
+    active, vanilla = read_sidecar(stb)
 
     if args.restore:
-        if not saved:
+        if not vanilla:
             sys.exit("no sidecar -- nothing to restore")
-        for row, (power, reload_) in saved.items():
-            stb.set(row, COL_POWER, str(power))
-            stb.set(row, COL_RELOAD, str(reload_))
-        with open(SKILL_STB, "wb") as fh:
-            fh.write(stb.to_bytes())
+        apply_values(stb, vanilla)
+        save(stb)
         os.remove(SIDECAR)
-        print(f"restored power/reload on {len(saved)} rows; sidecar removed")
+        print(f"restored {len(vanilla)} rows to vanilla (was profile "
+              f"{active!r}); sidecar removed")
         return
-
-    want = expected_state(stb)
 
     if args.verify:
-        if not saved:
-            sys.exit("no sidecar -- the rebalance has not been applied")
-        bad = []
-        for r, (p, rl) in sorted(want.items()):
-            if p is not None and gi(stb, r, COL_POWER) != p:
-                bad.append((r, "power", gi(stb, r, COL_POWER), p))
-            if rl is not None and gi(stb, r, COL_RELOAD) != rl:
-                bad.append((r, "reload", gi(stb, r, COL_RELOAD), rl))
-        print(f"{len(saved)} rows recorded; {len(bad)} columns do not match")
-        for r, what, got, exp in bad:
-            print(f"    row {r} {what}: {got} != {exp}")
+        if not active:
+            sys.exit("no sidecar -- no profile is applied")
+        profile = args.profile or active
+        if args.profile and args.profile != active:
+            sys.exit(f"profile {active!r} is applied, cannot verify {args.profile!r}")
+        want = target_state(stb, profile)
+        bad = [(r, c, gi(stb, r, c), v)
+               for r, vals in sorted(want.items())
+               for c, v in zip(WRITTEN, vals) if gi(stb, r, c) != v]
+        print(f"profile {profile!r}: {len(want)} rows, {len(bad)} columns do not match")
+        for r, c, got, exp in bad:
+            print(f"    row {r} col {c}: {got} != {exp}")
         sys.exit(1 if bad else 0)
 
-    if saved:
-        print(f"already applied to {len(saved)} rows (sidecar present) -- nothing to do.")
-        print("re-run with --restore first if you want to change the values.")
+    if not args.profile:
+        print(f"active profile: {active!r}" if active else "no profile applied (vanilla)")
+        print(f"available: {', '.join(sorted(PROFILES))}")
+        print("pass --profile <name> to apply one, or --restore to go back to vanilla")
         return
 
-    record = {}
-    for base, (expect, powers, reloads) in PLAN.items():
-        rows = rows_for(stb, base, expect)
-        print(f"\n{expect}  (rows {rows[0]}-{rows[-1]})")
-        print(f"  {'rank':>5}{'power':>16}{'cooldown s':>20}{'MP':>6}")
-        for n, r in enumerate(rows):
-            p0, r0 = gi(stb, r, COL_POWER), gi(stb, r, COL_RELOAD)
-            record[r] = (p0, r0)
-            p1 = powers[n] if powers else p0
-            r1 = reloads[n] if reloads else r0
-            pcol = f"{p0} -> {p1}" if p1 != p0 else f"{p0} (kept)"
-            rcol = (f"{r0 * 0.2:.1f} -> {r1 * 0.2:.1f}" if r1 != r0
-                    else f"{r0 * 0.2:.1f} (kept)")
-            print(f"  {n + 1:>5}{pcol:>16}{rcol:>20}{gi(stb, r, COL_MP):>6}")
-            stb.set(r, COL_POWER, str(p1))
-            stb.set(r, COL_RELOAD, str(r1))
+    if active == args.profile:
+        print(f"profile {args.profile!r} is already applied -- nothing to do.")
+        print("use --restore to go back to vanilla, or --profile <other> to switch.")
+        return
+
+    # The sidecar always holds vanilla, so switching is just: revert, then apply.
+    if active:
+        print(f"switching profile {active!r} -> {args.profile!r}\n")
+        apply_values(stb, vanilla)
+    else:
+        vanilla = {r: tuple(gi(stb, r, c) for c in WRITTEN)
+                   for base in PROFILES[args.profile] for r in rows_for(stb, base)}
+
+    want = target_state(stb, args.profile)
+    show(stb, want, vanilla)
+    apply_values(stb, want)
 
     if args.dry_run:
         print("\ndry run -- nothing written")
         return
 
-    with open(SKILL_STB, "wb") as fh:
-        fh.write(stb.to_bytes())
-    with open(SIDECAR, "w", encoding="utf-8") as fh:
-        json.dump({str(k): v for k, v in record.items()}, fh, indent=1)
+    save(stb)
+    write_sidecar(args.profile, vanilla)
 
     chk = oro.Stb(SKILL_STB)
-    for r, (p, rl) in want.items():
-        if p is not None and gi(chk, r, COL_POWER) != p:
-            sys.exit(f"verify failed: row {r} power {gi(chk, r, COL_POWER)} != {p}")
-        if rl is not None and gi(chk, r, COL_RELOAD) != rl:
-            sys.exit(f"verify failed: row {r} reload {gi(chk, r, COL_RELOAD)} != {rl}")
-    print(f"\ndone -- {len(record)} rows rewritten and verified. "
+    for r, vals in want.items():
+        for c, v in zip(WRITTEN, vals):
+            if gi(chk, r, c) != v:
+                sys.exit(f"verify failed: row {r} col {c} = {gi(chk, r, c)}, expected {v}")
+    print(f"\ndone -- profile {args.profile!r} applied to {len(want)} rows and verified. "
           f"Sidecar: {os.path.basename(SIDECAR)}")
     print("Restart the game server (it caches STBs at startup) and the client "
           "(it reads LIST_SKILL.STB for cooldowns and tooltips). Rebake the VFS "
