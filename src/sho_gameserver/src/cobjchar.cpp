@@ -1090,6 +1090,27 @@ CObjCHAR::Apply_DAMAGE(CObjCHAR* pTarget,
                                             pMobOWNER,
                                             false,
                                             pCParty); // 죽을때 떨굼
+
+                                    /// Must precede Add_DIRECT. The item is
+                                    /// created inactive (m_iRemainTIME = 0)
+                                    /// because the legacy gsv_DAMAGE packets
+                                    /// carried the drop inline and called
+                                    /// SetACTIVE() while building it. This path
+                                    /// sends a FlatBuffer DamageEvent instead,
+                                    /// which carries no drop -- so nothing woke
+                                    /// the item up, Make_gsv_ADD_OBJECT
+                                    /// early-returned on m_iRemainTIME <= 0, and
+                                    /// AddObjectToSector skipped its whole
+                                    /// broadcast block. The item sat in the zone
+                                    /// with a valid index, invisible to everyone.
+                                    ///
+                                    /// Announcement happens once, at insertion,
+                                    /// so activating after Add_DIRECT is too
+                                    /// late -- SetACTIVE() also applies the
+                                    /// longer party-ownership window, which
+                                    /// passing bActive=true above would skip.
+                                    (*ppOutITEM)->SetACTIVE();
+
                                     this->GetZONE()->Add_DIRECT(*ppOutITEM); // 드롭 아이템
                                 }
                             }
