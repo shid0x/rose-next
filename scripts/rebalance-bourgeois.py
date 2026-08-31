@@ -47,9 +47,10 @@ mirrored in the client (`recvpacket.cpp`, for the summon info panel), so both
 sides have to move together. Deliberately out of scope here.
 
 MP was the other problem: Employ Warrior cost 150 MP at rank 1 when a level-55
-Dealer has about 290 MP total, so fielding a squad was impossible. Prices now
-run 90->170 / 110->210 / 150->280, which buys roughly three Warriors at level 55
-and leaves you dry -- MP is the governor, deliberately (see the note below).
+Dealer has about 290 MP total, so fielding a squad was impossible. Prices now run
+90->170 / 110->210 / 150->280. Squad *size* is set by the capacity cap (below),
+not by MP; these prices are set so that replacing a dead mercenary costs
+something real without the whole squad being unaffordable.
 
 Pillar 2: better loot
 ---------------------
@@ -73,42 +74,61 @@ Simulated on the real formula against a level-52 monster, 200k drops each:
           60    300    100.0%         30.6               61.9%
 
 Vanilla maxes at +18 drop rate and +40 charm. This pass takes them to +50 and
-+150, which roughly triples the rate of bonus-stat drops and is actually
-noticeable in play.
++150 -- but **back-loaded**, which is the important part.
+
+The economy passives are not uniformly shared. `SKILL_AVAILBLE_CLASS_SET`
+(col 35) is re-declared partway up each curve, gating the upper ranks behind
+the job change:
+
+    passive                   shared ranks   Bourgeois-only from
+    Gathering (drop rate)              1-5   rank 6
+    Economy Research (CHARM)          1-10   rank 11
+    Buying Trick (buy price)           1-7   rank 8
+    Sell Trick (sell price)              -   rank 1 (fully exclusive)
+
+So the curves here keep the shared lower ranks close to vanilla and put the
+payoff past the gate, which makes better loot a *Bourgeois* identity rather
+than a Dealer-line one -- the Artisan branch gains very little. Sell Trick is
+exclusive from rank 1 and is raised throughout.
+
+Buy and sell haggling are server-authoritative (`gs_user.cpp` reads
+`GetBuySkillVALUE()`), and the units are plain percentages:
+`buy = base * (1 - value*0.01)`, `sell = base * (1 + value*0.01)`. **Buying
+Trick must stay well under 100** or items become free and then negatively
+priced; it is capped at 30 here.
 
 Things worth knowing
 --------------------
-* **The summon cap is not enforced, so Employ Troops is dead data.**
-  `GetMax_SummonCNT()` is `50 + GetPassiveSkillValue(AT_PSV_SUMMON_MOB_CNT)`,
-  each mercenary costs `NPC_NEED_SUMMON_CNT` (40-85 for these three), and the
-  costs are beautifully judged -- at base you can afford one Warrior but not
-  two, and no Terror Knight at all; maxed Employ Troops reaches 170, enough for
-  three Warriors or two Terror Knights. But nothing ever compares the two:
-  `SKILL_TYPE_14` in `CObjCHAR::Skill_START` summons unconditionally and only
-  calls `Add_SummonCNT` afterwards. `Max_SummonCNT()` is computed and put in a
-  packet and never read. So MP is currently the only limit on squad size, which
-  is why the MP prices here are not cut further than they are.
-  Enforcing it is a small server change, and the trap is that `Max_SummonCNT()`
-  is virtual on `CObjCHAR` returning **0** for non-users -- gate it on
-  `IsUSER()` or monsters lose the ability to summon entirely.
+* **The summon cap IS enforced -- client-side.**
+  `CSkillManager::CheckSummonCapacity` (client `gamecommon/skill.cpp`) refuses
+  the cast when `NPC_NEED_SUMMON_CNT(mob) + used > GetCur_SummonMaxCapacity()`,
+  where the client keeps its own `50 + GetPassiveSkillValue(AT_PSV_SUMMON_MOB_CNT)`.
+  Confirmed in game: with Employ Troops rank 1 (budget 80) a level-60 character
+  fields exactly two rank-1 Warriors (40 each) and is refused a third. So
+  **Employ Troops is live**, and it -- not MP -- sets squad size; MP sets how
+  fast you replace losses. Grepping the server alone is misleading here: the
+  server has `Add_SummonCNT` / `Sub_SummonCNT` / `Max_SummonCNT()` but never
+  compares them, so the cap is not *re-validated* server-side. That is a
+  cheat-resistance gap, not a gameplay one, and closing it would need the
+  `IsUSER()` guard noted below since `Max_SummonCNT()` is virtual on `CObjCHAR`
+  returning 0 for non-users.
 * **Mercenary NPC rows 851-880 are summon-only.** Checked against every map
   REGEN lump in `data/`: they are spawned by no map, so raising their stats
   cannot leak into field monsters.
-* **Economy Research and Gathering are class 44 ("Dealer Job"), not 67.** They
-  are shared with the Artisan branch, so this buffs loot for the whole Dealer
-  line, not the Bourgeois alone. Making them Bourgeois-exclusive means changing
-  `SKILL_AVAILBLE_CLASS_SET` (col 35) from 44 to 67 -- but 67 is 421/431 only,
-  so a base Dealer could no longer learn them at all, which moves them behind
-  the job change. That is a progression decision, not a tuning one, so it is
-  left alone here.
+* **Read col 35 per rank, not per family.** These passives declare class 44
+  ("Dealer Job") at rank 1 and re-declare 67 ("Bourgeois Job" = 421/431) at the
+  rank where the branch splits; ranks in between carry 0, meaning "inherit". A
+  family therefore has no single owning class, and checking only its first row
+  reports it as shared when half of it is not.
 * `m_nGEM_OP` is assigned as `iITEM_OP % (mobLevel + 70)`, so the mapping from
   charm to bonus stat is **not monotonic** -- a higher roll can wrap to a lower
   option. The simulated averages above already include that effect; do not
   expect a clean linear return on charm.
 * Summons no longer expire on a timer (the lifetime HP-drain was removed, see
-  `status_effects.cpp`), so they persist until killed. That matters if the cap
-  is ever enforced: the counter decrements in `CObjMOB::Dead` and is cleared on
-  owner death and zone warp.
+  `status_effects.cpp`), so they persist until killed. The client's used-capacity
+  tracker is `m_iSummonMobCapacity` alongside `m_SummonedMobList`; the server's
+  parallel counter decrements in `CObjMOB::Dead` and is cleared on owner death
+  and zone warp.
 
 Idempotent: --dry-run, --verify and --restore are available. data/ is
 gitignored, so this file is the only record of the change.
@@ -146,6 +166,8 @@ def lin(a, b, n=10):
 # --- skill families: base row -> (label, family col value, first rank, ranks)
 SKILL_FAMILIES = {
     2001: ("Economy Research (CHARM)", 2001, 1, 20),
+    2051: ("Buying Trick (buy price)", 2051, 1, 10),
+    2071: ("Sell Trick (sell price)", 2071, 1, 10),
     2091: ("Gathering (drop rate)", 2091, 1, 10),
     2351: ("Employ Warrior", 2351, 1, 10),
     2361: ("Employ Hunter", 2361, 1, 10),
@@ -155,9 +177,13 @@ SKILL_FAMILIES = {
 # profile -> base row -> (mp, reload, ability_value); None keeps vanilla.
 SKILL_PROFILES = {
     "tycoon": {
-        # loot passives: the two numbers Get_DropITEM actually reads
-        2001: (None, None, lin(6, 150, 20)),    # AT_CHARM  -> bonus stat on drops
-        2091: (None, None, lin(12, 50)),        # AT_PSV_DROP_RATE -> drop chance
+        # Economy passives, back-loaded into the Bourgeois-exclusive ranks (see
+        # the class-filter table above): the shared lower ranks stay near vanilla
+        # so the Artisan branch gains little, and the payoff lands past the gate.
+        2001: (None, None, lin(2, 30, 10) + lin(45, 150, 10)),   # CHARM, gate @11
+        2051: (None, None, lin(2, 14, 7) + lin(20, 30, 3)),      # buy %, gate @8
+        2071: (None, None, lin(4, 40)),                          # sell %, all @1
+        2091: (None, None, lin(6, 14, 5) + lin(24, 50, 5)),      # dropRate, gate @6
         # mercenaries: affordable enough to field a squad, MP still the governor
         2351: (lin(90, 170), [25] * 10, None),   # Employ Warrior, 5.0s
         2361: (lin(110, 210), [30] * 10, None),  # Employ Hunter, 6.0s
