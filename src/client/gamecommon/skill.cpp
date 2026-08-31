@@ -1257,6 +1257,17 @@ CSkillManager::CheckNeedProperty(int iSkillIDX, CObjCHAR* pCaster) {
                 if (iCurrentMP < SKILL_USE_VALUE(iSkillIDX, i))
                     return false;
             } break;
+
+            case AT_MONEY: {
+                // Money-cost skills: the Employ mercenaries, Zuly Storm / Zuly
+                // Pink, the Donation skills. Without this the cast is not blocked
+                // locally, the server refuses it in Skill_ActionCondition, and the
+                // skill just fails with no explanation. Only the local avatar has
+                // a wallet to check, so a remote caster is left alone.
+                if (pCaster == static_cast<CObjCHAR*>(g_pAVATAR)
+                    && g_pAVATAR->GetCur_MONEY() < SKILL_USE_VALUE(iSkillIDX, i))
+                    return false;
+            } break;
         }
     }
 

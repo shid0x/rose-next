@@ -930,6 +930,7 @@ classUSER::Do_SelfSKILL(short nSkillIDX) {
     if (this->Skill_ActionCondition(nSkillIDX)) {
         // 실제 필요 수치 소모 적용...
         if (this->SetCMD_Skill2SELF(nSkillIDX)) {
+            this->Skill_PayMoneyCOST(nSkillIDX);
             return true;
         }
     }
@@ -955,6 +956,7 @@ classUSER::Do_TargetSKILL(int iTargetObject, short nSkillIDX) {
 
         if (this->Skill_ActionCondition(nSkillIDX)) {
             if (this->SetCMD_Skill2OBJ(iTargetObject, nSkillIDX)) {
+                this->Skill_PayMoneyCOST(nSkillIDX);
                 return true;
             }
         }
@@ -6031,6 +6033,7 @@ classUSER::Recv_cli_POSITION_SKILL(t_PACKET* pPacket) {
         // if ( this->SetCMD_Skill2POS( pPacket->m_cli_POSITION_SKILL.m_PosTARGET, nSkillIDX ) )
         //	this->Skill_UseAbilityValue( nSkillIDX );
         if (this->SetCMD_Skill2POS(pPacket->m_cli_POSITION_SKILL.m_PosTARGET, nSkillIDX)) {
+            this->Skill_PayMoneyCOST(nSkillIDX);
             // 시작 성공...
             this->m_dwLastSkillActiveTIME = dwCurTime;
             this->m_dwLastSkillSpellTIME[pPacket->m_cli_POSITION_SKILL.m_btSkillSLOT] = dwCurTime;

@@ -148,14 +148,22 @@ SIDECAR = os.path.join(STB_DIR, "LIST_SKILL.bourgeois.json")
 
 # LIST_SKILL columns (src/common/io_skill.h)
 SK_NAME, SK_FAMILY, SK_LEVEL = 0, 1, 2
-SK_MP = 17          # SKILL_USE_VALUE(s, 0)
-SK_RELOAD = 20      # SKILL_RELOAD_TIME, x 0.2s
-SK_ABILITY_VAL = 22  # SKILL_INCREASE_ABILITY_VALUE(s, 0); col 21 says what it means
+# A skill's cost is up to two (property, value) pairs. The property is a
+# t_AbilityINDEX, so a value column means nothing on its own -- for the Employ
+# mercenaries slot 0 is AT_MONEY and its "value" is zuly, not mana. Both slots
+# are written explicitly here so the cost can never be misread again.
+SK_PROP0, SK_VAL0 = 16, 17      # SKILL_USE_PROPERTY(s,0) / SKILL_USE_VALUE(s,0)
+SK_PROP1, SK_VAL1 = 18, 19      # SKILL_USE_PROPERTY(s,1) / SKILL_USE_VALUE(s,1)
+SK_RELOAD = 20                  # SKILL_RELOAD_TIME, x 0.2s
+SK_ABILITY_VAL = 22             # SKILL_INCREASE_ABILITY_VALUE(s, 0); col 21 says
+                                # what it means -- CHARM / drop rate / buy / sell
+
+AT_MP, AT_MONEY = 17, 40        # t_AbilityINDEX, src/common/shared/datatype.h
 
 # LIST_NPC columns (src/common/include/rose/io/stb.h)
 NPC_HP, NPC_ATK = 8, 9
 
-SKILL_COLS = (SK_MP, SK_RELOAD, SK_ABILITY_VAL)
+SKILL_COLS = (SK_PROP0, SK_VAL0, SK_PROP1, SK_VAL1, SK_RELOAD, SK_ABILITY_VAL)
 NPC_COLS = (NPC_HP, NPC_ATK)
 
 
@@ -174,20 +182,27 @@ SKILL_FAMILIES = {
     2371: ("Terror Knight", 2371, 1, 10),
 }
 
-# profile -> base row -> (mp, reload, ability_value); None keeps vanilla.
+# profile -> base row -> (prop0, val0, prop1, val1, reload, ability); None keeps
+# vanilla. Order matches SKILL_COLS.
 SKILL_PROFILES = {
     "tycoon": {
         # Economy passives, back-loaded into the Bourgeois-exclusive ranks (see
         # the class-filter table above): the shared lower ranks stay near vanilla
         # so the Artisan branch gains little, and the payoff lands past the gate.
-        2001: (None, None, lin(2, 30, 10) + lin(45, 150, 10)),   # CHARM, gate @11
-        2051: (None, None, lin(2, 14, 7) + lin(20, 30, 3)),      # buy %, gate @8
-        2071: (None, None, lin(4, 40)),                          # sell %, all @1
-        2091: (None, None, lin(6, 14, 5) + lin(24, 50, 5)),      # dropRate, gate @6
-        # mercenaries: affordable enough to field a squad, MP still the governor
-        2351: (lin(90, 170), [25] * 10, None),   # Employ Warrior, 5.0s
-        2361: (lin(110, 210), [30] * 10, None),  # Employ Hunter, 6.0s
-        2371: (lin(150, 280), [40] * 10, None),  # Terror Knight, 8.0s
+        2001: (None, None, None, None, None, lin(2, 30, 10) + lin(45, 150, 10)),
+        2051: (None, None, None, None, None, lin(2, 14, 7) + lin(20, 30, 3)),
+        2071: (None, None, None, None, None, lin(4, 40)),
+        2091: (None, None, None, None, None, lin(6, 14, 5) + lin(24, 50, 5)),
+        # Mercenaries are HIRED: the bill is zuly, the mana is a token. The Employ
+        # skills already declared AT_MONEY in slot 0 -- the amounts were just
+        # trivial (90-280 zuly), and nothing charged them anyway until the server
+        # gained Skill_PayMoneyCOST.
+        2351: ([AT_MONEY] * 10, lin(5000, 20000), [AT_MP] * 10, lin(10, 25),
+               [25] * 10, None),                                  # Warrior, 5.0s
+        2361: ([AT_MONEY] * 10, lin(8000, 32000), [AT_MP] * 10, lin(12, 30),
+               [30] * 10, None),                                  # Hunter, 6.0s
+        2371: ([AT_MONEY] * 10, lin(12000, 50000), [AT_MP] * 10, lin(15, 40),
+               [40] * 10, None),                                  # Terror Knight, 8.0s
     },
 }
 
@@ -285,19 +300,26 @@ def show(sk, npc, want_sk, want_npc, van_sk, van_npc, profile):
         rows = skill_rows(sk, base)
         label, _fam, first, _n = SKILL_FAMILIES[base]
         print(f"\n{label}  (rows {rows[0]}-{rows[-1]}, ranks {first}-{first + len(rows) - 1})")
-        print(f"  {'rank':>5}{'MP':>16}{'cooldown s':>18}{'ability val':>16}")
+        print(f"  {'rank':>5}{'cost slot 0':>22}{'cost slot 1':>18}"
+              f"{'cooldown s':>16}{'ability val':>16}")
+        AT = {0: "", AT_MP: "MP", AT_MONEY: "zuly"}
         for n, r in enumerate(rows):
             was = van_sk.get(r) or tuple(gi(sk, r, c) for c in SKILL_COLS)
-            cells = []
-            for i, (w, v) in enumerate(zip(was, want_sk[r])):
-                if i == 1:
-                    w, v = w * 0.2, v * 0.2
-                    cells.append(f"{w:.1f} -> {v:.1f}" if w != v else f"{w:.1f} =")
-                elif w == v == 0:
-                    cells.append("-")
-                else:
-                    cells.append(f"{w} -> {v}" if w != v else f"{w} =")
-            print(f"  {first + n:>5}{cells[0]:>16}{cells[1]:>18}{cells[2]:>16}")
+            (wp0, wv0, wp1, wv1, wrl, wab) = was
+            (np0, nv0, np1, nv1, nrl, nab) = want_sk[r]
+
+            def slot(wp, wv, np_, nv):
+                if not wp and not np_:
+                    return "-"
+                a, b = f"{wv}{AT.get(wp, wp)}", f"{nv}{AT.get(np_, np_)}"
+                return a + " =" if a == b else f"{a} -> {b}"
+
+            cd = (f"{wrl * 0.2:.1f} -> {nrl * 0.2:.1f}" if wrl != nrl
+                  else f"{wrl * 0.2:.1f} =")
+            ab = "-" if wab == nab == 0 else (f"{wab} -> {nab}" if wab != nab
+                                              else f"{wab} =")
+            print(f"  {first + n:>5}{slot(wp0, wv0, np0, nv0):>22}"
+                  f"{slot(wp1, wv1, np1, nv1):>18}{cd:>16}{ab:>16}")
 
     firstn, lastn, mhp, matk = NPC_PROFILES[profile]
     print(f"\nMercenary NPC stats (LIST_NPC rows {firstn}-{lastn}): "

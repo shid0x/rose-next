@@ -481,6 +481,39 @@ public:
         }
         return true;
     }
+
+    /// Charge the AT_MONEY component of a skill's cost, server-side.
+    ///
+    /// Skill costs are normally applied by the *client*
+    /// (CSkillManager::UseSkill -> Skill_UseAbilityValue); the server's copy of
+    /// that call sits commented out in the cast path and it only ever validates,
+    /// via Skill_ActionCondition. That split is survivable for MP, which the
+    /// server re-syncs anyway, but not for money: gsv_SET_MONEY_ONLY carries the
+    /// *absolute* total, so a client-only deduction is silently reverted on the
+    /// next sync and the skill is effectively free.
+    ///
+    /// Deliberately scoped to AT_MONEY rather than calling Skill_UseAbilityValue:
+    /// that would start deducting HP/MP server-side for every skill in the game,
+    /// which is a behaviour change nobody asked for. Skills that declare no money
+    /// cost are untouched, so this is inert for all but the handful that do
+    /// (the Employ mercenaries, Zuly Storm, Zuly Pink, the Donation skills).
+    ///
+    /// Callers must already have passed Skill_ActionCondition, which checks
+    /// affordability with the same Skill_ToUseAbilityVALUE, so this cannot take a
+    /// player below zero.
+    void Skill_PayMoneyCOST(short nSkillIDX) {
+        for (short nI = 0; nI < SKILL_USE_PROPERTY_CNT; ++nI) {
+            const int iProperty = SKILL_USE_PROPERTY(nSkillIDX, nI);
+            if (0 == iProperty)
+                break; // property list is terminated by a zero, as elsewhere
+            if (AT_MONEY != iProperty)
+                continue;
+
+            const int iCost = this->Skill_ToUseAbilityVALUE(nSkillIDX, nI);
+            if (iCost > 0)
+                this->Add_MoneyNSend(-iCost);
+        }
+    }
     bool Add_ExpNSend(int iExp) {
         if (iExp)
             this->Add_EXP(iExp, false, 0);
