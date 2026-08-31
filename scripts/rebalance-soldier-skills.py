@@ -62,6 +62,25 @@ magic-formula skills (Divine Force itself, Spin Attack) and **+10.7%** to the
 weapon-formula ones. Opening with it is a real, discoverable choice. The debuff
 columns are deliberately NOT touched here; only damage, cooldown and MP move.
 
+Leaving room for the advanced classes
+-------------------------------------
+This profile was written before any Knight or Champion work and set the *base*
+skills so high that they buried the capstones. Class 41 is shared with Knight and
+Champion, so a level-100 Champion was unlocking Champion Hit (vanilla, 330 power)
+having already spent a hundred levels with Leap Attack (950 power, plus a stun,
+plus an HP cost). Advancing made you worse at hitting things.
+
+Three ceilings were pulled down so the advanced skills have somewhere to sit:
+
+    Leap Attack     260->950  =>  180->560   (still the biggest *base* hit)
+    Triple Attack   340->620  =>  300->520
+    Heavy Bow Shot  200->620  =>  180->520
+
+Everything else is unchanged -- the axis design is the good part and none of the
+others were competing with a capstone. The resulting order at level 140, biggest
+single hit first: Champion Hit 2146, Range Bow Shot 1501, Tendon Slash 1340,
+Leap Attack 1114. Base sits under advanced, which is the whole point.
+
 Rank 11-20 continuity
 ---------------------
 Double Attack continues into **Triple Attack** (rows 331-340) past rank 10, and
@@ -116,10 +135,13 @@ COL_POWER = 9       # SKILL_POWER
 COL_ABILITY = 22    # SKILL_INCREASE_ABILITY_VALUE(s, 0). What it *means* depends on
                     # col 21: AT_HP for Blood Attack (the heal), but AT_AVOID on
                     # Triple Attack ranks 19-20. Only Blood Attack is written here.
-COL_MP = 17         # SKILL_USE_VALUE(s, 0)
+COL_COST = 17       # SKILL_USE_VALUE(s, 0). NOT always mana: the property lives in
+                    # col 16, and it is AT_HP for Leap Attack -- so that skill is
+                    # priced in blood, deliberately, and always has been. This pass
+                    # only moves the value; the property is never touched.
 COL_RELOAD = 20     # SKILL_RELOAD_TIME, x 0.2s (io_skill.cpp: x200 - 100 ms)
 
-WRITTEN = (COL_POWER, COL_RELOAD, COL_MP, COL_ABILITY)   # order matches sidecar tuples
+WRITTEN = (COL_POWER, COL_RELOAD, COL_COST, COL_ABILITY)   # order matches sidecar tuples
 RANKS = 10
 
 # base row -> (label, SKILL_1LEV_INDEX the rows must share, first rank number).
@@ -153,8 +175,8 @@ PROFILES = {
         301: (lin(80, 260), [25] * 10, lin(8, 24), None),           # cheap, fast
         321: (lin(110, 380), [27, 26, 25, 24, 23, 22, 21, 20, 19, 18],
               lin(30, 78), None),                                   # crit gamble
-        331: (lin(340, 620), lin(22, 18), lin(82, 130), None),      # 3 hits, r11-20
-        341: (lin(260, 950), [60] * 10, lin(50, 110), None),        # the nuke
+        331: (lin(300, 520), lin(22, 18), lin(82, 130), None),      # 3 hits, r11-20
+        341: (lin(180, 560), [60] * 10, lin(50, 110), None),        # the nuke
         391: (lin(160, 420), [50] * 10, lin(40, 80), None),         # ranged + amp
         401: (lin(130, 420), [75] * 10, lin(55, 110), None),        # AoE
         471: (lin(90, 330), [25] * 10, lin(14, 38), None),          # crossbow, fast
@@ -251,7 +273,8 @@ def show(stb, want, vanilla):
         label, _family, first = FAMILIES[base]
         print(f"\n{label}  (rows {rows[0]}-{rows[-1]}, ranks {first}-{first + 9})")
         ab = "heal" if base == 651 else "abilityVal"
-        print(f"  {'rank':>5}{'power':>16}{'cooldown s':>18}{'MP':>14}{ab:>16}")
+        cost = "HP cost" if base == 341 else "MP cost"
+        print(f"  {'rank':>5}{'power':>16}{'cooldown s':>18}{cost:>14}{ab:>16}")
         for n, r in enumerate(rows):
             was = vanilla.get(r) or tuple(gi(stb, r, c) for c in WRITTEN)
             cells = []
