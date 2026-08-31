@@ -269,6 +269,7 @@ hand and are useful when developing or diagnosing:
 | `[VIDEO] TERRAIN_INSERTS_PER_FRAME` | Default `24`. How many distant terrain tiles may appear per frame. **Lower = smaller hitch, slower horizon fill-in.** See below. |
 | `[VIDEO] LOAD_BUDGET_US` | Default `2000`. Microseconds per frame the engine may spend pre-loading resources. `0` = legacy behaviour. See below. |
 | `[VIDEO] MAP_PREFETCH` | Default `1`. Background thread that warms the OS file cache for map chunks before they are read. `0` disables it. |
+| `[VIDEO] CACHE_WARM_MB` | Default `300`. Megabytes of the archive pulled into the OS file cache during each loading screen, on the same background thread. **Measured 3.7x faster in-game texture reads.** `0` disables it. See below. |
 | `[VIDEO] STREAM_SPIKE_LOG_MS` | Default `0` (off). Diagnostic: log a `client.log` line for every frame spending ≥ this many ms loading resources. `4` is a good value when hunting a hitch. |
 | `[VIDEO] FRAME_SPIKE_LOG_MS` | Default `0` (off). Diagnostic: log a `client.log` line for every frame whose **total** time is ≥ this many ms, with the phase breakdown. `20` is a good starting value at 60 fps. Catches the hitches `STREAM_SPIKE_LOG_MS` cannot see. |
 
@@ -376,6 +377,29 @@ rule from 2003 — one millisecond per kilobyte — which badly overestimates mo
 hardware, so a 350 KB texture was assumed to need 350 ms and got postponed for
 ~70 frames, then loaded urgently at the worst possible moment. This paces that
 work on actual measured time instead. `0` restores the old behaviour.
+
+**`CACHE_WARM_MB`** (default `300`) is a different trade from the two above: it
+spends time you are *already* waiting through. While a loading screen is up, a
+background thread reads that zone's asset groups end to end — the zone's own map
+directory first, then its terrain tiles, then the shared NPC and motion trees —
+so the first in-game access to any of them costs no disk read. Map-chunk requests
+always take priority, and the budget is per zone, not per session.
+
+Measured on a cold cache, same five-zone route, warming on versus off:
+
+| | in-game texture read | frames > 20 ms |
+| --- | --- | --- |
+| on | **0.135–0.142 ms** each | 6 |
+| off | 0.503 ms each | 10 |
+
+Two things worth knowing before you tune it. The gain is **entirely in the
+streaming that happens while you walk around** — it does nothing for the zone
+transition itself (0.475 vs 0.445 ms), because the warm starts at the same moment
+that zone's own texture burst does and can never get ahead of it. And measuring
+any of this needs a genuinely cold cache: a second run reads from RAM either way,
+so an A/B without an eviction step reports "no difference" however well it works.
+`just purge-cache` drops the standby list in about a second, which is the part of
+a reboot that matters here.
 
 **Diagnosing a hitch.** There are two spike logs, and they answer different
 questions. Start with the frame one, because it tells you whether streaming is
