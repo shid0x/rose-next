@@ -2475,6 +2475,34 @@ CRecvPACKET::Recv_gsv_USE_ITEM() {
 /// 떨어뜨렸을때 옴.
 void
 CRecvPACKET::Recv_gsv_ADD_FIELDITEM() {
+    /// The same field item is legitimately announced more than once: at
+    /// insertion by CZoneTHREAD::AddObjectToSector, and again by the
+    /// sector-visibility path when a player crosses into the sector it landed
+    /// in (drop positions are randomised by +/-100 units, so a mob-death drop
+    /// often lands in a neighbouring sector). The server re-sends deliberately
+    /// -- it calls Update_OwnerObjIDX first, because ownership can change.
+    ///
+    /// Add_GndITEM does not dedupe: it allocates a fresh slot, and
+    /// Set_EmptySlot then repoints m_nServer2ClientOBJ at the new object. The
+    /// first one is orphaned -- still drawn, but no longer reachable by server
+    /// index, so it can never be picked up or removed. That is two identical
+    /// items on the ground, one of which works and one of which is permanent.
+    ///
+    /// Refresh the existing object instead of building a second one. Not done
+    /// inside Add_GndITEM because the caller below follows up with
+    /// InsertToScene(), which calls CreateAnimatable() and re-links scene
+    /// nodes; running it twice on one object is not safe.
+    {
+        CObjITEM* pExisting =
+            g_pObjMGR->Get_ClientItemOBJ(m_pRecvPacket->m_gsv_ADD_FIELDITEM.m_wServerItemIDX);
+        if (pExisting) {
+            pExisting->m_wOwnerServerObjIDX =
+                m_pRecvPacket->m_gsv_ADD_FIELDITEM.m_wOwnerObjIDX;
+            pExisting->m_wRemainTIME = m_pRecvPacket->m_gsv_ADD_FIELDITEM.m_wRemainTIME;
+            return;
+        }
+    }
+
     /// 내가 떨어뜨린것이다.
     {
         int iItemOBJ = g_pObjMGR->Add_GndITEM(m_pRecvPacket->m_gsv_ADD_FIELDITEM.m_wServerItemIDX,
