@@ -1,4 +1,4 @@
-"""Retune the Dealer's three low-tier attack skills. Two profiles, switchable.
+"""Retune the Dealer's offensive skills. Two profiles, switchable.
 
     python scripts/rebalance-dealer-skills.py --profile parity   # balance-first
     python scripts/rebalance-dealer-skills.py --profile burst    # feel-first
@@ -47,7 +47,10 @@ cooldowns alone would have made the felt problem worse.
 
 Profile: parity (balance-first)
 -------------------------------
-Brings the Dealer level with its peers and stops there.
+Brings the three low-tier skills level with their peers and stops there. It does
+NOT cover the rest of the offensive kit -- those skills have no clean peer to be
+at parity *with*, so inventing targets for them would be a different exercise.
+Use `burst` for the whole kit.
 
     Power Gun Shot  power 35->100 => 45->135   cd 7.0-7.8s => 5.6-6.0s
     Twin Shot       power unchanged            cd 6.0-5.2s => 5.4-3.6s
@@ -61,28 +64,81 @@ uplift over auto-attack goes +24.6% -> +42.3%, +41.7% -> +50.3% and
 
 Profile: burst (feel-first)
 ---------------------------
-Deliberately *not* balanced. Big satisfying hits on longer cooldowns, with the
-three skills given distinct roles instead of being three similar buttons:
+Deliberately *not* balanced, and covering all seven offensive skills. The first
+three were built as a clean escalation -- filler, nuke, commitment -- where the
+ranking is obvious on purpose. The other four were added afterwards on the
+Soldier pass's principle instead: each wins one axis and loses the others, so
+which is "best" depends on the situation rather than on a number.
 
     Twin Shot       filler   power  50->220   cd 5.4->4.4s    MP 12->26
     Power Gun Shot  nuke     power  80->460   cd 10.0->8.4s   MP 10->30
-    Smash Gun       slam     power 150->900   cd 16.0->13.0s  MP 25->50
+    Smash Gun       slam     power 150->900   cd 16.0->13.0s  MP 25->95
+    Sniping Shot    safe hit power 200->850   cd 14.0->11.0s  MP 60->130
+    Aim Point       reach    power 150->560   cd 10.0->8.0s   MP 30->65
+    Poison Fang     softener power 100->330   cd 12.0->9.0s   MP 30->60
+    Zuly Pink       armour   power 180->620   cd 7.0->5.2s    MP 55->150
 
-Smash Gun keeps its 300 (3 m) range on purpose -- that is the risk, and it now
-carries the reward to match. At level 52 rank 4 it hits for about half a field
-monster's HP in one button.
+Smash Gun keeps its 300 (3 m) range on purpose -- that is the risk, and it
+carries the reward to match. Its MP curve was later raised from 25->50 to
+25->95: at rank 10 it was both the biggest hit *and* the most MP-efficient
+skill in the kit, winning four axes of six, because the sim cannot price the
+3 m range. The change is negligible at low rank (28 -> 33 MP at rank 2) and
+leaves its damage untouched, so how it feels in the hand is unchanged.
 
-Measured at level 52 (median field monster, HP 1428, auto-attack 55/swing):
+Measured at level 80 rank 4 (median field monster, DEF 226, HP 3936):
 
-    rank 4              damage   x auto   % mob HP    cd     dmg/MP
-    Twin Shot              271      4.9        19%   5.0s      15.9
-    Power Gun Shot         405      7.4        28%   9.4s      23.8
-    Smash Gun              714     13.0        50%  15.0s      21.6
+    skill            burst  exp.tot    cd   mp  cd dps  MPbound  dmg/MP  4 mobs
+    Twin Shot          315      315   5.0   17     141      115    18.5     315
+    Power Gun Shot     408      408   9.4   17     121      121    24.0     408
+    Smash Gun          697      697  15.0   48     125      107    14.5     697
+    Sniping Shot       723      723  13.0   83     134       96     8.7     723
+    Aim Point          528      528   9.4   42     134      103    12.6     528
+    Poison Fang        363      541  11.0   40     127      105    13.5    1077
+    Zuly Pink          619      619   6.4   87     175       92     7.1     619
 
-The escalation is the point: a cheap filler, a real nuke, and a commitment. Note
-damage-per-MP *rises* with the tier, so the big buttons are also the efficient
-ones -- and roughly doubles versus the parity profile, which makes the burst
-profile the more MP-sustainable of the two despite the bigger numbers.
+Five skills win six different axes, and the ordering is stable from level 80 to
+200: biggest number is Sniping Shot early and Smash Gun later, cooldown-bound
+DPS is Zuly Pink, MP-bound DPS and damage-per-MP are Power Gun Shot, and
+multi-target is Poison Fang by a wide margin.
+
+The identities, and why they are not interchangeable:
+
+* **Smash Gun vs Sniping Shot** is the sharpest question in the kit: comparable
+  damage, but Smash Gun is cheaper and needs you at 3 m, while Sniping Shot is
+  safe and costs roughly twice the MP. "Is three metres worth 80 MP?" has no
+  fixed answer, which is the point.
+* **Zuly Pink is the anti-armour option.** It is SKILL_DAMAGE_TYPE 2, and the
+  magic branch divides by `DEF*0.3 + RES + AVOID*0.3 + 60` where the weapon
+  branch divides by `DEF + RES*0.8 + AVOID*0.4 + 20` -- so DEF hurts it about a
+  third as much. Sampled against real level-80 field monsters it beats Sniping
+  Shot on Firegon (DEF 226 / RES 104) and Grand Master Doonga (DEF 379) and
+  loses on everything with ordinary armour. Its MP cost is what stops it simply
+  being the best.
+* **Poison Fang is the crowd softener.** Its damage is single-target but its
+  SKILL_SCOPE (800->1250, i.e. 8-12.5 m) spreads the *poison* to a whole pack,
+  and against four monsters that is roughly double any other skill in the kit.
+* **Aim Point does not win a column, and that is honest.** Its edge is 37-42 m
+  of range -- by far the longest here, against Zuly Pink's 25-30 m and weapon
+  range for everything else -- which the simulation cannot score. On the numbers
+  it is simply the efficient one among the long-range options.
+
+Note damage-per-MP *rises* with the tier among the original three, so the big
+buttons are also the efficient ones -- and roughly doubles versus the parity
+profile, which makes the burst profile the more MP-sustainable of the two
+despite the bigger numbers.
+
+Poison Fang's DoT is NOT tunable here
+-------------------------------------
+Poison damage is `STATE_APPLY_ABILITY_VALUE(status_row, 0)` in
+`status_effects.cpp` -- a flat per-second value read from LIST_STATUS.STB, with
+no reference to the caster, the skill or anyone's level. Poison Fang already
+escalates through three rows across its ranks (8 "Poisoned 2" = 20/s for ranks
+1-5, 9 "Poisoned 3" = 30/s for 6-9, 10 for rank 10), so the progression is
+already there. Those rows are **shared** -- row 9 is also the Raider's Poison
+Knife, and rows 7/8 are used by monster skills -- so raising the tick would
+change poison across the whole game, including what monsters do to players.
+Left alone deliberately. It does mean the DoT is flat and decays with level,
+which is why the direct damage carries the skill at high level.
 
 Cooldowns stay well inside one fight. Time-to-kill on auto-attacks alone is ~24s
 at level 52 and only grows with level, so even Smash Gun's 15s lands 1.6 times
@@ -169,9 +225,13 @@ RANKS = 10
 # column is the reliable identifier.
 FAMILIES = {
     2201: ("Power Gun Shot", 2201, 1),
+    2211: ("Sniping Shot", 2211, 1),
     2221: ("Twin Shot", 2221, 1),
     2231: ("Triple Shot", 2221, 11),      # same family as Twin Shot
+    2261: ("Aim Point", 2261, 1),
+    2271: ("Poison Fang", 2271, 1),
     2281: ("Smash Gun", 2281, 1),
+    2311: ("Zuly Pink", 2311, 1),
 }
 
 
@@ -189,10 +249,16 @@ PROFILES = {
         2281: ([75, 86, 97, 108, 119, 130, 141, 152, 163, 175], [42] * 10, None),
     },
     "burst": {
-        2201: (lin(80, 460), lin(50, 42), lin(10, 30)),
-        2221: (lin(50, 220), lin(27, 22), lin(12, 26)),
+        # -- the original three, plus Twin Shot's rank 11-20 continuation
+        2201: (lin(80, 460), lin(50, 42), lin(10, 30)),      # nuke: reliable mid
+        2221: (lin(50, 220), lin(27, 22), lin(12, 26)),      # filler: fast + cheap
         2231: (lin(260, 480), lin(21, 18), lin(28, 48)),
-        2281: (lin(150, 900), lin(80, 65), lin(25, 50)),
+        2281: (lin(150, 900), lin(80, 65), lin(25, 95)),     # slam: 3 m risk, biggest
+        # -- the rest of the Dealer's offensive kit
+        2211: (lin(200, 850), lin(70, 55), lin(60, 130)),    # safe big hit, pricey
+        2261: (lin(150, 560), lin(50, 40), lin(30, 65)),     # 37-42 m, efficient
+        2271: (lin(100, 330), lin(60, 45), lin(30, 60)),     # AoE poison softener
+        2311: (lin(180, 620), lin(35, 26), lin(55, 150)),    # anti-armour, fast
     },
 }
 
@@ -290,9 +356,9 @@ def save(stb):
         fh.write(stb.to_bytes())
 
 
-def show(stb, want, vanilla):
+def show(stb, want, vanilla, profile):
     """Print every rank as vanilla -> target, grouped by family."""
-    for base in sorted(PROFILES["burst"]):
+    for base in sorted(PROFILES[profile]):
         rows = rows_for(stb, base)
         label, _family, first = FAMILIES[base]
         print(f"\n{label}  (rows {rows[0]}-{rows[-1]}, ranks {first}-{first + 9})")
@@ -368,7 +434,7 @@ def main():
                    for base in PROFILES[args.profile] for r in rows_for(stb, base)}
 
     want = target_state(stb, args.profile)
-    show(stb, want, vanilla)
+    show(stb, want, vanilla, args.profile)
     apply_values(stb, want)
 
     if args.dry_run:
