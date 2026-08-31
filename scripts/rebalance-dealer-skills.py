@@ -90,6 +90,28 @@ per monster; nothing here is a dead button. Cooldowns shorten with rank rather
 than lengthening (retail had Power Gun Shot getting *slower* as you invested in
 it), so ranking up always feels like a gain.
 
+Ranks 11-20: Twin Shot continues into Triple Shot
+-------------------------------------------------
+Rows 2231-2240 are the same family (SKILL_1LEV_INDEX 2221) at ranks 11-20, so
+they are included -- otherwise ranking Twin Shot past 10 would be a *downgrade*.
+
+**That downgrade exists in vanilla and is almost certainly a data bug.** The
+Soldier/Hawker equivalent, Triple Attack, goes from `power 90 x2 hits` at rank 10
+to `power 45 x3 hits` at rank 11 -- the power halves because a third hit is
+added, so the total is roughly preserved. Triple Shot has the *identical* halved
+power curve (45..100 against Twin Shot's 40..90) but `SKILL_ANI_HIT_COUNT` is
+still **2**, making rank 11 strictly worse than rank 10 for a longer cooldown.
+The Hawker's Double Shot line has the same defect. The obvious reading is that
+Triple Shot was authored as a three-hit skill and its hit count was never
+updated.
+
+The tempting fix -- set the hit count to 3 -- is NOT done here, for the reason in
+the next section: the client consumes one queued DamageEvent per hit frame of the
+motion, and while Triple Attack proves *some* motion 92 services three hits, the
+animation index resolves per weapon type, so a gun's motion 92 may not. That
+wants a deliberate, in-game-tested change, not a data tweak. Both profiles close
+the cliff with power and cooldown instead, which needs no such assumption.
+
 Things worth knowing before changing these numbers
 --------------------------------------------------
 * **SKILL_ANI_HIT_COUNT (col 70) is deliberately untouched.** Raising Twin
@@ -134,6 +156,7 @@ SIDECAR = os.path.join(ROOT, "data", "3DDATA", "STB", "LIST_SKILL.dealer-skills.
 
 # Game column indices, from src/common/io_skill.h.
 COL_NAME = 0        # internal name, English, not the displayed one
+COL_FAMILY = 1      # SKILL_1LEV_INDEX, stable across a mid-curve rename
 COL_LEVEL = 2       # SKILL_LEVEL, the rank within the family
 COL_POWER = 9       # SKILL_POWER
 COL_MP = 17         # SKILL_USE_VALUE(s, 0)
@@ -141,7 +164,15 @@ COL_RELOAD = 20     # SKILL_RELOAD_TIME, x 0.2s (io_skill.cpp: x200 - 100 ms)
 
 WRITTEN = (COL_POWER, COL_RELOAD, COL_MP)   # order matches the sidecar tuples
 RANKS = 10
-FAMILIES = {2201: "Power Gun Shot", 2221: "Twin Shot", 2281: "Smash Gun"}
+# base row -> (expected name, SKILL_1LEV_INDEX the rows share, first rank number).
+# Twin Shot's family continues under a different *name* at rank 11, so the family
+# column is the reliable identifier.
+FAMILIES = {
+    2201: ("Power Gun Shot", 2201, 1),
+    2221: ("Twin Shot", 2221, 1),
+    2231: ("Triple Shot", 2221, 11),      # same family as Twin Shot
+    2281: ("Smash Gun", 2281, 1),
+}
 
 
 def lin(a, b, n=RANKS):
@@ -154,11 +185,13 @@ PROFILES = {
     "parity": {
         2201: (lin(45, 135), [28, 28, 28, 28, 29, 29, 29, 29, 30, 30], None),
         2221: (None, [27, 26, 25, 24, 23, 22, 21, 20, 19, 18], None),
+        2231: (lin(95, 150), lin(20, 18), None),     # ranks 11-20, see below
         2281: ([75, 86, 97, 108, 119, 130, 141, 152, 163, 175], [42] * 10, None),
     },
     "burst": {
         2201: (lin(80, 460), lin(50, 42), lin(10, 30)),
         2221: (lin(50, 220), lin(27, 22), lin(12, 26)),
+        2231: (lin(260, 480), lin(21, 18), lin(28, 48)),
         2281: (lin(150, 900), lin(80, 65), lin(25, 50)),
     },
 }
@@ -187,19 +220,21 @@ def gi(stb, r, c):
 def rows_for(stb, base):
     """The ten rank rows of one family, checked against what we expect to find.
 
-    Guards against a data change having shifted the table under us: a silent
-    write to the wrong ten rows would be very hard to notice afterwards.
+    Keyed on SKILL_1LEV_INDEX and the rank number rather than the displayed name,
+    because Twin Shot's family renames to Triple Shot at rank 11. Guards against a
+    data change having shifted the table under us: a silent write to the wrong ten
+    rows would be very hard to notice afterwards.
     """
-    expect = FAMILIES[base]
+    label, family, first = FAMILIES[base]
     out = []
     for n in range(RANKS):
         r = base + n
-        got = stb.get(r, COL_NAME).decode("latin-1", "replace").strip()
-        if got != expect:
-            sys.exit(f"row {r}: expected {expect!r}, found {got!r} -- "
+        got = gi(stb, r, COL_FAMILY)
+        if got != family:
+            sys.exit(f"row {r} ({label}): expected family {family}, found {got} -- "
                      f"LIST_SKILL.STB has moved; refusing to write")
-        if gi(stb, r, COL_LEVEL) != n + 1:
-            sys.exit(f"row {r}: expected rank {n + 1}, found "
+        if gi(stb, r, COL_LEVEL) != first + n:
+            sys.exit(f"row {r} ({label}): expected rank {first + n}, found "
                      f"{gi(stb, r, COL_LEVEL)} -- refusing to write")
         out.append(r)
     return out
@@ -259,7 +294,8 @@ def show(stb, want, vanilla):
     """Print every rank as vanilla -> target, grouped by family."""
     for base in sorted(PROFILES["burst"]):
         rows = rows_for(stb, base)
-        print(f"\n{FAMILIES[base]}  (rows {rows[0]}-{rows[-1]})")
+        label, _family, first = FAMILIES[base]
+        print(f"\n{label}  (rows {rows[0]}-{rows[-1]}, ranks {first}-{first + 9})")
         print(f"  {'rank':>5}{'power':>16}{'cooldown s':>20}{'MP':>14}")
         for n, r in enumerate(rows):
             was = vanilla.get(r) or tuple(gi(stb, r, c) for c in WRITTEN)
@@ -271,7 +307,7 @@ def show(stb, want, vanilla):
                     cells.append(f"{w:.1f} -> {v:.1f}" if w != v else f"{w:.1f} =")
                 else:
                     cells.append(f"{w} -> {v}" if w != v else f"{w} =")
-            print(f"  {n + 1:>5}{cells[0]:>16}{cells[1]:>20}{cells[2]:>14}")
+            print(f"  {first + n:>5}{cells[0]:>16}{cells[1]:>20}{cells[2]:>14}")
 
 
 def main():
