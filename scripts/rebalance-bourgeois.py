@@ -46,11 +46,34 @@ scaling formula itself -- which lives on the server in `SetCallerOBJ` *and* is
 mirrored in the client (`recvpacket.cpp`, for the summon info panel), so both
 sides have to move together. Deliberately out of scope here.
 
-MP was the other problem: Employ Warrior cost 150 MP at rank 1 when a level-55
-Dealer has about 290 MP total, so fielding a squad was impossible. Prices now run
-90->170 / 110->210 / 150->280. Squad *size* is set by the capacity cap (below),
-not by MP; these prices are set so that replacing a dead mercenary costs
-something real without the whole squad being unaffordable.
+Price was the other half, and it was hiding in plain sight: **the Employ skills
+already declared AT_MONEY in cost slot 0**. They were always meant to be paid for
+in zuly rather than mana -- the amounts were simply trivial (90-280) and, until
+`classUSER::Skill_PayMoneyCOST` existed, nothing collected them at all. Hiring
+now runs 5000->20000 / 8000->32000 / 12000->50000 zuly with a token 10-40 MP
+beside it. Squad *size* is set by the capacity cap (below), not by price; the
+prices are set so that replacing a dead mercenary costs something real.
+
+Pillar 1b: Zuly Storm, the signature
+------------------------------------
+Zuly Storm (2301) is Bourgeois-only from rank 1, SKILL_TYPE_17 so it reaches
+`CObjCHAR::Skill_DamageToAROUND` and does real area damage, and it carries the
+**widest radius in the game** -- SKILL_SCOPE 1300-1570, i.e. 13-15.7 m, against
+the Soldier's Twist Attack at 1000 and Poison Fang at 1250. It is also
+SKILL_DAMAGE_TYPE 2, so like Zuly Pink it divides by RES rather than DEF and
+shrugs off armour. Every part of that says "class signature", and it was tuned
+like a footnote: 160->350 power on a cooldown that got *longer* with rank.
+
+    power  160->350  =>  300->900
+    cd     16.0->19.6s (lengthening)  =>  22.0->16.0s (shortening)
+    cost   100->300 zuly  =>  1500->12000 zuly, MP 20->50
+
+At rank 10 it hits each target for about as much as Smash Gun hits one -- but it
+hits everything within 15.7 m. The pricing is the interesting part: 12,000 zuly
+works out at **6.9 zuly per point of damage against a single target and 1.1
+against six**, so the skill's own cost tells you it is a crowd tool and that
+firing it at one monster is a bad trade. That is the intended lesson and it is
+carried by the numbers rather than by a tooltip.
 
 Pillar 2: better loot
 ---------------------
@@ -177,6 +200,7 @@ SKILL_FAMILIES = {
     2051: ("Buying Trick (buy price)", 2051, 1, 10),
     2071: ("Sell Trick (sell price)", 2071, 1, 10),
     2091: ("Gathering (drop rate)", 2091, 1, 10),
+    2301: ("Zuly Storm", 2301, 1, 10),
     2351: ("Employ Warrior", 2351, 1, 10),
     2361: ("Employ Hunter", 2361, 1, 10),
     2371: ("Terror Knight", 2371, 1, 10),
@@ -203,6 +227,10 @@ SKILL_PROFILES = {
                [30] * 10, None),                                  # Hunter, 6.0s
         2371: ([AT_MONEY] * 10, lin(12000, 50000), [AT_MP] * 10, lin(15, 40),
                [40] * 10, None),                                  # Terror Knight, 8.0s
+        # The signature: the widest AoE in the game, paid for in cash. Its price
+        # per point of damage is what teaches you to save it for a crowd.
+        2301: ([AT_MONEY] * 10, lin(1500, 12000), [AT_MP] * 10, lin(20, 50),
+               lin(110, 80), None),                               # Zuly Storm, 22->16s
     },
 }
 
