@@ -1469,7 +1469,20 @@ struct gsv_EFFECT_OF_SKILL: public t_PACKETHEADER {
 #else
     union {
         struct {
-            unsigned short m_nSkillIDX : 12;
+            /// 14 bits, not 12. This index has to address every row of
+            /// LIST_SKILL.STB, which is past 7000; at 12 bits anything over 4095
+            /// wrapped silently. Skill 7002 (Calibrated Burst) arrived as 2906, so
+            /// the client resolved an unrelated blank row, concluded the hit was
+            /// not projectile-presented, and routed the damage down the legacy
+            /// effected-skill path -- where a gun motion has no action-25 frame to
+            /// drain it. No digit, and the stranded entry blocked the queue until
+            /// the orphan sweep folded it in seconds later.
+            ///
+            /// Bits 14-15 were unused padding. The other arm of this union only
+            /// occupies byte 0 and bytes 2-3, so m_nINT is untouched and the union
+            /// is still 4 bytes -- the packet size does not change. New ceiling is
+            /// 16383: keep skill rows under it, or widen this again.
+            unsigned short m_nSkillIDX : 14;
             unsigned short m_btSuccessBITS : 2; // 성공여부
             BYTE m_tmp1;
         };
