@@ -148,49 +148,49 @@ it), so ranking up always feels like a gain.
 
 Ranks 11-20: Twin Shot continues into Triple Shot
 -------------------------------------------------
-Rows 2231-2240 are the same family (SKILL_1LEV_INDEX 2221) at ranks 11-20, so
-they are included -- otherwise ranking Twin Shot past 10 would be a *downgrade*.
+Rows 2231-2240 are the same family (SKILL_1LEV_INDEX 2221) at ranks 11-20 and are
+included, but **not** for the reason an earlier version of this file gave. That
+version claimed vanilla had a bug -- rank 11 doing half the damage of rank 10
+because `SKILL_ANI_HIT_COUNT` said 2 where the name said 3. That was wrong twice
+over.
 
-**That downgrade exists in vanilla and is almost certainly a data bug.** The
-Soldier/Hawker equivalent, Triple Attack, goes from `power 90 x2 hits` at rank 10
-to `power 45 x3 hits` at rank 11 -- the power halves because a third hit is
-added, so the total is roughly preserved. Triple Shot has the *identical* halved
-power curve (45..100 against Twin Shot's 40..90) but `SKILL_ANI_HIT_COUNT` is
-still **2**, making rank 11 strictly worse than rank 10 for a longer cooldown.
-The Hawker's Double Shot line has the same defect. The obvious reading is that
-Triple Shot was authored as a three-hit skill and its hit count was never
-updated.
+**`SKILL_ANI_HIT_COUNT` (col 70) is dead data.** The macro is defined in three
+headers and read by no `.cpp` anywhere in the tree.
 
-**The hit count is now corrected to 3**, which was held back until the animation
-could be checked rather than assumed. It checks out: `SKILL_ANI_ACTION_TYPE` 92
-resolves through `TYPE_MOTION` column 12 (the gun column) to
-`3DDATA/MOTION/AVATAR/gun_3attack_m1.zmo`, which is present on disk -- a
-purpose-built three-shot gun animation that **Triple Shot already pointed at**
-while carrying a hit count of 2. Triple Attack uses the same action type with a
-hit count of 3 and works. So the motion services three hits and the third was
-simply never switched on.
+**The multiplier is the animation's own attack-frame count.** The damage sites in
+`CObjCHAR` pass `m_pCurMOTION->m_wTatalAttackFrame` as `wHitCNT`, which
+`CMotionFILE::Load` counts at ZMO load time by walking the extended frame-event
+table and tallying the attack-event types. Parsing the files directly confirms
+it:
 
-Power is rescaled to suit: at the old 2-hit curve a third hit would have made
-rank 11 a 50% jump over rank 10. Burst runs 175->335 and parity 65->110, both at
-3 hits, so rank 11 is a ~1.3x step up from Twin Shot rank 10 rather than a cliff
-in either direction.
+    GUN_2ATTACK_M1.ZMO   2 attack frames      <- Twin Shot, action type 91
+    GUN_3ATTACK_M1.ZMO   3 attack frames      <- Triple Shot, action type 92
+    GUN_FIRING_M1.ZMO    1 attack frame
 
-Caveat worth keeping: the filename and Triple Attack's behaviour are strong
-evidence, not proof -- the ZMO's hit-frame events were not parsed. If a third
-damage number fails to appear in game, the client is orphaning the event and the
-count should go back to 2.
+So Triple Shot has *always* struck three times, and vanilla halving its power
+from Twin Shot's 90 to 45 is exactly the right compensation for gaining a frame.
+Measured, vanilla rank 11 is **1.12x** rank 10 in damage -- a normal step up, not
+a cliff. The data was correct and the "fix" corrected nothing.
+
+**And `wHitCNT` multiplies one number, it does not produce several.**
+`Get_SkillDAMAGE` ends in `iDamage *= wHitCNT` and the caller sends a single
+`Send_gsv_DAMAGE_OF_SKILL`. The animation plays its three shots and one damage
+figure lands, already multiplied -- which is how these skills have always looked
+in play.
+
+What is real is a cliff *this profile creates*: shortening Twin Shot's cooldown
+to 3.6s while Triple Shot sits at vanilla's 7.0s means ranking up costs DPS. So
+parity moves only the cooldown and leaves the power alone, and burst carries a
+power curve sized against three frames rather than two.
 
 Things worth knowing before changing these numbers
 --------------------------------------------------
-* **SKILL_ANI_HIT_COUNT (col 70) is only safe to change when the motion backs
-  it.** It multiplies damage directly (`wHitCNT` in `Get_SkillDAMAGE`), but the
-  client consumes exactly one queued DamageEvent per hit frame of the motion, so
-  a count the animation cannot service orphans an event -- the failure mode the
-  whole combat-presentation machinery in the client CLAUDE.md exists to handle.
-  Triple Shot qualifies because its animation is literally `gun_3attack_m1.zmo`.
-  Do not raise it on a skill whose motion has not been checked the same way:
-  resolve `SKILL_ANI_ACTION_TYPE` through `TYPE_MOTION` at the skill's **own
-  weapon column** and read the `FILE_MOTION` path.
+* **Do not tune SKILL_ANI_HIT_COUNT (col 70) -- nothing reads it.** To change
+  how many times a skill strikes you have to change its *animation*: resolve
+  `SKILL_ANI_ACTION_TYPE` through `TYPE_MOTION` at the skill's own weapon column
+  to a `FILE_MOTION` path, and pick a motion with the attack-frame count you
+  want. `GUN_2ATTACK` / `GUN_3ATTACK` (and the `ONEHAND_*` equivalents) differ
+  by exactly that. Sizing power therefore means knowing the motion first.
 * **AoE is not available on these skills.** `SKILL_SCOPE` (col 8) only spreads
   the *status effect* for SKILL_TYPE 3 (`Skill_ChangeIngSTATUS`); AoE *damage*
   goes through `Skill_DamageToAROUND`, which only types 7 and 17 reach. Giving
@@ -232,7 +232,10 @@ COL_LEVEL = 2       # SKILL_LEVEL, the rank within the family
 COL_POWER = 9       # SKILL_POWER
 COL_MP = 17         # SKILL_USE_VALUE(s, 0)
 COL_RELOAD = 20     # SKILL_RELOAD_TIME, x 0.2s (io_skill.cpp: x200 - 100 ms)
-COL_HITS = 70       # SKILL_ANI_HIT_COUNT -- see the Triple Shot note below
+COL_HITS = 70       # SKILL_ANI_HIT_COUNT. **Dead data** -- defined in three headers
+                    # and read by no .cpp in the tree. Listed here only so the
+                    # display can show it is deliberately left alone; the real
+                    # multiplier comes from the motion. See the Triple Shot note.
 
 WRITTEN = (COL_POWER, COL_RELOAD, COL_MP, COL_HITS)   # order matches the sidecar tuples
 RANKS = 10
@@ -261,17 +264,22 @@ PROFILES = {
     "parity": {
         2201: (lin(45, 135), [28, 28, 28, 28, 29, 29, 29, 29, 30, 30], None, None),
         2221: (None, [27, 26, 25, 24, 23, 22, 21, 20, 19, 18], None, None),
-        # ranks 11-20. Hit count corrected 2 -> 3, power rescaled to suit.
-        2231: (lin(65, 110), lin(20, 18), None, [3] * 10),
+        # ranks 11-20. Power is left at vanilla: it is already correct for the
+        # three attack frames the motion carries. Only the cooldown moves, to
+        # match the shortened Twin Shot curve above -- otherwise ranking up costs
+        # you DPS purely because of *our* change to rank 10.
+        2231: (None, lin(20, 18), None, None),
         2281: ([75, 86, 97, 108, 119, 130, 141, 152, 163, 175], [42] * 10, None, None),
     },
     "burst": {
         # -- the original three, plus Twin Shot's rank 11-20 continuation
         2201: (lin(80, 460), lin(50, 42), lin(10, 30), None),      # nuke: reliable mid
         2221: (lin(50, 220), lin(27, 22), lin(12, 26), None),      # filler: fast + cheap
-        # ranks 11-20. Hit count corrected 2 -> 3, power rescaled to suit: at the
-        # old 260->480 a third hit would have been a 50% jump on rank 11.
-        2231: (lin(175, 335), lin(21, 18), lin(28, 48), [3] * 10),
+        # ranks 11-20. Power sized against the motion's *three* attack frames,
+        # which is where the multiplier actually comes from: 175 x3 makes rank 11
+        # a 1.28x step over Twin Shot rank 10, against vanilla's 1.12x. The
+        # earlier 260->480 here was sized believing the motion struck twice.
+        2231: (lin(175, 335), lin(21, 18), lin(28, 48), None),
         2281: (lin(150, 900), lin(80, 65), lin(25, 95), None),     # slam: 3 m risk, biggest
         # -- the rest of the Dealer's offensive kit
         2211: (lin(200, 850), lin(70, 55), lin(60, 130), None),    # safe big hit, pricey

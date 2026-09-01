@@ -15,7 +15,11 @@ tuning invents an attack skill. So one is brought in.
 The source
 ----------
 `RoseZA test client`, row 2461 "Aimed Triple Shot": SKILL_TYPE 3, weapon 232 gun
-+ 233 launcher, SKILL_DAMAGE_TYPE 1, **SKILL_ANI_HIT_COUNT 3**, 5 ranks.
++ 233 launcher, SKILL_DAMAGE_TYPE 1, action type 92, 5 ranks.
+
+Action type 92 is what makes it a burst. At the gun column it resolves to
+`GUN_3ATTACK_M1.ZMO`, which carries **three attack frames** -- and the attack
+frame count, not any STB column, is what multiplies the damage.
 
 It was chosen over the alternatives (667's Daze Attack / Poison Shot / Acid Shot,
 137 and RoseZA's Hypno Shot -- all natively class 68) for two reasons:
@@ -53,7 +57,7 @@ new name is also a maker's word, which suits the class.
 
 The numbers
 -----------
-    power   80 -> 200   at 3 hits
+    power   80 -> 200   against the motion's 3 attack frames
     cd     3.6 -> 2.8s  -- the shortest cooldown of any attack skill in the game
     MP      26 -> 55
     prereq  Craft Mastery rank 6, which is itself the Artisan gate
@@ -82,10 +86,16 @@ Traps this had to avoid
 * **The tree XML ships LF-only.** It is read and written with `newline=""` so
   Python's text mode does not rewrite all 59 lines to CRLF just to add one node --
   which also keeps `--restore` byte-exact.
-* **Hit count 3 is only safe because the motion backs it** -- `gun_3attack_m1.zmo`
-  is a purpose-built three-shot animation. See the note in
-  `rebalance-dealer-skills.py`; do not copy this to a skill whose motion has not
-  been resolved through TYPE_MOTION at its own weapon column.
+* **How often a skill strikes is a property of its animation, not its row.**
+  `SKILL_ANI_HIT_COUNT` (col 70) is read by nothing; the damage sites pass
+  `m_pCurMOTION->m_wTatalAttackFrame` as `wHitCNT`, counted from the ZMO's
+  frame-event table at load. This skill strikes three times because action type
+  92 resolves to `GUN_3ATTACK_M1.ZMO` (3 attack frames), and the power curve is
+  sized against that. Col 70 is written to 3 only so the table does not lie.
+* **Three strikes is still one damage number.** `Get_SkillDAMAGE` ends in
+  `iDamage *= wHitCNT` and the caller sends a single `Send_gsv_DAMAGE_OF_SKILL`,
+  so the animation plays out and one multiplied figure lands -- which is how
+  every multi-hit skill in this game has always presented.
 
 Idempotent: records what it appended in a sidecar, so a second run is a no-op and
 --restore removes the rows again. data/ is gitignored, so this file is the record.
@@ -148,7 +158,11 @@ def row_cells(base_row, n):
         52: 95, 53: 150,            # casting anim + speed
         54: 131,                    # casting repeat
         56: 1041, 57: 3, 58: 131,   # casting effect / dummy point / sound
-        68: 92, 69: 175, 70: 3,     # action anim / speed / THREE HITS
+        68: 92, 69: 175,            # action anim (gun_3attack, 3 attack frames) + speed
+        70: 3,                      # SKILL_ANI_HIT_COUNT -- cosmetic. Nothing reads
+                                    # this column; the real multiplier is the
+                                    # motion's attack-frame count. Set to match
+                                    # the animation so the table stays honest.
         71: 180, 72: 1, 73: 148,    # bullet effect / point / sound
         74: 110, 75: 999, 76: 67,   # hit effect / root dummy / sound
         77: 171, 78: 1, 79: 67,     # dummy hit effect / point / sound
