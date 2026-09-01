@@ -106,6 +106,7 @@ import json
 import os
 import struct
 import sys
+import shutil
 import xml.etree.ElementTree as ET
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -115,6 +116,28 @@ SKILL_STB = os.path.join(STB_DIR, "LIST_SKILL.STB")
 SKILL_STL = os.path.join(STB_DIR, "LIST_SKILL_S.STL")
 TREE_XML = os.path.join(ROOT, "data", "3DDATA", "CONTROL", "xml", "skilltree_dealer.xml")
 SIDECAR = os.path.join(STB_DIR, "LIST_SKILL.artisan-import.json")
+TREE_ART = os.path.join(ROOT, "data", "3DDATA", "CONTROL", "RES",
+                        "DEALER_CRAFT_MASTERY.DDS")
+# Hidden on purpose: pack.rs walks the data tree filtering only *hidden* entries and
+# applies no extension filter, so a plain .bak next to the art gets baked into the .vfs.
+ART_BACKUP = os.path.join(ROOT, "data", "3DDATA", "CONTROL", "RES",
+                          ".DEALER_CRAFT_MASTERY.DDS.orig")
+
+# CSkillTreeDlg::Draw blits the page art at m_sPosition + (20, 75), then draws 40x40
+# icons on top at their XML offsets -- so art-local + ART_ORIGIN = dialog-local.
+# There is NO line-drawing code anywhere in the dialog: every box and every connector
+# in the skill tree is painted into this DDS. A new skill gets no box and no line
+# unless it is added here, which is why the first attempt looked broken.
+ART_ORIGIN = (20, 75)
+ART_LINE_RGBA = (74, 81, 99, 255)   # sampled from the existing spine
+ART_SPINE_X = 74                    # vertical spine that every branch hangs off
+ART_SPINE_BOTTOM = 296              # where it stopped, at the 2621 branch
+ART_BOX = (178, 355)                # art-local top-left of the new box
+ART_BOX_SIZE = 42                   # boxes are 42x42, 1px border
+
+# Icon sits 1px in horizontally and 2px vertically from the box border -- the same
+# relationship retail uses (2621: box art(178,275) -> icon dialog(199,352)).
+TREE_OFFSET = (ART_BOX[0] + ART_ORIGIN[0] + 1, ART_BOX[1] + ART_ORIGIN[1] + 2)
 
 RANKS = 10
 NAME = "Calibrated Burst"
@@ -321,7 +344,16 @@ def stl_write(path, keys, langs):
 
 # ------------------------------------------------------------------ tree XML
 def tree_add(base_row, dry):
-    """Hang the skill under Craft Mastery LEVEL=6 -- where the Artisan branch starts."""
+    """Hang the skill under Craft Mastery LEVEL=6 -- where the Artisan branch starts.
+
+    OFFSETX/OFFSETY are absolute inside the 564x540 dialog, NOT relative to the
+    parent node (`CSkillTreeDlg::MoveWindow` does `m_sPosition + m_offset`), and
+    icons are 40x40 (`CIcon::CIcon`). The rank-6 row already runs 273/337/401/465,
+    so 465 collides exactly with Refine Item (2601) -- which is declared after us
+    and paints straight over the top, making the skill invisible. 529 would be the
+    next 64-step but ends at 569 and clips the 564px panel, so the free slot is the
+    head of the row: 233 spans 233-273, clear of the parent icon at 182-222.
+    """
     raw = open(TREE_XML, encoding="utf-8", newline="").read()
     if f'INDEX="{base_row}"' in raw:
         print(f"  tree: INDEX {base_row} already present, skipping")
@@ -329,7 +361,8 @@ def tree_add(base_row, dry):
     anchor = '<SKILL INDEX="2081" OFFSETX="182" OFFSETY="79" LEVEL="6">'
     if anchor not in raw:
         sys.exit("tree: could not find the Craft Mastery rank-6 node; refusing to edit")
-    node = f'\n         <SKILL INDEX="{base_row}" OFFSETX="465" OFFSETY="116"/>'
+    node = (f'\n         <SKILL INDEX="{base_row}" '
+            f'OFFSETX="{TREE_OFFSET[0]}" OFFSETY="{TREE_OFFSET[1]}"/>')
     out = raw.replace(anchor, anchor + node, 1)
     if not dry:
         open(TREE_XML, "w", encoding="utf-8", newline="").write(out)
@@ -338,10 +371,77 @@ def tree_add(base_row, dry):
 
 def tree_remove(base_row):
     raw = open(TREE_XML, encoding="utf-8", newline="").read()
-    node = f'\n         <SKILL INDEX="{base_row}" OFFSETX="465" OFFSETY="116"/>'
+    node = (f'\n         <SKILL INDEX="{base_row}" '
+            f'OFFSETX="{TREE_OFFSET[0]}" OFFSETY="{TREE_OFFSET[1]}"/>')
     if node in raw:
         open(TREE_XML, "w", encoding="utf-8", newline="").write(raw.replace(node, "", 1))
         print(f"  tree: removed INDEX {base_row}")
+
+
+# ------------------------------------------------------------------ tree art
+def _hide(path):
+    """Set the Windows hidden attribute so pack.rs skips this file."""
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetFileAttributesW(str(path), 0x02)
+    except Exception:
+        pass
+
+
+def _art_draw(im):
+    """Extend the spine one branch further and add the box, in the retail style."""
+    from PIL import ImageDraw
+    d = ImageDraw.Draw(im)
+    mid = ART_BOX[1] + ART_BOX_SIZE // 2
+    d.line([(ART_SPINE_X, ART_SPINE_BOTTOM), (ART_SPINE_X, mid)], fill=ART_LINE_RGBA)
+    d.line([(ART_SPINE_X, mid), (ART_BOX[0], mid)], fill=ART_LINE_RGBA)
+    d.rectangle([ART_BOX[0], ART_BOX[1],
+                 ART_BOX[0] + ART_BOX_SIZE - 1, ART_BOX[1] + ART_BOX_SIZE - 1],
+                outline=ART_LINE_RGBA)
+    return im
+
+
+def art_has_node(path):
+    """True if the new box is already painted (probes its top-left corner pixel)."""
+    from PIL import Image
+    return Image.open(path).convert("RGBA").load()[ART_BOX[0], ART_BOX[1]][3] > 8
+
+
+def art_add(dry):
+    """Paint the new branch into the page art.
+
+    Deliberately a plain connector, not an arrowhead: in this artwork an arrow means
+    "same skill, higher rank" (2081 -> 2081 L6, 2221 -> 2221 L11). Calibrated Burst is
+    a distinct skill, so it gets the same plain line as the 2111/2131/2621 branches.
+
+    Saved UNCOMPRESSED. The original is DXT5 with 10 mips; Pillow can only write BGRA
+    here (350 KB -> 1 MB, no mips). Harmless for a UI sprite -- it is blitted 1:1 and
+    INIT.LUA setMipmapLevel(3) caps the chain anyway -- but it is a real format change,
+    hence the backup.
+    """
+    from PIL import Image
+    if art_has_node(TREE_ART):
+        print("  art: branch already painted, skipping")
+        return
+    if dry:
+        print("  art: would paint a box at art%s and extend the spine" % (ART_BOX,))
+        return
+    if not os.path.exists(ART_BACKUP):
+        shutil.copyfile(TREE_ART, ART_BACKUP)
+        _hide(ART_BACKUP)
+        print("  art: backed up -> %s (hidden)" % os.path.basename(ART_BACKUP))
+    _art_draw(Image.open(TREE_ART).convert("RGBA")).save(TREE_ART)
+    print("  art: painted branch box at art%s -> dialog%s"
+          % (ART_BOX, (ART_BOX[0] + ART_ORIGIN[0], ART_BOX[1] + ART_ORIGIN[1])))
+
+
+def art_remove():
+    if os.path.exists(ART_BACKUP):
+        shutil.copyfile(ART_BACKUP, TREE_ART)
+        os.remove(ART_BACKUP)
+        print("  art: restored the original DXT5 page art")
+    else:
+        print("  art: no backup found -- page art left as-is")
 
 
 # ------------------------------------------------------------------ main
@@ -374,6 +474,7 @@ def main():
                 e.pop()
             stl_write(SKILL_STL, keys, langs)
         tree_remove(base)
+        art_remove()
         os.remove(SIDECAR)
         print(f"restored -- removed {RANKS} skill rows, the STL key and the tree node")
         return
@@ -403,6 +504,7 @@ def main():
             print(f"    row {r} col {c}: {got!r} != {w!r}")
         print(f"STL key present: {any(k == f'LSkill{base}'.encode() for k, _ in keys)}")
         print(f"tree node present: {f'INDEX=\"{base}\"' in raw}")
+        print("tree art branch painted:", art_has_node(TREE_ART))
         sys.exit(1 if bad else 0)
 
     if saved:
@@ -438,6 +540,7 @@ def main():
         print(f"  STL: added {key.decode()}")
 
     tree_add(base, False)
+    art_add(False)
 
     with open(SIDECAR, "w", encoding="utf-8") as fh:
         json.dump({"base_row": base, "ranks": RANKS, "name": NAME}, fh, indent=1)
