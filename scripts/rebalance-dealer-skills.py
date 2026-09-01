@@ -161,21 +161,36 @@ The Hawker's Double Shot line has the same defect. The obvious reading is that
 Triple Shot was authored as a three-hit skill and its hit count was never
 updated.
 
-The tempting fix -- set the hit count to 3 -- is NOT done here, for the reason in
-the next section: the client consumes one queued DamageEvent per hit frame of the
-motion, and while Triple Attack proves *some* motion 92 services three hits, the
-animation index resolves per weapon type, so a gun's motion 92 may not. That
-wants a deliberate, in-game-tested change, not a data tweak. Both profiles close
-the cliff with power and cooldown instead, which needs no such assumption.
+**The hit count is now corrected to 3**, which was held back until the animation
+could be checked rather than assumed. It checks out: `SKILL_ANI_ACTION_TYPE` 92
+resolves through `TYPE_MOTION` column 12 (the gun column) to
+`3DDATA/MOTION/AVATAR/gun_3attack_m1.zmo`, which is present on disk -- a
+purpose-built three-shot gun animation that **Triple Shot already pointed at**
+while carrying a hit count of 2. Triple Attack uses the same action type with a
+hit count of 3 and works. So the motion services three hits and the third was
+simply never switched on.
+
+Power is rescaled to suit: at the old 2-hit curve a third hit would have made
+rank 11 a 50% jump over rank 10. Burst runs 175->335 and parity 65->110, both at
+3 hits, so rank 11 is a ~1.3x step up from Twin Shot rank 10 rather than a cliff
+in either direction.
+
+Caveat worth keeping: the filename and Triple Attack's behaviour are strong
+evidence, not proof -- the ZMO's hit-frame events were not parsed. If a third
+damage number fails to appear in game, the client is orphaning the event and the
+count should go back to 2.
 
 Things worth knowing before changing these numbers
 --------------------------------------------------
-* **SKILL_ANI_HIT_COUNT (col 70) is deliberately untouched.** Raising Twin
-  Shot's 2 hits to 3 would multiply damage directly (`wHitCNT` multiplies in
-  `Get_SkillDAMAGE`) but the client consumes exactly one queued DamageEvent per
-  hit frame of the motion. A count the animation cannot service orphans an
-  event, which is the failure mode the whole combat-presentation machinery in
-  the client CLAUDE.md exists to handle. Not a tuning knob.
+* **SKILL_ANI_HIT_COUNT (col 70) is only safe to change when the motion backs
+  it.** It multiplies damage directly (`wHitCNT` in `Get_SkillDAMAGE`), but the
+  client consumes exactly one queued DamageEvent per hit frame of the motion, so
+  a count the animation cannot service orphans an event -- the failure mode the
+  whole combat-presentation machinery in the client CLAUDE.md exists to handle.
+  Triple Shot qualifies because its animation is literally `gun_3attack_m1.zmo`.
+  Do not raise it on a skill whose motion has not been checked the same way:
+  resolve `SKILL_ANI_ACTION_TYPE` through `TYPE_MOTION` at the skill's **own
+  weapon column** and read the `FILE_MOTION` path.
 * **AoE is not available on these skills.** `SKILL_SCOPE` (col 8) only spreads
   the *status effect* for SKILL_TYPE 3 (`Skill_ChangeIngSTATUS`); AoE *damage*
   goes through `Skill_DamageToAROUND`, which only types 7 and 17 reach. Giving
@@ -217,8 +232,9 @@ COL_LEVEL = 2       # SKILL_LEVEL, the rank within the family
 COL_POWER = 9       # SKILL_POWER
 COL_MP = 17         # SKILL_USE_VALUE(s, 0)
 COL_RELOAD = 20     # SKILL_RELOAD_TIME, x 0.2s (io_skill.cpp: x200 - 100 ms)
+COL_HITS = 70       # SKILL_ANI_HIT_COUNT -- see the Triple Shot note below
 
-WRITTEN = (COL_POWER, COL_RELOAD, COL_MP)   # order matches the sidecar tuples
+WRITTEN = (COL_POWER, COL_RELOAD, COL_MP, COL_HITS)   # order matches the sidecar tuples
 RANKS = 10
 # base row -> (expected name, SKILL_1LEV_INDEX the rows share, first rank number).
 # Twin Shot's family continues under a different *name* at rank 11, so the family
@@ -243,22 +259,25 @@ def lin(a, b, n=RANKS):
 # profile -> base row -> (power, reload, mp); None leaves that column vanilla.
 PROFILES = {
     "parity": {
-        2201: (lin(45, 135), [28, 28, 28, 28, 29, 29, 29, 29, 30, 30], None),
-        2221: (None, [27, 26, 25, 24, 23, 22, 21, 20, 19, 18], None),
-        2231: (lin(95, 150), lin(20, 18), None),     # ranks 11-20, see below
-        2281: ([75, 86, 97, 108, 119, 130, 141, 152, 163, 175], [42] * 10, None),
+        2201: (lin(45, 135), [28, 28, 28, 28, 29, 29, 29, 29, 30, 30], None, None),
+        2221: (None, [27, 26, 25, 24, 23, 22, 21, 20, 19, 18], None, None),
+        # ranks 11-20. Hit count corrected 2 -> 3, power rescaled to suit.
+        2231: (lin(65, 110), lin(20, 18), None, [3] * 10),
+        2281: ([75, 86, 97, 108, 119, 130, 141, 152, 163, 175], [42] * 10, None, None),
     },
     "burst": {
         # -- the original three, plus Twin Shot's rank 11-20 continuation
-        2201: (lin(80, 460), lin(50, 42), lin(10, 30)),      # nuke: reliable mid
-        2221: (lin(50, 220), lin(27, 22), lin(12, 26)),      # filler: fast + cheap
-        2231: (lin(260, 480), lin(21, 18), lin(28, 48)),
-        2281: (lin(150, 900), lin(80, 65), lin(25, 95)),     # slam: 3 m risk, biggest
+        2201: (lin(80, 460), lin(50, 42), lin(10, 30), None),      # nuke: reliable mid
+        2221: (lin(50, 220), lin(27, 22), lin(12, 26), None),      # filler: fast + cheap
+        # ranks 11-20. Hit count corrected 2 -> 3, power rescaled to suit: at the
+        # old 260->480 a third hit would have been a 50% jump on rank 11.
+        2231: (lin(175, 335), lin(21, 18), lin(28, 48), [3] * 10),
+        2281: (lin(150, 900), lin(80, 65), lin(25, 95), None),     # slam: 3 m risk, biggest
         # -- the rest of the Dealer's offensive kit
-        2211: (lin(200, 850), lin(70, 55), lin(60, 130)),    # safe big hit, pricey
-        2261: (lin(150, 560), lin(50, 40), lin(30, 65)),     # 37-42 m, efficient
-        2271: (lin(100, 330), lin(60, 45), lin(30, 60)),     # AoE poison softener
-        2311: (lin(180, 620), lin(35, 26), lin(55, 150)),    # anti-armour, fast
+        2211: (lin(200, 850), lin(70, 55), lin(60, 130), None),    # safe big hit, pricey
+        2261: (lin(150, 560), lin(50, 40), lin(30, 65), None),     # 37-42 m, efficient
+        2271: (lin(100, 330), lin(60, 45), lin(30, 60), None),     # AoE poison softener
+        2311: (lin(180, 620), lin(35, 26), lin(55, 150), None),    # anti-armour, fast
     },
 }
 
@@ -362,7 +381,7 @@ def show(stb, want, vanilla, profile):
         rows = rows_for(stb, base)
         label, _family, first = FAMILIES[base]
         print(f"\n{label}  (rows {rows[0]}-{rows[-1]}, ranks {first}-{first + 9})")
-        print(f"  {'rank':>5}{'power':>16}{'cooldown s':>20}{'MP':>14}")
+        print(f"  {'rank':>5}{'power':>16}{'cooldown s':>20}{'MP':>14}{'hits':>10}")
         for n, r in enumerate(rows):
             was = vanilla.get(r) or tuple(gi(stb, r, c) for c in WRITTEN)
             new = want[r]
@@ -373,7 +392,7 @@ def show(stb, want, vanilla, profile):
                     cells.append(f"{w:.1f} -> {v:.1f}" if w != v else f"{w:.1f} =")
                 else:
                     cells.append(f"{w} -> {v}" if w != v else f"{w} =")
-            print(f"  {first + n:>5}{cells[0]:>16}{cells[1]:>20}{cells[2]:>14}")
+            print(f"  {first + n:>5}{cells[0]:>16}{cells[1]:>20}{cells[2]:>14}{cells[3]:>10}")
 
 
 def main():
