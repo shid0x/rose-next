@@ -20,6 +20,28 @@ enum class PresentationResult {
     PresentedDeath,
 };
 
+// Client-synthesized event ids live in the top half of the id space.
+//
+// The server's g_nextCombatEventId starts at 1 and hands out ids for every swing
+// and damage event in the process; the client mints its own ids for legacy
+// GSV_DAMAGE / GSV_DAMAGE_OF_SKILL packets, which carry none. Both feed the same
+// per-defender queue, and event_id is the key for push() dedupe, discard_event(),
+// has_event() and ClearPendingCombatSwingPresentation() -- so an id that exists on
+// both sides is not a cosmetic clash. A colliding push is **silently dropped**
+// (that hit shows no digit and loses its HP checkpoint), and a discard keyed on the
+// id can take the wrong event out from under a live swing.
+//
+// The client counters used to start at 1 alongside the server's, overlapping for
+// the whole low range -- observed live with server ids at 1..330 and legacy skill
+// ids at 1..10 in the same five minutes. Offsetting by 1e6 was the earlier
+// mitigation and only moved the problem: at a busy zone's event rate the server
+// walks into those bands within days of uptime. Setting the high bit puts client
+// ids somewhere the server cannot reach without issuing 2^31 events.
+//
+// Every client-side synthetic id must be built from this base. Keep the per-source
+// offsets distinct so the four legacy paths stay separable in a log.
+constexpr uint32_t kClientSyntheticEventIdBase = 0x80000000u;
+
 struct DamageEvent {
     uint32_t event_id = 0;
     uint32_t defender_seq = 0;
@@ -152,6 +174,54 @@ public:
     bool pop_stale_lethal(uint32_t now_ms, uint32_t grace_ms, int32_t dead_hp, DamageEvent& out) {
         return pop_stale_lethal(
             now_ms, grace_ms, grace_ms, dead_hp, [](const DamageEvent&) { return false; }, out);
+    }
+
+    // A *non-lethal* deferred event whose presentation vehicle no longer exists.
+    //
+    // Deferred events are consumed by the attacker's hit frame / projectile impact,
+    // so every cancellation path lives on the attacker side. When the attacker
+    // object itself goes away -- it left the sector, the zone changed, or two swings
+    // were in flight and only the newest one was tracked -- nothing is left to run
+    // those paths and the event sits here forever. That is not a cosmetic leak:
+    // has_pending_damage() gates both reconciliation paths, so one stranded entry
+    // disables HP convergence for this defender permanently.
+    //
+    // still_live(event) reports that the attacker can still present it (it is alive
+    // and swinging, or its projectile is in flight); hard_cap_ms bounds that
+    // deferral so an attacker that swings forever at somebody else cannot pin an
+    // event here indefinitely.
+    //
+    // Lethal events are deliberately excluded -- pop_stale_lethal and the
+    // pending-authoritative-death backstop resolve those by presenting a death,
+    // which is not what a silent HP fold should ever do.
+    template <typename StillLive>
+    bool pop_stale_orphan(uint32_t now_ms,
+        uint32_t grace_ms,
+        uint32_t hard_cap_ms,
+        int32_t dead_hp,
+        StillLive&& still_live,
+        DamageEvent& out) {
+        for (auto it = m_events.begin(); it != m_events.end(); ++it) {
+            if (it->presentation_kind != DamagePresentationKind::MeleeHitFrame
+                && it->presentation_kind != DamagePresentationKind::ProjectileImpact) {
+                continue;
+            }
+            if (it->lethal || it->hp_after <= dead_hp) {
+                continue;
+            }
+            const uint32_t age_ms = now_ms - it->queued_at_ms;
+            if (age_ms < grace_ms) {
+                continue;
+            }
+            if (age_ms < hard_cap_ms && still_live(*it)) {
+                continue;
+            }
+
+            out = *it;
+            m_events.erase(it);
+            return true;
+        }
+        return false;
     }
 
     // Is a committed death sitting in this queue, waiting for its animation frame?

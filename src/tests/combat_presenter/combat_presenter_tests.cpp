@@ -212,6 +212,28 @@ struct HpHarness {
         }
     }
 
+    // Mirrors CObjCHAR::Proc()'s orphaned-damage sweep: a non-lethal deferred event
+    // whose attacker can no longer present it (object destroyed, no longer swinging)
+    // is folded into shadow HP and dropped. Without this a stranded entry keeps
+    // has_pending_damage() true forever, which gates off BOTH reconciliation paths.
+    template <typename StillLive>
+    int sweep_orphans(uint32_t now_ms,
+        uint32_t grace_ms,
+        uint32_t hard_cap_ms,
+        StillLive&& still_live) {
+        static const int kDeadHp = 0;
+        DamageEvent e;
+        int swept = 0;
+        while (queue.pop_stale_orphan(now_ms, grace_ms, hard_cap_ms, kDeadHp, still_live, e)) {
+            ++swept;
+            set_authoritative_from_event(e);
+        }
+        if (swept > 0) {
+            defer_if_idle();
+        }
+        return swept;
+    }
+
     // Mirrors CObjCHAR::PresentPendingAuthoritativeDeath: turn a flagged pending
     // authoritative death into an actual death (no digit, no damage). Used both by
     // the Layer 1 mutual-death-on-kill path and the Proc() backstop timeout.
@@ -974,6 +996,79 @@ main() {
             "immediate mutual-death present clears the pending flag");
         expect(h.displayed_damage != 20,
             "mutual-death present must not show a phantom damage digit from the orphan");
+    }
+
+    {
+        // A single stranded orphan disables reconciliation for good -- the reason
+        // the drain-on-death tests above can all pass while the system looks broken
+        // in a real session. A monster that swings and then leaves the sector
+        // (gsv_SUB_OBJECT -> CObjectMANAGER::Del_Object) or a zone change
+        // (CObjectMANAGER::Clear) destroys the only object that could ever present
+        // or cancel that event. It stays queued, has_pending_damage() stays true,
+        // and that gates off BOTH the checkpoint fold in ApplyPresentedCombatDamage
+        // and DeferCombatHPDriftIfIdle. Every later hit then moves the bar by its
+        // own digit alone and the drift only accumulates.
+        HpHarness h;
+        h.queue.push(event(99, 77, 20, 80)); // attacker 77 is about to be deleted
+        h.queue.push(event(1, 10, 20, 60));
+        h.drain_from_attacker(10);
+        expect(h.pending_correction == 0,
+            "a stranded orphan gates DeferCombatHPDriftIfIdle off entirely");
+
+        h.queue.push(event(2, 11, 25, 35));
+        h.hit(11);
+        expect(h.visible_hp == 75,
+            "poisoned gate: the bar moves by its own digit only, drift is not folded");
+        expect(h.authoritative_hp == 35,
+            "shadow HP still tracks the server correctly while the bar drifts");
+
+        // Proc()'s sweep resolves the orphan; convergence resumes immediately.
+        const int swept =
+            h.sweep_orphans(4000, 3000, 8000, [](const DamageEvent&) { return false; });
+        expect(swept == 1, "the sweep takes the stranded orphan once it is stale");
+        expect(h.authoritative_hp == 35,
+            "sweeping an older orphan must not raise shadow HP back up (lower-only)");
+
+        h.queue.push(event(3, 11, 10, 25));
+        h.hit(11);
+        expect(h.visible_hp == 25,
+            "reconciliation converges again once the stranded orphan is gone");
+        expect(h.displayed_damage == 10,
+            "the folded drift stays hidden from the damage digit");
+    }
+
+    {
+        // The sweep must not steal a presentation that is still coming. An attacker
+        // that is alive and still swinging keeps producing hit frames, and the queue
+        // drains oldest-first, so its own older event is still reachable.
+        HpHarness h;
+        h.queue.push(event(1, 10, 20, 80));
+        expect(h.sweep_orphans(4000, 3000, 8000, [](const DamageEvent&) { return true; }) == 0,
+            "a live swing defers the sweep");
+        expect(h.hit(10) == PresentationResult::PresentedDamage,
+            "the deferred event still presents normally");
+        expect(h.visible_hp == 80, "and it converges the bar the usual way");
+    }
+
+    {
+        // ...but the deferral is bounded. An attacker that swings forever at someone
+        // else must not pin an event in our queue for the rest of the session.
+        HpHarness h;
+        h.queue.push(event(1, 10, 20, 80));
+        expect(h.sweep_orphans(9000, 3000, 8000, [](const DamageEvent&) { return true; }) == 1,
+            "the hard cap sweeps a live-swing event that never arrived");
+        expect(h.authoritative_hp == 80, "the swept event still folds its server HP");
+        expect(h.visible_hp == 100, "sweeping is silent -- it never moves the bar itself");
+    }
+
+    {
+        // Lethal orphans are deliberately out of scope: pop_stale_lethal and the
+        // pending-authoritative-death backstop present a death for those, and a
+        // silent HP fold would strand the player alive-client / dead-server.
+        HpHarness h;
+        h.queue.push(event(1, 10, 20, 0, true));
+        expect(h.sweep_orphans(9999, 3000, 8000, [](const DamageEvent&) { return false; }) == 0,
+            "the orphan sweep must leave lethal events to the death paths");
     }
 
     {

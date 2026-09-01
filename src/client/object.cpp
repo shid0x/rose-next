@@ -200,6 +200,14 @@ void
 CObjectMANAGER::Clear(short nExceptObjIndex) {
     //	WORD wMyServerObjIDX = m_wClient2ServerOBJ[ nExceptObjIndex ];
 
+    /// Zone change wipes every object except the avatar, so nothing is left that
+    /// could present the damage those objects had queued on it. Drop the whole
+    /// queue up front rather than letting Del_Object fold each entry into shadow
+    /// HP: the server re-states the avatar's HP on JOIN_ZONE, and a checkpoint from
+    /// the zone we are leaving has no authority over the one we are entering.
+    if (g_pAVATAR)
+        g_pAVATAR->ClearAllDamage();
+
     for (short nI = MIN_OBJECTS; nI < MAX_CLIENT_OBJECTS; nI++) {
         if (nExceptObjIndex != nI)
             Del_Object(nI);
@@ -224,6 +232,28 @@ void
 CObjectMANAGER::Del_Object(CGameOBJ* pObject) {
     if (NULL == pObject)
         return;
+
+    /// A departing character takes its unpresented combat damage with it. Deferred
+    /// damage events are consumed by the *attacker's* hit frame, so once this
+    /// object is gone nothing can ever present -- or cancel -- what it already
+    /// queued on the avatar. The entry would sit in the avatar's queue forever,
+    /// and has_pending_damage() gates both HP reconciliation paths, so a single
+    /// stranded event silently disables HP convergence for the rest of the session.
+    /// (CObjCHAR::Proc()'s orphan sweep is the timed safety net; this is the exact
+    /// one, and it also runs before the client object slot can be recycled -- a
+    /// reused index would otherwise hand this event to whatever spawns next.)
+    ///
+    /// Death presentation is suppressed: we are inside object destruction, and
+    /// Dead() -> ClearAllEntityList() must not run against a half-deleted world.
+    /// A lethal orphan stays armed for the Proc() pending-death backstop.
+    /// Not IsCHAR(): that is `Get_TYPE() >= OBJ_NPC`, and OBJ_EVENTOBJECT sorts
+    /// above OBJ_CGEAR in t_ObjTAG while CObjFixedEvent is not a CObjCHAR.
+    const int iDelTYPE = pObject->Get_TYPE();
+    if (g_pAVATAR && pObject != (CGameOBJ*)g_pAVATAR && iDelTYPE >= OBJ_NPC
+        && iDelTYPE <= OBJ_CGEAR) {
+        g_pAVATAR->DrainQueuedCombatDamageFromAttacker((CObjCHAR*)pObject,
+            /*bAllowDeathPresentation=*/false);
+    }
 
     m_nServer2ClientOBJ[m_wClient2ServerOBJ[pObject->m_nIndex]] = 0;
     m_wClient2ServerOBJ[pObject->m_nIndex] = 0;

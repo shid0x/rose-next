@@ -2907,7 +2907,7 @@ CObjCHAR::DiscardQueuedCombatDamageEvent(uint32_t eventId, CObjCHAR* pAtkOBJ, co
 }
 
 void
-CObjCHAR::DrainQueuedCombatDamageFromAttacker(CObjCHAR* pAtkOBJ) {
+CObjCHAR::DrainQueuedCombatDamageFromAttacker(CObjCHAR* pAtkOBJ, bool bAllowDeathPresentation) {
     const int iAttacker = pAtkOBJ ? pAtkOBJ->Get_INDEX() : 0;
     Rose::Combat::DamageEvent event;
     int iDrained = 0;
@@ -2947,10 +2947,20 @@ CObjCHAR::DrainQueuedCombatDamageFromAttacker(CObjCHAR* pAtkOBJ) {
     // lethal event and the killer object) instead of stranding the avatar
     // pending-dead / frozen. If this is somehow not reached, the Proc() backstop
     // timeout still catches it.
-    if (bLethalOrphan && this == g_pAVATAR) {
+    //
+    // The caller opts out when it is tearing the attacker object down
+    // (CObjectMANAGER::Del_Object). Presenting a death from inside object
+    // destruction would re-enter Dead() -> ClearAllEntityList() on a half-deleted
+    // world; the Proc() pending-death backstop -- already armed by
+    // PushCombatDamageEvent when the lethal event was queued -- presents it a frame
+    // later instead.
+    if (bLethalOrphan && this == g_pAVATAR && bAllowDeathPresentation) {
         MarkPendingAuthoritativeDeath("attacker died mid-swing");
         PresentPendingAuthoritativeDeath(pAtkOBJ, "attacker died mid-swing");
     } else {
+        if (bLethalOrphan && this == g_pAVATAR) {
+            MarkPendingAuthoritativeDeath("attacker object destroyed mid-swing");
+        }
         DeferCombatHPDriftIfIdle("attacker died mid-swing");
     }
 }
@@ -3060,7 +3070,11 @@ CObjCHAR::ConvertDamageOfSkillToDamage(gsv_DAMAGE_OF_SKILL stDamageOfSkill, uint
     pAtkOBJ = g_pObjMGR->Get_ClientCharOBJ(stDamageOfSkill.m_wSpellObjIDX, false);
 
     if (pAtkOBJ) {
-        static uint32_t s_LegacySkillDamageEventId = 1;
+        // Same id space as the server's swings -- see kClientSyntheticEventIdBase.
+        // This is the counter that was observed colliding: legacy skill hits were
+        // numbered 1, 2, 3 ... while live server swing ids sat in the same range.
+        static uint32_t s_LegacySkillDamageEventId =
+            Rose::Combat::kClientSyntheticEventIdBase + 5000000;
 
         Rose::Combat::DamageEvent event;
         event.event_id = s_LegacySkillDamageEventId++;
@@ -3921,9 +3935,10 @@ CObjCHAR::Proc(void) {
     //
     // The grace window matters: StartConfirmedCombatSwing queues the event and then
     // calls SetCMD_ATTACK, which pushes onto m_CommandQueue instead of applying when
-    // CanApplyCommand() is false (the attacker is casting). During that window the
-    // attack motion legitimately does not exist yet, and cancelling would throw away
-    // a swing that is about to be presented normally.
+    // CanApplyCommand() is false (the attacker is casting, or its own command queue
+    // has not drained). During that window the attack motion legitimately does not
+    // exist yet, and cancelling would throw away a swing that is about to be
+    // presented normally.
     // (m_dwPendingCombatSwingTime is stamped whenever the event id is set, so the
     // id being non-zero is the only liveness check needed -- do not also test the
     // stamp against 0, which is a legitimate tick value.)
@@ -3932,15 +3947,56 @@ CObjCHAR::Proc(void) {
     // a mounted rider tracks the swing but never plays it, so testing the rider
     // cancelled *every* mounted swing at the grace boundary. Castle gear hit
     // frames land at 0.70-1.17 s (51-frame motions, action points at frames
-    // 21-35), straddling the 1000 ms window -- which is why it presented as
+    // 21-35), straddling the old 1000 ms window -- which is why it presented as
     // intermittent phantom swings rather than as no mounted damage at all.
-    static const DWORD kOrphanedSwingGraceMs = 1000;
+    //
+    // 3000 ms, not 1000: castle gear was not the only thing straddling it.
+    // Measured over a real session (client.log, CombatTrace "combat swing received"
+    // paired with "queued presentation pop" by event id), the client's own
+    // swing-to-hit-frame latency for ordinary monsters ran to a **median of 1 s,
+    // with 23% of swings at 2 s or more and a maximum of 3 s** -- attack motions are
+    // long, the client presents a full swing behind the server's cadence when a
+    // packet lands while CanApplyCommand() is false, and monsters reposition between
+    // swings so the state test below reads "not attacking" mid-sequence. At 1000 ms
+    // this sweep raced legitimate swings and won: the event was discarded, then the
+    // real hit frame arrived ~1 s later to an empty queue and Hitted() presented
+    // *nothing* -- no digit, no hit effect, no sound. On screen that is a monster
+    // visibly connecting for free, standing right next to you. Server HP was still
+    // correct (the discard folds it into the shadow, and the next real hit
+    // reconciles the bar), so it was a pure presentation loss and easy to misread as
+    // a dodge.
+    //
+    // A non-empty command queue is an *exact* liveness signal for the case the grace
+    // only approximates -- SetCMD_ATTACK went to m_CommandQueue and the motion has
+    // not started yet -- so a queued command defers the cancel outright. Both are
+    // wanted: the queue term catches the deterministic case, the wider grace covers
+    // the between-swings reposition it cannot see.
+    //
+    // Widening is safe now in a way it was not before: the defender-side
+    // orphaned-damage sweep further down resolves anything this misses (3 s grace,
+    // 8 s hard cap), so this no longer has to be the safety net -- and its resolution
+    // is a silent HP fold either way, so being later costs nothing visible.
+    static const DWORD kOrphanedSwingGraceMs = 3000;
     if (m_dwPendingCombatSwingEventId != 0
         && !(m_bPendingCombatSwingProjectile && m_bPendingCombatSwingProjectileSpawned)
         && (dwCurrentTime - m_dwPendingCombatSwingTime) >= kOrphanedSwingGraceMs) {
         CObjCHAR* pSwingMotionOBJ = this->GetCombatSwingMotionOBJ();
         if (!(pSwingMotionOBJ->Get_STATE() & CS_BIT_ATTACK)
-            && pSwingMotionOBJ->Get_COMMAND() != CMD_ATTACK) {
+            && pSwingMotionOBJ->Get_COMMAND() != CMD_ATTACK
+            && pSwingMotionOBJ->m_CommandQueue.IsEmpty()) {
+            // Only fires on an actual cancel, so it is free in the common case --
+            // and it is the line that separates "the swing really was interrupted"
+            // from "we cancelled a swing that was still coming" if a silent
+            // unpresented hit is ever reported again.
+            LogString(LOG_DEBUG_,
+                "CombatTrace swing motion cancelled: attacker %d motion obj %d defender %d event %u age %u state 0x%x command %d\n",
+                this->Get_INDEX(),
+                pSwingMotionOBJ->Get_INDEX(),
+                m_iPendingCombatSwingDefenderIndex,
+                m_dwPendingCombatSwingEventId,
+                (unsigned int)(dwCurrentTime - m_dwPendingCombatSwingTime),
+                (unsigned int)pSwingMotionOBJ->Get_STATE(),
+                pSwingMotionOBJ->Get_COMMAND());
             CancelInterruptedCombatSwingPresentation("swing motion cancelled");
         }
     }
@@ -3991,6 +4047,100 @@ CObjCHAR::Proc(void) {
                 static_cast<int>(m_CombatDamageQueue.size()));
             ApplyPresentedCombatDamage(pAtkOBJ, staleDeathEvent);
             CreateImmediateDigitEffect(staleDeathEvent.raw_damage);
+        }
+    }
+
+    // Orphaned *non-lethal* damage sweep, defender side. Every cancellation path
+    // for a deferred event lives on the attacker: the hit frame consumes it,
+    // Dead() drains it, the swing sweep above cancels it. All three need the
+    // attacker object to still exist and to still be tracking that exact event.
+    // None of that holds when the attacker simply goes away -- it walked out of our
+    // sectors (gsv_SUB_OBJECT -> CObjectMANAGER::Del_Object), the zone changed
+    // (CObjectMANAGER::Clear), or it had two swings in flight and only the newest
+    // one was ever tracked in m_dwPendingCombatSwingEventId.
+    //
+    // A stranded entry is not a cosmetic leak. has_pending_damage() gates BOTH
+    // reconciliation paths -- the checkpoint fold in ApplyPresentedCombatDamage and
+    // DeferCombatHPDriftIfIdle -- so one of them disables HP convergence for this
+    // character for the rest of its life: every later hit then moves the bar by its
+    // own digit alone and the client/server drift only accumulates. That is why the
+    // drain-on-death machinery could be correct in isolation and still look broken
+    // in a real session.
+    //
+    // Resolve exactly like a discarded projectile: fold the server-applied HP into
+    // the shadow silently. No digit, no hit effect, no hit feedback -- the damage
+    // was never presented and inventing it late would be a phantom hit.
+    static const DWORD kOrphanedDamageGraceMs = 3000;
+    static const DWORD kOrphanedDamageHardCapMs = 8000;
+    auto fnPresentationStillLive = [](const Rose::Combat::DamageEvent& event) -> bool {
+        CObjCHAR* pAtkOBJ = g_pObjMGR->Get_CharOBJ(event.attacker_id, true);
+        if (!pAtkOBJ) {
+            return false;
+        }
+
+        // Still holding this exact event as its pending swing -- including a
+        // projectile already in flight, whose timing belongs to the bullet rather
+        // than to the attack motion.
+        if (pAtkOBJ->HasPendingCombatSwingEvent(event.event_id)) {
+            return true;
+        }
+        if (pAtkOBJ->IsPET()) {
+            CObjCHAR* pRider = ((CObjCART*)pAtkOBJ)->GetParent();
+            if (pRider && pRider->HasPendingCombatSwingEvent(event.event_id)) {
+                return true;
+            }
+        }
+
+        // A projectile's timing belongs to the bullet, not to the attack motion, so
+        // an idle attacker proves nothing -- and a skill projectile arrives as a
+        // FlatBuffer DamageEvent, which never records a pending swing to check
+        // against. The attacker still existing is all we can ask; the hard cap is
+        // what bounds it.
+        if (event.presentation_kind
+            == Rose::Combat::DamagePresentationKind::ProjectileImpact) {
+            return true;
+        }
+
+        // Otherwise: an attacker that is still swinging keeps producing hit frames,
+        // and the queue drains oldest-first, so an older event of its own is still
+        // reachable. The hard cap bounds this -- an attacker that swings forever at
+        // somebody else must not pin an event here for good.
+        return pAtkOBJ->Get_COMMAND() == CMD_ATTACK
+            || (pAtkOBJ->GetCombatSwingMotionOBJ()->Get_STATE() & CS_BIT_ATTACK) != 0;
+    };
+
+    if (this->Get_HP() > DEAD_HP) {
+        Rose::Combat::DamageEvent orphanEvent;
+        bool bSweptOrphan = false;
+        while (m_CombatDamageQueue.pop_stale_orphan(dwCurrentTime,
+            kOrphanedDamageGraceMs,
+            kOrphanedDamageHardCapMs,
+            DEAD_HP,
+            fnPresentationStillLive,
+            orphanEvent)) {
+            CObjCHAR* pAtkOBJ = g_pObjMGR->Get_CharOBJ(orphanEvent.attacker_id, false);
+            if (pAtkOBJ) {
+                pAtkOBJ->ClearPendingCombatSwingPresentation(orphanEvent.event_id);
+            }
+
+            bSweptOrphan = true;
+            SetAuthoritativeHPFromDamageEvent(orphanEvent);
+            LogString(LOG_DEBUG_,
+                "CombatTrace orphaned damage swept: attacker %d target %d kind %d damage %d hp_after %d event %u seq %u age %u visible hp %d queue %d\n",
+                orphanEvent.attacker_id,
+                this->Get_INDEX(),
+                static_cast<int>(orphanEvent.presentation_kind),
+                orphanEvent.damage_value,
+                orphanEvent.hp_after,
+                orphanEvent.event_id,
+                orphanEvent.defender_seq,
+                (unsigned int)(dwCurrentTime - orphanEvent.queued_at_ms),
+                this->Get_HP(),
+                static_cast<int>(m_CombatDamageQueue.size()));
+        }
+
+        if (bSweptOrphan) {
+            DeferCombatHPDriftIfIdle("orphaned damage swept");
         }
     }
 

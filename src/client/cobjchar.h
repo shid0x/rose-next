@@ -532,7 +532,8 @@ public:
     /// Drain every combat event this attacker queued on us that can no longer be
     /// presented (attacker died before its hit frame). Folds the lost HP into the
     /// reconciliation drift so the next presented hit absorbs it silently.
-    void DrainQueuedCombatDamageFromAttacker(CObjCHAR* pAtkOBJ);
+    void DrainQueuedCombatDamageFromAttacker(CObjCHAR* pAtkOBJ,
+        bool bAllowDeathPresentation = true);
     void ApplyPresentedCombatDamage(CObjCHAR* pAtkOBJ, Rose::Combat::DamageEvent& event);
     void ApplyPresentedCombatFeedback(CObjCHAR* pAtkOBJ,
         uint32_t rawDamage,

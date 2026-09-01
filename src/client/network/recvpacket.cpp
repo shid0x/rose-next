@@ -1892,7 +1892,8 @@ CRecvPACKET::Recv_gsv_DAMAGE() {
             pDefOBJ->m_bDead = true;
 
             uniDAMAGE damage = m_pRecvPacket->m_gsv_DAMAGE.m_Damage;
-            static uint32_t s_LegacyDeadDamageEventId = 3000000;
+            static uint32_t s_LegacyDeadDamageEventId =
+                Rose::Combat::kClientSyntheticEventIdBase + 3000000;
             Rose::Combat::DamageEvent event;
             event.event_id = s_LegacyDeadDamageEventId++;
             event.defender_seq = event.event_id;
@@ -1917,7 +1918,8 @@ CRecvPACKET::Recv_gsv_DAMAGE() {
 
         if (m_pRecvPacket->m_gsv_DAMAGE.m_Damage.m_wDamage & DMG_BIT_IMMEDIATE) {
             uniDAMAGE damage = m_pRecvPacket->m_gsv_DAMAGE.m_Damage;
-            static uint32_t s_LegacyImmediateDamageEventId = 1000000;
+            static uint32_t s_LegacyImmediateDamageEventId =
+                Rose::Combat::kClientSyntheticEventIdBase + 1000000;
             Rose::Combat::DamageEvent event;
             event.event_id = s_LegacyImmediateDamageEventId++;
             event.defender_seq = event.event_id;
@@ -1949,7 +1951,8 @@ CRecvPACKET::Recv_gsv_DAMAGE() {
         }
 
         uniDAMAGE damage = m_pRecvPacket->m_gsv_DAMAGE.m_Damage;
-        static uint32_t s_LegacyDamageEventId = 1;
+        static uint32_t s_LegacyDamageEventId =
+            Rose::Combat::kClientSyntheticEventIdBase + 4000000;
         Rose::Combat::DamageEvent event;
         event.event_id = s_LegacyDamageEventId++;
         event.defender_seq = event.event_id;
@@ -1983,7 +1986,8 @@ CRecvPACKET::Recv_gsv_DAMAGE() {
     }
 
     uniDAMAGE damage = m_pRecvPacket->m_gsv_DAMAGE.m_Damage;
-    static uint32_t s_LegacyMissingAttackerDamageEventId = 2000000;
+    static uint32_t s_LegacyMissingAttackerDamageEventId =
+        Rose::Combat::kClientSyntheticEventIdBase + 2000000;
     Rose::Combat::DamageEvent event;
     event.event_id = s_LegacyMissingAttackerDamageEventId++;
     event.defender_seq = event.event_id;
