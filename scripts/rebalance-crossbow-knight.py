@@ -13,6 +13,7 @@ A complete crossbow kit is already in the Soldier tree and essentially nobody
 uses it. Everything below already existed; none of it needed inventing:
 
     CrossBow Mastery  (271)  passive, AT_PSV_ATK_POW_AUTO_BOW, +4%..+26%
+                             (Knight-exclusive from rank 6 -- col 35 splits)
     Taunt Shot        (471)  applies ING_TAUNT -- forces a target onto you
     Heavy Bow Shot    (481)  the big close-range punish
     Slow Shot         (491)  Knight-only. Applies ING_DEC_MOV_SPD at 40-53%
@@ -49,14 +50,17 @@ slowed indefinitely rather than watching it wear off.
 
 And the mastery
 ---------------
-`CrossBow Mastery` goes from +4..26% to +6..35%, which is **parity, not a buff**.
+`CrossBow Mastery` goes from +4..26% to +6..40%, **back-loaded past its rank-6
+gate** -- col 35 re-declares the family as Knight-only there, so a Soldier or
+Champion holding a crossbow caps at 16% while a Knight reaches 40%. At the top
+that is **parity, not a buff**.
 A sword Knight stacks two masteries -- Weapon Mastery (+12%) and One-Hand
 Mastery (+25%) -- for 37% combined. A crossbow user gets exactly one, because
 weapon class 271 appears in the attack-power mapping and *not* in the
 attack-speed one (`CUserDATA::GetPassiveSkillAttackSpeed` covers bow, gun and
 katar only, and returns 0 for anything else). So a crossbow build can scale
-damage and can never scale attack speed, and 35% on one mastery lands just under
-what a sword gets from two.
+damage and can never scale attack speed, and 40% on one mastery lands just above
+what a sword gets from two -- which is the compensation for having only one.
 
 Things worth knowing
 --------------------
@@ -121,8 +125,12 @@ def lin(a, b, n=RANKS):
 # profile -> base row -> (power, reload, mp, rate); None keeps vanilla.
 PROFILES = {
     "marksman": {
-        # Parity with the two masteries a sword Knight stacks (12% + 25%).
-        271: (None, None, None, lin(6, 35)),
+        # Back-loaded past its rank-6 gate: a plain Soldier or a Champion with a
+        # crossbow caps at 16%, while a Knight -- who exclusively owns ranks 6-10
+        # -- reaches 40%, parity with the two masteries a sword Knight stacks
+        # (Weapon Mastery 12% + One-Hand Mastery 25%). That makes the crossbow a
+        # Knight weapon by progression rather than by convention.
+        271: (None, None, None, [6, 8, 11, 13, 16] + lin(24, 40, 5)),
         # Control: cooldown drops under the slow's own 16-20s duration, so a
         # kiter can actually keep something slowed instead of losing it.
         491: (lin(120, 380), lin(35, 25), lin(20, 60), None),

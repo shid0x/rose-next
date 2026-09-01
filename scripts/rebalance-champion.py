@@ -105,20 +105,25 @@ SK_POWER = 9
 SK_PROP0, SK_VAL0 = 16, 17
 SK_PROP1, SK_VAL1 = 18, 19
 SK_RELOAD = 20
+SK_FLAT = 22        # SKILL_INCREASE_ABILITY_VALUE(s,0) -- flat, e.g. Quick Step's speed
+SK_RATE = 23        # SKILL_CHANGE_ABILITY_RATE(s,0)    -- percentage, e.g. Berserk's ATK
 
 AT_HP, AT_MP = 16, 17           # t_AbilityINDEX, src/common/shared/datatype.h
 
-WRITTEN = (SK_POWER, SK_PROP0, SK_VAL0, SK_PROP1, SK_VAL1, SK_RELOAD)
-RANKS = 10
+WRITTEN = (SK_POWER, SK_PROP0, SK_VAL0, SK_PROP1, SK_VAL1, SK_RELOAD, SK_FLAT, SK_RATE)
 
-# base row -> (label, SKILL_1LEV_INDEX, first rank)
+# base row -> (label, SKILL_1LEV_INDEX, first rank, rank count)
 FAMILIES = {
-    661: ("Tendon Slash", 661, 1),
-    671: ("Champion Hit", 671, 1),
+    # Champion-exclusive from rank 1
+    661: ("Tendon Slash", 661, 1, 10),
+    671: ("Champion Hit", 671, 1, 10),
+    # families the Champion owns only past a mid-curve gate
+    281: ("Quick Step", 281, 1, 10),
+    361: ("Berserk", 361, 1, 20),
 }
 
 
-def lin(a, b, n=RANKS):
+def lin(a, b, n=10):
     return [round(a + (b - a) * k / (n - 1)) for k in range(n)]
 
 
@@ -127,11 +132,24 @@ PROFILES = {
     "berserker": {
         # The reach. Type 6, 20 m, usable with any weapon -- the Champion's only
         # answer to something it cannot walk to.
-        661: (lin(250, 700), None, None, None, None, lin(40, 30)),
+        661: (lin(250, 700), None, None, None, None, lin(40, 30), None, None),
         # The capstone, and the blood price: biggest single hit in the Soldier
         # line, bought with health rather than mana.
         671: (lin(400, 1200), [AT_HP] * 10, lin(120, 320),
-              [AT_MP] * 10, lin(40, 80), lin(70, 55)),
+              [AT_MP] * 10, lin(40, 80), lin(70, 55), None, None),
+
+        # Back-loaded: the shared low ranks are written back at their exact
+        # vanilla values so a Soldier or Knight gains nothing, and the payoff
+        # lands past the gate where only a Champion can reach it.
+        #
+        # Movement speed, Champion-exclusive from rank 6 -- what gets a
+        # two-hander into range before the fight is decided.
+        281: (None, None, None, None, None, None,
+              [30, 40, 52, 64, 76] + lin(105, 240, 5), None),
+        # ATK%, Champion-exclusive from rank 11 (20-rank family). The DEF% in the
+        # second ability slot is left at vanilla; this class is not a wall.
+        361: (None, None, None, None, None, None, None,
+              [10, 11, 12, 13, 14, 15, 16, 17, 18, 19] + lin(26, 52, 10)),
     },
 }
 
@@ -157,9 +175,9 @@ def gi(stb, r, c):
 
 def rows_for(stb, base):
     """Rank rows of one family, keyed on the family column and rank number."""
-    label, family, first = FAMILIES[base]
+    label, family, first, count = FAMILIES[base]
     out = []
-    for n in range(RANKS):
+    for n in range(count):
         r = base + n
         got = gi(stb, r, SK_FAMILY)
         if got != family:
@@ -207,14 +225,14 @@ def show(stb, want, vanilla, profile):
     AT = {0: "", AT_HP: " HP", AT_MP: " MP"}
     for base in sorted(PROFILES[profile]):
         rows = rows_for(stb, base)
-        label, _fam, first = FAMILIES[base]
+        label, _fam, first, _n = FAMILIES[base]
         print(f"\n{label}  (rows {rows[0]}-{rows[-1]})")
         print(f"  {'rank':>5}{'power':>16}{'cost slot 0':>20}"
-              f"{'cost slot 1':>16}{'cooldown s':>16}")
+              f"{'cost slot 1':>16}{'cooldown s':>16}{'flat':>12}{'rate %':>12}")
         for n, r in enumerate(rows):
-            wp, wp0, wv0, wp1, wv1, wrl = vanilla.get(r) or tuple(
+            wp, wp0, wv0, wp1, wv1, wrl, wfl, wrt = vanilla.get(r) or tuple(
                 gi(stb, r, c) for c in WRITTEN)
-            np_, np0, nv0, np1, nv1, nrl = want[r]
+            np_, np0, nv0, np1, nv1, nrl, nfl, nrt = want[r]
 
             def slot(op, ov, xp, xv):
                 if not op and not xp:
@@ -225,8 +243,11 @@ def show(stb, want, vanilla, profile):
             pw = f"{wp} -> {np_}" if wp != np_ else f"{wp} ="
             cd = (f"{wrl * 0.2:.1f} -> {nrl * 0.2:.1f}" if wrl != nrl
                   else f"{wrl * 0.2:.1f} =")
+            plain = lambda a, b: ("-" if a == b == 0 else
+                                  (f"{a} -> {b}" if a != b else f"{a} ="))
             print(f"  {first + n:>5}{pw:>16}{slot(wp0, wv0, np0, nv0):>20}"
-                  f"{slot(wp1, wv1, np1, nv1):>16}{cd:>16}")
+                  f"{slot(wp1, wv1, np1, nv1):>16}{cd:>16}"
+                  f"{plain(wfl, nfl):>12}{plain(wrt, nrt):>12}")
 
 
 def main():

@@ -62,6 +62,32 @@ magic-formula skills (Divine Force itself, Spin Attack) and **+10.7%** to the
 weapon-formula ones. Opening with it is a real, discoverable choice. The debuff
 columns are deliberately NOT touched here; only damage, cooldown and MP move.
 
+Who actually owns each rank
+---------------------------
+**`SKILL_AVAILBLE_CLASS_SET` (col 35) is declared per rank, not per family.**
+Rank 1 names the base class, the rank where the tree branches re-declares an
+advanced one, and ranks in between carry 0 meaning "inherit". Reading a family's
+first row therefore tells you nothing about who owns its upper half. Nine
+families in this tree split mid-curve:
+
+    Champion-exclusive from       Knight-exclusive from
+      Spin Attack/Twist Attack r6   Armor Mastery              r11
+      Blood Attack             r6   Shield Barrier             r6
+      Quick Step               r6   Endure                     r6
+      Berserk                 r11   Divine Force/Lightening    r6
+                                    CrossBow Mastery           r6
+
+The split is coherent -- Knight takes armour, shield, endure and the debuff;
+Champion takes the area attack, the heal, movement and Berserk.
+
+Three of those live in this file, and their curves are now **back-loaded**: the
+shared ranks 1-5 stay near vanilla so a plain Soldier gains little, and the
+payoff lands past the gate on the branch that owns it. Spin Attack becomes the
+Champion's area attack, Blood Attack (damage *and* heal) becomes the Champion's
+sustain, and Divine Lightening becomes the Knight's group debuff. The other six
+are handled in `rebalance-knight.py`, `rebalance-champion.py` and
+`rebalance-crossbow-knight.py`.
+
 Leaving room for the advanced classes
 -------------------------------------
 This profile was written before any Knight or Champion work and set the *base*
@@ -177,11 +203,17 @@ PROFILES = {
               lin(30, 78), None),                                   # crit gamble
         331: (lin(300, 520), lin(22, 18), lin(82, 130), None),      # 3 hits, r11-20
         341: (lin(180, 560), [60] * 10, lin(50, 110), None),        # the nuke
-        391: (lin(160, 420), [50] * 10, lin(40, 80), None),         # ranged + amp
-        401: (lin(130, 420), [75] * 10, lin(55, 110), None),        # AoE
+        # Split families: ranks 1-5 stay near vanilla, the exclusive upper half
+        # carries the payoff. See the ownership table in the docstring.
+        391: (lin(160, 260, 5) + lin(400, 700, 5),                  # -> KNIGHT at r6
+              [50] * 10, lin(40, 80), None),
+        401: (lin(130, 220, 5) + lin(380, 700, 5),                  # -> CHAMPION at r6
+              [75] * 10, lin(55, 110), None),
         471: (lin(90, 330), [25] * 10, lin(14, 38), None),          # crossbow, fast
         481: (lin(200, 620), [45] * 10, lin(26, 70), None),         # crossbow, big
-        651: (lin(150, 480), [55] * 10, lin(45, 90), lin(350, 1000)),   # sustain
+        651: (lin(150, 260, 5) + lin(380, 620, 5),                  # -> CHAMPION at r6
+              [55] * 10, lin(45, 90),
+              lin(300, 500, 5) + lin(750, 1400, 5)),                # the heal, likewise
     },
 }
 
