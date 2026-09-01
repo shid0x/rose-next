@@ -3126,6 +3126,33 @@ CObjCHAR::DropFieldItemFromList() {
     for (int i = 0; i < m_FieldItemList.size(); i++) {
         // gsv_ADD_FIELDITEM& ItemInfo = m_FieldItemList[ i ];
 
+        /// The same field item reaches the client twice on a skill kill, by two
+        /// different routes. Apply_DAMAGE activates the drop and inserts it into
+        /// the zone, so AddObjectToSector announces it as gsv_ADD_FIELDITEM; that
+        /// very same CObjITEM is then handed to Send_gsv_DAMAGE_OF_SKILL, which
+        /// appends it inline as a tag_DROPITEM and lands here.
+        ///
+        /// The sector broadcast wins the race -- it goes out at insertion, while
+        /// this list is only drained when the death animation presents -- so the
+        /// object already exists by the time we get here. Building a second one
+        /// makes Set_EmptySlot repoint m_nServer2ClientOBJ at it and orphan the
+        /// first: still drawn, no longer reachable by server index, so it can
+        /// never be picked up or removed. That is two identical items, one of
+        /// which loots and one of which is permanent.
+        ///
+        /// Recv_gsv_ADD_FIELDITEM guards the mirror-image case (announced twice
+        /// by the sector path). This is that guard for the inline-drop route.
+        /// Auto-attack kills never reach it: Send_gsv_DAMAGE2Sector has no
+        /// callers, so the FlatBuffer path carries no inline drop and announces
+        /// once -- which is why this reproduced only on skill kills.
+        CObjITEM* pExisting =
+            g_pObjMGR->Get_ClientItemOBJ(m_FieldItemList[i].m_wServerItemIDX);
+        if (pExisting) {
+            pExisting->m_wOwnerServerObjIDX = m_FieldItemList[i].m_wOwnerObjIDX;
+            pExisting->m_wRemainTIME = ITEM_OBJ_LIVE_TIME;
+            continue;
+        }
+
         int iItemOBJ = g_pObjMGR->Add_GndITEM(m_FieldItemList[i].m_wServerItemIDX,
             m_FieldItemList[i].m_ITEM,
             m_FieldItemList[i].m_PosCUR,
