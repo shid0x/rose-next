@@ -62,9 +62,8 @@ The ladder, at rank 10 (the Hawker's own ceiling), effective damage:
 
     Aim Shot        300  x1  5.0 s   bow, cheap and always ready
     Power Attack    320  x1  4.8 s   the melee twin of Aim Shot
-    Double Shot     330  x2  5.0 s   + slows the target's movement
-    Double Attack   270  x2  3.6 s   + STUNS; damage held down deliberately,
-                                     a 3.6 s stun is the real payload
+    Double Shot     330  x2  5.0 s   bow, the fast cycle
+    Double Attack   270  x2  3.6 s   melee, the fastest cycle in the class
     Spiral Kick     420  x1 11.0 s   the only Hawker AoE, 7 m
     Spirit Heart    430  x1  8.0 s   26 m, + slows the target's attack speed
     Flame Hawk      780  x1 14.0 s   40 m, the signature hit
@@ -73,6 +72,30 @@ For comparison the Dealer now sits at 460 (Power Gun Shot) to 900 (Smash Gun) on
 8-13 s cooldowns. The Hawker deliberately lands *under* that per hit and well
 under it per cooldown: this line's damage is supposed to come from attack speed
 and its skills from control, so the skills buy tempo rather than burst.
+
+Double Attack and Double Shot carry **no status effect at any rank** -- checked
+per row, not inferred from the family. An earlier draft of this file claimed
+Double Attack stuns and held its damage down to pay for it; that was a misread of
+the status column, taken from the last row of the family (which is Triple
+Attack rank 20) rather than from the rank in question. The stun and the slow are
+capstones on the *advanced* halves of those curves, at ranks 19-20 only:
+
+    Triple Attack  r19/20  Faint     15% / 20%,  4 s /  6 s   (RAIDER)
+    Triple Shot    r19/20  Slow Run  15% / 20%, 10 s / 15 s   (SCOUT)
+
+The numbers below were left unchanged anyway, on their own merit: Double
+Attack's axis is tempo, not size. At 3.6 s it is the fastest cycle in the class
+and already the highest sustained output in the set (75 damage/s against 54-67
+for the rest), which is the right shape for a melee skill with no utility
+attached and a position risk the bow skills do not take.
+
+The status effects that ARE real on this line, verified per rank:
+
+    Vanish          Sleep,     80% -> 104%, 16 -> 34 s  (7 m radius, 25 m range)
+    Holding Arrow   Slow Run,  70% ->  90%, 20 -> 26 s  (+ Slow Attack from r6)
+    Screw Attack    Def down,  35% ->  55%, 20 s
+    Spirit Heart    Slow Atk,  30% ->  62%, 15 -> 20 s
+    Hawk Shot       Faint,     30% ->  50%,  6 -> 10 s  (Scout, and r6+ only)
 
 Cooldowns that got worse as you ranked them
 -------------------------------------------
@@ -176,8 +199,8 @@ PROFILES = {
         # --- pure Hawker -------------------------------------------------
         1481: (lin(90, 300), cd(6.0, 5.0), lin(20, 40)),          # bow poke
         1501: (lin(95, 320), cd(5.6, 4.8), lin(20, 42)),          # melee poke
-        1521: (per_hit(120, 330, 2), cd(6.0, 5.0), lin(24, 50)),  # x2, + slow
-        1541: (per_hit(100, 270, 2), cd(5.4, 3.6), lin(22, 52)),  # x2, + STUN
+        1521: (per_hit(120, 330, 2), cd(6.0, 5.0), lin(24, 50)),  # x2, bow
+        1541: (per_hit(100, 270, 2), cd(5.4, 3.6), lin(22, 52)),  # x2, melee
         1571: (lin(120, 420), cd(14.0, 11.0), lin(35, 85)),       # 7 m AoE
         1601: (lin(140, 430), cd(10.0, 8.0), lin(40, 80)),        # 26 m, + slow atk
         1641: (lin(280, 780), cd(18.0, 14.0), lin(55, 120)),      # 40 m signature
