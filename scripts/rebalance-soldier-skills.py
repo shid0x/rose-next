@@ -195,13 +195,37 @@ def lin(a, b, n=RANKS):
     return [round(a + (b - a) * k / (n - 1)) for k in range(n)]
 
 
+# Multi-hit: power is NOT damage
+# ------------------------------
+# These families land more than once per cast -- the multiplier is the
+# animation's attack-frame count, not SKILL_ANI_HIT_COUNT (col 70), which is
+# dead data. Power therefore has to be set from *effective* damage.
+#
+# The ceiling comes from vanilla rather than from taste. Vanilla made multi-hit
+# the high-damage mana-burner deliberately, and the two source lines disagreed
+# about how far: the Soldier's multi-hit sat at 3.2-4.0x its own single-hit
+# median, the Dealer's at 1.7-2.4x. Restoring each line's own ratio would put a
+# dominant button straight back into the Soldier tree, so the Dealer's -- the
+# moderate precedent -- is the house standard for every line:
+#
+#     x2 per cast  ->  1.68x the line's single-hit median damage/second
+#     x3 per cast  ->  2.36x
+#
+# Rank-11 power curves are deliberately shallow. The upgrade from the x2 skill
+# to the x3 skill is the extra hit and the cooldown, not raw power; letting
+# power climb as well puts the ceiling back. Each x3 curve starts at whatever
+# lands on the x2 family's rank-10 damage/second, so the rename is never a
+# downgrade.
+
 # profile -> base row -> (power, reload, mp, heal); None leaves that column vanilla.
 PROFILES = {
     "brawl": {
         301: (lin(80, 260), [25] * 10, lin(8, 24), None),           # cheap, fast
-        321: (lin(110, 380), [27, 26, 25, 24, 23, 22, 21, 20, 19, 18],
+        # x2 per cast -> 95 dmg/s (1.68 x the 56 dmg/s single-hit median)
+        321: (lin(60, 170), [27, 26, 25, 24, 23, 22, 21, 20, 19, 18],
               lin(30, 78), None),                                   # crit gamble
-        331: (lin(300, 520), lin(22, 18), lin(82, 130), None),      # 3 hits, r11-20
+        # x3 per cast -> 133 dmg/s; starts at 140 so rank 11 matches rank 10
+        331: (lin(140, 160), lin(22, 18), lin(82, 130), None),      # 3 hits, r11-20
         341: (lin(180, 560), [60] * 10, lin(50, 110), None),        # the nuke
         # Split families: ranks 1-5 stay near vanilla, the exclusive upper half
         # carries the payoff. See the ownership table in the docstring.

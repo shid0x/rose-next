@@ -62,8 +62,8 @@ The ladder, at rank 10 (the Hawker's own ceiling), effective damage:
 
     Aim Shot        300  x1  5.0 s   bow, cheap and always ready
     Power Attack    320  x1  4.8 s   the melee twin of Aim Shot
-    Double Shot     330  x2  5.0 s   bow, the fast cycle
-    Double Attack   270  x2  3.6 s   melee, the fastest cycle in the class
+    Double Shot     468  x2  5.0 s   bow, the fast cycle
+    Double Attack   336  x2  3.6 s   melee, the fastest cycle in the class
     Spiral Kick     420  x1 11.0 s   the only Hawker AoE, 7 m
     Spirit Heart    430  x1  8.0 s   26 m, + slows the target's attack speed
     Flame Hawk      780  x1 14.0 s   40 m, the signature hit
@@ -199,8 +199,8 @@ PROFILES = {
         # --- pure Hawker -------------------------------------------------
         1481: (lin(90, 300), cd(6.0, 5.0), lin(20, 40)),          # bow poke
         1501: (lin(95, 320), cd(5.6, 4.8), lin(20, 42)),          # melee poke
-        1521: (per_hit(120, 330, 2), cd(6.0, 5.0), lin(24, 50)),  # x2, bow
-        1541: (per_hit(100, 270, 2), cd(5.4, 3.6), lin(22, 52)),  # x2, melee
+        1521: (per_hit(140, 468, 2), cd(6.0, 5.0), lin(24, 50)),  # x2, bow
+        1541: (per_hit(120, 336, 2), cd(5.4, 3.6), lin(22, 52)),  # x2, melee
         1571: (lin(120, 420), cd(14.0, 11.0), lin(35, 85)),       # 7 m AoE
         1601: (lin(140, 430), cd(10.0, 8.0), lin(40, 80)),        # 26 m, + slow atk
         1641: (lin(280, 780), cd(18.0, 14.0), lin(55, 120)),      # 40 m signature
@@ -220,8 +220,8 @@ PROFILES = {
                cd(10.0, 8.0), lin(45, 95)),
 
         # --- rank 11-20 tails, continuation only (see the docstring) -----
-        1531: (per_hit(360, 690, 3), cd(6.0, 5.0), lin(52, 86)),  # x3, SCOUT
-        1551: (per_hit(330, 630, 3), cd(5.4, 4.4), lin(56, 92)),  # x3, RAIDER
+        1531: (per_hit(562, 657, 3), cd(6.0, 5.0), lin(52, 86)),  # x3, SCOUT
+        1551: (per_hit(505, 579, 3), cd(5.4, 4.4), lin(56, 92)),  # x3, RAIDER
     },
 }
 

@@ -274,12 +274,14 @@ PROFILES = {
     "burst": {
         # -- the original three, plus Twin Shot's rank 11-20 continuation
         2201: (lin(80, 460), lin(50, 42), lin(10, 30), None),      # nuke: reliable mid
-        2221: (lin(50, 220), lin(27, 22), lin(12, 26), None),      # filler: fast + cheap
+        # x2 per cast -> 117 dmg/s (1.68 x the 70 dmg/s single-hit median)
+        2221: (lin(58, 257), lin(27, 22), lin(12, 26), None),      # filler: fast + cheap
         # ranks 11-20. Power sized against the motion's *three* attack frames,
         # which is where the multiplier actually comes from: 175 x3 makes rank 11
         # a 1.28x step over Twin Shot rank 10, against vanilla's 1.12x. The
         # earlier 260->480 here was sized believing the motion struck twice.
-        2231: (lin(175, 335), lin(21, 18), lin(28, 48), None),
+        # x3 per cast -> 164 dmg/s; starts at 164 so rank 11 matches rank 10
+        2231: (lin(164, 197), lin(21, 18), lin(28, 48), None),
         2281: (lin(150, 900), lin(80, 65), lin(25, 95), None),     # slam: 3 m risk, biggest
         # -- the rest of the Dealer's offensive kit
         2211: (lin(200, 850), lin(70, 55), lin(60, 130), None),    # safe big hit, pricey
