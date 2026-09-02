@@ -145,7 +145,8 @@ DESC = ("A tuned three-round burst. The fastest attack skill an Artisan can fire
         "and far too expensive to hold down.")
 PREREQ_SKILL, PREREQ_RANK = 2081, 6      # Craft Mastery, at the Artisan gate
 CLASS_ARTISAN = 68
-ICON = 172
+ICON = 512                  # custom art, added by scripts/add-skill-icon.py;
+                            # 172 was Twin Shot's icon, shared by accident
 
 
 def lin(a, b, n=RANKS):
