@@ -155,24 +155,36 @@ AssertionError: data\3DDATA\CONTROL\RES\icon51.dds is not one of our uncompresse
 
 `icon51.dds` is 1,398,228 bytes where an uncompressed 512×512 BGRA sheet is 1,048,704.
 The difference is exactly a full mip chain — header says `mipcount 10`, flags carry
-`DDSD_MIPMAPCOUNT`. It was regenerated (mtime 2026-08-28) after the last `add-item-icon.py`
-run (`ITEM1.TSI` mtime 2026-08-14), and `dds_read_bgra`'s strict size check now rejects it.
+`DDSD_MIPMAPCOUNT` — and `dds_read_bgra`'s strict size check rejected it.
 
 This was **pre-existing and unrelated to Jrose**: `add_icon` fills the last extension sheet
 before starting a new one, so *any* new item icon was blocked, from a PNG or from a source
 atlas.
 
-`dds_read_bgra` now validates the pixel format out of the **header** (512×512, 32bpp,
-`RGB|ALPHAPIXELS`, no fourcc) and reads only the top mip, ignoring whatever trails it.
-`dds_write` still emits no mip chain, which is what this script has always done and what
-the client has always shipped — mips are meaningless for a 40px-cell atlas drawn at 1:1,
-and generating them would bleed neighbouring cells together at the low levels, the same
-hazard as the object lightmap atlas in the root `CLAUDE.md`.
+**What put the chain there is `scripts/add-dds-mipmaps.py`** — the sweep that gives every
+mip-less DDS under `data/` a real chain, because `D3DXCreateTextureFromFileInMemoryEx`
+otherwise *builds* one at load time, which is the expensive path (196 of 196 slow texture
+creates in a captured session had `src_mips=1`). So the two scripts are in a loop:
 
-Worth knowing: the 50 original sheets are **DXT5 with 10 mips**; our extension sheets are
-uncompressed 32-bit. `bake_dds` in the pipeline forces DXT5, so it is not what regenerated
-`icon51.dds` — that came from somewhere else. Tolerating mips on read is the durable fix
-either way.
+| | writes | leaves |
+|---|---|---|
+| `add-item-icon.py` | one sprite into a sheet | a plain DDS, **no mips** |
+| `add-dds-mipmaps.py` | mips onto anything lacking them | a sheet the icon tool must still read |
+
+Before the fix that loop was broken in one direction: once the sweep had run, the icon tool
+could never open the sheet again. `dds_read_bgra` now validates the pixel format out of the
+**header** (512×512, 32bpp, `RGB|ALPHAPIXELS`, no fourcc) and reads only the top mip,
+ignoring whatever trails it — so the two compose in either order. Verified by running the
+sweep and re-reading sprite 8594 out of the re-mipped sheet.
+
+`dds_write` deliberately still emits no chain. That is correct **because** the sweep exists
+to add it: the icon tool should not duplicate that logic, and a stale chain written
+alongside a freshly-pasted sprite would be wrong anyway. The consequence is simply that
+**`add-dds-mipmaps.py` must be run after any icon add**, before a bake.
+
+Worth knowing: the 50 original sheets are DXT5 with 10 mips; our extension sheets are
+uncompressed 32-bit, and the sweep keeps each file's own format. `bake_dds` in the pipeline
+forces DXT5 and is *not* involved.
 
 ### 4.3 The one that would actually hurt: out-of-range ability ids
 
@@ -269,7 +281,16 @@ python scripts/import-item.py --type back `
 
 ## 6. Where this stands
 
-Done: the tooling changes (§4.0–4.2), and the five above imported and verified on disk.
+Done: the tooling changes (§4.0–4.2), the five above imported and verified on disk, and
+`scripts/add-dds-mipmaps.py` run afterwards.
+
+**Always run the mip sweep after an import.** Five of the seven textures that came from
+Jrose shipped with **no mip chain** (`houou_wing`, `houou_wing02`, `light_wing2`,
+`yadutsu`, `magicbook`; only the Clockwork pair had one), against 9 levels on every one of
+our existing back textures. A mip-less texture is not a cosmetic issue here — it forces
+D3DX to build the chain at load, which is the documented cause of 20–140 ms texture-create
+spikes. The sweep also had to put back the chain on `icon51.dds` that `--copy-icon`
+stripped (§4.2). Seven files, 2.4 MB, verified for brightness as well as presence.
 
 Still to do:
 
@@ -278,6 +299,9 @@ Still to do:
    and mounted.
 2. If they look right, the remaining **189 models** are the same command with different
    numbers. §4.4's sex-split list and the disabled-row levels are the only per-item traps.
+
+Per-import checklist: `import-item.py --art-only …` → `add-dds-mipmaps.py` → delete any
+`.bak` under `data/` → bake → deploy.
 
 Rollback is `scripts/remove-trailing-items.py`, one item at a time in reverse order
 (961 → 957), since the five names share no common prefix. Dry-run verified.

@@ -105,10 +105,19 @@ def dds_read_bgra(path):
     icon, from a PNG or from another data set's atlas. The trailing mips are
     simply ignored; we only ever composite into level 0.
 
-    Note dds_write() still emits no mip chain, which is what this script has
-    always done and what the client has always been shipped. Mips are pointless
-    for a 40px-cell icon atlas drawn at 1:1, and generating them would bleed
-    neighbouring cells into each other at the low levels.
+    What put a chain on icon51.dds is scripts/add-dds-mipmaps.py, the sweep that
+    gives every mip-less DDS under data/ a real one so D3DX does not build it at
+    load time. The two scripts are a loop -- this one writes a plain sheet, that
+    one mips it -- and before this read tolerated a chain, running the sweep
+    locked *every* subsequent icon add out of the sheet permanently.
+
+    dds_write() still emits no chain on purpose: adding it is the sweep's job,
+    not this script's. So run add-dds-mipmaps.py after adding icons, before a
+    bake. For this atlas specifically the chain is never actually sampled --
+    zz_renderer_d3d forces `miplevels = 1` for image textures ("if this is image
+    texture, we need no mipmap") -- so it costs a little file size and nothing
+    else. It matters enormously for model textures, which is the case that
+    justifies the sweep.
     """
     with open(path, "rb") as fh:
         d = fh.read()
