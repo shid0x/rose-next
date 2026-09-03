@@ -172,7 +172,7 @@ def level_of(stb, r):
     return 0
 
 
-def candidates(stb, wtype, vanilla=None):
+def candidates(stb, wtype, vanilla=None, stat=None):
     """Rows of one weapon type with a level requirement, and which slot to use.
 
     Prefer a free slot. When both are taken, **overwrite slot 2** rather than
@@ -206,7 +206,13 @@ def candidates(stb, wtype, vanilla=None):
         # written, a re-read sees it occupied and picks slot 2 instead, so
         # --verify computes a different target than --profile just applied.
         b0, _a0, b1, a1 = vanilla.get(r) or tuple(gi(stb, r, c) for c in WRITTEN)
-        if not b0:
+        if stat and b0 == stat:
+            # Slot 1 already grants the very stat we are adding -- raise it
+            # rather than writing a second entry of the same stat into slot 2,
+            # which would show as two identical lines in the item tooltip.
+            # One weapon hits this: Dual Viper Blades, whose slot 1 is ATK +30.
+            rows.append((r, lv, COL_BONUS0, COL_BONUS0_AMT))
+        elif not b0:
             rows.append((r, lv, COL_BONUS0, COL_BONUS0_AMT))
         elif not b1:
             rows.append((r, lv, COL_BONUS1, COL_BONUS1_AMT))
@@ -220,7 +226,7 @@ def target_state(stb, profile, vanilla=None):
     """{row: (bonus0, amt0, bonus1, amt1)} the named profile should produce."""
     want = {}
     for wtype, (stat, lo_amt, hi_amt, _label) in PROFILES[profile].items():
-        rows, _displaced = candidates(stb, wtype, vanilla)
+        rows, _displaced = candidates(stb, wtype, vanilla, stat)
         if not rows:
             continue
         lv_lo = min(lv for _r, lv, _c, _a in rows)
@@ -258,7 +264,7 @@ def write_sidecar(profile, rows):
 
 def show(stb, profile, want, vanilla=None):
     for wtype, (stat, lo_amt, hi_amt, label) in PROFILES[profile].items():
-        rows, displaced = candidates(stb, wtype, vanilla)
+        rows, displaced = candidates(stb, wtype, vanilla, stat)
         name = "KATAR" if wtype == KATAR else "DUAL WIELD"
         print(f"\n{name}  (type {wtype})  -- +{label}, {lo_amt} to {hi_amt} by weapon level")
         print(f"  {'lv':>4}  {'weapon':<26}{'slot':>6}{'bonus':>10}")
@@ -326,7 +332,8 @@ def main():
         # Snapshot every row the profile could touch before anything is written.
         vanilla = {}
         for wtype in PROFILES[args.profile]:
-            for r, _lv, _c, _a in candidates(stb, wtype)[0]:
+            stat = PROFILES[args.profile][wtype][0]
+            for r, _lv, _c, _a in candidates(stb, wtype, None, stat)[0]:
                 vanilla[r] = tuple(gi(stb, r, c) for c in WRITTEN)
     want = target_state(stb, args.profile, vanilla)
     show(stb, args.profile, want, vanilla)

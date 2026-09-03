@@ -3,8 +3,8 @@
     python scripts/rebalance-raider.py --profile assassin
     python scripts/rebalance-raider.py --restore
 
-Same machinery and sidecar contract as the other passes. Data only -- see the
-"What this pass cannot do" section at the bottom for the part that needs C++.
+Same machinery and sidecar contract as the other passes. The stat side of the
+katar/dual split lives in `rebalance-raider-weapons.py`.
 
 Why this pass exists
 --------------------
@@ -89,26 +89,27 @@ Deliberately untouched
 Mana Blood (the HP -> MP sustain engine; 280 HP -> 380 MP is already a fair
 rate and its cooldown already improves) and Combat Mastery ranks 11-20.
 
-What this pass cannot do
-------------------------
-**A weapon-gated passive is not achievable in data.** Weapon-specific passives
-work by a switch on the equipped weapon that selects an ability index, and
-`CUserDATA::GetPassiveSkillAttackPower` deliberately falls `case 251:` through to
-`case 252:` -- one `AT_PSV_ATK_POW_KATAR_PAIR` serves both. `Cal_CRITICAL` has no
-weapon awareness at all; it reads `AT_PSV_CRITICAL` unconditionally.
+Where the stat difference lives
+-------------------------------
+Not here. This pass splits the *skills*; the katar/dual **stat** difference is
+`rebalance-raider-weapons.py`, which puts +CRITICAL on katars and +ATK on dual
+wields as weapon bonus stats.
 
-So the katar crit bonus and the dual attack bonus need new ability indices plus
-weapon-aware reads, mirrored in the client and server copies of cuserdata.cpp.
-That is a separate step.
+That was originally attempted as a pair of weapon-gated passive skills, which
+needed C++: retail's weapon switches fold katar (251) and dual (252) into one
+shared index and cannot tell them apart. That work was written, then deleted --
+`LIST_WEAPON.STB` already has bonus-stat slots the engine reads, and the shipped
+data already uses these exact stats on these exact weapon types. The item route
+is also better: the bonus is visible in the tooltip, and it scales with gear tier
+and therefore with level, which matters because crit chance carries a level
+penalty.
 
-It matters more than it sounds. Dodge and crit are driven by *competing* stats --
-`AVOID = (DEX + 10) * 0.8 + LEVEL * 0.5` but `CRITICAL = SENSE + (CON + 20) * 0.2`
--- and crit chance carries a level penalty, so at level 230 a DEX-built Raider
-(SENSE 60-100, CRITICAL 76-120) crits **0%** of the time. The endgame katar itself
-demands 335 DEX. Until that C++ change lands, "katar crits often" is not
-achievable by any amount of data tuning, and the bonus must be **flat** rather
-than a percentage when it does: Cal_CRITICAL computes `flat + base * rate/100`,
-and a percentage of a base of 76 is nothing.
+Worth knowing when reading the numbers above: dodge and crit are driven by
+*competing* stats -- `AVOID = (DEX + 10) * 0.8 + LEVEL * 0.5` but
+`CRITICAL = SENSE + (CON + 20) * 0.2` -- and the endgame katar demands 335 DEX.
+A pure-DEX Raider crits almost never at level 230 even with the weapon bonus.
+That is deliberate: the katar gets you to the threshold and your stat spread
+decides whether you cross it.
 """
 
 import argparse
