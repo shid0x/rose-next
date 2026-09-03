@@ -95,11 +95,35 @@ def dds_write(path, img, dry):
             fh.write(header + pixels)
 
 def dds_read_bgra(path):
+    """Read the top mip of one of our uncompressed extension sheets.
+
+    Validate the pixel format from the header rather than from the file length.
+    An earlier version asserted `len(d) == 128 + SHEET_SIZE**2 * 4`, which broke
+    the moment something regenerated icon51.dds with a mip chain (10 levels, so
+    1,398,228 bytes instead of 1,048,704) -- and since add_icon() fills the last
+    extension sheet before starting a new one, that blocked *every* new item
+    icon, from a PNG or from another data set's atlas. The trailing mips are
+    simply ignored; we only ever composite into level 0.
+
+    Note dds_write() still emits no mip chain, which is what this script has
+    always done and what the client has always been shipped. Mips are pointless
+    for a 40px-cell icon atlas drawn at 1:1, and generating them would bleed
+    neighbouring cells into each other at the low levels.
+    """
     with open(path, "rb") as fh:
         d = fh.read()
-    assert d[:4] == b"DDS " and len(d) == 128 + SHEET_SIZE * SHEET_SIZE * 4, \
-        "%s is not one of our uncompressed extension sheets" % path
-    bgra = Image.frombytes("RGBA", (SHEET_SIZE, SHEET_SIZE), d[128:])
+    if d[:4] != b"DDS " or len(d) < 128:
+        sys.exit("%s is not a DDS file" % path)
+    h, w = struct.unpack_from("<II", d, 12)
+    pf_flags, fourcc, bitcount = struct.unpack_from("<I4sI", d, 80)
+    top = SHEET_SIZE * SHEET_SIZE * 4
+    if (w, h) != (SHEET_SIZE, SHEET_SIZE) or bitcount != 32 \
+            or not (pf_flags & 0x41) or fourcc != b"\x00\x00\x00\x00" \
+            or len(d) < 128 + top:
+        sys.exit("%s is not one of our uncompressed %dx%d BGRA extension sheets "
+                 "(got %dx%d, fourcc %r, %d bpp)"
+                 % (path, SHEET_SIZE, SHEET_SIZE, w, h, fourcc, bitcount))
+    bgra = Image.frombytes("RGBA", (SHEET_SIZE, SHEET_SIZE), d[128:128 + top])
     c0, c1, c2, c3 = bgra.split()  # file bytes are B,G,R,A -> swap back
     return Image.merge("RGBA", (c2, c1, c0, c3))
 

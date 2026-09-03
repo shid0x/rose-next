@@ -4,6 +4,20 @@ Usage:
     python scripts/import-item.py --type back --source C:\\path\\to\\data --source-row 803 --icon 8451
     python scripts/import-item.py --type weapon --source ... --source-row 873 --dry-run
 
+Two modes:
+    default     copy the source row's stats, with --def/--res/--atk/--req-level to
+                temper them. Needs the source schema to line up with ours.
+    --art-only  take the model (plus optionally the icon and ground-drop model) and
+                nothing else; every stat column is cloned from --template-row, one of
+                OUR existing rows. Use it whenever the source's game semantics are not
+                wanted. It is also the mode to reach for with an unfamiliar dump: no
+                source cell is ever read, so a foreign schema cannot misalign and a
+                foreign ability id cannot reach the *unbounded* write at
+                `m_iAddValue[nType] += nValue` in cuserdata.cpp (client and server
+                both). That array is int[AT_MAX] with m_nPassiveRate/m_btRecoverHP/
+                m_iDropRATE sitting right behind it, so an out-of-range id from a
+                modern affix system corrupts character state instead of erroring.
+
 What it does (all appends -- existing rows/objects are never modified):
     1. <type>.STB   append one row (new ID = current row count) with the source stats
     2. <type>.ZSC   append the source's model object; meshes/materials already present
@@ -429,6 +443,17 @@ def main():
                     help="row in the source table for this type")
     ap.add_argument("--name", help="override item name (default: from source STL)")
     ap.add_argument("--desc", help="override item description (default: from source STL)")
+    ap.add_argument("--art-only", action="store_true",
+                    help="take ONLY the model (and, with the flags below, the icon and "
+                         "ground-drop model) from the source; clone every stat column from "
+                         "--template-row instead of the source row. Use this whenever the "
+                         "source's game semantics are not wanted -- it is also the safe mode "
+                         "for a foreign schema, since no source cell is ever read and a "
+                         "foreign ability id therefore cannot reach the unbounded "
+                         "m_iAddValue[] write on client and server. Requires --name.")
+    ap.add_argument("--template-row", type=int,
+                    help="row in OUR table whose stat columns the new item copies "
+                         "(required by --art-only)")
     ap.add_argument("--icon", type=int, help="icon index in OUR ITEM1.TSI (default: keep source value, likely wrong art)")
     ap.add_argument("--copy-icon", action="store_true",
                     help="port the source's inventory icon into our ITEM1.TSI and use it "
@@ -461,7 +486,7 @@ def main():
     if args.source_row >= len(sdata):
         sys.exit("source row %d out of range (%d rows)" % (args.source_row, len(sdata)))
     src = sdata[args.source_row]
-    if not src[0] and not args.name:
+    if not src[0] and not args.name and not args.art_only:
         # An empty STB name usually means an unused row -- but not always: QQ-iROSE
         # leaves column 0 blank throughout and keeps names only in the STL, so
         # requiring one there would reject its entire table. --name settles it.
@@ -471,12 +496,15 @@ def main():
     if ocols - 1 != EXPECT_COLS:
         sys.exit("our %s has %d data cols, expected %d -- update TYPES before importing"
                  % (os.path.basename(STB_REL), ocols - 1, EXPECT_COLS))
-    if scols - 1 < ocols - 1:
-        sys.exit("source table is narrower (%d) than ours (%d); columns would not line up"
-                 % (scols - 1, ocols - 1))
-    if scols != ocols:
-        print("note: source has %d data cols to our %d; the extra trailing columns are dropped"
-              % (scols - 1, ocols - 1))
+    if not args.art_only:
+        # Only the stat-copying path cares that the columns line up; --art-only
+        # never reads a source cell, so a foreign schema is irrelevant to it.
+        if scols - 1 < ocols - 1:
+            sys.exit("source table is narrower (%d) than ours (%d); columns would not line up"
+                     % (scols - 1, ocols - 1))
+        if scols != ocols:
+            print("note: source has %d data cols to our %d; the extra trailing columns are dropped"
+                  % (scols - 1, ocols - 1))
     new_id = orows - 1
     if new_id > 2047:
         sys.exit("new ID %d exceeds the 11-bit item number limit (2047)" % new_id)
@@ -496,9 +524,12 @@ def main():
                      % (os.path.basename(rel), scount, args.source_row))
     new_key = ("%s%d" % (KEY_PREFIX, new_id)).encode("ascii")
 
-    # name/desc from source STL via the source row's key (last col)
+    # name/desc from source STL via the source row's key (last col).
+    # --art-only never touches the source STL: its text is ours to write, and
+    # skipping the read also sidesteps foreign STL dialects entirely (Jrose
+    # writes the legacy `I_NUM` header, which stl_read() below rejects).
     name = desc = b""
-    src_key = src[-1]
+    src_key = src[-1] if not args.art_only else b""
     if src_key:
         try:
             skeys, slangs = stl_read(os.path.join(args.source, STL_REL))
@@ -510,10 +541,10 @@ def main():
                 name, desc = slangs[lang][ki[0]]
         except FileNotFoundError:
             pass
-    stb_name = src[0].decode("euc-kr", "replace")
-    if stb_name and name and stb_name.split()[:1] != name.decode("utf-8", "replace").split()[:1]:
-        print("WARNING: source STL name %r differs from STB name %r -- source data may be "
-              "inconsistent; pass --name/--desc to override" % (name.decode("utf-8", "replace"), stb_name))
+        stb_name = src[0].decode("euc-kr", "replace")
+        if stb_name and name and stb_name.split()[:1] != name.decode("utf-8", "replace").split()[:1]:
+            print("WARNING: source STL name %r differs from STB name %r -- source data may be "
+                  "inconsistent; pass --name/--desc to override" % (name.decode("utf-8", "replace"), stb_name))
     if args.name:
         name = args.name.encode("utf-8")
     if args.desc:
@@ -521,8 +552,34 @@ def main():
     if not name:
         name = src[0]
 
-    # build our row: source cols 0..n-2 + our key in the last column
-    row = list(src[0:ocols - 2]) + [new_key]
+    if args.art_only:
+        # Take the model and nothing else. Every stat column is cloned from one
+        # of OUR existing rows, so the new item can only ever hold values this
+        # build already handles -- which is the whole point: a foreign row's
+        # bonus/requirement ability ids (cols 24/27 and 19/21) are fed straight
+        # into `m_iAddValue[nType] += nValue` on both client and server with no
+        # bounds check (src/client/common/cuserdata.cpp, and the gameserver's
+        # copy of it). m_iAddValue is int[AT_MAX] followed in CUserDATA by
+        # m_nPassiveRate, m_btRecoverHP and m_iDropRATE, so an out-of-range id
+        # silently corrupts adjacent character state rather than crashing.
+        # Jrose's modern affix ids (174/175/184/185/195) are exactly that.
+        if args.template_row is None:
+            sys.exit("--art-only needs --template-row: the stat columns are cloned from one "
+                     "of our own rows, so pick an existing %s row to base it on"
+                     % os.path.basename(STB_REL))
+        if not 0 <= args.template_row < len(odata):
+            sys.exit("--template-row %d out of range (our %s has %d rows)"
+                     % (args.template_row, os.path.basename(STB_REL), len(odata)))
+        if not args.name:
+            sys.exit("--art-only needs --name: no name is read from the source")
+        tmpl = odata[args.template_row]
+        print("art-only: model from source row %d, stats cloned from our row %d (%r)"
+              % (args.source_row, args.template_row,
+                 tmpl[0].decode("euc-kr", "replace")))
+        row = list(tmpl[0:ocols - 2]) + [new_key]
+    else:
+        # build our row: source cols 0..n-2 + our key in the last column
+        row = list(src[0:ocols - 2]) + [new_key]
     row[1] = b""  # vestigial model-path column; the game reads the ZSC instead
     if args.name:
         # Col 0 is what the *server* reports (ITEM_NAME is get_cstr(I, 0) there);
@@ -536,6 +593,11 @@ def main():
                                       args.dry_run)).encode("ascii")
     elif args.icon is not None:
         row[9] = str(args.icon).encode("ascii")
+    elif args.art_only:
+        # The template's icon is a real index in our own atlas, so this is a
+        # valid placeholder rather than the wrong-art hazard below.
+        print("note: no --copy-icon/--icon, reusing the template row's icon %s "
+              "(valid, but shared with that item)" % row[9].decode())
     else:
         print("WARNING: keeping source icon index %s -- points at different art in our atlas, "
               "pass --copy-icon or --icon" % src[9].decode())
@@ -590,7 +652,13 @@ def main():
             sys.exit("field model %d out of range (our LIST_FieldITEM.ZSC has %d objects); "
                      "pass --field-model or --copy-field-model" % (fm, field_count))
 
-    print("importing %r as ID %d (key %s, name %r)" % (src[0].decode("euc-kr", "replace"), new_id, new_key.decode(), name.decode("utf-8", "replace")))
+    # In --art-only the source name is never read, and blindly decoding it as
+    # euc-kr would print mojibake for a cp932 source (Jrose) -- so say which row
+    # the model came from instead of guessing at its text.
+    what = ("source row %d" % args.source_row if args.art_only
+            else repr(src[0].decode("euc-kr", "replace")))
+    print("importing %s as ID %d (key %s, name %r)"
+          % (what, new_id, new_key.decode(), name.decode("utf-8", "replace")))
 
     # backups
     if not args.dry_run:
@@ -627,16 +695,27 @@ def main():
     if args.copy_field_model:
         src_fm = int(src[10] or b"0")
         src_field = Zsc(os.path.join(args.source, FIELD_ZSC_REL))
-        if src_fm <= 0 or src_fm >= len(src_field.objects):
-            sys.exit("source field model %d out of range (%d objects)" % (src_fm, len(src_field.objects)))
-        field_path = os.path.join(OURS, FIELD_ZSC_REL)
-        field_id, ffiles, fblob = zsc_build_append(field_path, src_field, src_fm)
-        if not args.dry_run:
-            with open(field_path, "wb") as fh:
-                fh.write(fblob)
-        copy_assets(ffiles, args.source, args.dry_run)
-        row[10] = str(field_id).encode("ascii")
-        print("field model: ported source object %d as our %d" % (src_fm, field_id))
+        usable = 0 < src_fm < len(src_field.objects)
+        # Index 0 is the "no ground-drop model" convention and plenty of cosmetic
+        # rows use it. In --art-only the template already supplied a field model
+        # that is valid in OUR ZSC, so degrade to that rather than failing a whole
+        # import over a drop mesh. In stat-copy mode there is no such fallback --
+        # row[10] would be a source index meaning nothing here -- so it stays fatal.
+        if not usable and not args.art_only:
+            sys.exit("source field model %d out of range (%d objects)"
+                     % (src_fm, len(src_field.objects)))
+        if not usable:
+            print("note: source row has no ground-drop model (%d); keeping the "
+                  "template's field model %s" % (src_fm, row[10].decode() or "0"))
+        else:
+            field_path = os.path.join(OURS, FIELD_ZSC_REL)
+            field_id, ffiles, fblob = zsc_build_append(field_path, src_field, src_fm)
+            if not args.dry_run:
+                with open(field_path, "wb") as fh:
+                    fh.write(fblob)
+            copy_assets(ffiles, args.source, args.dry_run)
+            row[10] = str(field_id).encode("ascii")
+            print("field model: ported source object %d as our %d" % (src_fm, field_id))
 
     stb_append_row(os.path.join(OURS, STB_REL), row, args.dry_run)
     stl_append(os.path.join(OURS, STL_REL), new_key, new_id, name, desc, args.dry_run)
