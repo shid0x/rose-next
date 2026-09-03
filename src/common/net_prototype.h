@@ -1467,31 +1467,27 @@ struct gsv_EFFECT_OF_SKILL: public t_PACKETHEADER {
     unsigned short m_nINT;
     BYTE m_btSuccessBITS;
 #else
-    union {
-        struct {
-            /// 14 bits, not 12. This index has to address every row of
-            /// LIST_SKILL.STB, which is past 7000; at 12 bits anything over 4095
-            /// wrapped silently. Skill 7002 (Calibrated Burst) arrived as 2906, so
-            /// the client resolved an unrelated blank row, concluded the hit was
-            /// not projectile-presented, and routed the damage down the legacy
-            /// effected-skill path -- where a gun motion has no action-25 frame to
-            /// drain it. No digit, and the stranded entry blocked the queue until
-            /// the orphan sweep folded it in seconds later.
-            ///
-            /// Bits 14-15 were unused padding. The other arm of this union only
-            /// occupies byte 0 and bytes 2-3, so m_nINT is untouched and the union
-            /// is still 4 bytes -- the packet size does not change. New ceiling is
-            /// 16383: keep skill rows under it, or widen this again.
-            unsigned short m_nSkillIDX : 14;
-            unsigned short m_btSuccessBITS : 2; // 성공여부
-            BYTE m_tmp1;
-        };
-        struct {
-            BYTE m_tmp2;
-            unsigned short m_tmp3 : 6;
-            unsigned short m_nINT : 10; // 시전자의 지력
-        };
-    };
+    /// m_nSkillIDX is 14 bits, not the retail 12. It has to address every row
+    /// of LIST_SKILL.STB, which is past 7000; at 12 bits anything over 4095
+    /// wrapped silently. Skill 7002 (Calibrated Burst) arrived as 2906, so the
+    /// client resolved an unrelated blank row, concluded the hit was not
+    /// projectile-presented, and routed the damage down the legacy
+    /// effected-skill path -- where a gun motion has no action-25 frame to
+    /// drain it. Ceiling is now 16383.
+    ///
+    /// m_nINT gets its own storage rather than sharing these three bytes.
+    /// Retail packed all three fields into a union over 12/2/10 bits, which is
+    /// exactly 24 -- there was never any spare room, and widening the index
+    /// into "bits 14-15" silently aliased them onto the low two bits of
+    /// m_nINT. Because the senders write m_nINT last, every status effect in
+    /// the game then shipped m_btSuccessBITS = casterINT % 4, and a caster
+    /// whose INT was a multiple of 4 applied no buffs or debuffs at all. Do
+    /// not re-merge these: this struct is packed to 1 byte (see the top of
+    /// this file), so a bitfield here starts wherever the previous one ended
+    /// and overlaps are invisible in the source.
+    unsigned short m_nSkillIDX : 14;
+    unsigned short m_btSuccessBITS : 2; // 성공여부
+    unsigned short m_nINT;              // 시전자의 지력
 #endif
 };
 

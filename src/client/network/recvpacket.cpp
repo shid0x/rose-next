@@ -2875,19 +2875,6 @@ CRecvPACKET::Recv_gsv_EFFECT_OF_SKILL() {
     short iSkillOwner = m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_wSpellObjIDX;
     CObjCHAR* pChar = g_pObjMGR->Get_ClientCharOBJ(iSkillOwner, true);
 
-    LogString(LOG_DEBUG_,
-        "StatusTrace recv EFFECT_OF_SKILL: caster %d target %d skill %d type %d "
-        "success_bits %d state1 %d caster_obj %s active %d todo %d\n",
-        (int)iSkillOwner,
-        (int)m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_wObjectIDX,
-        (int)m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_nSkillIDX,
-        SKILL_TYPE(m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_nSkillIDX),
-        (int)m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_btSuccessBITS,
-        SKILL_STATE_STB(m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_nSkillIDX, 0),
-        pChar ? "found" : "NULL",
-        pChar ? pChar->m_nActiveSkillIDX : -1,
-        pChar ? pChar->m_nToDoSkillIDX : -1);
-
     /// 현재 사용중인 스킬이 발사형이라면.. 바로 적용한다.
     int iDoingSkillIDX = 0;
 

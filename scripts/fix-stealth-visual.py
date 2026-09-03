@@ -20,14 +20,27 @@ and the mechanic behind it is fully implemented server-side: `cobjai.cpp` (488
 and 834) makes monsters refuse to target a disguised character, and
 `cobjchar.cpp` (877-953) drops the flag the moment you attack or take a hit.
 
-What is missing is every channel that would tell the player any of that
-happened. `FLAG_ING_DISGUISE` appears **only** in server code -- there are zero
-occurrences anywhere under `src/client/` -- so the client cannot fade the
-character out even in principle. And in `LIST_STATUS.STB`, Disguise's "Phase
-effects" column is **empty**, where Sleep has 1510 and Haste Attack 181. Nothing
-is drawn on the character because there is nothing to draw.
+What was actually broken was the packet, not the skill and not the client.
+`gsv_EFFECT_OF_SKILL` packs the skill index, the success bits and the caster's
+INT into a union of 12 + 2 + 10 bits -- exactly 24, with no spare room. Widening
+the skill index to 14 bits (so it could address rows past 4095) silently aliased
+the success bits onto the low two bits of `m_nINT`, and since the senders write
+INT last, every status effect in the game shipped `m_btSuccessBITS = casterINT %
+4`. A caster whose INT was a multiple of four applied nothing at all.
+`ApplyEffectOfSkill` reads zero as "the skill failed" and never calls
+`AddEnduranceEntity`, which is the single function that would have added the
+icon, spawned the effect and faded the character -- so all three symptoms had
+one cause. Fixed in net_prototype.h by giving `m_nINT` its own storage.
 
-So a working stealth looks exactly like a dead button.
+The client side was never missing: `CEnduranceSkill::CreateEnduranceEntity`
+(`cenduranceproperty.cpp`) already handles `ING_DISGUISE` and calls
+`setVisibilityRecursive(model, 0.3f)` -- allies and players see you at 30%
+opacity, everyone else at zero -- and `CNameBox` already suppresses your name.
+
+What *is* genuinely missing is data: in `LIST_STATUS.STB`, Disguise's "Phase
+effects" column is empty, where Sleep has 1510 and Haste Attack 181. So even
+with the packet fixed there is no aura on the character, because there is
+nothing to draw.
 
 What this changes
 -----------------
@@ -46,13 +59,13 @@ basenames do not have to match** -- `_smoke_black_01.eft` points at
 would have ruled this effect out wrongly. Resolve the reference out of the file
 itself; this script does that and refuses to write if any asset is absent.
 
-What it does not fix
---------------------
-The character still does not turn translucent. That genuinely needs client code,
-since the client has no knowledge of the flag at all, and it is deliberately not
-attempted here. A smoke aura is arguably the better read anyway: it tells you
-*and* anyone watching that you are hidden, where transparency alone is easy to
-miss on your own screen.
+Scope
+-----
+This is a cosmetic addition on top of the packet fix, not the fix itself. The
+icon and the translucency come back on their own once the success bits survive
+the wire; the smoke is here because retail Disguise had no visible aura at all,
+and one that reads to *other* players is worth more than transparency alone,
+which is easy to miss on your own screen.
 """
 
 import argparse
