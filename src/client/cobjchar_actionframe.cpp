@@ -502,6 +502,10 @@ CObjCHAR::ActionSkill(int iActionIDX) {
                 case SKILL_ACTION_SELF_BOUND:
                 case SKILL_ACTION_SELF_STATE_DURATION:
                 case SKILL_ACTION_SELF_DAMAGE: {
+                    LogString(LOG_DEBUG_,
+                        "StatusTrace action24 self-skill drain: obj %d skill %d type %d queued %d\n",
+                        this->Get_INDEX(), iSkillIdx, SKILL_TYPE(iSkillIdx),
+                        (int)m_EffectedSkillList.size());
                     ProcEffectedSkill();
                     CSkillManager::ActionSkill(iSkillIdx, this, this);
                 } break;

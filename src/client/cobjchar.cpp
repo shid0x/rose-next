@@ -2047,6 +2047,12 @@ CObjCHAR::ApplyEffectOfSkill(int iSkillIDX,
                 {
                     /// 일단 유져일경우만 속성객체 추가..
                     // if( pChar->IsA( OBJ_USER ) )
+                    LogString(LOG_DEBUG_,
+                        "StatusTrace ApplyEffectOfSkill add: obj %d skill %d slot %d "
+                        "state_stb %d state_type %d duration %d step_fx %d symbol %d\n",
+                        pEffectedChar->Get_INDEX(), iSkillIDX, i, iStateIndex,
+                        STATE_TYPE(iStateIndex), SKILL_DURATION(iSkillIDX),
+                        STATE_STEP_EFFECT(iStateIndex), STATE_SYMBOL(iStateIndex));
                     pEffectedChar->AddEnduranceEntity(iSkillIDX,
                         iStateIndex,
                         SKILL_DURATION(iSkillIDX),
@@ -2220,6 +2226,11 @@ CObjCHAR::ProcOneEffectedSkill(stEFFECT_OF_SKILL* pEffectOfSkill) {
 
     } else /// 지속성이거나.. 상태를 바꾸는 스킬..
     {
+        LogString(LOG_DEBUG_,
+            "StatusTrace ProcOneEffectedSkill -> ApplyEffectOfSkill: obj %d skill %d "
+            "success_bits %d\n",
+            iObjIDX, iSkillIDX,
+            (int)pEffectOfSkill->EffectOfSkill.m_btSuccessBITS);
         ApplyEffectOfSkill(iSkillIDX, iObjIDX, pChar, pEffectOfSkill);
     }
 }
