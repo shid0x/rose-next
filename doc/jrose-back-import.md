@@ -1,6 +1,7 @@
 # Importing Back Items From Jrose
 
-**Status:** first five imported as IDs **957–961**, awaiting in-game test.
+**Status:** first five imported as IDs **957–961** and **confirmed in game**.
+Model-carried effects (wing trails) implemented; the Phoenix trail itself is still unseen.
 **Date:** 2026-09-04.
 **Source:** `C:\Users\Thomas\Desktop\Testclients\Jrose` (loose `3Ddata\`).
 **Prerequisite reading:** [doc/jrose-survey.md](jrose-survey.md) for the dump as a whole.
@@ -26,8 +27,8 @@ weapons, far easier than armour. Three structural facts do all the work:
 
 `scripts/import-item.py --type back` already exists and already understands this table.
 It got all the way through the STB column check, both ZSC object-count checks, the model
-append, the asset list and the field-drop model against a live Jrose row. **One** line
-stops it (§4.1), and that line is a three-line fix.
+append, the asset list and the field-drop model against a live Jrose row. One line stopped
+it (§4.1), and one latent bug in it crashed the client on load (§4.5).
 
 Their variety is real: **2,864 occupied back rows to our 144** (19.9x, the largest ratio of
 any table in the dump), across **194 distinct models whose art we do not hold** — every
@@ -108,8 +109,8 @@ other 29 need an override on every row (§4.3).
 
 ## 4. What had to be fixed
 
-All three are done. §4.1 and §4.3 were solved by the same change — a new
-`--art-only` mode — rather than separately.
+All done. §4.1 and §4.3 were solved by the same change — a new `--art-only` mode —
+rather than separately. §4.5 is the one that got through and crashed the client.
 
 ### 4.0 `--art-only`: take the model, author the row
 
@@ -236,6 +237,44 @@ in our range — if you ever copy stats from Jrose, add the guard first.
 
 ---
 
+### 4.5 FIXED — a copied dummy-point effect index took the client down at the title screen
+
+The first attempt at these five **hard-crashed the client**, with nothing in `error.txt`:
+the engine log is buffered, so the session was lost and the file still ended at the
+previous run's `log: end.`. `client.log` survived (it flushes per record) and showed
+startup reaching RmlUi init and stopping, which put the fault in the phase right after it.
+`scripts/debug-client-crash.ps1` named it exactly:
+
+```
+rosenext!CMODEL<CCharPART>::Load+0x218        IO_Model.h:187
+rosenext!CModelDATA<CCharPART>::Load+0x3dc
+rosenext!CBasicDATA::Load3DDATA+0x21a
+rosenext!CGame::Load_BasicDATA+0xa7
+```
+
+Line 187 is `m_pDummyPoints[nP].m_uiEftKEY = (nListIDX >= 0) ? pEftKEY[nListIDX] : 0;`
+
+`zsc_build_append` remapped mesh and material indices but copied **dummy points verbatim**,
+effect index included — so a source-table index was written into ours. `LIST_BACK.ZSC`
+declares **no effects at all**, which makes `pEftKEY` NULL, and the Phoenix object's dummy
+referenced its source table's effect 0. Null read, before the title screen.
+
+Latent from the day the tool was written, not new. It only fires when a source object has a
+dummy point carrying an effect, and nothing imported before this had one — only 2 of
+Jrose's 5,001 back objects do.
+
+Fixed two ways: the index is remapped (reuse our entry when the path matches, else drop the
+dummy, or port it with `--copy-effects` per §5a), **and** a post-write check now scans the
+whole table for any index out of range for the list it points into — meshes, materials and
+dummy effects alike. The client bounds-checks none of the three, so each is a crash rather
+than an error.
+
+**The general rule this leaves:** never emit an index into a list the importer did not also
+write. The mesh and material paths got that right from the start; the effect path did not,
+and nothing caught it because the crash was three subsystems away from the cause.
+
+---
+
 ## 5. The five that were imported
 
 Chosen to cover both single- and multi-part objects, DXT1 and DXT5, and both wing and
@@ -279,10 +318,50 @@ python scripts/import-item.py --type back `
 
 ---
 
+## 5a. Model-carried effects (wing trails)
+
+A ZSC dummy point holds an effect key. `CMODEL<CCharPART>::Load` has always read it into
+`m_uiEftKEY`, and **nothing on the avatar side ever consumed it** — the only consumer in
+the tree is `CObjFIXED` (world objects: braziers and the like). The character equivalent,
+`CCharPartEffect::CreatePartEffect`, is commented out in its entirety. Retail never needed
+it: `LIST_WEAPON.ZSC` carries 2,074 dummy points and exactly **one** effect, `LIST_SUBWPN`
+66 dummy points and **none**.
+
+Two things came out of that.
+
+**It crashed the client** (§4.5), because the importer wrote a source-table effect index
+into a table whose effect list is empty, and `pEftKEY[nListIDX]` is an unchecked read off a
+null pointer.
+
+**It is now implemented.** Almost nothing had to be built — `CObjCHAR::Add_EFFECT`,
+`Del_EFFECT`, `Link_EFFECT` and the `m_pppEFFECT[part][point]` storage were all already
+live, and `New_EFFECT` already runs for every part on equip. Back items just fell into
+`default: return;`, since the switch only handles weapons (which take their effect from the
+item tables). That default branch now spawns from the part model's own dummy points.
+
+- Effects are registered with **`CBoneEffectBudget`** — they are passive, bone-attached,
+  looping cosmetics, exactly what it was built for, so a crowd in the same wings degrades
+  to a cheaper particle tier instead of multiplying emitters.
+- `Del_EFFECT` now **unregisters**; the budget holds raw `CEffect*` and would otherwise
+  keep a dangling record on every item swap. It is a no-op for unregistered effects, so
+  the weapon path is untouched.
+- `import-item.py --copy-effects` appends the effect to our list and copies the `.eft`
+  plus everything it pulls in. **Without the flag the dummy point is still dropped** —
+  never emit a dangling index.
+
+The dependency walk matches the path shape anchored on the data root rather than searching
+for an extension: these blobs store a bare filename and the full path back to back
+(`flying_ef.ptl` then `3DDATA\EFFECT\PARTICLES\flying_ef.ptl`), so searching for `.ptl`
+first lands on the name and silently misses the path behind it. `.ptl` files also write
+their separators **doubled** (`3DData\\effect\\…`), which the walk collapses.
+
+Phoenix Wings ships `flying_ef.eft` + `flying_ef.ptl`; `twinkle_03.dds` we already had.
+
 ## 6. Where this stands
 
-Done: the tooling changes (§4.0–4.2), the five above imported and verified on disk, and
-`scripts/add-dds-mipmaps.py` run afterwards.
+Done: the tooling changes (§4.0–4.2), the five above imported and verified on disk,
+`scripts/add-dds-mipmaps.py` run afterwards, the load crash fixed (§4.5), and
+model-carried effects implemented (§5a). **Tested in game: all five look correct.**
 
 **Always run the mip sweep after an import.** Five of the seven textures that came from
 Jrose shipped with **no mip chain** (`houou_wing`, `houou_wing02`, `light_wing2`,
@@ -294,14 +373,15 @@ stripped (§4.2). Seven files, 2.4 MB, verified for brightness as well as presen
 
 Still to do:
 
-1. **Test in game** — bake the VFS and deploy, then equip each on both a male and a female
-   character and check the model sits on the back dummy point correctly at rest, running
-   and mounted.
-2. If they look right, the remaining **189 models** are the same command with different
-   numbers. §4.4's sex-split list and the disabled-row levels are the only per-item traps.
+1. **Confirm the Phoenix Wings trail in game** — the effect path is new code, built and
+   smoke-tested (client starts and reaches zone loading) but the particle has not been
+   seen on a character yet.
+2. The remaining **189 models** are the same command with different numbers. §4.4's
+   sex-split list and the disabled-row levels are the only per-item traps; pass
+   `--copy-effects` for anything with a trail.
 
-Per-import checklist: `import-item.py --art-only …` → `add-dds-mipmaps.py` → delete any
-`.bak` under `data/` → bake → deploy.
+Per-import checklist: `import-item.py --art-only [--copy-effects] …` →
+`add-dds-mipmaps.py` → delete any `.bak` under `data/` → bake → deploy.
 
 Rollback is `scripts/remove-trailing-items.py`, one item at a time in reverse order
 (961 → 957), since the five names share no common prefix. Dry-run verified.
