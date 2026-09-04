@@ -262,8 +262,43 @@ def zsc_build_append(ours_path, src_zsc, src_obj_idx):
     for mid, tid, props in sparts:
         obj.append(struct.pack("<HH", mesh_map[mid], mat_map[tid]))
         obj.append(props)
-    obj.append(struct.pack("<H", len(sdummies)))
+
+    # Dummy points carry an index into the ZSC's *effect* list, and that index
+    # must be remapped exactly like a mesh or material index -- copying it
+    # verbatim writes a source-table index into our table.
+    #
+    # This is a hard crash, not a cosmetic bug. CMODEL<CCharPART>::Load does
+    #
+    #     m_pDummyPoints[nP].m_uiEftKEY = (nListIDX >= 0) ? pEftKEY[nListIDX] : 0;
+    #
+    # (src/client/IO_Model.h) with no bounds check, and pEftKEY is NULL when the
+    # table declares no effects -- which LIST_BACK.ZSC does. Importing Jrose's
+    # Phoenix Wings, whose dummy references its table's effect 0, therefore took
+    # the client down inside CGame::Load_BasicDATA with a null read, before the
+    # title screen and before anything reached error.txt.
+    #
+    # Effects are a separate asset class with their own dependency tree (.EFT ->
+    # particles -> textures), so we reuse one only when our table already holds
+    # the same path, and otherwise drop the dummy point. Dropping costs a
+    # cosmetic attachment; emitting a dangling index costs the whole client.
+    our_eft_idx = {norm(e): i for i, e in enumerate(ours.effects)}
+    kept = []
     for a, props in sdummies:
+        list_idx, eff_type = struct.unpack("<hh", a)
+        if list_idx < 0:                      # no effect on this point -- always safe
+            kept.append((a, props))
+            continue
+        src_path = (src_zsc.effects[list_idx] if list_idx < len(src_zsc.effects) else None)
+        if src_path is not None and norm(src_path) in our_eft_idx:
+            kept.append((struct.pack("<hh", our_eft_idx[norm(src_path)], eff_type), props))
+            continue
+        print("WARNING: dropping a dummy point whose effect %s is not in our %s "
+              "(our table declares %d effect(s)); the model imports, its attached "
+              "effect does not"
+              % (src_path.decode("ascii", "replace") if src_path else "index %d" % list_idx,
+                 os.path.basename(ours_path), len(ours.effects)))
+    obj.append(struct.pack("<H", len(kept)))
+    for a, props in kept:
         obj += [a, props]
     obj.append(sbb)
 
@@ -733,6 +768,24 @@ def main():
                 "%s ended with %d objects, expected %d" % (rel, len(vz.objects), new_id + 1))
             if rel not in empty_models:
                 assert vz.objects[new_id][1], "%s object %d has no parts" % (rel, new_id)
+            # Every index we wrote must be in range for the list it points into.
+            # The client bounds-checks none of them: a mesh/material index runs
+            # off the end of its array and a dummy point's effect index is read
+            # straight out of pEftKEY, which is NULL when the table declares no
+            # effects -- a null deref inside CGame::Load_BasicDATA, i.e. a client
+            # that dies at the title screen having written nothing to error.txt.
+            # Scanned over the whole table, so it also catches earlier damage.
+            for oi, (_cyl, vparts, vdummies, _bb) in enumerate(vz.objects):
+                for mid, tid, _p in vparts:
+                    assert mid < len(vz.meshes) and tid < len(vz.materials), (
+                        "%s object %d references mesh %d / material %d of %d / %d"
+                        % (rel, oi, mid, tid, len(vz.meshes), len(vz.materials)))
+                for a, _p in vdummies:
+                    eidx = struct.unpack("<h", a[:2])[0]
+                    assert eidx < len(vz.effects), (
+                        "%s object %d has a dummy point referencing effect %d but the "
+                        "table declares %d -- this crashes the client on load"
+                        % (rel, oi, eidx, len(vz.effects)))
         vkeys, vlangs = stl_read(os.path.join(OURS, STL_REL))
         assert vkeys[-1][0] == new_key and vlangs[0][-1][0] == name
         print("verified: STB row, ZSC object and STL entry all present")
