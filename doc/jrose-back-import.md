@@ -1,7 +1,7 @@
 # Importing Back Items From Jrose
 
-**Status:** first five imported as IDs **957–961** and **confirmed in game**.
-Model-carried effects (wing trails) implemented; the Phoenix trail itself is still unseen.
+**Status:** done and **confirmed in game** — five back items imported as IDs **957–961**,
+and model-carried effects (wing trails) implemented, with the Phoenix trail rendering.
 **Date:** 2026-09-04.
 **Source:** `C:\Users\Thomas\Desktop\Testclients\Jrose` (loose `3Ddata\`).
 **Prerequisite reading:** [doc/jrose-survey.md](jrose-survey.md) for the dump as a whole.
@@ -361,7 +361,8 @@ Phoenix Wings ships `flying_ef.eft` + `flying_ef.ptl`; `twinkle_03.dds` we alrea
 
 Done: the tooling changes (§4.0–4.2), the five above imported and verified on disk,
 `scripts/add-dds-mipmaps.py` run afterwards, the load crash fixed (§4.5), and
-model-carried effects implemented (§5a). **Tested in game: all five look correct.**
+model-carried effects implemented (§5a). **Tested in game: all five look correct, and the
+Phoenix Wings particle trail renders.**
 
 **Always run the mip sweep after an import.** Five of the seven textures that came from
 Jrose shipped with **no mip chain** (`houou_wing`, `houou_wing02`, `light_wing2`,
@@ -373,12 +374,9 @@ stripped (§4.2). Seven files, 2.4 MB, verified for brightness as well as presen
 
 Still to do:
 
-1. **Confirm the Phoenix Wings trail in game** — the effect path is new code, built and
-   smoke-tested (client starts and reaches zone loading) but the particle has not been
-   seen on a character yet.
-2. The remaining **189 models** are the same command with different numbers. §4.4's
-   sex-split list and the disabled-row levels are the only per-item traps; pass
-   `--copy-effects` for anything with a trail.
+The remaining **189 models** are the same command with different numbers. §4.4's sex-split
+list and the disabled-row levels are the only per-item traps; pass `--copy-effects` for
+anything carrying a trail.
 
 Per-import checklist: `import-item.py --art-only [--copy-effects] …` →
 `add-dds-mipmaps.py` → delete any `.bak` under `data/` → bake → deploy.
