@@ -224,6 +224,11 @@ public:
 
     void New_EFFECT(short nPartIdx, short nItemNo, bool bLinkNODE = true);
 
+    /// Spawn the cosmetic effects an equipment model carries on its own ZSC dummy
+    /// points (a wing trail, say). Weapons get their effect from the item tables
+    /// instead, so this covers every other part.
+    void New_ModelDummyEFFECT(CMODEL<CCharPART>* pCharPART, short nPartIdx, bool bLinkNODE);
+
     void CreateSpecificPART(char* szName, int iPartIDX);
     void DeleteSpecificPART(short nPartIdx, HNODE* pVIS);
 

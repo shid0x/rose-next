@@ -6,6 +6,7 @@
 #include "Game.h"
 #include "OBJECT.h"
 #include "BULLET.h"
+#include "BoneEffectBudget.h"
 #include "IO_Event.h"
 #include "CViewMSG.h"
 #include "Network\CNetwork.h"
@@ -1074,6 +1075,11 @@ CObjCHAR::Del_EFFECT(short nPartIDX) {
             for (short nT = 0; nT < pCharPART->m_nDummyPointCNT; nT++) {
                 /// g_pEffectLIST->Del_EFFECT( m_pppEFFECT[ nPartIDX ][ nT ] );
                 if (m_pppEFFECT[nPartIDX][nT]) {
+                    // Unregister before the delete: the budget holds raw CEffect*
+                    // and would otherwise keep a dangling record for every item
+                    // swap. A no-op for effects that were never registered, so
+                    // it is safe on the weapon path too.
+                    CBoneEffectBudget::Instance().Unregister(m_pppEFFECT[nPartIDX][nT]);
                     delete m_pppEFFECT[nPartIDX][nT];
                     m_pppEFFECT[nPartIDX][nT] = NULL;
                 }
@@ -1146,6 +1152,9 @@ CObjCHAR::New_EFFECT(short nPartIdx, short nItemNo, bool bLinkNODE) {
             }
             break;
         default:
+            // Everything that is not a weapon takes its effect from the model
+            // itself rather than from the item tables.
+            this->New_ModelDummyEFFECT(pCharPART, nPartIdx, bLinkNODE);
             return;
     }
 
@@ -1156,6 +1165,47 @@ CObjCHAR::New_EFFECT(short nPartIdx, short nItemNo, bool bLinkNODE) {
             if (EffectHASH)
                 this->Add_EFFECT(pCharPART, nPartIdx, nP, EffectHASH, bLinkNODE);
         }
+    }
+}
+
+//--------------------------------------------------------------------------------
+/// class : CObjCHAR
+/// @param  CMODEL<CCharPART> *pCharPART 해당 파트의 모델
+/// @param  short nPartIdx  파트 인덱스
+/// @param  bool bLinkNODE  링크할꺼냐?
+/// @brief  : 모델의 더미포인트에 붙은 효과를 생성( 예: 날개의 파티클 )
+//--------------------------------------------------------------------------------
+
+void
+CObjCHAR::New_ModelDummyEFFECT(CMODEL<CCharPART>* pCharPART, short nPartIdx, bool bLinkNODE) {
+    // A ZSC dummy point carries an effect key, and CMODEL<CCharPART>::Load has
+    // always read it into m_uiEftKEY -- but on the avatar side nothing ever
+    // consumed it. The only consumer in the tree is CObjFIXED (braziers and the
+    // like); the character equivalent, CCharPartEffect::CreatePartEffect, was
+    // commented out in its entirety by the original team. Retail data never
+    // needed it: LIST_WEAPON.ZSC has 2074 dummy points and one effect, and
+    // LIST_SUBWPN has 66 dummy points and none. Imported cosmetic backs do use
+    // it, so this is what finally reads the field.
+    if (NULL == pCharPART || NULL == pCharPART->m_pDummyPoints)
+        return;
+
+    for (short nP = 0; nP < pCharPART->m_nDummyPointCNT; nP++) {
+        const t_HASHKEY EffectHASH = pCharPART->m_pDummyPoints[nP].m_uiEftKEY;
+        if (0 == EffectHASH)
+            continue;
+
+        this->Add_EFFECT(pCharPART, nPartIdx, nP, EffectHASH, bLinkNODE);
+
+        CEffect* pEffect = m_pppEFFECT[nPartIdx] ? m_pppEFFECT[nPartIdx][nP] : NULL;
+        if (NULL == pEffect)
+            continue;
+
+        // These are passive, bone-attached, looping cosmetics -- exactly what
+        // CBoneEffectBudget is for, and the reason it is safe to switch this
+        // path on at all. Budgeting them means a crowd wearing the same wings
+        // degrades to a cheaper particle tier instead of multiplying emitters.
+        pEffect->SetParticleBatchRenderHint(true);
+        CBoneEffectBudget::Instance().Register(this, pEffect, EffectHASH, nP);
     }
 }
 

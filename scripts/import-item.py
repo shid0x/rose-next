@@ -57,7 +57,7 @@ Structure facts this relies on (verified against the live client/server loaders)
 
 After running: restart servers + client, spawn with /item <type>:<new id> (GM 2048).
 """
-import argparse, io, os, shutil, struct, sys
+import argparse, io, os, re, shutil, struct, sys
 
 OURS = "data"
 FIELD_ZSC_REL = r"3DDATA\ITEM\LIST_FieldITEM.ZSC"
@@ -214,7 +214,52 @@ class Zsc:
 def norm(p):
     return p.decode("ascii", "replace").replace("\\", "/").lower()
 
-def zsc_build_append(ours_path, src_zsc, src_obj_idx):
+# Paths inside .eft/.ptl are length-prefixed rather than NUL-terminated, and the
+# prefix width varies, so match the path shape directly instead of parsing the
+# container. Missing one is not fatal -- the engine's contract is that an absent
+# asset logs once and renders without it -- whereas a mis-parsed length would be.
+#
+# Anchored on the data root and non-greedy, so it stops at the first extension:
+# these blobs put a bare name and the full path back to back
+# ("flying_ef.ptl" then "3DDATA\EFFECT\PARTICLES\flying_ef.ptl"), and searching
+# for the extension first lands on the name and misses the path behind it.
+# Note .ptl files write their separators **doubled** ("3DData\\effect\\..."),
+# which is why the result is collapsed below rather than used as-is.
+_ASSET_RE = re.compile(
+    rb"3[Dd][Dd][Aa][Tt][Aa][\\/][ -~]{0,200}?\.(?:[Pp][Tt][Ll]|[Dd][Dd][Ss]|[Tt][Gg][Aa]"
+    rb"|[Zz][Mm][Ss]|[Ee][Ff][Tt])")
+
+def _collapse_seps(rel):
+    while b"\\\\" in rel:
+        rel = rel.replace(b"\\\\", b"\\")
+    return rel
+
+def effect_dependencies(source, eft_rel):
+    """Every file an .eft pulls in: itself, its particle files, their textures.
+
+    Returns ZSC-style backslash paths, so copy_assets can take them unchanged.
+    """
+    out, seen, queue = [], set(), [eft_rel]
+    while queue:
+        rel = queue.pop(0)
+        key = norm(rel)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(rel)
+        rel_nodata = rel.decode("ascii", "replace").replace("/", "\\")
+        if rel_nodata.lower().startswith("3ddata"):
+            rel_nodata = rel_nodata.split("\\", 1)[1]
+        path = os.path.join(source, "3DDATA", rel_nodata)
+        if not os.path.exists(path):
+            continue
+        with open(path, "rb") as fh:
+            blob = fh.read()
+        for m in _ASSET_RE.finditer(blob):
+            queue.append(_collapse_seps(m.group()))
+    return out
+
+def zsc_build_append(ours_path, src_zsc, src_obj_idx, source=None, copy_effects=False):
     """Return (new_object_index, assets_needed, new_file_bytes) -- writes nothing.
 
     Callers write only once *every* table for this item has been built, so a
@@ -282,6 +327,7 @@ def zsc_build_append(ours_path, src_zsc, src_obj_idx):
     # the same path, and otherwise drop the dummy point. Dropping costs a
     # cosmetic attachment; emitting a dangling index costs the whole client.
     our_eft_idx = {norm(e): i for i, e in enumerate(ours.effects)}
+    new_effects, effect_files = [], []
     kept = []
     for a, props in sdummies:
         list_idx, eff_type = struct.unpack("<hh", a)
@@ -292,9 +338,16 @@ def zsc_build_append(ours_path, src_zsc, src_obj_idx):
         if src_path is not None and norm(src_path) in our_eft_idx:
             kept.append((struct.pack("<hh", our_eft_idx[norm(src_path)], eff_type), props))
             continue
+        if src_path is not None and copy_effects:
+            idx = len(ours.effects) + len(new_effects)
+            our_eft_idx[norm(src_path)] = idx
+            new_effects.append(src_path)
+            effect_files.append(src_path)
+            kept.append((struct.pack("<hh", idx, eff_type), props))
+            continue
         print("WARNING: dropping a dummy point whose effect %s is not in our %s "
               "(our table declares %d effect(s)); the model imports, its attached "
-              "effect does not"
+              "effect does not. Pass --copy-effects to port it."
               % (src_path.decode("ascii", "replace") if src_path else "index %d" % list_idx,
                  os.path.basename(ours_path), len(ours.effects)))
     obj.append(struct.pack("<H", len(kept)))
@@ -308,11 +361,16 @@ def zsc_build_append(ours_path, src_zsc, src_obj_idx):
     out += [struct.pack("<H", len(ours.materials) + len(new_mats)),
             ours.d[ours.mesh_end + 2:ours.mat_end]]
     out += [p + b"\x00" + flags for p, flags in new_mats]
-    out += [ours.d[ours.mat_end:ours.objcnt_pos],
-            struct.pack("<H", len(ours.objects) + 1),
+    # effect list: count, then the existing strings, then anything we appended
+    out += [struct.pack("<H", len(ours.effects) + len(new_effects)),
+            ours.d[ours.mat_end + 2:ours.objcnt_pos]]
+    out += [e + b"\x00" for e in new_effects]
+    out += [struct.pack("<H", len(ours.objects) + 1),
             ours.d[ours.objcnt_pos + 2:ours.obj_end],
             b"".join(obj)]
     files_needed = [m for m in new_meshes] + [p for p, _ in new_mats]
+    for eft in effect_files:
+        files_needed += effect_dependencies(source, eft)
     return len(ours.objects), files_needed, b"".join(out)
 
 # ---------------------------------------------------------------- STL
@@ -508,6 +566,12 @@ def main():
     ap.add_argument("--field-model", type=int, help="ground-drop model index in OUR LIST_FieldITEM.ZSC")
     ap.add_argument("--copy-field-model", action="store_true",
                     help="port the source's ground-drop model object into our LIST_FieldITEM.ZSC")
+    ap.add_argument("--copy-effects", action="store_true",
+                    help="port cosmetic effects the model carries on its ZSC dummy points "
+                         "(a wing trail, say): appends the effect to our table's effect list "
+                         "and copies the .eft plus the particle files and textures it pulls "
+                         "in. Without this such a dummy point is dropped, since a dangling "
+                         "effect index crashes the client on load.")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -715,7 +779,8 @@ def main():
         if not src_zsc.objects[args.source_row][1]:
             empty_models.add(rel)
         obj_id, files_needed, blob = zsc_build_append(
-            os.path.join(OURS, rel), src_zsc, args.source_row)
+            os.path.join(OURS, rel), src_zsc, args.source_row,
+            args.source, args.copy_effects)
         if obj_id != new_id:
             sys.exit("STB/ZSC index drift in %s: row %d vs object %d"
                      % (os.path.basename(rel), new_id, obj_id))
