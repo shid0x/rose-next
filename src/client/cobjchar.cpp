@@ -6658,8 +6658,27 @@ CObjAVT::Create(const D3DVECTOR& Position, BYTE btCharRACE) {
         // 케릭터 신장.
         m_fStature = ::getModelHeight(this->m_hNodeMODEL);
 
-        this->New_EFFECT(BODY_PART_WEAPON_R, this->GetPartITEM(BODY_PART_WEAPON_R));
-        this->New_EFFECT(BODY_PART_WEAPON_L, this->GetPartITEM(BODY_PART_WEAPON_L));
+        // Part effects for everything already worn when the avatar is built.
+        // This used to cover only the two weapon slots (trails), and the per-part
+        // call in the loop above was commented out. Equipping in game goes through
+        // SetPartITEM(short, short), which calls New_EFFECT, but the initial load
+        // (Set_EquipITEM for the local avatar, SetAllPARTS for remote ones) only
+        // stores the index -- so a back item with a ZSC dummy effect (Phoenix
+        // Wings) showed nothing until it was taken off and put back on. Run the
+        // same New_EFFECT for every slot, with the hair/face index resolved the
+        // way SetPartMODEL above resolved it, so the effect lookup sees the same
+        // model the part was built from. It has to run after CreateCHAR because
+        // New_EFFECT links to m_phPartVIS, which only exists from then on.
+        for (short nItemIDX, nI = 0; nI < MAX_BODY_PART; nI++) {
+            nItemIDX = m_sPartItemIDX[nI].m_nItemNo;
+            if (nI == BODY_PART_HAIR) {
+                nItemIDX += HELMET_HAIR_TYPE(m_sPartItemIDX[BODY_PART_HELMET].m_nItemNo);
+            }
+            if (nI == BODY_PART_FACE) {
+                nItemIDX += GetCharExpression();
+            }
+            this->New_EFFECT(nI, nItemIDX);
+        }
 
         CreateGemmingEffect();
         CreateGradeEffect();
