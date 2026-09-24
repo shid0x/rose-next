@@ -68,10 +68,10 @@
 /* 667 panels darken for ~4px inside the rim on every side. Two straight
    gradients stacked reproduce that inner vignette. */
 @decorator ui-vignette-v : linear-gradient {
-    decorator: to bottom, #00000060 0px, #00000000 5px, #00000000 97%, #00000060 100%;
+    decorator: to bottom, #00000060 0dp, #00000000 5dp, #00000000 97%, #00000060 100%;
 }
 @decorator ui-vignette-h : linear-gradient {
-    decorator: to right, #00000060 0px, #00000000 5px, #00000000 99%, #00000060 100%;
+    decorator: to right, #00000060 0dp, #00000000 5dp, #00000000 99%, #00000060 100%;
 }
 
 
@@ -79,7 +79,7 @@
 
 body {
     font-family: Verdana;      /* the client's own UI font */
-    font-size: 11px;
+    font-size: 11dp;
     color: #e6e6e6;
 
     /* DO NOT REMOVE. ElementHandle clamps a drag to the move target's
@@ -113,9 +113,9 @@ body > * { pointer-events: auto; }
     display: flex;
     flex-direction: column;
 
-    padding: 4px;
-    border: 1px #7f7f7fbf;
-    border-radius: 4px;
+    padding: 4dp;
+    border: 1dp #7f7f7fbf;
+    border-radius: 4dp;
     background-color: #1c1c1cb4;
     decorator: ui-vignette-v, ui-vignette-h;
 }
@@ -125,13 +125,13 @@ body > * { pointer-events: auto; }
     display: flex;
     flex-direction: row;
     align-items: center;
-    height: 22px;
-    padding-left: 8px;
-    padding-right: 3px;
-    margin-bottom: 4px;
+    height: 22dp;
+    padding-left: 8dp;
+    padding-right: 3dp;
+    margin-bottom: 4dp;
 
-    border: 1px #565656ff;
-    border-radius: 3px;
+    border: 1dp #565656ff;
+    border-radius: 3dp;
     background-color: #343434ff;
     decorator: ui-gloss;
     cursor: move;
@@ -139,7 +139,7 @@ body > * { pointer-events: auto; }
 
 .ui-title {
     flex-grow: 1;
-    font-size: 12px;
+    font-size: 12dp;
     font-weight: bold;
     color: #f0f0f0;
     font-effect: shadow(1px 1px #000000c0);
@@ -147,17 +147,17 @@ body > * { pointer-events: auto; }
 
 /* Small ember glass square, the 667 X button. */
 .ui-close {
-    width: 16px;
-    height: 16px;
-    line-height: 15px;
+    width: 16dp;
+    height: 16dp;
+    line-height: 15dp;
     text-align: center;
-    font-size: 10px;
+    font-size: 10dp;
     font-weight: bold;
     color: #ffffff;
     font-effect: shadow(1px 1px #00000090);
 
-    border: 1px #5f2410ff;
-    border-radius: 3px;
+    border: 1dp #5f2410ff;
+    border-radius: 3dp;
     background-color: #7a2206ff;
     decorator: ui-gloss;
     cursor: pointer;
@@ -171,12 +171,12 @@ body > * { pointer-events: auto; }
 /* Dark recess: shadowed top edge, faintly lit bottom edge -- the opposite of
    a raised bevel. Used for info strips and list areas. */
 .ui-well {
-    border-width: 1px;
+    border-width: 1dp;
     border-top-color: #000000c0;
     border-left-color: #00000090;
     border-right-color: #00000090;
     border-bottom-color: #ffffff24;
-    border-radius: 3px;
+    border-radius: 3dp;
     background-color: #00000070;
 }
 
@@ -186,18 +186,18 @@ body > * { pointer-events: auto; }
 /* Grey glass at rest, ember glass under the mouse, dark ember pressed --
    the three states of every 667 button sheet. */
 .ui-btn {
-    height: 20px;
-    line-height: 19px;
-    padding-left: 12px;
-    padding-right: 12px;
+    height: 20dp;
+    line-height: 19dp;
+    padding-left: 12dp;
+    padding-right: 12dp;
     text-align: center;
 
     font-weight: bold;
     color: #e6e6e6;
     font-effect: shadow(1px 1px #000000a0);
 
-    border: 1px #565656ff;
-    border-radius: 3px;
+    border: 1dp #565656ff;
+    border-radius: 3dp;
     background-color: #3a3a3aff;
     decorator: ui-gloss;
     cursor: pointer;
@@ -208,6 +208,14 @@ body > * { pointer-events: auto; }
 .ui-btn:hover  { color: #ffffff; background-color: #922500ff; border-color: #d0501aff; }
 .ui-btn:active { background-color: #621800ff; border-color: #8a3010ff; }
 
+/* A selected option in a group ( scale presets, a toggle that is on ): ember
+   at rest, so the current choice reads at a glance. */
+.ui-btn.on { color: #ffffff; background-color: #7a2206ff; border-color: #c04818ff; }
+
+/* Panels locked ( /ui -> Lock panels ): RoseRmlLayout puts .locked on every
+   document's body and turns drag off; the grab cursor would then lie. */
+body.locked .ui-titlebar { cursor: default; }
+
 
 /* --- gauges --------------------------------------------------------------- */
 
@@ -215,12 +223,12 @@ body > * { pointer-events: auto; }
    text can be placed absolutely inside it. */
 .ui-gauge {
     position: relative;
-    border-width: 1px;
+    border-width: 1dp;
     border-top-color: #000000c8;
     border-left-color: #000000a0;
     border-right-color: #000000a0;
     border-bottom-color: #ffffff20;
-    border-radius: 3px;
+    border-radius: 3dp;
     background-color: #0a0a0aa0;
 }
 
@@ -228,12 +236,12 @@ body > * { pointer-events: auto; }
    from one of the modifiers below. Default is steel. */
 .ui-gauge-fill {
     position: absolute;
-    left: 0px;
-    top: 0px;
-    bottom: 0px;
+    left: 0dp;
+    top: 0dp;
+    bottom: 0dp;
 
-    border: 1px #2a2a2aff;
-    border-radius: 2px;
+    border: 1dp #2a2a2aff;
+    border-radius: 2dp;
     background-color: #4a4a4aff;
     decorator: ui-gloss;
 }
@@ -257,27 +265,83 @@ body > * { pointer-events: auto; }
 }
 
 
+/* --- icons and tooltips ------------------------------------------------------ */
+
+/* A game icon ( <img src rect> from the TSI atlases, see RoseRmlIcons ) on a
+   dark backing square, the icon centred. The panel sets the sizes. The img
+   must be a block: inline, it rides the text baseline out of the square. */
+.ui-icon {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1dp #000000c0;
+    border-radius: 4dp;
+    background-color: #000000a0;
+}
+.ui-icon img { display: block; }
+
+/* Something that needs attention ( equipment about to break ): red cast. */
+.ui-icon.warn { border-color: #b02a10ff; }
+.ui-icon.warn img { image-color: #ffb4b4; }
+
+/* Running out ( a buff's last 10 s ): the icon blinks. */
+@keyframes ui-blink {
+    from { opacity: 1; }
+    to   { opacity: 0.15; }
+}
+.ui-blink .ui-icon img {
+    animation: 0.35s quadratic-in-out infinite alternate ui-blink;
+}
+
+/* Hover tooltip: put .ui-tip ( usually with .ui-window for the glass ) inside
+   a .ui-tipped element and :hover shows it, right under that element.
+   The .ui-tipped element must NOT be position: relative. RmlUi caps an
+   absolute box's shrink-to-fit width at its containing block, so a tip
+   anchored to a 24 px icon wraps every word onto its own line; with the panel
+   as the containing block and left/top left at auto, the tip still opens
+   under its own element ( static position ). */
+.ui-tip {
+    display: none;
+    z-index: 10;
+    margin-top: 2dp;
+    padding: 4dp 6dp;
+    white-space: nowrap;
+}
+.ui-tipped:hover .ui-tip { display: flex; }
+
+.ui-tip-name {
+    display: block;
+    font-weight: bold;
+    color: #f0f0f0;
+}
+.ui-tip-body {
+    display: block;
+    white-space: pre-line;     /* multi-line details, one per line */
+}
+
+
 /* --- scrollbars ------------------------------------------------------------ */
 
 /* Thin dark track, grey glass thumb, no arrow buttons. Without these rules
    RmlUi's scrollbar is unstyled and effectively invisible. */
 scrollbarvertical {
-    width: 8px;
-    margin-left: 2px;
+    width: 8dp;
+    margin-left: 2dp;
 }
 scrollbarvertical slidertrack {
     background-color: #00000060;
-    border-radius: 4px;
+    border-radius: 4dp;
 }
 scrollbarvertical sliderbar {
-    border: 1px #565656ff;
-    border-radius: 4px;
+    border: 1dp #565656ff;
+    border-radius: 4dp;
     background-color: #505050ff;
     decorator: ui-gloss-soft;
 }
 scrollbarvertical sliderbar:hover  { background-color: #922500ff; border-color: #d0501aff; }
 scrollbarvertical sliderarrowdec,
 scrollbarvertical sliderarrowinc {
-    width: 0px;
-    height: 0px;
+    width: 0dp;
+    height: 0dp;
 }

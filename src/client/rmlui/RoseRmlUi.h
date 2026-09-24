@@ -59,6 +59,11 @@ int ReloadStyleSheets();
 /// this instead of the legacy CDamageMeterPanel; both read the same
 /// CDamageMeter data core, so they are interchangeable views.
 void ToggleDamageMeter();
+
+/// --- UI2 --------------------------------------------------------------------
+/// The interface settings window ( scale, lock, reset layout ): "/ui" and the
+/// status panel's UI button.
+void ToggleInterfacePanel();
 bool IsDamageMeterVisible();
 
 } // namespace RoseRmlUi

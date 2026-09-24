@@ -1,13 +1,11 @@
 /* UI2 status panel -- LAYOUT ONLY ( colours and materials: rose-theme.rcss ).
-   Reload in game with /uireload.
-
-   Footprint: the legacy buff icons are drawn at a fixed screen x of 250
-   ( CEndurancePack, ENDU_ICON_X ), so this panel must end before that. */
+   Reload in game with /uireload. Sizes are dp, so [VIDEO] UI_SCALE scales
+   them; the buff strip hangs under this panel and follows it. */
 
 #status {
-    left: 3px;
-    top: 3px;
-    width: 230px;
+    left: 3dp;
+    top: 3dp;
+    width: 230dp;
     cursor: pointer;           /* the whole panel is the self-target button */
 }
 
@@ -16,15 +14,15 @@
     display: flex;
     flex-direction: row;
     align-items: center;
-    height: 18px;
-    padding-left: 3px;
-    padding-right: 3px;
-    margin-bottom: 3px;
+    height: 18dp;
+    padding-left: 3dp;
+    padding-right: 3dp;
+    margin-bottom: 3dp;
 }
 
 .name {
     flex-grow: 1;
-    font-size: 12px;
+    font-size: 12dp;
     font-weight: bold;
     color: #f0f0f0;
     font-effect: shadow(1px 1px #000000c0);
@@ -40,19 +38,19 @@
 
 /* --- HP / MP ----------------------------------------------------------------- */
 .bar {
-    height: 17px;
-    margin-bottom: 2px;
+    height: 17dp;
+    margin-bottom: 2dp;
 
     display: flex;
     flex-direction: row;
     align-items: center;
-    padding-left: 5px;
-    padding-right: 5px;
+    padding-left: 5dp;
+    padding-right: 5dp;
 }
 
-.bar .tag { width: 22px; font-size: 10px; }
+.bar .tag { width: 22dp; font-size: 10dp; }
 .bar .val { flex-grow: 1; text-align: center; }
-.bar .pct { width: 34px; text-align: right; }
+.bar .pct { width: 34dp; text-align: right; }
 
 /* Low HP: the fill breathes brighter so the danger reads without a number. */
 @keyframes low-hp {
@@ -65,18 +63,18 @@
 
 /* --- EXP ----------------------------------------------------------------------- */
 .expbar {
-    height: 7px;
-    margin-top: 1px;
-    margin-bottom: 4px;
+    height: 7dp;
+    margin-top: 1dp;
+    margin-bottom: 4dp;
 }
 
 /* Tenths. Positioned above the fill ( which is itself positioned ). */
 .tick {
     position: absolute;
     z-index: 1;
-    top: 0px;
-    bottom: 0px;
-    width: 1px;
+    top: 0dp;
+    bottom: 0dp;
+    width: 1dp;
     background-color: #00000070;
 }
 
@@ -85,7 +83,7 @@
     display: flex;
     flex-direction: row;
     align-items: center;
-    padding-left: 3px;
+    padding-left: 3dp;
 }
 
 .job {
@@ -96,15 +94,15 @@
 }
 
 .stat {
-    margin-left: 8px;
-    font-size: 10px;
+    margin-left: 8dp;
+    font-size: 10dp;
 }
 
 .menu {
-    margin-left: 8px;
-    height: 18px;
-    line-height: 17px;
-    padding-left: 8px;
-    padding-right: 8px;
-    font-size: 10px;
+    margin-left: 4dp;
+    height: 18dp;
+    line-height: 17dp;
+    padding-left: 8dp;
+    padding-right: 8dp;
+    font-size: 10dp;
 }

@@ -26,9 +26,13 @@ namespace RoseUi2 {
 /// Whether UI2 is the chosen interface. Cheap; safe to call per frame.
 bool IsActive();
 
-/// Switch live and persist to rose-next.ini. Returns false ( and changes
-/// nothing ) when RmlUi was not initialised at startup, since the overlay
-/// cannot be brought up mid-session.
+/// The player's saved choice, whether or not it is live yet ( see SetActive ).
+bool IsChosen();
+
+/// Record the choice in rose-next.ini and apply it live. Returns false when it
+/// could not be applied now -- RmlUi was not initialised at startup and the
+/// overlay cannot be brought up mid-session -- in which case the saved choice
+/// takes effect on the next start ( UI2=1 also switches RmlUi on ).
 bool SetActive(bool bActive);
 
 /// True when this legacy dialog type is currently replaced by a UI2 panel.

@@ -1,0 +1,42 @@
+/* UI2 interface settings -- LAYOUT ONLY ( colours and materials:
+   rose-theme.rcss ). Reload in game with /uireload. */
+
+#interface {
+    left: 260dp;
+    top: 120dp;
+    width: 260dp;
+}
+
+.label {
+    margin-top: 4dp;
+    margin-bottom: 3dp;
+    padding-left: 2dp;
+    font-size: 10dp;
+}
+
+/* Scale presets: a wrapping row of small buttons, the current one lit. */
+.scales {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: 4dp;
+}
+.scale {
+    padding-left: 6dp;
+    padding-right: 6dp;
+    margin-right: 3dp;
+    margin-bottom: 3dp;
+    font-size: 10dp;
+}
+
+.row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-top: 3dp;
+}
+.row .label {
+    flex-grow: 1;
+    margin: 0dp;
+}
+.wide { width: 110dp; }

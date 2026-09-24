@@ -578,14 +578,30 @@ CChatDLG::SendChatMsg(char* szMsg) {
     /// remake, converted dialog by dialog ) and saves the choice to
     /// rose-next.ini. Local command, never sent.
     if (stMsg == "/ui2") {
-        const bool bNext = !RoseUi2::IsActive();
+        const bool bNext = !RoseUi2::IsChosen();
         if (RoseUi2::SetActive(bNext)) {
             g_itMGR.AppendChatMsg(bNext ? "Interface: UI2." : "Interface: classic.",
                 IT_MGR::CHAT_TYPE_SYSTEM);
         } else {
-            g_itMGR.AppendChatMsg("UI2 needs RmlUi: set [VIDEO] UI2=1 and restart.",
+            g_itMGR.AppendChatMsg(bNext ? "Interface: UI2 (applies after a restart)."
+                                        : "Interface: classic (applies after a restart).",
                 IT_MGR::CHAT_TYPE_SYSTEM);
         }
+
+        CWinCtrl* pEditCtrl = Find(IID_EDITBOX);
+        if (pEditCtrl != NULL && pEditCtrl->GetControlType() == CTRL_EDITBOX)
+            ((CTEditBox*)pEditCtrl)->clear_text();
+        return;
+    }
+
+    /// "/ui" opens the UI2 interface settings ( scale, lock, reset layout ).
+    /// Local command, never sent.
+    if (stMsg == "/ui") {
+        if (!RoseUi2::IsActive())
+            g_itMGR.AppendChatMsg("Interface settings are part of UI2 ( /ui2 ).",
+                IT_MGR::CHAT_TYPE_SYSTEM);
+        else
+            RoseRmlUi::ToggleInterfacePanel();
 
         CWinCtrl* pEditCtrl = Find(IID_EDITBOX);
         if (pEditCtrl != NULL && pEditCtrl->GetControlType() == CTRL_EDITBOX)

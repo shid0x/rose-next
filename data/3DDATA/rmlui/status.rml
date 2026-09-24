@@ -57,6 +57,8 @@
             <span class="job">{{job}}</span>
             <span class="stat"><span class="ui-muted">EXP</span> {{exp_pct}}</span>
             <span class="stat"><span class="ui-muted">WT</span> {{weight}}</span>
+            <!-- UI2 interface settings: scale, lock panels, reset layout. -->
+            <span class="ui-btn menu" data-event-click="open_ui()">UI</span>
             <span class="ui-btn menu" data-event-click="open_menu()">Menu</span>
         </div>
     </handle>

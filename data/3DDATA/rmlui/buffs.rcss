@@ -5,9 +5,9 @@
    here only matter for the first frame. */
 #buffs {
     position: absolute;
-    left: 3px;
-    top: 110px;
-    width: 250px;              /* icons wrap after ten */
+    left: 3dp;
+    top: 110dp;
+    width: 250dp;              /* icons wrap after ten */
 }
 
 /* --- icons ------------------------------------------------------------------ */
@@ -17,93 +17,49 @@
     flex-wrap: wrap;
 }
 
-/* NOT position: relative. RmlUi caps an absolute box's shrink-to-fit width at
-   its containing block, so a tip anchored to this 22 px icon wraps every word
-   onto its own line. With #buffs as the containing block, and left/top left
-   at auto, the tip still opens right under its own icon ( static position ). */
+/* Each buff is a .ui-tipped element ( rose-theme.rcss ); see there for why it
+   must not be position: relative. */
 .buff {
-    width: 24px;
-    margin-right: 3px;
-    margin-bottom: 2px;
+    width: 24dp;
+    margin-right: 3dp;
+    margin-bottom: 2dp;
 }
 
-/* The backing square is a little larger than the 20 px icon, with the icon
-   centred in it. The img must be a block: as an inline it sits on the text
-   baseline, riding up out of the frame instead of inside it. */
+/* The backing square ( .ui-icon ) is a little larger than the icon. */
 .frame {
-    box-sizing: border-box;    /* 24 px including the border, not 24 + 2 */
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px #000000c0;
-    border-radius: 4px;
-    background-color: #000000a0;
+    width: 24dp;
+    height: 24dp;
 }
-
 .frame img {
-    display: block;
-    width: 20px;
-    height: 20px;
+    width: 20dp;
+    height: 20dp;
 }
 
 /* Remaining time, under the icon. */
 .time {
     display: block;
     text-align: center;
-    font-size: 9px;
+    font-size: 9dp;
     color: #e6e6e6;
     font-effect: outline(1px #000000c0);
 }
 
-/* The last 10 s blink, like the legacy strip ( which toggled every 200 ms ). */
-@keyframes buff-blink {
-    from { opacity: 1; }
-    to   { opacity: 0.15; }
-}
-.buff.expiring .frame img {
-    animation: 0.35s quadratic-in-out infinite alternate buff-blink;
-}
-.buff.expiring .time { color: #ff9a5a; }
+.buff.ui-blink .time { color: #ff9a5a; }
 
-/* Worn equipment: the item icon with a red cast and a red rim. */
-.worn { margin-top: 3px; }
-.worn .frame { border-color: #b02a10ff; }
-.worn .frame img { image-color: #ffb4b4; }
-
-/* --- tooltips ------------------------------------------------------------- */
-.tip {
-    display: none;
-    z-index: 10;
-    margin-top: 2px;
-    padding: 4px 6px;
-    white-space: nowrap;
-}
-.buff:hover .tip { display: flex; }
-
-.tip-name {
-    display: block;
-    font-weight: bold;
-    color: #f0f0f0;
-}
-.tip-body {
-    display: block;
-    white-space: pre-line;     /* the goddess bonuses are one per line */
-}
+.worn { margin-top: 3dp; }
 
 /* --- summon / fuel gauges ------------------------------------------------- */
 .mini {
     display: flex;
     flex-direction: row;
     align-items: center;
-    width: 180px;
-    margin-top: 3px;
+    width: 180dp;
+    margin-top: 3dp;
 }
 
 .mini-label {
-    width: 70px;
-    font-size: 10px;
+    width: 70dp;
+    font-size: 10dp;
     font-effect: outline(1px #000000c0);
     overflow: hidden;
     white-space: nowrap;
@@ -112,10 +68,10 @@
 
 .mini-bar {
     flex-grow: 1;
-    height: 13px;
+    height: 13dp;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-.mini-text { font-size: 9px; }
+.mini-text { font-size: 9dp; }

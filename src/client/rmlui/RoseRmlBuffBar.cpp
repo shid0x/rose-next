@@ -31,7 +31,7 @@ const int kExpiringMs = 10000;
 /// Equipment below this life ( per mille ) is shown as worn -- the legacy 5%.
 const int kWornLife = 50;
 
-/// Space between the status panel and the strip hanging off it.
+/// Space between the status panel and the strip hanging off it, in dp.
 const float kAnchorGap = 4.0f;
 
 Rml::String
@@ -112,6 +112,27 @@ RoseRmlBuffBar::RoseRmlBuffBar():
     m_bFuel(false),
     m_fFuelWidth(0.0f) {}
 
+void
+RoseRmlBuffBar::RegisterBuffStruct(Rml::DataModelConstructor& constructor) {
+    /// Data models in one context share a type register, and registering a
+    /// struct twice logs "Struct type already declared". The buff strip and the
+    /// target frame both need BuffVM, so register once per register.
+    static Rml::DataTypeRegister* s_pRegistered = NULL;
+    if (constructor.GetDataTypeRegister() == s_pRegistered)
+        return;
+    s_pRegistered = constructor.GetDataTypeRegister();
+
+    if (auto buff = constructor.RegisterStruct<BuffVM>()) {
+        buff.RegisterMember("src", &BuffVM::src);
+        buff.RegisterMember("rect", &BuffVM::rect);
+        buff.RegisterMember("time", &BuffVM::time);
+        buff.RegisterMember("name", &BuffVM::name);
+        buff.RegisterMember("detail", &BuffVM::detail);
+        buff.RegisterMember("expiring", &BuffVM::expiring);
+    }
+    constructor.RegisterArray<std::vector<BuffVM>>();
+}
+
 bool
 RoseRmlBuffBar::Initialise(Rml::Context* pContext, const std::string& strAssetDir) {
     if (pContext == NULL)
@@ -123,15 +144,7 @@ RoseRmlBuffBar::Initialise(Rml::Context* pContext, const std::string& strAssetDi
     if (!constructor)
         return false;
 
-    if (auto buff = constructor.RegisterStruct<BuffVM>()) {
-        buff.RegisterMember("src", &BuffVM::src);
-        buff.RegisterMember("rect", &BuffVM::rect);
-        buff.RegisterMember("time", &BuffVM::time);
-        buff.RegisterMember("name", &BuffVM::name);
-        buff.RegisterMember("detail", &BuffVM::detail);
-        buff.RegisterMember("expiring", &BuffVM::expiring);
-    }
-    constructor.RegisterArray<std::vector<BuffVM>>();
+    RegisterBuffStruct(constructor);
 
     if (auto worn = constructor.RegisterStruct<WornVM>()) {
         worn.RegisterMember("src", &WornVM::src);
@@ -189,13 +202,15 @@ RoseRmlBuffBar::SetVisible(bool bVisible) {
 }
 
 void
-RoseRmlBuffBar::Sample() {
-    CObjUSER* pAvatar = g_pAVATAR;
-    CEndurancePack& pack = pAvatar->m_EndurancePack;
+RoseRmlBuffBar::CollectBuffs(CObjCHAR* pChar, std::vector<BuffVM>& out) {
+    out.clear();
+    if (pChar == NULL)
+        return;
+
+    CEndurancePack& pack = pChar->m_EndurancePack;
     const int iNow = (int)g_GameDATA.GetGameTime();
 
-    /// --- status effects, in the legacy strip's order ------------------------
-    std::vector<BuffVM> buffs;
+    /// In the legacy strip's order.
     for (int i = 0; i < pack.GetEntityCount(); ++i) {
         CEnduranceProperty* pEntity = pack.GetEntity(i);
         if (pEntity == NULL)
@@ -221,8 +236,17 @@ RoseRmlBuffBar::Sample() {
             vm.time = ShortTime(iRemain);
             vm.detail = LongTime(iRemain);
         }
-        buffs.push_back(vm);
+        out.push_back(vm);
     }
+}
+
+void
+RoseRmlBuffBar::Sample() {
+    CObjUSER* pAvatar = g_pAVATAR;
+
+    /// --- status effects -----------------------------------------------------
+    std::vector<BuffVM> buffs;
+    CollectBuffs(pAvatar, buffs);
     if (buffs != m_Buffs) {
         m_Buffs.swap(buffs);
         m_Model.DirtyVariable("buffs");
@@ -293,10 +317,11 @@ RoseRmlBuffBar::FollowAnchor() {
 
     const Rml::Vector2i view = m_pContext->GetDimensions();
     float x = anchorPos.x;
-    float y = anchorPos.y + anchorSize.y + kAnchorGap;
+    const float fGap = kAnchorGap * RoseRmlLayout::GetScaleRatio();
+    float y = anchorPos.y + anchorSize.y + fGap;
     /// Near the bottom edge, hang above the panel instead of off screen.
     if (y + size.y > (float)view.y)
-        y = anchorPos.y - size.y - kAnchorGap;
+        y = anchorPos.y - size.y - fGap;
 
     if (x == m_fPlacedX && y == m_fPlacedY)
         return;

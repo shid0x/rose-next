@@ -21,6 +21,8 @@
 
 #include <string>
 
+#include "RoseRmlEasedBar.h"
+
 namespace Rml {
 class Context;
 class Element;
@@ -43,17 +45,6 @@ public:
     Rml::Element* GetPanel() const { return m_pPanel; }
 
 private:
-    /// A bar that eases from where it is drawn now to a new target, restarting
-    /// from its current position whenever the target moves -- the 667 gauge.
-    struct EasedBar {
-        float fFrom;
-        float fTo;
-        float fShown;
-        DWORD dwStart;
-        bool bPrimed;
-    };
-    static bool StepBar(EasedBar& bar, float fTarget, DWORD dwNow);
-
     void SetVisible(bool bVisible);
     void Sample();
 
@@ -91,9 +82,9 @@ private:
     float m_fExpWidth;
     bool m_bHpLow;
 
-    EasedBar m_HpBar;
-    EasedBar m_MpBar;
-    EasedBar m_ExpBar;
+    RoseRmlEasedBar m_HpBar;
+    RoseRmlEasedBar m_MpBar;
+    RoseRmlEasedBar m_ExpBar;
 };
 
 #endif /// _ROSE_RML_STATUS_PANEL_H_

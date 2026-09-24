@@ -4,7 +4,10 @@
 
 #include "RoseRmlBuffBar.h"
 #include "RoseRmlDamageMeter.h"
+#include "RoseRmlInterfacePanel.h"
+#include "RoseRmlLayout.h"
 #include "RoseRmlStatusPanel.h"
+#include "RoseRmlTargetFrame.h"
 #include "RoseRmlRenderer.h"
 #include "RoseRmlSystem.h"
 
@@ -24,6 +27,8 @@ Rml::Context* g_pContext = NULL;
 RoseRmlDamageMeter g_DamageMeter;
 RoseRmlStatusPanel g_StatusPanel; ///< UI2: replaces CAvatarInfoDlg
 RoseRmlBuffBar g_BuffBar; ///< UI2: replaces CEndurancePack::Draw
+RoseRmlTargetFrame g_TargetFrame; ///< UI2: new, the selected target
+RoseRmlInterfacePanel g_InterfacePanel; ///< UI2: scale / lock / reset settings
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -211,6 +216,11 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_StatusPanel.Initialise(g_pContext, kAssetDir);
     g_BuffBar.Initialise(g_pContext, kAssetDir);
     g_BuffBar.SetAnchor(g_StatusPanel.GetPanel());
+    g_TargetFrame.Initialise(g_pContext, kAssetDir);
+    g_InterfacePanel.Initialise(g_pContext, kAssetDir);
+
+    /// After every document is loaded: the lock walks their <handle>s.
+    RoseRmlLayout::Initialise(g_pContext);
 
     g_bInitialised = true;
     return true;
@@ -224,6 +234,9 @@ Shutdown() {
     g_DamageMeter.Shutdown();
     g_StatusPanel.Shutdown();
     g_BuffBar.Shutdown();
+    g_TargetFrame.Shutdown();
+    g_InterfacePanel.Shutdown();
+    RoseRmlLayout::Shutdown();
     g_pContext = NULL;
 
     Rml::Debugger::Shutdown();
@@ -293,7 +306,15 @@ Update() {
     g_DamageMeter.Update();
     g_StatusPanel.Update();
     g_BuffBar.Update();
+    g_TargetFrame.Update();
+    g_InterfacePanel.Update();
     g_pContext->Update();
+}
+
+void
+ToggleInterfacePanel() {
+    if (g_bInitialised)
+        g_InterfacePanel.Toggle();
 }
 
 bool

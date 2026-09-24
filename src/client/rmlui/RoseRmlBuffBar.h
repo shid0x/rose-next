@@ -21,6 +21,8 @@
 #include <string>
 #include <vector>
 
+class CObjCHAR;
+
 namespace Rml {
 class Context;
 class Element;
@@ -57,6 +59,14 @@ public:
         }
         bool operator!=(const BuffVM& o) const { return !(*this == o); }
     };
+
+    /// The status-effect icons on any character, in the legacy strip's order.
+    /// Shared with the target frame, which shows its target's buffs the same way.
+    static void CollectBuffs(CObjCHAR* pChar, std::vector<BuffVM>& out);
+
+    /// Registers BuffVM with a data model, under the member names the .rml
+    /// files use ( src, rect, time, name, detail, expiring ).
+    static void RegisterBuffStruct(Rml::DataModelConstructor& constructor);
 
     struct WornVM {
         Rml::String src;

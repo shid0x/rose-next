@@ -81,6 +81,7 @@ protected:
         IID_CHECKBOX_SHOWPCNAME = 46,
         IID_CHECKBOX_SHOWNPCNAME = 47,
         IID_CHECKBOX_SHOWMOBHP = 48,
+        IID_CHECKBOX_UI2 = 49, ///< "Use new interface (UI2)", RoseUi2
 
         IID_TABBUTTON_COMMUNITY = 52,
         IID_RADIOBOX_WHISPER = 55,

@@ -14,7 +14,8 @@
 
         Icons are the game's own atlas sprites ( src = DDS sheet, rect = the
         sprite in it ), resolved by RoseRmlIcons. Tooltips are plain CSS: each
-        icon carries its tip and :hover shows it.
+        icon carries its tip and :hover shows it ( .ui-tipped / .ui-tip in the
+        theme ).
 
         The strip hangs under the status panel and follows it when the panel is
         dragged ( RoseRmlBuffBar positions it every frame ); it has no drag of
@@ -22,12 +23,12 @@
     -->
     <div id="buffs">
         <div class="icons">
-            <div class="buff" data-for="b : buffs" data-class-expiring="b.expiring">
-                <div class="frame"><img data-attr-src="b.src" data-attr-rect="b.rect"/></div>
+            <div class="buff ui-tipped" data-for="b : buffs" data-class-ui-blink="b.expiring">
+                <div class="frame ui-icon"><img data-attr-src="b.src" data-attr-rect="b.rect"/></div>
                 <span class="time">{{b.time}}</span>
-                <div class="tip ui-window">
-                    <span class="tip-name">{{b.name}}</span>
-                    <span class="tip-body ui-muted">{{b.detail}}</span>
+                <div class="ui-window ui-tip">
+                    <span class="ui-tip-name">{{b.name}}</span>
+                    <span class="ui-tip-body ui-muted">{{b.detail}}</span>
                 </div>
             </div>
         </div>
@@ -49,11 +50,11 @@
         </div>
 
         <div class="icons worn" data-if="worn.size > 0">
-            <div class="buff" data-for="w : worn">
-                <div class="frame"><img data-attr-src="w.src" data-attr-rect="w.rect"/></div>
-                <div class="tip ui-window">
-                    <span class="tip-name">{{w.name}}</span>
-                    <span class="tip-body ui-muted">Almost broken -- repair soon.</span>
+            <div class="buff ui-tipped" data-for="w : worn">
+                <div class="frame ui-icon warn"><img data-attr-src="w.src" data-attr-rect="w.rect"/></div>
+                <div class="ui-window ui-tip">
+                    <span class="ui-tip-name">{{w.name}}</span>
+                    <span class="ui-tip-body ui-muted">Almost broken -- repair soon.</span>
                 </div>
             </div>
         </div>

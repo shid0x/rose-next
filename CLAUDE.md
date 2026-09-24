@@ -275,6 +275,20 @@ VFS — no atlas re-cutting). Things that will bite:
   gear, not just buffs. The status panel dropped the weapon/ammo slot and two dead buttons.
 - The drag-and-drop panels (quickbar, inventory) need a bridge first: `CDragNDropMgr` resolves
   drop targets by legacy dialog type, so an RmlUi panel is invisible to it.
+- **Stylesheets measure in `dp`, never `px`** (font-effect widths excepted): the UI scale
+  (`[VIDEO] UI_SCALE`, 75-200%) is the context's dp ratio, so a `px` length silently ignores it.
+  C++ that positions in pixels multiplies by `RoseRmlLayout::GetScaleRatio()`.
+- `<handle>` sets `drag: drag` as an **inline** property, so the panel lock (`[VIDEO] UI_LOCK`)
+  flips it element by element (`RoseRmlLayout::ApplyLock`); a stylesheet cannot.
+- **Never bind an empty string into `data-style-*`**: it parses as `color: ;`, logs a syntax
+  warning and the RmlUi debugger pops its event log open at startup. Initialise bound style
+  strings to a valid value.
+- Data models in one context share a type register; a struct used by two panels
+  (`RoseRmlBuffBar::BuffVM`) must be registered once (`RegisterBuffStruct` guards it).
+
+Also UI2: the target frame (`RoseRmlTargetFrame`, new — retail showed the target only overhead),
+the Interface window (`/ui` or the status panel's UI button: scale, lock, reset layout, back to
+classic), and Options > Play > "Use new interface (UI2)" (checkbox ID 49, loose `DlgOption.xml`).
 
 Linear gradients are implemented in the D3D9 backend without a shader, and `border-radius` needs no
 renderer support, so skins need no image files at all. Radial/conic gradients, blurred `box-shadow`,

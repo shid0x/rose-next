@@ -1,0 +1,46 @@
+<rml>
+<head>
+    <title>Target</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="target.rcss"/>
+</head>
+<body data-model="target">
+    <!--
+        UI2 target frame ( RoseRmlTargetFrame ): what you have selected. Shown
+        only while UI2 is on and something is targeted. The whole frame is its
+        drag handle; the spot is saved.
+
+        The name is coloured the way the overhead tag colours it ( level
+        difference; summons blue ). HP numbers follow Options > Play > "Show
+        monster HP"; the percentage is always shown.
+    -->
+    <handle id="target" move_target="target" class="ui-window">
+        <div class="head">
+            <div class="mark" data-if="has_mark">
+                <img data-attr-src="mark_src" data-attr-rect="mark_rect"/>
+            </div>
+            <span class="name" data-style-color="name_color">{{name}}</span>
+            <span class="level" data-if="level != ''"><span class="ui-muted">Lv</span> {{level}}</span>
+        </div>
+
+        <div class="kind ui-muted" data-if="kind != ''">{{kind}}</div>
+
+        <div class="bar ui-gauge" data-if="has_hp">
+            <div class="ui-gauge-fill hp" data-style-width="hp_width + '%'"></div>
+            <span class="val ui-gauge-text">{{hp}}</span>
+            <span class="pct ui-gauge-text">{{hp_pct}}</span>
+        </div>
+
+        <div class="icons" data-if="buffs.size > 0">
+            <div class="buff ui-tipped" data-for="b : buffs" data-class-ui-blink="b.expiring">
+                <div class="frame ui-icon"><img data-attr-src="b.src" data-attr-rect="b.rect"/></div>
+                <div class="ui-window ui-tip">
+                    <span class="ui-tip-name">{{b.name}}</span>
+                    <span class="ui-tip-body ui-muted">{{b.detail}}</span>
+                </div>
+            </div>
+        </div>
+    </handle>
+</body>
+</rml>

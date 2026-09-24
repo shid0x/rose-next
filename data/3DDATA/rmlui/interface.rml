@@ -1,0 +1,43 @@
+<rml>
+<head>
+    <title>Interface</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="interface.rcss"/>
+</head>
+<body data-model="interface">
+    <!--
+        UI2 interface settings, opened by the status panel's UI button or /ui.
+        Every change applies at once and is saved to rose-next.ini
+        ( [VIDEO] UI_SCALE, UI_LOCK; positions under [UI_LAYOUT] ).
+    -->
+    <div id="interface" class="ui-window">
+        <handle move_target="interface" class="ui-titlebar">
+            <span class="ui-title">Interface</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <div class="label ui-muted">Scale</div>
+        <div class="scales">
+            <span class="ui-btn scale" data-for="s : scales"
+                  data-class-on="s == scale" data-event-click="set_scale(s)">{{s}}%</span>
+        </div>
+
+        <div class="row">
+            <span class="label ui-muted">Panels</span>
+            <span class="ui-btn wide" data-class-on="locked"
+                  data-event-click="toggle_lock()">{{ locked ? 'Locked' : 'Movable' }}</span>
+        </div>
+
+        <div class="row">
+            <span class="label ui-muted">Positions</span>
+            <span class="ui-btn wide" data-event-click="reset_layout()">Reset</span>
+        </div>
+
+        <div class="row">
+            <span class="label ui-muted">Interface</span>
+            <span class="ui-btn wide" data-event-click="classic()">Use classic</span>
+        </div>
+    </div>
+</body>
+</rml>

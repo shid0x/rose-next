@@ -21,6 +21,8 @@
 #include "tgamectrl/tcontrolmgr.h"
 #include "tgamectrl/teditbox.h"
 
+#include "../../rmlui/RoseUi2.h"
+
 COptionDlg::COptionDlg(void) {
     ZeroMemory(&m_VideoOption, sizeof(t_OptionVideo));
     m_iTab = IID_TABVIDEO;
@@ -612,6 +614,17 @@ COptionDlg::ChangePlayOption() {
             CTCheckBox* pCheckBox = (CTCheckBox*)pCtrl;
             g_ClientStorage.m_bShowMobHp = pCheckBox->IsCheck();
         }
+
+        /// UI2 ( rose-next.ini [VIDEO] UI2 ). This runs every frame while the
+        /// tab is open, so act only when the box disagrees with the saved
+        /// choice -- i.e. on the click itself. Applied live; RoseUi2 saves it.
+        pCtrl = pContainer->Find(IID_CHECKBOX_UI2);
+        if (pCtrl && pCtrl->GetControlType() == CTRL_CHECKBOX) {
+            const bool bWant = ((CTCheckBox*)pCtrl)->IsCheck();
+            if (bWant != RoseUi2::IsChosen() && !RoseUi2::SetActive(bWant))
+                g_itMGR.AppendChatMsg("The interface change applies after a restart.",
+                    IT_MGR::CHAT_TYPE_SYSTEM);
+        }
     }
 }
 void
@@ -929,6 +942,15 @@ COptionDlg::GetCurrentOption() {
                 pCheckBox->SetUncheck();
         }
 
+        pCtrl = pContainer->Find(IID_CHECKBOX_UI2);
+        if (pCtrl && pCtrl->GetControlType() == CTRL_CHECKBOX) {
+            CTCheckBox* pCheckBox = (CTCheckBox*)pCtrl;
+            if (RoseUi2::IsChosen())
+                pCheckBox->SetCheck();
+            else
+                pCheckBox->SetUncheck();
+        }
+
         /// Keyboard
         pContainer = pPane->GetTabContainer(IID_TABKEYBOARD);
         assert(pContainer);
@@ -1165,8 +1187,17 @@ COptionDlg::Draw() {
             CTabbedPane* pPane = (CTabbedPane*)pCtrl;
             CJContainer* pContainer = pPane->GetTabContainer(IID_TABPLAY);
             if (pContainer) {
-                CWinCtrl* pChk = pContainer->Find(IID_CHECKBOX_SHOWMOBHP);
-                if (pChk) {
+                const struct {
+                    int iID;
+                    const char* pszLabel;
+                } labels[] = {
+                    {IID_CHECKBOX_SHOWMOBHP, "Show monster HP"},
+                    {IID_CHECKBOX_UI2, "Use new interface (UI2)"},
+                };
+                for (const auto& label : labels) {
+                    CWinCtrl* pChk = pContainer->Find(label.iID);
+                    if (pChk == NULL)
+                        continue; /// the skin's XML may not have it
                     POINT pt = pChk->GetPosition();
                     D3DXMATRIX mat;
                     D3DXMatrixTranslation(&mat, (float)(pt.x + 18), (float)(pt.y + 1), 0.0f);
@@ -1176,7 +1207,7 @@ COptionDlg::Draw() {
                         0,
                         0,
                         g_dwBLACK,
-                        "Show monster HP");
+                        label.pszLabel);
                 }
             }
         }

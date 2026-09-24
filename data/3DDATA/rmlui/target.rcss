@@ -1,0 +1,90 @@
+/* UI2 target frame -- LAYOUT ONLY ( colours and materials: rose-theme.rcss ).
+   Reload in game with /uireload. */
+
+/* Default spot: to the right of the status panel. */
+#target {
+    left: 240dp;
+    top: 3dp;
+    width: 210dp;
+    cursor: move;
+}
+body.locked #target { cursor: default; }
+
+/* --- name / level ------------------------------------------------------------ */
+.head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 18dp;
+    padding-left: 2dp;
+    padding-right: 3dp;
+}
+
+/* The monster type mark ( TARGETMARK.TSI ), as beside the overhead tag. */
+.mark {
+    width: 19dp;
+    height: 19dp;
+    margin-right: 4dp;
+}
+.mark img {
+    display: block;
+    width: 19dp;
+    height: 19dp;
+}
+
+.name {
+    flex-grow: 1;
+    font-size: 12dp;
+    font-weight: bold;
+    font-effect: shadow(1px 1px #000000c0);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.level {
+    margin-left: 6dp;
+    font-weight: bold;
+    color: #ff9a5a;
+}
+
+.kind {
+    padding-left: 2dp;
+    font-size: 10dp;
+}
+
+/* --- HP ------------------------------------------------------------------------ */
+.bar {
+    height: 15dp;
+    margin-top: 3dp;
+
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding-left: 5dp;
+    padding-right: 5dp;
+}
+.bar .val { flex-grow: 1; text-align: center; }
+.bar .pct { width: 34dp; text-align: right; }
+
+/* --- status effects ----------------------------------------------------------- */
+.icons {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 4dp;
+}
+
+/* A .ui-tipped element: must not be position: relative ( see the theme ). */
+.buff {
+    margin-right: 2dp;
+    margin-bottom: 2dp;
+}
+.frame {
+    width: 20dp;
+    height: 20dp;
+}
+.frame img {
+    width: 16dp;
+    height: 16dp;
+}

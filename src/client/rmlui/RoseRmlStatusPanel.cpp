@@ -2,6 +2,7 @@
 
 #include "RoseRmlStatusPanel.h"
 #include "RoseRmlLayout.h"
+#include "RoseRmlUi.h"
 #include "RoseUi2.h"
 
 #include <RmlUi/Core/Context.h>
@@ -22,9 +23,6 @@
 #include <stdio.h>
 
 namespace {
-
-/// The 667 gauge's easing time ( CTGuage::Get_PercentValue, 0x190 ms ).
-const DWORD kBarEaseMs = 400;
 
 /// Below this share of max HP the bar switches to its warning look.
 const float kLowHpPct = 25.0f;
@@ -68,9 +66,6 @@ RoseRmlStatusPanel::RoseRmlStatusPanel():
     m_fMpWidth(0.0f),
     m_fExpWidth(0.0f),
     m_bHpLow(false) {
-    m_HpBar.bPrimed = false;
-    m_MpBar.bPrimed = false;
-    m_ExpBar.bPrimed = false;
 }
 
 bool
@@ -123,6 +118,13 @@ RoseRmlStatusPanel::Initialise(Rml::Context* pContext, const std::string& strAss
             g_itMGR.OpenDialog(DLG_TYPE_MENU);
         });
 
+    /// Interface settings ( scale, lock, reset layout ). Same bubbling guard.
+    constructor.BindEventCallback("open_ui",
+        [](Rml::DataModelHandle, Rml::Event& ev, const Rml::VariantList&) {
+            ev.StopPropagation();
+            RoseRmlUi::ToggleInterfacePanel();
+        });
+
     m_Model = constructor.GetModelHandle();
 
     const std::string strDoc = strAssetDir + "status.rml";
@@ -157,39 +159,13 @@ RoseRmlStatusPanel::SetVisible(bool bVisible) {
     if (bVisible) {
         /// Start the bars where the values are, not where they were when the
         /// panel was last seen ( another character, before a zone change ).
-        m_HpBar.bPrimed = false;
-        m_MpBar.bPrimed = false;
-        m_ExpBar.bPrimed = false;
+        m_HpBar.Reset();
+        m_MpBar.Reset();
+        m_ExpBar.Reset();
         m_pDocument->Show();
     } else {
         m_pDocument->Hide();
     }
-}
-
-bool
-RoseRmlStatusPanel::StepBar(EasedBar& bar, float fTarget, DWORD dwNow) {
-    if (!bar.bPrimed) {
-        bar.fFrom = bar.fTo = bar.fShown = fTarget;
-        bar.dwStart = dwNow;
-        bar.bPrimed = true;
-        return true;
-    }
-
-    if (fTarget != bar.fTo) {
-        bar.fFrom = bar.fShown;
-        bar.fTo = fTarget;
-        bar.dwStart = dwNow;
-    }
-
-    float t = (float)(dwNow - bar.dwStart) / (float)kBarEaseMs;
-    if (t > 1.0f)
-        t = 1.0f;
-    const float fShown = bar.fFrom + (bar.fTo - bar.fFrom) * t;
-    if (fShown == bar.fShown)
-        return false;
-
-    bar.fShown = fShown;
-    return true;
 }
 
 void
@@ -229,15 +205,15 @@ RoseRmlStatusPanel::Sample() {
     Assign(m_strWeight, Printf("%d%%", iWeightPct), "weight");
 
     const DWORD dwNow = g_GameDATA.GetGameTime();
-    if (StepBar(m_HpBar, fHpPct, dwNow)) {
+    if (m_HpBar.Step(fHpPct, dwNow)) {
         m_fHpWidth = m_HpBar.fShown;
         m_Model.DirtyVariable("hp_width");
     }
-    if (StepBar(m_MpBar, fMpPct, dwNow)) {
+    if (m_MpBar.Step(fMpPct, dwNow)) {
         m_fMpWidth = m_MpBar.fShown;
         m_Model.DirtyVariable("mp_width");
     }
-    if (StepBar(m_ExpBar, fExpPct, dwNow)) {
+    if (m_ExpBar.Step(fExpPct, dwNow)) {
         m_fExpWidth = m_ExpBar.fShown;
         m_Model.DirtyVariable("exp_width");
     }

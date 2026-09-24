@@ -67,13 +67,20 @@ IsActive() {
 }
 
 bool
-SetActive(bool bActive) {
-    if (!RoseRmlUi::IsInitialised())
-        return false;
+IsChosen() {
+    return ResolveActive();
+}
 
+bool
+SetActive(bool bActive) {
     ResolveActive();
     g_iActive = bActive ? 1 : 0;
     WritePrivateProfileStringA("VIDEO", "UI2", bActive ? "1" : "0", kIniPath);
+
+    if (!RoseRmlUi::IsInitialised()) {
+        LOG_INFO("[ui2] {} interface saved; applies on the next start", bActive ? "UI2" : "classic");
+        return false;
+    }
     LOG_INFO("[ui2] switched to {} interface", bActive ? "UI2" : "classic");
 
     if (!bActive) {

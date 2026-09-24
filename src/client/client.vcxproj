@@ -437,10 +437,12 @@
     <ClCompile Include="rmlui\RoseRmlBuffBar.cpp" />
     <ClCompile Include="rmlui\RoseRmlDamageMeter.cpp" />
     <ClCompile Include="rmlui\RoseRmlIcons.cpp" />
+    <ClCompile Include="rmlui\RoseRmlInterfacePanel.cpp" />
     <ClCompile Include="rmlui\RoseRmlLayout.cpp" />
     <ClCompile Include="rmlui\RoseRmlRenderer.cpp" />
     <ClCompile Include="rmlui\RoseRmlSystem.cpp" />
     <ClCompile Include="rmlui\RoseRmlStatusPanel.cpp" />
+    <ClCompile Include="rmlui\RoseRmlTargetFrame.cpp" />
     <ClCompile Include="rmlui\RoseRmlUi.cpp" />
     <ClCompile Include="rmlui\RoseUi2.cpp" />
     <ClCompile Include="Interface\CNameBox.cpp" />
