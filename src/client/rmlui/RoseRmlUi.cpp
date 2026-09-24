@@ -9,12 +9,16 @@
 #include "RoseRmlStatusPanel.h"
 #include "RoseRmlTargetFrame.h"
 #include "RoseRmlRenderer.h"
+#include "RoseRmlSkillBar.h"
 #include "RoseRmlSystem.h"
 
 #include <RmlUi/Core.h>
 #include <RmlUi/Debugger.h>
 
 #include "rose/common/log.h"
+
+#include "../interface/CDragNDropMgr.h"
+#include "tgamectrl/winctrl.h"
 
 #include <stdlib.h>
 #include <string>
@@ -29,6 +33,7 @@ RoseRmlStatusPanel g_StatusPanel; ///< UI2: replaces CAvatarInfoDlg
 RoseRmlBuffBar g_BuffBar; ///< UI2: replaces CEndurancePack::Draw
 RoseRmlTargetFrame g_TargetFrame; ///< UI2: new, the selected target
 RoseRmlInterfacePanel g_InterfacePanel; ///< UI2: scale / lock / reset settings
+RoseRmlSkillBar g_SkillBar; ///< UI2: replaces the two CQuickBARs ( as their view )
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -218,6 +223,7 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_BuffBar.SetAnchor(g_StatusPanel.GetPanel());
     g_TargetFrame.Initialise(g_pContext, kAssetDir);
     g_InterfacePanel.Initialise(g_pContext, kAssetDir);
+    g_SkillBar.Initialise(g_pContext, kAssetDir);
 
     /// After every document is loaded: the lock walks their <handle>s.
     RoseRmlLayout::Initialise(g_pContext);
@@ -236,6 +242,7 @@ Shutdown() {
     g_BuffBar.Shutdown();
     g_TargetFrame.Shutdown();
     g_InterfacePanel.Shutdown();
+    g_SkillBar.Shutdown();
     RoseRmlLayout::Shutdown();
     g_pContext = NULL;
 
@@ -308,7 +315,13 @@ Update() {
     g_BuffBar.Update();
     g_TargetFrame.Update();
     g_InterfacePanel.Update();
+    g_SkillBar.Update();
     g_pContext->Update();
+}
+
+short
+SkillBarSlotAt(int x, int y, int iDlgType) {
+    return g_bInitialised ? g_SkillBar.SlotAt(x, y, iDlgType) : -1;
 }
 
 void
@@ -412,6 +425,53 @@ OnResize(int iWidth, int iHeight) {
         g_pContext->SetDimensions(Rml::Vector2i(iWidth, iHeight));
 }
 
+/// The legacy drop-target type declared by the element under the point, or 0
+/// ( a UI2 panel that accepts nothing ). A row of the skill bar declares
+/// drop-target="8" ( DLG_TYPE_QUICKBAR ): a drop there is a drop on that
+/// legacy dialog, whose command then asks CQuickBAR::GetMouseClickSlot.
+static int
+DropTargetAt(int x, int y) {
+    for (Rml::Element* pEl = g_pContext->GetElementAtPoint(Rml::Vector2f((float)x, (float)y));
+         pEl != NULL;
+         pEl = pEl->GetParentNode()) {
+        if (pEl->HasAttribute("drop-target"))
+            return pEl->GetAttribute<int>("drop-target", 0);
+    }
+    return 0;
+}
+
+/// A left release while the LEGACY drag-and-drop system carries an icon.
+/// Without this, a release over any RmlUi panel was eaten here and never
+/// reached CITStateNormal, so DragEnd never ran and the icon stayed glued to
+/// the cursor.
+///   - over a UI2 drop target: end the legacy drag there ( its command runs );
+///   - over any other UI2 panel: cancel it -- nothing happens, as if dropped
+///     back where it came from ( NOT the ground, which removes / drops items );
+///   - elsewhere: hand the release to the legacy chain untouched, which drops
+///     on the ground or on a legacy dialog as it always did.
+static bool
+ReleaseLegacyDrag(int x, int y) {
+    const bool bOverPanel = IsPointOverPanel(x, y);
+
+    /// RmlUi still needs the release to close whatever press it tracked.
+    if (g_bDragging || bOverPanel)
+        g_pContext->ProcessMouseButtonUp(0, 0);
+    g_bDragging = false;
+
+    if (!bOverPanel)
+        return false;
+
+    /// The legacy chain resets this on every release; it is skipped here.
+    CWinCtrl::SetMouseExclusiveCtrl(NULL);
+
+    const int iTarget = DropTargetAt(x, y);
+    if (iTarget > 0)
+        CDragNDropMgr::GetInstance().DragEnd(iTarget);
+    else
+        CDragNDropMgr::GetInstance().DragCancel();
+    return true;
+}
+
 bool
 ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
     if (!g_bInitialised || g_pContext == NULL)
@@ -448,6 +508,8 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
             const int iButton = MouseButtonFromMsg(uiMsg);
             if (iButton < 0)
                 return false;
+            if (iButton == 0 && CDragNDropMgr::GetInstance().IsDraging())
+                return ReleaseLegacyDrag(x, y);
             /// A release that ends a panel drag must reach RmlUi even if the
             /// cursor has left the panel, or the handle keeps dragging forever.
             const bool bConsume = g_bDragging || IsPointOverPanel(x, y);

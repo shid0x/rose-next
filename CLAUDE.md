@@ -286,6 +286,19 @@ VFS — no atlas re-cutting). Things that will bite:
 - Data models in one context share a type register; a struct used by two panels
   (`RoseRmlBuffBar::BuffVM`) must be registered once (`RegisterBuffStruct` guards it).
 
+**Skill bar + drag-and-drop bridge** (2026-09-24). `RoseRmlSkillBar` replaces both quickbars as
+a *view*: the legacy `CQuickBAR`s stay alive hidden and keep the F-key hotkeys (`Process` runs for
+hidden dialogs), the page and the hot-icon observers. The bridge is thin because every quickbar
+drop command ends in `Send_cli_SET_HOTICON` and asks `CQuickBAR::GetMouseClickSlot` for the slot:
+a row declares `drop-target` (its legacy dialog type), `RoseRmlUi` ends a legacy drag there
+(`DragEnd`), and `GetMouseClickSlot` asks `SkillBarSlotAt` while UI2 is on. A release over any
+other UI2 area now **cancels** (`CDragNDropMgr::DragCancel`) — before, it was eaten and left the
+icon glued to the cursor. Icons report `GetSprite` / `GetCooldown` / `GetStackCount` (virtuals on
+`CIcon`; item reload logic shared with `Draw` via `CIconItem::GetUseItemDelay`). Two blur traps:
+**skill sprites are 39x39** (items 40x40) — never force an icon's size, let the `rect` size it and
+pin it top-left; and **position panels on whole pixels** (`RoseRmlLayout::SetPosition` floors) —
+centring an odd width put the bar at x.5 and blurred every icon on it.
+
 Also UI2: the target frame (`RoseRmlTargetFrame`, new — retail showed the target only overhead),
 the Interface window (`/ui` or the status panel's UI button: scale, lock, reset layout, back to
 classic), and Options > Play > "Use new interface (UI2)" (checkbox ID 49, loose `DlgOption.xml`).

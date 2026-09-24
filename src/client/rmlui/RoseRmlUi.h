@@ -64,6 +64,11 @@ void ToggleDamageMeter();
 /// The interface settings window ( scale, lock, reset layout ): "/ui" and the
 /// status panel's UI button.
 void ToggleInterfacePanel();
+
+/// The UI2 skill bar's absolute hot-icon index under the point, in the row
+/// standing for iDlgType ( DLG_TYPE_QUICKBAR / _EXT ), or -1. What
+/// CQuickBAR::GetMouseClickSlot answers while UI2 replaces the quickbars.
+short SkillBarSlotAt(int x, int y, int iDlgType);
 bool IsDamageMeterVisible();
 
 } // namespace RoseRmlUi

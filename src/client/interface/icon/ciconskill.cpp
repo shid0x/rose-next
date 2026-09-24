@@ -6,6 +6,8 @@
 #include "../../GameCommon/Skill.h"
 #include "../Dlgs/SubClass/CSlot.h"
 #include "../interfacetype.h"
+#include "../IO_ImageRes.h"
+#include "../../GameProc/SkillCommandDelay.h"
 
 //----------------------------------------------------------------------------------------------------
 /// Class CIconSkill
@@ -1213,4 +1215,46 @@ CIconSkill::AddSkillRequireSkillPoint2Learn(int iSkillNo, CInfo& ToolTip) {
 int
 CIconSkill::GetIndex() {
     return GetSkillSlotFromIcon();
+}
+
+/// Mirrors CSkill::DrawIcon: the skill's own reload, and over it the global
+/// casting delay CSkillCommandDelay draws on every skill icon.
+bool
+CIconSkill::GetSprite(int& iModuleID, int& iGraphicID) {
+    CSkill* pSkill = GetSkill();
+    if (pSkill == NULL)
+        return false;
+    iModuleID = IMAGE_RES_SKILL_ICON;
+    iGraphicID = SKILL_ICON_NO(pSkill->GetSkillIndex());
+    return true;
+}
+
+float
+CIconSkill::GetCooldown(int* piRemainMs) {
+    if (piRemainMs)
+        *piRemainMs = 0;
+
+    CSkill* pSkill = GetSkill();
+    if (pSkill == NULL)
+        return 0.0f;
+
+    float fRate = 0.0f;
+    const int iDelay = pSkill->GetSkillDelayTime();
+    const int iTotal = SKILL_RELOAD_TIME(pSkill->GetSkillIndex()) * 200;
+    if (iDelay > 0 && iTotal > 0) {
+        fRate = (float)iDelay / (float)iTotal;
+        if (piRemainMs)
+            *piRemainMs = iDelay;
+    }
+
+    const int iGlobal = CSkillCommandDelay::GetSingleton().GetSkillCommandDelayProgressRatio();
+    const float fGlobal = (float)(100 - iGlobal) / 100.0f;
+    if (fGlobal > fRate)
+        fRate = fGlobal;
+
+    if (fRate < 0.0f)
+        fRate = 0.0f;
+    if (fRate > 1.0f)
+        fRate = 1.0f;
+    return fRate;
 }

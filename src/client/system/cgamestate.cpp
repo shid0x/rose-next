@@ -4,6 +4,9 @@
 #include "capplication.h"
 #include "interface/dev/dev_ui.h"
 #include "rmlui/RoseRmlUi.h"
+#include "rmlui/RoseUi2.h"
+#include "interface/CDragNDropMgr.h"
+#include "System/CGame.h"
 
 CGameState::CGameState(void):
     m_iStateID(0),
@@ -89,4 +92,14 @@ CGameState::render_dev_ui(void) {
     /// owns the device for the duration of the pass.
     RoseRmlUi::Update();
     RoseRmlUi::Render();
+
+    /// A legacy drag in progress is drawn last under UI2, above the RmlUi
+    /// panels it may be dropped on ( IT_MGR::Update skips it then ).
+    if (RoseUi2::IsActive() && CDragNDropMgr::GetInstance().IsDraging()) {
+        POINT ptMouse;
+        CGame::GetInstance().Get_MousePos(ptMouse);
+        ::beginSprite(D3DXSPRITE_ALPHABLEND);
+        CDragNDropMgr::GetInstance().Draw(ptMouse);
+        ::endSprite();
+    }
 }

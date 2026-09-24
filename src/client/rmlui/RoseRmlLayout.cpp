@@ -10,6 +10,7 @@
 
 #include "rose/common/log.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
@@ -30,10 +31,12 @@ struct TrackedPanel {
 };
 std::vector<TrackedPanel> g_Tracked;
 
+/// Always whole pixels: a panel on a fractional position samples every image
+/// and glyph between two texels, which reads as blur.
 void
 SetPosition(Rml::Element* pPanel, float x, float y) {
-    pPanel->SetProperty(Rml::PropertyId::Left, Rml::Property(x, Rml::Unit::PX));
-    pPanel->SetProperty(Rml::PropertyId::Top, Rml::Property(y, Rml::Unit::PX));
+    pPanel->SetProperty(Rml::PropertyId::Left, Rml::Property(floorf(x), Rml::Unit::PX));
+    pPanel->SetProperty(Rml::PropertyId::Top, Rml::Property(floorf(y), Rml::Unit::PX));
 }
 
 int
@@ -156,8 +159,8 @@ Clamp(Rml::Element* pPanel, int iViewportW, int iViewportH) {
         return;
 
     const Rml::Vector2f pos = pPanel->GetAbsoluteOffset(Rml::BoxArea::Border);
-    const float fMaxX = max(0.0f, (float)iViewportW - size.x);
-    const float fMaxY = max(0.0f, (float)iViewportH - size.y);
+    const float fMaxX = max(0.0f, floorf((float)iViewportW - size.x));
+    const float fMaxY = max(0.0f, floorf((float)iViewportH - size.y));
 
     float x = pos.x;
     float y = pos.y;

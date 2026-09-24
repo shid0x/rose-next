@@ -36,6 +36,13 @@ public:
     virtual const char* GetName();
     virtual int GetIndex();
     virtual bool IsItemIcon() { return true; }
+    virtual bool GetSprite(int& iModuleID, int& iGraphicID);
+    virtual float GetCooldown(int* piRemainMs = NULL);
+    virtual int GetStackCount();
+
+    /// The use-item reload Draw() shows ( potion / scroll delay ): delay left
+    /// and its full length, in ms. False when not a reloading use item.
+    bool GetUseItemDelay(float& fDelay, float& fTotal);
 
     CItem* GetCItem();
     int GetItemNo();

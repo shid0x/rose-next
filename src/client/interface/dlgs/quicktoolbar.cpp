@@ -17,6 +17,8 @@
 #include "../Icon/CIconQuick.h"
 #include "../Icon/CIconItem.h"
 #include "../command/dragcommand.h"
+#include "../../rmlui/RoseRmlUi.h"
+#include "../../rmlui/RoseUi2.h"
 
 #include "../../GameData/Event/CTEventItem.h"
 
@@ -343,6 +345,12 @@ CQuickBAR::UpdateCSlotPosition() {
 
 short
 CQuickBAR::GetMouseClickSlot(POINT& ptMouse) {
+    /// UI2: the slots on screen belong to the RmlUi bar, not to this hidden
+    /// dialog. Every drop command ( inventory / skill / clan skill / move )
+    /// asks here, so this one redirect makes them all work on the UI2 bar.
+    if (RoseUi2::IsReplaced(GetDialogType()))
+        return RoseRmlUi::SkillBarSlotAt(ptMouse.x, ptMouse.y, GetDialogType());
+
     /// ÇöÀç ÆäÀÌÁö¿¡ µî·ÏµÈ ½½·ÔµéÀ» µ¹¸ç Ã¼Å©
     for (int i = 0; i < HOT_ICONS_PER_PAGE; i++) {
         if (m_QuickSlot[i].IsInside(ptMouse.x, ptMouse.y) == true) {
@@ -362,21 +370,12 @@ CQuickBAR::On_LButtonUP(unsigned iProcID, WPARAM wParam, LPARAM lParam) {
     switch (iProcID) {
         case IID_BTN_HORIZONTAL_PREV:
         case IID_BTN_VERTICAL_PREV: {
-            --m_nCurrentPage;
-            if (m_nCurrentPage < m_nStartPage)
-                m_nCurrentPage = m_nEndPage - 1;
-
-            UpdateHotIconSlot();
+            ChangePage(-1);
             break;
         }
         case IID_BTN_HORIZONTAL_NEXT:
         case IID_BTN_VERTICAL_NEXT: {
-            m_nCurrentPage++;
-
-            if (m_nCurrentPage >= m_nEndPage)
-                m_nCurrentPage = m_nStartPage;
-
-            UpdateHotIconSlot();
+            ChangePage(1);
         }
             return true;
         case IID_BTN_ROTATE: {
@@ -586,4 +585,15 @@ void
 CQuickBAR::SetStartEndPage(short nStart, short nEnd) {
     m_nStartPage = nStart;
     m_nEndPage = nEnd;
+}
+
+void
+CQuickBAR::ChangePage(int iDelta) {
+    m_nCurrentPage += (short)iDelta;
+    if (m_nCurrentPage < m_nStartPage)
+        m_nCurrentPage = m_nEndPage - 1;
+    if (m_nCurrentPage >= m_nEndPage)
+        m_nCurrentPage = m_nStartPage;
+
+    UpdateHotIconSlot();
 }

@@ -24,6 +24,9 @@ public:
     virtual void SetPosition(POINT pt);
     virtual void GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType);
     virtual int GetIndex();
+    virtual bool GetSprite(int& iModuleID, int& iGraphicID);
+    virtual float GetCooldown(int* piRemainMs = NULL);
+    virtual int GetStackCount();
 
     void SetQuickBarSlotIndex(int iIndex);
     int GetQuickBarSlotIndex();

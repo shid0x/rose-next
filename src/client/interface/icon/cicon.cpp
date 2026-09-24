@@ -20,6 +20,24 @@ CIcon::CIcon(void) {
     m_pSlot = NULL;
     m_strString = "CIcon";
     m_dwIconDrawColor = D3DCOLOR_ARGB(255, 255, 255, 255);
+    /// Never set by subclasses that compute their sprite in Draw(); -1 lets
+    /// GetSprite() tell "no sprite" from garbage.
+    m_iModuleID = -1;
+    m_iIconGraphicID = -1;
+}
+
+bool
+CIcon::GetSprite(int& iModuleID, int& iGraphicID) {
+    iModuleID = m_iModuleID;
+    iGraphicID = m_iIconGraphicID;
+    return m_iModuleID >= 0 && m_iIconGraphicID >= 0;
+}
+
+float
+CIcon::GetCooldown(int* piRemainMs) {
+    if (piRemainMs)
+        *piRemainMs = 0;
+    return 0.0f;
 }
 
 CIcon::~CIcon(void) {

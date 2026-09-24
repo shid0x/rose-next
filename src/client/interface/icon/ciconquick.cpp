@@ -74,3 +74,26 @@ int
 CIconQuick::GetIndex() {
     return m_iQuickBarSlotIndex;
 }
+
+/// UI2 icon queries: the quick icon is a wrapper, the wrapped icon answers.
+bool
+CIconQuick::GetSprite(int& iModuleID, int& iGraphicID) {
+    if (m_pIcon == NULL)
+        return false;
+    return m_pIcon->GetSprite(iModuleID, iGraphicID);
+}
+
+float
+CIconQuick::GetCooldown(int* piRemainMs) {
+    if (m_pIcon == NULL) {
+        if (piRemainMs)
+            *piRemainMs = 0;
+        return 0.0f;
+    }
+    return m_pIcon->GetCooldown(piRemainMs);
+}
+
+int
+CIconQuick::GetStackCount() {
+    return m_pIcon ? m_pIcon->GetStackCount() : 0;
+}

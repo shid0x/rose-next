@@ -366,7 +366,11 @@ IT_MGR::Update() {
 
     m_pCurrState->Update(ptMouse);
     // g_DragNDrop.DrawDRAG_Item();
-    CDragNDropMgr::GetInstance().Draw(ptMouse);
+    /// UI2 draws the dragged icon after the RmlUi pass instead
+    /// ( CGameState::render_dev_ui ), or it would slide under the UI2 panels
+    /// it is being dropped on.
+    if (!RoseUi2::IsActive())
+        CDragNDropMgr::GetInstance().Draw(ptMouse);
     CCursor::GetInstance().Draw(ptMouse);
 }
 

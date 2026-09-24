@@ -91,6 +91,19 @@ public:
     void SetQuickBarType(short nType);
     short GetQuickBarType();
 
+    /// --- UI2 ( RoseRmlSkillBar ) -------------------------------------------
+    /// With UI2 on, this dialog stays alive but hidden: it still owns the
+    /// hotkeys ( Process runs for hidden dialogs ), the current page and the
+    /// hot-icon observers, and the RmlUi bar is only its view. So switching
+    /// back to the classic UI finds the same page, and nothing is duplicated.
+    short GetCurrentPage() { return m_nCurrentPage; }
+    short GetStartPage() { return m_nStartPage; }
+    /// Next / previous page, wrapping, as the arrow buttons do.
+    void ChangePage(int iDelta);
+    /// The drag item a slot of this bar starts a drag with ( remove anywhere,
+    /// move within this bar ), for the RmlUi bar to start the same drag.
+    CDragItem* GetDragItem() { return m_pDragItem; }
+
 protected:
     bool On_LButtonUP(unsigned iProcID, WPARAM wParam, LPARAM lParam);
 };

@@ -35,6 +35,9 @@ public:
     void Draw(POINT ptMouse); /// 드래그 중인 CIcon을 그린다.
     void DragStart(CDragItem* pItem); /// 드래그 시작
     void DragEnd(int iTargetType); /// 드랍
+    /// Drop the dragged icon without running any command: a release over a
+    /// UI2 ( RmlUi ) panel that is not a drop target ( RoseRmlUi ).
+    void DragCancel();
     bool IsDraging(); /// 드래그 중인가?
 
 private:

@@ -9,31 +9,53 @@
     cursor: pointer;           /* the whole panel is the self-target button */
 }
 
-/* --- name / level ------------------------------------------------------------ */
+/* --- identity: name over class, level badge ------------------------------- */
 .head {
     display: flex;
     flex-direction: row;
     align-items: center;
-    height: 18dp;
     padding-left: 3dp;
     padding-right: 3dp;
-    margin-bottom: 3dp;
+    margin-bottom: 4dp;
+}
+
+.ident {
+    flex-grow: 1;
+    overflow: hidden;          /* only a 16-char name can ever reach the badge */
 }
 
 .name {
-    flex-grow: 1;
+    display: block;
     font-size: 12dp;
     font-weight: bold;
     color: #f0f0f0;
     font-effect: shadow(1px 1px #000000c0);
-    overflow: hidden;
     white-space: nowrap;
+    overflow: hidden;
     text-overflow: ellipsis;
 }
 
+/* The full class name, on its own line under the name. */
+.job {
+    display: block;
+    margin-top: 1dp;
+    font-size: 10dp;
+    white-space: nowrap;
+}
+
+/* Same size as the name, so the two read as one line of identity. */
 .level {
+    margin-left: 6dp;
+    font-size: 12dp;
     font-weight: bold;
     color: #ff9a5a;
+    font-effect: shadow(1px 1px #000000c0);
+}
+.level .lv {
+    margin-right: 2dp;
+    font-size: 10dp;
+    font-weight: normal;
+    font-effect: none;
 }
 
 /* --- HP / MP ----------------------------------------------------------------- */
@@ -78,7 +100,7 @@
     background-color: #00000070;
 }
 
-/* --- job / exp / weight / menu ----------------------------------------------- */
+/* --- exp / weight / buttons ------------------------------------------------- */
 .foot {
     display: flex;
     flex-direction: row;
@@ -86,15 +108,10 @@
     padding-left: 3dp;
 }
 
-.job {
-    flex-grow: 1;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-}
+.stats { flex-grow: 1; }
 
 .stat {
-    margin-left: 8dp;
+    margin-right: 8dp;
     font-size: 10dp;
 }
 

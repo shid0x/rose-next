@@ -1,0 +1,128 @@
+/* UI2 skill bar -- LAYOUT ONLY ( colours and materials: rose-theme.rcss ).
+   Reload in game with /uireload. RoseRmlSkillBar centres it at the bottom of
+   the screen until it is dragged ( by the grip ) or restored. */
+
+#skillbar {
+    left: 0dp;
+    top: 0dp;
+    flex-direction: row;       /* grip | rows */
+    padding: 3dp;
+}
+
+/* --- grip: the only drag handle, so slots stay free for their own drags ---- */
+.grip {
+    width: 7dp;
+    margin-right: 3dp;
+    border: 1dp #565656ff;
+    border-radius: 2dp;
+    background-color: #3a3a3aff;
+    decorator: ui-gloss-soft;
+    cursor: move;
+}
+body.locked .grip { cursor: default; }
+
+.rows {
+    display: flex;
+    flex-direction: column;
+}
+
+.row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+.row + .row { margin-top: 2dp; }
+
+/* --- page number and arrows ----------------------------------------------- */
+.pager {
+    width: 22dp;
+    margin-right: 3dp;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.page {
+    font-size: 13dp;
+    font-weight: bold;
+    font-effect: shadow(1px 1px #000000c0);
+}
+.arrows {
+    display: flex;
+    flex-direction: row;
+}
+.arrow {
+    width: 11dp;
+    text-align: center;
+    font-size: 13dp;
+    font-weight: bold;
+    color: #9a9a9a;
+    cursor: pointer;
+}
+.arrow:hover { color: #ff9a5a; }
+
+/* --- slots ------------------------------------------------------------------ */
+/* .ui-icon ( theme ) is the dark backing square; positioned here so the
+   cooldown curtain and the labels can sit on top of the icon.
+   Icons are drawn at their NATIVE atlas size, exactly as the classic bar
+   draws them: 40x40 for most items, 39x39 for every skill. So the img gets
+   NO width/height -- RmlUi then sizes it from its rect, times the UI scale --
+   and it is pinned top-left instead of centred: a 39 px sprite centred in a
+   40 px box lands on a half pixel and every texel is blurred across two.
+   The slot is the 40 px cell plus its 1 dp rim, border included. */
+.slot {
+    position: relative;
+    box-sizing: border-box;
+    width: 42dp;
+    height: 42dp;
+    margin-right: 2dp;
+    align-items: flex-start;
+    justify-content: flex-start;
+    cursor: pointer;
+}
+.slot:hover { border-color: #d0501aff; }
+.slot.empty { background-color: #00000060; cursor: default; }
+.slot.empty:hover { border-color: #000000c0; }
+
+/* Present but unusable ( wrong weapon, not enough MP ... ). */
+.slot.off img { image-color: #707070; }
+
+/* Cooldown: a curtain that drains from the top as the reload runs down. */
+.cd {
+    position: absolute;
+    left: 1dp;
+    right: 1dp;
+    bottom: 1dp;
+    border-radius: 3dp;
+    background-color: #000000b0;
+}
+.cd-text {
+    position: absolute;
+    left: 0dp;
+    right: 0dp;
+    top: 0dp;
+    line-height: 40dp;
+    text-align: center;
+    font-size: 14dp;
+    font-weight: bold;
+    color: #ffffff;
+    font-effect: outline(1px #000000e0);
+}
+
+/* Stack count, bottom right; key label, top left. */
+.count {
+    position: absolute;
+    right: 3dp;
+    bottom: 1dp;
+    font-size: 10dp;
+    font-weight: bold;
+    color: #ffffff;
+    font-effect: outline(1px #000000e0);
+}
+.key {
+    position: absolute;
+    left: 3dp;
+    top: 1dp;
+    font-size: 8dp;
+    color: #d8d8d8;
+    font-effect: outline(1px #000000e0);
+}

@@ -50,6 +50,18 @@ public:
     ///CIconItem만 true — 채팅 아이템 링크(shift+click)의 대상 판별용
     virtual bool IsItemIcon() { return false; }
 
+    /// UI2 ( RmlUi ) panels draw icons themselves, from the atlas sprite, so
+    /// these report what Draw() would show without drawing anything. Keep each
+    /// override in step with its class's Draw().
+    ///
+    /// GetSprite: the IMAGE_RES_* module and sprite index; false if none.
+    /// GetCooldown: the share of the reload still to run, 0..1 ( 0 = ready ),
+    ///   optionally with the milliseconds left.
+    /// GetStackCount: the number drawn on the icon ( stacked items ), else 0.
+    virtual bool GetSprite(int& iModuleID, int& iGraphicID);
+    virtual float GetCooldown(int* piRemainMs = NULL);
+    virtual int GetStackCount() { return 0; }
+
     POINT GetPosition() { return m_ptPosition; }
 
     void SetEnable() { m_bEnable = true; }

@@ -80,93 +80,19 @@ CIconItem::Draw() {
 
     m_iIconGraphicID = ITEM_ICON_NO(Item.GetTYPE(), Item.GetItemNO());
 
-    if (Item.GetTYPE() != ITEM_TYPE_USE) {
-        CIcon::Draw();
+    /// Use items can be reloading ( potion / scroll delay ): draw the reload
+    /// sweep instead of the plain icon. The rule lives in GetUseItemDelay so
+    /// the UI2 skill bar ( GetCooldown ) shows exactly the same thing.
+    float fDelay = 0.0f, fTotal = 1.0f;
+    if (GetUseItemDelay(fDelay, fTotal)) {
+        CReloadProcess* pReloadProcess = g_itMGR.GetReloadProcess();
+        pReloadProcess->Draw((int)m_ptPosition.x,
+            (int)m_ptPosition.y,
+            IMAGE_RES_ITEM,
+            m_iIconGraphicID,
+            fDelay / fTotal);
     } else {
-
-        if (USEITME_STATUS_STB(Item.GetItemNO())) {
-            switch (USEITME_STATUS_STB(Item.GetItemNO())) {
-                case 1:
-                case 2:
-                case 3: {
-                    if (float fUseItemDelay = (float)g_UseItemDelay.GetUseItemDelay(USE_ITEM_HP)) {
-                        float fProcessRate = fUseItemDelay / DEFAULT_HP_ITEM_DELAY;
-
-                        CReloadProcess* pReloadProcess = g_itMGR.GetReloadProcess();
-                        pReloadProcess->Draw((int)m_ptPosition.x,
-                            (int)m_ptPosition.y,
-                            IMAGE_RES_ITEM,
-                            m_iIconGraphicID,
-                            fProcessRate);
-                    } else
-                        CIcon::Draw();
-                } break;
-
-                case 4:
-                case 5:
-                case 6: {
-                    if (float fUseItemDelay = (float)g_UseItemDelay.GetUseItemDelay(USE_ITEM_MP)) {
-                        float fProcessRate = fUseItemDelay / DEFAULT_MP_ITEM_DELAY;
-
-                        CReloadProcess* pReloadProcess = g_itMGR.GetReloadProcess();
-                        pReloadProcess->Draw((int)m_ptPosition.x,
-                            (int)m_ptPosition.y,
-                            IMAGE_RES_ITEM,
-                            m_iIconGraphicID,
-                            fProcessRate);
-                    } else
-                        CIcon::Draw();
-
-                } break;
-
-                default: {
-                    if (float fUseItemDelay =
-                            (float)g_UseItemDelay.GetUseItemDelay(USE_ITEM_OTHERS)) {
-                        float fProcessRate = fUseItemDelay / DEFAULT_OTHER_ITEM_DELAY;
-
-                        CReloadProcess* pReloadProcess = g_itMGR.GetReloadProcess();
-                        pReloadProcess->Draw((int)m_ptPosition.x,
-                            (int)m_ptPosition.y,
-                            IMAGE_RES_ITEM,
-                            m_iIconGraphicID,
-                            fProcessRate);
-                    } else
-                        CIcon::Draw();
-                } break;
-            }
-        }
-
-        else {
-            /// 스크롤 스킬일경우
-            if (ITEM_TYPE(Item.GetTYPE(), Item.GetItemNO()) == USE_ITEM_SKILL_DOING) {
-                if (float fUseItemDelay = (float)g_UseItemDelay.GetUseItemDelay(USE_ITEM_SCROLL)) {
-                    float fProcessRate = fUseItemDelay / DEFAULT_USE_SCROLL_DELAY;
-
-                    CReloadProcess* pReloadProcess = g_itMGR.GetReloadProcess();
-                    pReloadProcess->Draw((int)m_ptPosition.x,
-                        (int)m_ptPosition.y,
-                        IMAGE_RES_ITEM,
-                        m_iIconGraphicID,
-                        fProcessRate);
-                } else {
-                    CIcon::Draw();
-                }
-            } else /// OTHER
-            {
-                if (float fUseItemDelay = (float)g_UseItemDelay.GetUseItemDelay(USE_ITEM_OTHERS)) {
-                    float fProcessRate = fUseItemDelay / DEFAULT_OTHER_ITEM_DELAY;
-
-                    CReloadProcess* pReloadProcess = g_itMGR.GetReloadProcess();
-                    pReloadProcess->Draw((int)m_ptPosition.x,
-                        (int)m_ptPosition.y,
-                        IMAGE_RES_ITEM,
-                        m_iIconGraphicID,
-                        fProcessRate);
-                } else {
-                    CIcon::Draw();
-                }
-            }
-        }
+        CIcon::Draw();
     }
 
     if (Item.HasSocket() && m_hSocketTexture) {
@@ -360,4 +286,84 @@ CIconItem::Process(unsigned uiMsg, WPARAM wParam, LPARAM lParam) {
         }
     }
     return 0;
+}
+
+/// The reload a use item is under, as Draw() showed it: which delay applies
+/// depends on the item ( HP / MP potion, skill scroll, anything else ).
+/// Returns false when the item is not a use item or is not reloading.
+bool
+CIconItem::GetUseItemDelay(float& fDelay, float& fTotal) {
+    fDelay = 0.0f;
+    fTotal = 1.0f;
+    if (m_pItem == NULL)
+        return false;
+
+    tagITEM& Item = m_pItem->GetItem();
+    if (Item.IsEmpty() || Item.GetTYPE() != ITEM_TYPE_USE)
+        return false;
+
+    int iDelayType = USE_ITEM_OTHERS;
+    float fDefault = (float)DEFAULT_OTHER_ITEM_DELAY;
+
+    switch (USEITME_STATUS_STB(Item.GetItemNO())) {
+        case 0:
+            /// No status: a skill scroll, or anything else.
+            if (ITEM_TYPE(Item.GetTYPE(), Item.GetItemNO()) == USE_ITEM_SKILL_DOING) {
+                iDelayType = USE_ITEM_SCROLL;
+                fDefault = (float)DEFAULT_USE_SCROLL_DELAY;
+            }
+            break;
+        case 1:
+        case 2:
+        case 3:
+            iDelayType = USE_ITEM_HP;
+            fDefault = (float)DEFAULT_HP_ITEM_DELAY;
+            break;
+        case 4:
+        case 5:
+        case 6:
+            iDelayType = USE_ITEM_MP;
+            fDefault = (float)DEFAULT_MP_ITEM_DELAY;
+            break;
+        default:
+            break;
+    }
+
+    fDelay = (float)g_UseItemDelay.GetUseItemDelay(iDelayType);
+    fTotal = fDefault;
+    return fDelay != 0.0f;
+}
+
+bool
+CIconItem::GetSprite(int& iModuleID, int& iGraphicID) {
+    if (m_pItem == NULL || m_pItem->GetItem().IsEmpty())
+        return false;
+    tagITEM& Item = m_pItem->GetItem();
+    iModuleID = IMAGE_RES_ITEM;
+    iGraphicID = ITEM_ICON_NO(Item.GetTYPE(), Item.GetItemNO());
+    return true;
+}
+
+float
+CIconItem::GetCooldown(int* piRemainMs) {
+    float fDelay = 0.0f, fTotal = 1.0f;
+    if (!GetUseItemDelay(fDelay, fTotal) || fTotal <= 0.0f || fDelay <= 0.0f) {
+        if (piRemainMs)
+            *piRemainMs = 0;
+        return 0.0f;
+    }
+    if (piRemainMs)
+        *piRemainMs = (int)fDelay;
+    const float fRate = fDelay / fTotal;
+    return fRate > 1.0f ? 1.0f : fRate;
+}
+
+int
+CIconItem::GetStackCount() {
+    if (m_pItem == NULL)
+        return 0;
+    tagITEM& Item = m_pItem->GetItem();
+    if (Item.IsEmpty() || !Item.IsEnableDupCNT())
+        return 0;
+    return GetQuantity();
 }

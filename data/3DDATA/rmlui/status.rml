@@ -19,9 +19,14 @@
          few pixels is a click ( self-target ), anything more is a move. -->
     <handle id="status" move_target="status" class="ui-window"
             data-event-mousedown="press()" data-event-click="self_target()">
+        <!-- Identity: name over class on the left, level as a badge on the
+             right. The class has its own line so it is never shortened. -->
         <div class="head">
-            <span class="name">{{name}}</span>
-            <span class="level"><span class="ui-muted">Lv</span> {{level}}</span>
+            <div class="ident">
+                <span class="name">{{name}}</span>
+                <span class="job ui-muted">{{job}}</span>
+            </div>
+            <span class="level"><span class="lv ui-muted">Lv</span>{{level}}</span>
         </div>
 
         <div class="bar ui-gauge">
@@ -54,9 +59,10 @@
         </div>
 
         <div class="foot">
-            <span class="job">{{job}}</span>
-            <span class="stat"><span class="ui-muted">EXP</span> {{exp_pct}}</span>
-            <span class="stat"><span class="ui-muted">WT</span> {{weight}}</span>
+            <div class="stats">
+                <span class="stat"><span class="ui-muted">EXP</span> {{exp_pct}}</span>
+                <span class="stat"><span class="ui-muted">WT</span> {{weight}}</span>
+            </div>
             <!-- UI2 interface settings: scale, lock panels, reset layout. -->
             <span class="ui-btn menu" data-event-click="open_ui()">UI</span>
             <span class="ui-btn menu" data-event-click="open_menu()">Menu</span>

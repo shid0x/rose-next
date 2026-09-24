@@ -67,6 +67,14 @@ CDragNDropMgr::DragEnd(int iTargetType) {
         m_pItem = NULL;
     }
 }
+void
+CDragNDropMgr::DragCancel() {
+    if (m_pItem) {
+        m_pItem->SetIcon(NULL);
+        m_pItem = NULL;
+    }
+}
+
 bool
 CDragNDropMgr::IsDraging() {
     if (m_pItem)

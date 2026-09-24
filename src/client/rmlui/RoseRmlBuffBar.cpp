@@ -20,6 +20,7 @@
 
 #include "rose/common/log.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdarg.h>
 
@@ -322,6 +323,9 @@ RoseRmlBuffBar::FollowAnchor() {
     /// Near the bottom edge, hang above the panel instead of off screen.
     if (y + size.y > (float)view.y)
         y = anchorPos.y - size.y - fGap;
+    /// Whole pixels, or the icons blur ( see RoseRmlLayout's SetPosition ).
+    x = floorf(x);
+    y = floorf(y);
 
     if (x == m_fPlacedX && y == m_fPlacedY)
         return;

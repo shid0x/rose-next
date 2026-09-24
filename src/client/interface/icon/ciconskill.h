@@ -24,7 +24,9 @@ public:
     int GetSkillSlotFromIcon() { return m_iSkillSlot; }
     virtual int GetSkillLevel();
     virtual int GetSkillIndex();
-    CSkill* GetSkill();
+    /// Virtual so CIconSkillClan's GetSkill ( the clan skill slot ) is the one
+    /// GetSprite / GetCooldown see for clan skills.
+    virtual CSkill* GetSkill();
 
     //----------------------------------------------------------------------------------------------------
     /// Overrided from CIcon
@@ -34,6 +36,8 @@ public:
     /*override*/ virtual CIcon* Clone();
     /*override*/ virtual void GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType);
     /*override*/ virtual const char* GetName();
+    /*override*/ virtual bool GetSprite(int& iModuleID, int& iGraphicID);
+    /*override*/ virtual float GetCooldown(int* piRemainMs = NULL);
 
     static void AddSkillRequireJob(int iSkillNo, CInfo& ToolTip);
     static void AddSkillRequireSkill(int iSkillNo, CInfo& ToolTip);

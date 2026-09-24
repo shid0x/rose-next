@@ -18,6 +18,10 @@ namespace {
 /// table is the whole of the "converted" switch.
 const int kReplacedDialogs[] = {
     DLG_TYPE_INFO, ///< RoseRmlStatusPanel ( name, level, HP/MP/EXP, menu )
+    /// RoseRmlSkillBar. Hidden, NOT gone: a hidden CQuickBAR still handles the
+    /// F-key hotkeys and owns the page; the RmlUi bar is its view.
+    DLG_TYPE_QUICKBAR,
+    DLG_TYPE_QUICKBAR_EXT,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).
