@@ -11,6 +11,7 @@
 #include "RoseRmlRenderer.h"
 #include "RoseRmlSkillBar.h"
 #include "RoseRmlSkillWindow.h"
+#include "RoseRmlCharacterWindow.h"
 #include "RoseRmlSystem.h"
 
 #include <RmlUi/Core.h>
@@ -37,6 +38,7 @@ RoseRmlTargetFrame g_TargetFrame; ///< UI2: new, the selected target
 RoseRmlInterfacePanel g_InterfacePanel; ///< UI2: scale / lock / reset settings
 RoseRmlSkillBar g_SkillBar; ///< UI2: replaces the two CQuickBARs ( as their view )
 RoseRmlSkillWindow g_SkillWindow; ///< UI2: replaces CSkillDLG ( a window )
+RoseRmlCharacterWindow g_CharacterWindow; ///< UI2: replaces CCharacterDLG ( a window )
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -228,6 +230,7 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_InterfacePanel.Initialise(g_pContext, kAssetDir);
     g_SkillBar.Initialise(g_pContext, kAssetDir);
     g_SkillWindow.Initialise(g_pContext, kAssetDir);
+    g_CharacterWindow.Initialise(g_pContext, kAssetDir);
 
     /// After every document is loaded: the lock walks their <handle>s.
     RoseRmlLayout::Initialise(g_pContext);
@@ -248,6 +251,7 @@ Shutdown() {
     g_InterfacePanel.Shutdown();
     g_SkillBar.Shutdown();
     g_SkillWindow.Shutdown();
+    g_CharacterWindow.Shutdown();
     RoseRmlLayout::Shutdown();
     g_pContext = NULL;
 
@@ -322,6 +326,7 @@ Update() {
     g_InterfacePanel.Update();
     g_SkillBar.Update();
     g_SkillWindow.Update();
+    g_CharacterWindow.Update();
     g_pContext->Update();
 }
 
@@ -338,6 +343,9 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_SKILL:
             g_SkillWindow.SetOpen(bOpen);
             break;
+        case DLG_TYPE_CHAR:
+            g_CharacterWindow.SetOpen(bOpen);
+            break;
         default:
             break;
     }
@@ -350,6 +358,8 @@ IsWindowOpen(int iDlgType) {
     switch (iDlgType) {
         case DLG_TYPE_SKILL:
             return g_SkillWindow.IsOpen();
+        case DLG_TYPE_CHAR:
+            return g_CharacterWindow.IsOpen();
         default:
             return false;
     }

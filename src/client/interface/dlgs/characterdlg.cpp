@@ -6,6 +6,7 @@
 #include "../CDragItem.h"
 #include "../IO_ImageRes.h"
 #include "../TypeResource.h"
+#include "../StatDescriptions.h"
 
 #include "../icon/ciconitem.h"
 
@@ -22,103 +23,8 @@
 #include "tgamectrl/resourcemgr.h"
 
 namespace {
-/// Plain-English explanation of each base ability, shown as a tooltip when the
-/// player hovers the stat name/value on the ABILITY tab. Each entry is a bold
-/// title, a one-line summary, then the concrete things the stat feeds into.
-/// Rows are ordered top-to-bottom exactly as DrawAbilityInfo() draws them.
-/// The weapon lists mirror the server's CObjAVT::Cal_ATTACK switch (and the
-/// CUserDATA::Cal_* formulas for the rest) -- keep them in sync if those change.
-struct StatToolTip {
-    const char* pszTitle;
-    const char* pszSummary;
-    const char* pszEffects[4]; ///< NULL-terminated bullet list
-};
-
-const StatToolTip kStatToolTips[6] = {
-    {"Strength (STR)",
-        "Boosts melee weapons and toughness.",
-        {"Attack power: swords, axes, spears, katars, dual swords, launchers",
-            "Maximum HP",
-            "Defense",
-            "Carry weight"}},
-    {"Dexterity (DEX)",
-        "Improves bows, katars, dual swords and evasion.",
-        {"Attack power: bows, crossbows, katars, dual swords",
-            "Some gun attack power",
-            "Dodge rate (avoid enemy hits)",
-            "Movement speed"}},
-    {"Intelligence (INT)",
-        "Powers magic and your MP pool.",
-        {"Maximum MP",
-            "Attack power: wands, staves",
-            "Magic skill damage, heal & buff strength",
-            "Magic resistance"}},
-    {"Concentration (CON)",
-        "Helps you land hits and recover.",
-        {"Accuracy (hit rate)",
-            "Attack power: guns, launchers",
-            "HP & MP recovery speed",
-            "Crafting success, and a little critical"}},
-    {"Charm (CHA)",
-        "Improves quest rewards and loot.",
-        {"Bigger quest EXP, zuly & item rewards",
-            "Dropped gear more often has bonus stats",
-            NULL,
-            NULL}},
-    {"Sensibility (SEN)",
-        "Sharpens criticals and skill damage.",
-        {"Critical hit rate",
-            "Skill damage",
-            "Attack power: wands, guns, launchers (bows a little)",
-            "Crafted gear more often has bonus stats"}},
-};
-
 /// Top Y (dialog-relative) of each stat value drawn in DrawAbilityInfo().
 const int kStatRowY[6] = {67, 88, 109, 130, 151, 172};
-
-/// Right column: the derived combat stats the base abilities feed into.
-/// Ordered top-to-bottom exactly as DrawAbilityInfo() draws them.
-const StatToolTip kDerivedToolTips[8] = {
-    {"Attack Power",
-        "How hard your attacks hit.",
-        {"More damage on every normal attack",
-            "Grows with your weapon and its main stat (STR/DEX/INT...)",
-            NULL,
-            NULL}},
-    {"Defense",
-        "Reduces physical damage you take.",
-        {"Lowers damage from melee/physical hits",
-            "Comes from armor, plus STR and level",
-            NULL,
-            NULL}},
-    {"Magic Resistance",
-        "Reduces magic damage you take.",
-        {"Lowers damage from spells", "Comes from gear, plus INT and level", NULL, NULL}},
-    {"Accuracy",
-        "How reliably you land hits.",
-        {"Higher chance to hit (vs the enemy's dodge)",
-            "Raised mainly by CON and your weapon",
-            NULL,
-            NULL}},
-    {"Critical",
-        "Chance to score critical hits.",
-        {"Critical hits deal extra damage", "Raised mainly by SEN (and some CON)", NULL, NULL}},
-    {"Dodge",
-        "How well you avoid enemy attacks.",
-        {"Higher chance to evade incoming hits",
-            "Raised mainly by DEX, armor and level",
-            NULL,
-            NULL}},
-    {"Attack Speed",
-        "How fast you attack.",
-        {"More swings over time means more damage",
-            "Set by your weapon (and some buffs)",
-            NULL,
-            NULL}},
-    {"Move Speed",
-        "How fast you move.",
-        {"Faster running and travel", "Raised by boots and DEX (and some buffs)", NULL, NULL}},
-};
 
 /// Top Y (dialog-relative) of each derived stat value (right column).
 const int kDerivedRowY[8] = {67, 88, 109, 130, 151, 172, 193, 214};
@@ -126,15 +32,9 @@ const int kDerivedRowY[8] = {67, 88, 109, 130, 151, 172, 193, 214};
 /// Build and register the hover tooltip for one stat: bold title, plain
 /// summary, a blank gap, then the bullet list of concrete effects.
 void
-RegStatToolTip(const StatToolTip& Tip, POINT ptMouse) {
+RegStatToolTip(const StatDescription& Tip, POINT ptMouse) {
     CInfo Info;
-    Info.AddString(Tip.pszTitle,
-        D3DCOLOR_ARGB(255, 255, 221, 102),
-        g_GameDATA.m_hFONT[FONT_NORMAL_BOLD]);
-    Info.AddString(Tip.pszSummary, g_dwWHITE);
-    Info.AddString(""); ///separator gap
-    for (int e = 0; e < 4 && Tip.pszEffects[e]; ++e)
-        Info.AddString(CStr::Printf("- %s", Tip.pszEffects[e]), g_dwBlueToolTip);
+    BuildStatToolTip(Tip, Info);
 
     POINT pt = {ptMouse.x + 20, ptMouse.y};
     Info.SetPosition(pt);
@@ -441,7 +341,7 @@ CCharacterDLG::Update(POINT ptMouse) {
                     || ptMouse.y >= m_sPosition.y + kStatRowY[i] + 17)
                     continue;
 
-                RegStatToolTip(kStatToolTips[i], ptMouse);
+                RegStatToolTip(g_BaseStatDescriptions[i], ptMouse);
                 break;
             }
 
@@ -452,7 +352,7 @@ CCharacterDLG::Update(POINT ptMouse) {
                     || ptMouse.y >= m_sPosition.y + kDerivedRowY[i] + 17)
                     continue;
 
-                RegStatToolTip(kDerivedToolTips[i], ptMouse);
+                RegStatToolTip(g_DerivedStatDescriptions[i], ptMouse);
                 break;
             }
             break;

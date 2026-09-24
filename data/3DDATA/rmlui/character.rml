@@ -1,0 +1,91 @@
+<rml>
+<head>
+    <title>Character</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="character.rcss"/>
+</head>
+<body data-model="character">
+    <!--
+        UI2 character window ( RoseRmlCharacterWindow ), replacing CCharacterDLG.
+        Opened and closed through IT_MGR like any window ( menu, hotkey, Escape ).
+
+        Identity, EXP and stamina on top; under them two tabs. Stats: the six
+        attributes beside the eight combat stats. An attribute's green "+n" is
+        what gear and passives add on top of the points you spent, and a row
+        glows when a point goes in. Hover any row for what the stat does ( the
+        classic window's text ). Union: yours, and your points with each.
+    -->
+    <div id="character" class="ui-window">
+        <handle move_target="character" class="ui-titlebar">
+            <span class="ui-title">Character</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <!-- Identity: name over class and clan, level as a badge. -->
+        <div class="head">
+            <div class="ident">
+                <span class="name">{{name}}</span>
+                <span class="sub ui-muted">{{subtitle}}</span>
+            </div>
+            <span class="level"><span class="lv ui-muted">Lv</span>{{level}}</span>
+        </div>
+
+        <!-- Label lines and bars sit DIRECTLY in the window ( a flex column ),
+             exactly like the status panel's EXP bar: wrapped in a container,
+             RmlUi sized the fills wrong ( absolute: against the window; in
+             flow: a percentage of nothing ). -->
+        <div class="plabel"><span class="ui-muted">EXP</span><span class="pval">{{exp}}</span><span class="ppct">{{exp_pct}}</span></div>
+        <div class="pbar ui-gauge"><div class="ui-gauge-fill exp" data-style-width="exp_width + '%'"></div></div>
+
+        <div class="plabel"><span class="ui-muted">Stamina</span><span class="pval">{{stamina}}</span></div>
+        <div class="pbar ui-gauge last"><div class="ui-gauge-fill green" data-style-width="stamina_width + '%'"></div></div>
+
+        <div class="tabs">
+            <span class="ui-btn tab" data-class-on="tab == 0" data-event-click="set_tab(0)">Stats</span>
+            <span class="ui-btn tab" data-class-on="tab == 1" data-event-click="set_tab(1)">Union</span>
+        </div>
+
+        <div class="cols" data-if="tab == 0">
+            <div class="col attrs ui-well">
+                <div class="colhead">
+                    <span class="coltitle">Attributes</span>
+                    <span class="points" data-class-some="points > 0"><span class="ui-muted">Points</span> {{points}}</span>
+                </div>
+                <div class="row" data-for="a : attrs" data-attr-stat="a.id"
+                     data-class-flash1="a.flash == 1" data-class-flash2="a.flash == 2">
+                    <span class="rname">{{a.name}}</span>
+                    <span class="rval">{{a.total}}</span>
+                    <span class="rbonus"><span data-if="a.bonus > 0">+{{a.bonus}}</span><span class="neg" data-if="0 > a.bonus">{{a.bonus}}</span></span>
+                    <span class="plus" data-class-live="a.can_up" data-event-click="raise(a.id)">+</span>
+                    <span class="upcost" data-class-short="a.up_short">{{a.up_text}}</span>
+                </div>
+            </div>
+
+            <div class="col combat ui-well">
+                <div class="colhead">
+                    <span class="coltitle">Combat</span>
+                </div>
+                <div class="row" data-for="c : combat" data-attr-stat="c.id">
+                    <span class="rname">{{c.name}}</span>
+                    <span class="rval">{{c.value}}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="union ui-well" data-if="tab == 1">
+            <div class="colhead">
+                <span class="coltitle">Your union</span>
+                <span class="mine-name" data-style-color="union_color">{{union_name}}</span>
+            </div>
+            <div class="row" data-for="u : unions" data-class-mine="u.mine">
+                <span class="dot" data-style-background-color="u.color"></span>
+                <span class="rname" data-style-color="u.color">{{u.name}}</span>
+                <span class="you" data-if="u.mine">yours</span>
+                <span class="rval">{{u.points}}</span>
+            </div>
+            <div class="hint ui-muted">Union points are spent at your union's merchants.</div>
+        </div>
+    </div>
+</body>
+</rml>

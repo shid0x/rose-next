@@ -1,0 +1,252 @@
+/* UI2 character window -- LAYOUT ONLY ( colours and materials: rose-theme.rcss,
+   plus the few colours that are this window's own states ).
+   Reload in game with /uireload. */
+
+#character {
+    left: 260dp;
+    top: 120dp;
+    width: 400dp;
+}
+
+/* --- identity: name over class and clan, level badge ---------------------- */
+.head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding-left: 4dp;
+    padding-right: 4dp;
+    margin-bottom: 5dp;
+}
+.ident {
+    flex-grow: 1;
+    overflow: hidden;
+}
+.name {
+    display: block;
+    font-size: 14dp;
+    font-weight: bold;
+    color: #f0f0f0;
+    font-effect: shadow(1px 1px #000000c0);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.sub {
+    display: block;
+    margin-top: 1dp;
+    font-size: 10dp;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.level {
+    margin-left: 8dp;
+    font-size: 14dp;
+    font-weight: bold;
+    color: #ff9a5a;
+    font-effect: shadow(1px 1px #000000c0);
+}
+.level .lv {
+    margin-right: 3dp;
+    font-size: 10dp;
+    font-weight: normal;
+    font-effect: none;
+}
+
+/* --- EXP / stamina: label line over a thin bar ------------------------------- */
+/* Direct children of the window, like the status panel's EXP bar -- keep them
+   that way ( see character.rml ). Side margins stand in for a wrapper's
+   padding. */
+.plabel {
+    display: flex;
+    flex-direction: row;
+    font-size: 10dp;
+    margin-left: 4dp;
+    margin-right: 4dp;
+    margin-bottom: 2dp;
+}
+.pval {
+    flex-grow: 1;
+    margin-left: 6dp;
+    color: #d8d8d8;
+}
+.ppct {
+    font-weight: bold;
+    color: #e0e070;
+}
+.pbar {
+    height: 7dp;
+    margin-left: 4dp;
+    margin-right: 4dp;
+    margin-bottom: 5dp;
+}
+.pbar.last { margin-bottom: 8dp; }
+
+/* --- tabs: a segmented row of the theme's buttons ------------------------ */
+.tabs {
+    display: flex;
+    flex-direction: row;
+    margin-bottom: 4dp;
+}
+.tab {
+    flex: 1;
+    padding-left: 0dp;
+    padding-right: 0dp;
+}
+.tab + .tab { margin-left: 3dp; }
+
+/* --- the two columns ------------------------------------------------------------ */
+.cols {
+    display: flex;
+    flex-direction: row;
+}
+.col {
+    padding: 4dp;
+}
+.attrs {
+    flex: 1.25;
+    margin-right: 4dp;
+}
+.combat { flex: 1; }
+
+.colhead {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 18dp;
+    padding-left: 3dp;
+    padding-right: 3dp;
+    margin-bottom: 3dp;
+    border-bottom: 1dp #ffffff14;
+}
+.coltitle {
+    flex-grow: 1;
+    font-size: 10dp;
+    font-weight: bold;
+    color: #c8c8c8;
+}
+
+/* Unspent points: quiet at zero, ember when there is something to spend. */
+.points {
+    font-size: 10dp;
+    font-weight: bold;
+    color: #9a9a9a;
+}
+.points.some {
+    color: #ff9a5a;
+    font-effect: shadow(1px 1px #000000c0);
+}
+
+.row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 21dp;
+    padding-left: 3dp;
+    padding-right: 3dp;
+    border-radius: 2dp;
+}
+.row:hover { background-color: #ffffff12; }
+
+.rname {
+    flex-grow: 1;
+    color: #b8b8b8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.rval {
+    font-weight: bold;
+    color: #f0f0f0;
+    text-align: right;
+}
+/* What gear and passives add, beside the total. */
+.rbonus {
+    width: 30dp;
+    margin-left: 3dp;
+    font-size: 10dp;
+    color: #7ad04a;
+}
+.rbonus .neg { color: #ff6a5a; }
+
+/* --- raise: the skill window's + button ----------------------------------- */
+.plus {
+    width: 18dp;
+    height: 16dp;
+    line-height: 14dp;
+    text-align: center;
+    font-size: 13dp;
+    font-weight: bold;
+    color: #5a5a5a;
+    border: 1dp #3a3a3aff;
+    border-radius: 3dp;
+    background-color: #262626ff;
+    decorator: ui-gloss-soft;
+}
+.plus.live {
+    color: #ffffff;
+    border-color: #d0501aff;
+    background-color: #922500ff;
+    decorator: ui-gloss;
+    cursor: pointer;
+    font-effect: shadow(1px 1px #00000090);
+}
+.plus.live:hover { background-color: #b0360eff; }
+.plus.live:active {
+    color: #ffd2b8;
+    background-color: #5a1804ff;
+    border-color: #8a3010ff;
+}
+
+/* --- a point went in: the row glows ember and the value lights up -------- */
+/* Two identical animations: the C++ alternates flash1 / flash2 per point, so
+   a second click inside the glow restarts it instead of being swallowed. */
+@keyframes raised-row-1 { from { background-color: #d0501a80; } to { background-color: #d0501a00; } }
+@keyframes raised-row-2 { from { background-color: #d0501a80; } to { background-color: #d0501a00; } }
+@keyframes raised-val-1 { from { color: #ffd060; } to { color: #f0f0f0; } }
+@keyframes raised-val-2 { from { color: #ffd060; } to { color: #f0f0f0; } }
+.row.flash1 { animation: 0.8s cubic-out raised-row-1; }
+.row.flash2 { animation: 0.8s cubic-out raised-row-2; }
+.row.flash1 .rval { animation: 0.8s cubic-out raised-val-1; }
+.row.flash2 .rval { animation: 0.8s cubic-out raised-val-2; }
+
+/* --- union tab ---------------------------------------------------------------- */
+.union {
+    box-sizing: border-box;
+    min-height: 200dp;
+    padding: 4dp;
+}
+.mine-name {
+    font-size: 10dp;
+    font-weight: bold;
+    font-effect: shadow(1px 1px #000000c0);
+}
+.dot {
+    width: 7dp;
+    height: 7dp;
+    margin-right: 7dp;
+    border-radius: 4dp;
+}
+.row.mine {
+    background-color: #ffffff10;
+    border: 1dp #d0501a80;
+}
+.you {
+    margin-right: 8dp;
+    font-size: 9dp;
+    color: #ff9a5a;
+}
+.union .rval { width: 70dp; }
+.hint {
+    margin-top: 6dp;
+    padding-left: 3dp;
+    font-size: 9dp;
+}
+
+.upcost {
+    width: 34dp;
+    text-align: right;
+    font-size: 9dp;
+    color: #9a9a9a;
+}
+.upcost.short { color: #ff6a5a; }

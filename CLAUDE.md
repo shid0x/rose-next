@@ -309,6 +309,13 @@ lists** — RmlUi resolved one against the list, not its `position: relative` pa
 painted gold); use an in-flow block with a % width. And a scroll area must itself be positioned
 (`.ui-well` is) or it does not clip its absolutely positioned descendants.
 
+**Character window** (2026-09-25, `RoseRmlCharacterWindow`, second `kReplacedWindows` entry):
+Stats and Union tabs under a shared identity/EXP/stamina header; the Union tab the classic XML
+hid is back. Stat hover text is shared with the classic window (`interface/StatDescriptions.*`).
+One more layout trap: **a gauge must be a direct child of the window's flex column** (as the
+status panel's EXP bar is). Wrapped in a container, an absolute fill resolved against the window
+and an in-flow fill took its percentage of a zero width.
+
 Also UI2: the target frame (`RoseRmlTargetFrame`, new — retail showed the target only overhead),
 the Interface window (`/ui` or the status panel's UI button: scale, lock, reset layout, back to
 classic), and Options > Play > "Use new interface (UI2)" (checkbox ID 49, loose `DlgOption.xml`).

@@ -427,6 +427,7 @@
     <ClCompile Include="Interface\CHelpMgr.cpp" />
     <ClCompile Include="Interface\CIndicate.cpp" />
     <ClCompile Include="Interface\CInfo.cpp" />
+    <ClCompile Include="Interface\StatDescriptions.cpp" />
     <ClCompile Include="Interface\ClanMarkManager.cpp" />
     <ClCompile Include="Interface\ClanMarkTransfer.cpp" />
     <ClCompile Include="Interface\CLoading.cpp" />
@@ -442,6 +443,7 @@
     <ClCompile Include="rmlui\RoseRmlRenderer.cpp" />
     <ClCompile Include="rmlui\RoseRmlSkillBar.cpp" />
     <ClCompile Include="rmlui\RoseRmlSkillWindow.cpp" />
+    <ClCompile Include="rmlui\RoseRmlCharacterWindow.cpp" />
     <ClCompile Include="rmlui\RoseRmlSystem.cpp" />
     <ClCompile Include="rmlui\RoseRmlStatusPanel.cpp" />
     <ClCompile Include="rmlui\RoseRmlTargetFrame.cpp" />
@@ -907,6 +909,7 @@
     <ClInclude Include="Interface\DLGs\CDialogDlg.h" />
     <ClInclude Include="Interface\DLGs\CGoodsDlg.h" />
     <ClInclude Include="Interface\DLGs\CharacterDLG.h" />
+    <ClInclude Include="Interface\StatDescriptions.h" />
     <ClInclude Include="Interface\DLGs\ChattingDLG.h" />
     <ClInclude Include="Interface\DLGs\CItemDlg.h" />
     <ClInclude Include="Interface\DLGs\ClanOrganizeDlg.h" />

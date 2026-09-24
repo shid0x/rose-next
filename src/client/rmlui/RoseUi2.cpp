@@ -23,12 +23,14 @@ const int kReplacedDialogs[] = {
     DLG_TYPE_QUICKBAR,
     DLG_TYPE_QUICKBAR_EXT,
     DLG_TYPE_SKILL, ///< RoseRmlSkillWindow ( also in kReplacedWindows )
+    DLG_TYPE_CHAR, ///< RoseRmlCharacterWindow ( also in kReplacedWindows )
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
 /// rather than always-on HUD: IT_MGR routes open / close / "is open" here.
 const int kReplacedWindows[] = {
     DLG_TYPE_SKILL,
+    DLG_TYPE_CHAR,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).
