@@ -22,6 +22,13 @@ const int kReplacedDialogs[] = {
     /// F-key hotkeys and owns the page; the RmlUi bar is its view.
     DLG_TYPE_QUICKBAR,
     DLG_TYPE_QUICKBAR_EXT,
+    DLG_TYPE_SKILL, ///< RoseRmlSkillWindow ( also in kReplacedWindows )
+};
+
+/// The replaced dialogs that are windows ( opened / closed by the player )
+/// rather than always-on HUD: IT_MGR routes open / close / "is open" here.
+const int kReplacedWindows[] = {
+    DLG_TYPE_SKILL,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).
@@ -119,6 +126,42 @@ IsPieceReplaced(Piece ePiece) {
             return true;
     }
     return false;
+}
+
+static bool
+IsReplacedWindow(int iDlgType) {
+    if (!IsActive())
+        return false;
+    for (int iType : kReplacedWindows) {
+        if (iType == iDlgType)
+            return true;
+    }
+    return false;
+}
+
+bool
+OpenWindow(int iDlgType, bool bToggle) {
+    if (!IsReplacedWindow(iDlgType))
+        return false;
+    const bool bOpen = RoseRmlUi::IsWindowOpen(iDlgType);
+    RoseRmlUi::SetWindowOpen(iDlgType, bToggle ? !bOpen : true);
+    return true;
+}
+
+bool
+CloseWindow(int iDlgType) {
+    if (!IsReplacedWindow(iDlgType))
+        return false;
+    RoseRmlUi::SetWindowOpen(iDlgType, false);
+    return true;
+}
+
+bool
+QueryWindow(int iDlgType, bool& bOpen) {
+    if (!IsReplacedWindow(iDlgType))
+        return false;
+    bOpen = RoseRmlUi::IsWindowOpen(iDlgType);
+    return true;
 }
 
 void

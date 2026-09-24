@@ -171,6 +171,12 @@ body > * { pointer-events: auto; }
 /* Dark recess: shadowed top edge, faintly lit bottom edge -- the opposite of
    a raised bevel. Used for info strips and list areas. */
 .ui-well {
+    /* DO NOT REMOVE. Wells are the scrolling areas, and RmlUi clips an
+       absolutely positioned descendant ( a bar fill, a cooldown curtain ) only
+       by overflow on its chain of POSITIONED ancestors. Without this the
+       well is skipped: the fills of rows scrolled out of view kept drawing
+       above the list ( over the title bar ) and kept catching the mouse. */
+    position: relative;
     border-width: 1dp;
     border-top-color: #000000c0;
     border-left-color: #00000090;

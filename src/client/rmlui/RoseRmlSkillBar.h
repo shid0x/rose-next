@@ -54,6 +54,11 @@ public:
     /// answer while UI2 is on.
     short SlotAt(int x, int y, int iDlgType);
 
+    /// Horizontal ( two rows ) or vertical ( two columns ). Saved in
+    /// rose-next.ini [VIDEO] UI_SKILLBAR_VERTICAL; the Interface window sets it.
+    void SetVertical(bool bVertical);
+    bool IsVertical() const { return m_bVertical; }
+
     struct SlotVM {
         int index; ///< absolute hot-icon index
         bool filled;
@@ -102,6 +107,7 @@ private:
     int m_iExtPage;
     int m_iMainType; ///< DLG_TYPE_QUICKBAR, the main row's drop-target
     int m_iExtType; ///< DLG_TYPE_QUICKBAR_EXT
+    bool m_bVertical;
 };
 
 #endif /// _ROSE_RML_SKILL_BAR_H_

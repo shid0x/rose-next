@@ -126,3 +126,36 @@ body.locked .grip { cursor: default; }
     color: #d8d8d8;
     font-effect: outline(1px #000000e0);
 }
+
+/* --- vertical layout ( [VIDEO] UI_SKILLBAR_VERTICAL ) -------------------------
+   The same elements, turned: the grip on top, the two rows as two columns,
+   each column's pager above its slots. */
+#skillbar.vertical { flex-direction: column; }
+
+#skillbar.vertical .grip {
+    width: auto;
+    height: 7dp;
+    margin-right: 0dp;
+    margin-bottom: 3dp;
+}
+
+#skillbar.vertical .rows { flex-direction: row; }
+#skillbar.vertical .row { flex-direction: column; }
+#skillbar.vertical .row + .row {
+    margin-top: 0dp;
+    margin-left: 2dp;
+}
+
+/* The pager lies flat above its column: page number, then the arrows. */
+#skillbar.vertical .pager {
+    width: 42dp;
+    margin-right: 0dp;
+    margin-bottom: 3dp;
+    flex-direction: row;
+    justify-content: center;
+}
+#skillbar.vertical .page { margin-left: 3dp; margin-right: 3dp; }
+#skillbar.vertical .slot {
+    margin-right: 0dp;
+    margin-bottom: 2dp;
+}

@@ -1,0 +1,66 @@
+<rml>
+<head>
+    <title>Skills</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="skills.rcss"/>
+</head>
+<body data-model="skills">
+    <!--
+        UI2 skill window ( RoseRmlSkillWindow ), replacing CSkillDLG. Opened
+        and closed through IT_MGR like any window ( menu, hotkey, Escape ).
+
+        One card per learned skill: icon ( with its cooldown ), name, level out
+        of the line's maximum with a thin bar, what it costs to use, and a
+        level-up button that says what the next level costs. Hover a card for
+        the full tooltip; drag the icon onto the skill bar; double-click it to
+        use the skill.
+    -->
+    <div id="skills" class="ui-window">
+        <handle move_target="skills" class="ui-titlebar">
+            <span class="ui-title">Skills</span>
+            <span class="sp"><span class="ui-muted">SP</span> {{sp}}</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <div class="tabs">
+            <span class="ui-btn tab" data-class-on="tab == 0" data-event-click="set_tab(0)">Basic<span class="n">{{count_basic}}</span></span>
+            <span class="ui-btn tab" data-class-on="tab == 1" data-event-click="set_tab(1)">Active<span class="n">{{count_active}}</span></span>
+            <span class="ui-btn tab" data-class-on="tab == 2" data-event-click="set_tab(2)">Passive<span class="n">{{count_passive}}</span></span>
+        </div>
+
+        <div class="list ui-well">
+            <div class="empty ui-muted" data-if="skills.size == 0">No skills here yet.</div>
+
+            <div class="card" data-for="k : skills" data-attr-skill="k.slot"
+                 data-class-passive="k.passive">
+                <div class="icon ui-icon" data-event-mousedown="press(k.slot)"
+                     data-event-dblclick="use(k.slot)">
+                    <img data-attr-src="k.src" data-attr-rect="k.rect"/>
+                    <div class="cd" data-if="k.cd > 0" data-style-height="k.cd + '%'"></div>
+                </div>
+
+                <div class="info">
+                    <div class="line1">
+                        <span class="name">{{k.name}}</span>
+                        <span class="lv"><span class="ui-muted">Lv</span> {{k.level}}<span class="of"> / {{k.max_level}}</span></span>
+                    </div>
+                    <div class="lvbar"><div class="lvfill" data-style-width="k.level_pct + '%'"></div></div>
+                    <div class="costs ui-muted">{{ k.passive ? 'Passive' : k.costs }}</div>
+                </div>
+
+                <div class="up">
+                    <span class="plus" data-class-live="k.can_up"
+                          data-event-click="level_up(k.slot)">+</span>
+                    <span class="upcost" data-class-short="k.up_short">{{k.up_text}}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <span class="hint ui-muted">Drag a skill onto your bar &#183; double-click to use</span>
+            <span class="ui-btn tree" data-if="has_tree" data-event-click="open_tree()">Skill Tree</span>
+        </div>
+    </div>
+</body>
+</rml>

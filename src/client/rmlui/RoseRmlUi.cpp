@@ -10,6 +10,7 @@
 #include "RoseRmlTargetFrame.h"
 #include "RoseRmlRenderer.h"
 #include "RoseRmlSkillBar.h"
+#include "RoseRmlSkillWindow.h"
 #include "RoseRmlSystem.h"
 
 #include <RmlUi/Core.h>
@@ -19,6 +20,7 @@
 
 #include "../interface/CDragNDropMgr.h"
 #include "tgamectrl/winctrl.h"
+#include "../interface/interfacetype.h"
 
 #include <stdlib.h>
 #include <string>
@@ -34,6 +36,7 @@ RoseRmlBuffBar g_BuffBar; ///< UI2: replaces CEndurancePack::Draw
 RoseRmlTargetFrame g_TargetFrame; ///< UI2: new, the selected target
 RoseRmlInterfacePanel g_InterfacePanel; ///< UI2: scale / lock / reset settings
 RoseRmlSkillBar g_SkillBar; ///< UI2: replaces the two CQuickBARs ( as their view )
+RoseRmlSkillWindow g_SkillWindow; ///< UI2: replaces CSkillDLG ( a window )
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -224,6 +227,7 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_TargetFrame.Initialise(g_pContext, kAssetDir);
     g_InterfacePanel.Initialise(g_pContext, kAssetDir);
     g_SkillBar.Initialise(g_pContext, kAssetDir);
+    g_SkillWindow.Initialise(g_pContext, kAssetDir);
 
     /// After every document is loaded: the lock walks their <handle>s.
     RoseRmlLayout::Initialise(g_pContext);
@@ -243,6 +247,7 @@ Shutdown() {
     g_TargetFrame.Shutdown();
     g_InterfacePanel.Shutdown();
     g_SkillBar.Shutdown();
+    g_SkillWindow.Shutdown();
     RoseRmlLayout::Shutdown();
     g_pContext = NULL;
 
@@ -316,12 +321,49 @@ Update() {
     g_TargetFrame.Update();
     g_InterfacePanel.Update();
     g_SkillBar.Update();
+    g_SkillWindow.Update();
     g_pContext->Update();
 }
 
 short
 SkillBarSlotAt(int x, int y, int iDlgType) {
     return g_bInitialised ? g_SkillBar.SlotAt(x, y, iDlgType) : -1;
+}
+
+void
+SetWindowOpen(int iDlgType, bool bOpen) {
+    if (!g_bInitialised)
+        return;
+    switch (iDlgType) {
+        case DLG_TYPE_SKILL:
+            g_SkillWindow.SetOpen(bOpen);
+            break;
+        default:
+            break;
+    }
+}
+
+bool
+IsWindowOpen(int iDlgType) {
+    if (!g_bInitialised)
+        return false;
+    switch (iDlgType) {
+        case DLG_TYPE_SKILL:
+            return g_SkillWindow.IsOpen();
+        default:
+            return false;
+    }
+}
+
+void
+SetSkillBarVertical(bool bVertical) {
+    if (g_bInitialised)
+        g_SkillBar.SetVertical(bVertical);
+}
+
+bool
+IsSkillBarVertical() {
+    return g_bInitialised && g_SkillBar.IsVertical();
 }
 
 void

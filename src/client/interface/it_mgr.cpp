@@ -996,6 +996,10 @@ IT_MGR::FindDlg(DWORD dwDlgType) {
 
 int
 IT_MGR::IsDlgOpened(int iDlgID) {
+    bool bUi2Open = false;
+    if (RoseUi2::QueryWindow(iDlgID, bUi2Open))
+        return bUi2Open ? 1 : 0;
+
     CTDialog* pDlg = FindDlg((short)iDlgID);
     if (pDlg && pDlg->IsVision())
         return 1;
@@ -1426,6 +1430,10 @@ IT_MGR::ServerDisconnected() {
 
 void
 IT_MGR::OpenDialog(int iDlgType, bool bToggle, int iPosX, int iPosY) {
+    /// UI2 windows ( RoseUi2::OpenWindow ) take the call for their type.
+    if (RoseUi2::OpenWindow(iDlgType, bToggle))
+        return;
+
     CTDialog* pDlg = NULL;
     if (pDlg = FindDlg(iDlgType)) {
         if (iPosX >= 0 && iPosY >= 0) {
@@ -1453,6 +1461,9 @@ IT_MGR::OpenDialog(int iDlgType, bool bToggle, int iPosX, int iPosY) {
 
 void
 IT_MGR::CloseDialog(int iDlgType) {
+    if (RoseUi2::CloseWindow(iDlgType))
+        return;
+
     CTDialog* pDlg = NULL;
     if (pDlg = FindDlg(iDlgType)) {
         if (pDlg->IsVision())

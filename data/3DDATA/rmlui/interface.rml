@@ -30,6 +30,14 @@
         </div>
 
         <div class="row">
+            <span class="label ui-muted">Skill bar</span>
+            <span class="ui-btn half" data-class-on="!bar_vertical"
+                  data-event-click="set_bar(false)">Horizontal</span>
+            <span class="ui-btn half" data-class-on="bar_vertical"
+                  data-event-click="set_bar(true)">Vertical</span>
+        </div>
+
+        <div class="row">
             <span class="label ui-muted">Positions</span>
             <span class="ui-btn wide" data-event-click="reset_layout()">Reset</span>
         </div>

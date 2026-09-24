@@ -2,6 +2,7 @@
 
 #include "RoseRmlInterfacePanel.h"
 #include "RoseRmlLayout.h"
+#include "RoseRmlUi.h"
 #include "RoseUi2.h"
 
 #include <RmlUi/Core/Context.h>
@@ -27,7 +28,8 @@ RoseRmlInterfacePanel::RoseRmlInterfacePanel():
     m_pPanel(NULL),
     m_bVisible(false),
     m_iScale(100),
-    m_bLocked(false) {
+    m_bLocked(false),
+    m_bBarVertical(false) {
     for (int iPreset : kScalePresets)
         m_Scales.push_back(iPreset);
 }
@@ -47,6 +49,7 @@ RoseRmlInterfacePanel::Initialise(Rml::Context* pContext, const std::string& str
     constructor.Bind("scales", &m_Scales);
     constructor.Bind("scale", &m_iScale);
     constructor.Bind("locked", &m_bLocked);
+    constructor.Bind("bar_vertical", &m_bBarVertical);
 
     constructor.BindEventCallback("set_scale",
         [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
@@ -58,6 +61,13 @@ RoseRmlInterfacePanel::Initialise(Rml::Context* pContext, const std::string& str
     constructor.BindEventCallback("toggle_lock",
         [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
             RoseRmlLayout::SetLocked(!RoseRmlLayout::IsLocked());
+            Refresh();
+        });
+    constructor.BindEventCallback("set_bar",
+        [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
+            if (args.empty())
+                return;
+            RoseRmlUi::SetSkillBarVertical(args[0].Get<bool>());
             Refresh();
         });
     constructor.BindEventCallback("reset_layout",
@@ -103,8 +113,10 @@ void
 RoseRmlInterfacePanel::Refresh() {
     m_iScale = RoseRmlLayout::GetScale();
     m_bLocked = RoseRmlLayout::IsLocked();
+    m_bBarVertical = RoseRmlUi::IsSkillBarVertical();
     m_Model.DirtyVariable("scale");
     m_Model.DirtyVariable("locked");
+    m_Model.DirtyVariable("bar_vertical");
 }
 
 void

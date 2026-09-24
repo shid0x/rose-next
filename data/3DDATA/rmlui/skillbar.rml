@@ -17,7 +17,8 @@
         Slots: click to use, press and drag to move ( drop on the ground to
         remove ). The grip on the left moves the bar.
     -->
-    <div id="skillbar" class="ui-window">
+    <!-- .vertical ( Interface window ) turns the rows into columns. -->
+    <div id="skillbar" class="ui-window" data-class-vertical="vertical">
         <handle move_target="skillbar" class="grip"></handle>
 
         <div class="rows">

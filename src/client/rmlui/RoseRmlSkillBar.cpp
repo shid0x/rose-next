@@ -54,8 +54,10 @@ CooldownText(int iRemainMs) {
     return Printf("%dm", (iSec + 59) / 60);
 }
 
-/// Gap between the bar and the bottom of the screen at its default spot, dp.
-const float kBottomGap = 6.0f;
+/// Gap between the bar and the screen edge at its default spot, dp.
+const float kEdgeGap = 6.0f;
+
+const char* kIniPath = ".\\rose-next.ini";
 
 } // namespace
 
@@ -70,7 +72,8 @@ RoseRmlSkillBar::RoseRmlSkillBar():
     m_iMainPage(1),
     m_iExtPage(1),
     m_iMainType(DLG_TYPE_QUICKBAR),
-    m_iExtType(DLG_TYPE_QUICKBAR_EXT) {
+    m_iExtType(DLG_TYPE_QUICKBAR_EXT),
+    m_bVertical(false) {
     /// Eight empty slots per row from the start, so the document lays out at
     /// its real size before the first sample.
     for (int i = 0; i < HOT_ICONS_PER_PAGE; ++i) {
@@ -132,6 +135,9 @@ RoseRmlSkillBar::Initialise(Rml::Context* pContext, const std::string& strAssetD
     constructor.Bind("ext_page", &m_iExtPage);
     constructor.Bind("main_type", &m_iMainType);
     constructor.Bind("ext_type", &m_iExtType);
+    constructor.Bind("vertical", &m_bVertical);
+
+    m_bVertical = GetPrivateProfileIntA("VIDEO", "UI_SKILLBAR_VERTICAL", 0, kIniPath) != 0;
 
     /// A left press on a slot: remember it; Update() turns it into a drag if
     /// the mouse moves before the release.
@@ -277,13 +283,21 @@ RoseRmlSkillBar::PlaceDefault() {
     if (size.x <= 0.0f || size.y <= 0.0f)
         return; /// not laid out yet
 
-    /// Centred at the bottom of the screen -- a stylesheet cannot say that
-    /// without margins that would then fight every saved position.
+    /// Horizontal: centred at the bottom of the screen. Vertical: centred on
+    /// the right edge. A stylesheet cannot say either without margins that
+    /// would then fight every saved position.
     /// Whole pixels: centring an odd width lands on x.5, and a panel on a half
     /// pixel samples every icon between two texels ( visibly blurred ).
     const Rml::Vector2i view = m_pContext->GetDimensions();
-    const float x = floorf(((float)view.x - size.x) * 0.5f);
-    const float y = floorf((float)view.y - size.y - kBottomGap * RoseRmlLayout::GetScaleRatio());
+    const float fGap = kEdgeGap * RoseRmlLayout::GetScaleRatio();
+    float x, y;
+    if (m_bVertical) {
+        x = floorf((float)view.x - size.x - fGap);
+        y = floorf(((float)view.y - size.y) * 0.5f);
+    } else {
+        x = floorf(((float)view.x - size.x) * 0.5f);
+        y = floorf((float)view.y - size.y - fGap);
+    }
     m_pPanel->SetProperty(Rml::PropertyId::Left, Rml::Property(x, Rml::Unit::PX));
     m_pPanel->SetProperty(Rml::PropertyId::Top, Rml::Property(y, Rml::Unit::PX));
 }
@@ -351,23 +365,37 @@ RoseRmlSkillBar::UpdateTooltip() {
     if (ToolTip.IsEmpty())
         return;
 
-    /// Above the bar, so it is never drawn under it ( legacy tooltips draw
-    /// before the RmlUi pass ); below it if the bar sits at the top.
+    /// Outside the bar, so it is never drawn under it ( legacy tooltips draw
+    /// before the RmlUi pass ): above a horizontal bar ( below it at the top
+    /// of the screen ), beside a vertical one ( left of it at the right edge ).
     POINT ptMouse;
     CGame::GetInstance().Get_MousePos(ptMouse);
     const Rml::Vector2f panelPos = m_pPanel->GetAbsoluteOffset(Rml::BoxArea::Border);
     const Rml::Vector2f panelSize = m_pPanel->GetBox().GetSize(Rml::BoxArea::Border);
+    const int iScreenW = g_pCApp->GetWIDTH();
+    const int iScreenH = g_pCApp->GetHEIGHT();
 
     POINT pt;
-    pt.x = ptMouse.x + 12;
-    pt.y = (int)panelPos.y - ToolTip.GetHeight() - 4;
-    if (pt.y < 0)
-        pt.y = (int)(panelPos.y + panelSize.y) + 4;
-    const int iMaxX = g_pCApp->GetWIDTH() - ToolTip.GetWidth();
-    if (pt.x > iMaxX)
-        pt.x = iMaxX;
+    if (m_bVertical) {
+        /// Side from where the bar is, not from this tooltip's width.
+        const bool bRightSide = (panelPos.x + panelSize.x * 0.5f) < (float)iScreenW * 0.5f;
+        pt.x = bRightSide ? (int)(panelPos.x + panelSize.x) + 4
+                          : (int)panelPos.x - ToolTip.GetWidth() - 4;
+        pt.y = ptMouse.y - ToolTip.GetHeight() / 2;
+    } else {
+        pt.x = ptMouse.x + 12;
+        pt.y = (int)panelPos.y - ToolTip.GetHeight() - 4;
+        if (pt.y < 0)
+            pt.y = (int)(panelPos.y + panelSize.y) + 4;
+    }
+    if (pt.x > iScreenW - ToolTip.GetWidth())
+        pt.x = iScreenW - ToolTip.GetWidth();
     if (pt.x < 0)
         pt.x = 0;
+    if (pt.y > iScreenH - ToolTip.GetHeight())
+        pt.y = iScreenH - ToolTip.GetHeight();
+    if (pt.y < 0)
+        pt.y = 0;
 
     ToolTip.SetPosition(pt);
     CToolTipMgr::GetInstance().RegistInfo(ToolTip);
@@ -410,4 +438,16 @@ RoseRmlSkillBar::SlotAt(int x, int y, int iDlgType) {
             return (pEl->GetAttribute<int>("drop-target", 0) == iDlgType) ? (short)iSlot : -1;
     }
     return -1;
+}
+
+void
+RoseRmlSkillBar::SetVertical(bool bVertical) {
+    if (bVertical == m_bVertical)
+        return;
+    m_bVertical = bVertical;
+    m_Model.DirtyVariable("vertical");
+    WritePrivateProfileStringA("VIDEO", "UI_SKILLBAR_VERTICAL", bVertical ? "1" : "0", kIniPath);
+    /// The bar keeps its top-left corner; Clamp pulls it back if the new
+    /// shape runs off screen. A bar still at its default spot moves to the
+    /// new default ( PlaceDefault only runs while no position is set ).
 }

@@ -46,6 +46,16 @@ enum Piece {
 /// True when this legacy HUD piece is currently replaced by a UI2 panel.
 bool IsPieceReplaced(Piece ePiece);
 
+/// --- windows ------------------------------------------------------------------
+/// Some replaced dialogs are windows the player opens and closes ( the skill
+/// window ), not always-on HUD. IT_MGR::OpenDialog / CloseDialog /
+/// IsDlgOpened call these first; each returns true when it handled the call
+/// ( UI2 on and the type is a replaced window ), so every opener -- menu,
+/// hotkey, the Escape key's close-all / reopen -- drives the UI2 window.
+bool OpenWindow(int iDlgType, bool bToggle);
+bool CloseWindow(int iDlgType);
+bool QueryWindow(int iDlgType, bool& bOpen);
+
 /// Called by IT_MGR::Update before any dialog draws: hides the replaced
 /// legacy dialogs. Game code re-shows them freely ( state changes,
 /// InitInterfacePos, OpenDialog ), so this is enforced per frame rather than

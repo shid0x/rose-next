@@ -299,6 +299,16 @@ icon glued to the cursor. Icons report `GetSprite` / `GetCooldown` / `GetStackCo
 pin it top-left; and **position panels on whole pixels** (`RoseRmlLayout::SetPosition` floors) —
 centring an odd width put the bar at x.5 and blurred every icon on it.
 
+**UI2 windows** (2026-09-24): replaced dialogs the player opens/closes (`kReplacedWindows` in
+`RoseUi2.cpp`, first: the skill window `RoseRmlSkillWindow`) are routed at the source —
+`IT_MGR::OpenDialog` / `CloseDialog` / `IsDlgOpened` defer to `RoseUi2::OpenWindow` & co, so every
+opener (menu, hotkey, menu shortcut) and the Escape close-all/reopen work unchanged. UI2 panels are
+designed fresh in the 667 style around the jobs the legacy dialog did, not copied from its layout.
+Two more RmlUi layout traps: **avoid `position: absolute` fills deep inside flex items in scroll
+lists** — RmlUi resolved one against the list, not its `position: relative` parent (the whole list
+painted gold); use an in-flow block with a % width. And a scroll area must itself be positioned
+(`.ui-well` is) or it does not clip its absolutely positioned descendants.
+
 Also UI2: the target frame (`RoseRmlTargetFrame`, new — retail showed the target only overhead),
 the Interface window (`/ui` or the status panel's UI button: scale, lock, reset layout, back to
 classic), and Options > Play > "Use new interface (UI2)" (checkbox ID 49, loose `DlgOption.xml`).

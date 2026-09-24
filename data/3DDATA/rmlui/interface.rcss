@@ -39,4 +39,20 @@
     flex-grow: 1;
     margin: 0dp;
 }
-.wide { width: 110dp; }
+/* Outer sizes ( border-box ), so a wide button and a pair of halves line up
+   exactly: 136 = 66 + 4 + 66. */
+.wide {
+    box-sizing: border-box;
+    width: 136dp;
+    height: 22dp;              /* the theme's 20 + border, now counted inside */
+}
+/* Two choices side by side taking exactly one wide button's room. */
+.half {
+    box-sizing: border-box;
+    width: 66dp;
+    height: 22dp;
+    padding-left: 0dp;
+    padding-right: 0dp;
+    font-size: 10dp;
+}
+.half + .half { margin-left: 4dp; }

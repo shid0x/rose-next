@@ -69,6 +69,15 @@ void ToggleInterfacePanel();
 /// standing for iDlgType ( DLG_TYPE_QUICKBAR / _EXT ), or -1. What
 /// CQuickBAR::GetMouseClickSlot answers while UI2 replaces the quickbars.
 short SkillBarSlotAt(int x, int y, int iDlgType);
+
+/// UI2 windows standing in for legacy dialog types ( RoseUi2::OpenWindow ).
+/// Unknown types are ignored / report closed.
+void SetWindowOpen(int iDlgType, bool bOpen);
+bool IsWindowOpen(int iDlgType);
+
+/// Skill bar orientation ( Interface window ).
+void SetSkillBarVertical(bool bVertical);
+bool IsSkillBarVertical();
 bool IsDamageMeterVisible();
 
 } // namespace RoseRmlUi

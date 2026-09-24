@@ -51,6 +51,7 @@ private:
     std::vector<int> m_Scales; ///< the preset buttons, in percent
     int m_iScale;
     bool m_bLocked;
+    bool m_bBarVertical;
 };
 
 #endif /// _ROSE_RML_INTERFACE_PANEL_H_
