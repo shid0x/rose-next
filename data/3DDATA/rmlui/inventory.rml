@@ -1,0 +1,60 @@
+<rml>
+<head>
+    <title>Inventory</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="inventory.rcss"/>
+</head>
+<body data-model="inventory">
+    <!--
+        UI2 inventory ( RoseRmlInventory ), replacing CItemDlg. Opened and
+        closed through IT_MGR like any window ( menu, Alt+I, Escape ).
+
+        The bag: three tabs of 6x5 slots. Drag an item to move it, onto a
+        shop / the bank / a trade / the skill bar, or out to drop it; double-
+        click to use or equip. Alt+click previews, Shift+click links it in
+        chat, Ctrl+click adds it to the wishlist. Click the money to drop some,
+        or to offer it in an open trade.
+
+        The whole window is a drop target for items ( DLG_TYPE_ITEM ).
+    -->
+    <div id="inventory" class="ui-window" data-attr-drop-target="drop_type">
+        <handle move_target="inventory" class="ui-titlebar">
+            <span class="ui-title">Inventory</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <div class="columns">
+            <!-- The bag. -->
+            <div class="bagcol">
+                <div class="tabs">
+                    <span class="ui-btn tab" data-class-on="page == 0" data-event-click="set_page(0)">Equip<span class="n">{{count0}}</span></span>
+                    <span class="ui-btn tab" data-class-on="page == 1" data-event-click="set_page(1)">Use<span class="n">{{count1}}</span></span>
+                    <span class="ui-btn tab" data-class-on="page == 2" data-event-click="set_page(2)">Etc<span class="n">{{count2}}</span></span>
+                </div>
+
+                <div class="grid ui-well" bag-area="1">
+                    <div class="cell ui-icon" data-for="c : cells" data-attr-bagslot="c.index"
+                         data-class-empty="!c.filled" data-class-dim="c.dim" data-class-worn="c.worn"
+                         data-event-mousedown="press(c.index)" data-event-dblclick="use(c.index)">
+                        <img data-if="c.filled" data-attr-src="c.src" data-attr-rect="c.rect"/>
+                        <div class="cd" data-if="c.cd > 0" data-style-height="c.cd + '%'"></div>
+                        <div class="gem" data-if="c.socket == 2"><img data-attr-src="c.gem_src" data-attr-rect="c.gem_rect"/></div>
+                        <div class="socket" data-if="c.socket == 1"></div>
+                        <span class="count" data-if="c.count > 0">{{c.count}}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <span class="money" data-event-click="money()"><span class="coin"></span><span class="mval">{{money}}</span></span>
+            <div class="weight" data-class-heavy="weight_level == 1" data-class-over="weight_level == 2">
+                <span class="wlabel ui-muted">Weight</span>
+                <div class="wbar"><div class="wfill" data-style-width="weight_pct + '%'"></div></div>
+                <span class="wval">{{weight}}</span>
+            </div>
+        </div>
+    </div>
+</body>
+</rml>

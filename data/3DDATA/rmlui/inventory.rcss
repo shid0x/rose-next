@@ -1,0 +1,178 @@
+/* UI2 inventory -- LAYOUT ONLY ( colours and materials: rose-theme.rcss, plus
+   the few colours that are this window's own states ).
+   Reload in game with /uireload. */
+
+#inventory {
+    left: 560dp;
+    top: 160dp;
+}
+
+/* Equipment on the left ( phase 2 ), the bag on the right. */
+.columns {
+    display: flex;
+    flex-direction: row;
+}
+
+/* --- bag tabs: a segmented row of the theme's buttons ---------------------- */
+.tabs {
+    display: flex;
+    flex-direction: row;
+    margin-bottom: 4dp;
+}
+.tab {
+    flex: 1;
+    padding-left: 0dp;
+    padding-right: 0dp;
+    font-size: 10dp;
+}
+.tab + .tab { margin-left: 3dp; }
+.tab .n {
+    margin-left: 4dp;
+    font-weight: normal;
+    color: #9a9a9a;
+}
+.tab.on .n { color: #ffd2b8; }
+
+/* --- the 6x5 grid ----------------------------------------------------------- */
+/* Six cells of 42 + 2 margin = 264, the content width exactly ( one dp less
+   and the row wraps at five ). */
+.grid {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: 264dp;
+    padding: 3dp 1dp 1dp 3dp;
+}
+
+/* .ui-icon ( theme ) is the dark backing square. Icons are drawn at their
+   NATIVE atlas size ( 40x40 ), pinned top-left, as on the skill bar -- no
+   width/height on the img, or it is stretched and blurred. */
+.cell {
+    position: relative;
+    box-sizing: border-box;
+    width: 42dp;
+    height: 42dp;
+    margin-right: 2dp;
+    margin-bottom: 2dp;
+    align-items: flex-start;
+    justify-content: flex-start;
+    cursor: pointer;
+}
+.cell:hover { border-color: #d0501aff; }
+.cell.empty { background-color: #00000050; cursor: default; }
+.cell.empty:hover { border-color: #000000c0; }
+
+/* Locked ( in a trade, a shop list ... ) and nearly broken, as the classic
+   icon drew them. */
+.cell.dim img { image-color: #707070; }
+.cell.worn img { image-color: #ff8080; }
+
+/* Reload curtain, drains from the top. */
+.cd {
+    position: absolute;
+    left: 1dp;
+    right: 1dp;
+    bottom: 1dp;
+    border-radius: 3dp;
+    background-color: #000000b0;
+}
+
+/* Socket: the gem's mark -- an overlay the classic icon drew at its own
+   top-left, so it goes exactly over the item image -- or an empty ring. */
+.gem {
+    position: absolute;
+    left: 0dp;
+    top: 0dp;
+}
+.socket {
+    position: absolute;
+    right: 3dp;
+    top: 3dp;
+    width: 7dp;
+    height: 7dp;
+    border: 1dp #c8c8c8c0;
+    border-radius: 4dp;
+    background-color: #00000080;
+}
+
+/* Stack count, top left on a dark tab, where the classic icon drew it: item
+   art often carries its own text in the bottom right ( upgrade letters,
+   grades ) and the count must not cover it. */
+.count {
+    position: absolute;
+    left: 1dp;
+    top: 1dp;
+    padding: 0dp 2dp;
+    line-height: 12dp;
+    font-size: 10dp;
+    font-weight: bold;
+    color: #ffffff;
+    border-radius: 2dp;
+    background-color: #00000080;
+    font-effect: outline(1px #000000c0);
+}
+
+/* --- money and weight --------------------------------------------------------- */
+.footer {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-top: 4dp;
+    padding: 0dp 2dp;
+}
+
+/* The money is the classic money button: click to drop some, or to offer it
+   in an open trade. Text in a flex row must sit in its own element -- a bare
+   text node there is not laid out and simply does not draw. */
+.money {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 20dp;
+    padding: 0dp 6dp;
+    font-weight: bold;
+    color: #ffe070;
+    border: 1dp #00000000;
+    border-radius: 3dp;
+    cursor: pointer;
+}
+.money:hover { border-color: #d0501a80; background-color: #ffffff10; }
+.coin {
+    width: 9dp;
+    height: 9dp;
+    margin-right: 5dp;
+    border: 1dp #a07818ff;
+    border-radius: 5dp;
+    background-color: #e0b030ff;
+    decorator: ui-gloss-soft;
+}
+
+.weight {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-left: 10dp;
+    font-size: 10dp;
+}
+.wlabel { margin-right: 5dp; }
+.wbar {
+    flex-grow: 1;
+    height: 6dp;
+    margin-right: 5dp;
+    border-radius: 3dp;
+    background-color: #00000090;
+}
+.wfill {
+    height: 6dp;
+    border-radius: 3dp;
+    background-color: #4a8ac0ff;
+    decorator: ui-gloss-soft;
+}
+.wval { color: #d8d8d8; }
+
+/* 80%: orange. 100%: red -- overweight. */
+.weight.heavy .wfill { background-color: #d08020ff; }
+.weight.heavy .wval  { color: #ffb060; }
+.weight.over .wfill  { background-color: #c02818ff; }
+.weight.over .wval   { color: #ff6a5a; }

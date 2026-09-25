@@ -16,6 +16,7 @@
 #include "RoseRmlPartyInvite.h"
 #include "RoseRmlPartyOptions.h"
 #include "RoseRmlMessageBox.h"
+#include "RoseRmlInventory.h"
 #include "RoseRmlSystem.h"
 
 #include <RmlUi/Core.h>
@@ -47,6 +48,7 @@ RoseRmlPartyFrames g_PartyFrames; ///< UI2: replaces CPartyDlg
 RoseRmlPartyOptions g_PartyOptions; ///< UI2: replaces CPartyOptionDlg ( a window )
 RoseRmlPartyInvite g_PartyInvite; ///< UI2: replaces the party request message box
 RoseRmlMessageBox g_MessageBox; ///< UI2: questions and notices ( opt-in CMsgBox stand-in )
+RoseRmlInventory g_Inventory; ///< UI2: replaces CItemDlg ( a window, a view over it )
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -243,6 +245,7 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_PartyOptions.Initialise(g_pContext, kAssetDir);
     g_PartyOptions.SetAnchor(g_PartyFrames.GetPanel());
     g_PartyInvite.Initialise(g_pContext, kAssetDir);
+    g_Inventory.Initialise(g_pContext, kAssetDir);
     g_MessageBox.Initialise(g_pContext, kAssetDir);
 
     /// After every document is loaded: the lock walks their <handle>s.
@@ -268,6 +271,7 @@ Shutdown() {
     g_PartyFrames.Shutdown();
     g_PartyOptions.Shutdown();
     g_PartyInvite.Shutdown();
+    g_Inventory.Shutdown();
     g_MessageBox.Shutdown();
     RoseRmlLayout::Shutdown();
     g_pContext = NULL;
@@ -347,6 +351,7 @@ Update() {
     g_PartyFrames.Update();
     g_PartyOptions.Update();
     g_PartyInvite.Update();
+    g_Inventory.Update();
     g_MessageBox.Update();
     g_pContext->Update();
 }
@@ -370,6 +375,9 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_PARTYOPTION:
             g_PartyOptions.SetOpen(bOpen);
             break;
+        case DLG_TYPE_ITEM:
+            g_Inventory.SetOpen(bOpen);
+            break;
         default:
             break;
     }
@@ -386,6 +394,8 @@ IsWindowOpen(int iDlgType) {
             return g_CharacterWindow.IsOpen();
         case DLG_TYPE_PARTYOPTION:
             return g_PartyOptions.IsOpen();
+        case DLG_TYPE_ITEM:
+            return g_Inventory.IsOpen();
         default:
             return false;
     }
@@ -414,6 +424,31 @@ ConfirmBox(const char* pszTitle,
 bool
 NoticeBox(const char* pszTitle, const char* pszText) {
     return g_bInitialised && g_MessageBox.Notice(pszTitle, pszText);
+}
+
+bool
+InventoryBagAt(int x, int y) {
+    return g_bInitialised && g_Inventory.BagAt(x, y);
+}
+
+bool
+InventoryBagSlotAt(int x, int y, int& iPage, int& iSlot) {
+    return g_bInitialised && g_Inventory.BagSlotAt(x, y, iPage, iSlot);
+}
+
+bool
+InventoryEquipAt(int x, int y) {
+    return g_bInitialised && g_Inventory.EquipAt(x, y);
+}
+
+int
+InventoryEquipSlotAt(int x, int y) {
+    return g_bInitialised ? g_Inventory.EquipSlotAt(x, y) : -1;
+}
+
+bool
+InventoryCostumeOpen() {
+    return g_bInitialised && g_Inventory.CostumeOpen();
 }
 
 void

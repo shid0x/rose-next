@@ -100,6 +100,14 @@ bool ConfirmBox(const char* pszTitle,
 /// A notice that closes itself.
 bool NoticeBox(const char* pszTitle, const char* pszText);
 
+/// The UI2 inventory ( RoseRmlInventory ) answering CItemDlg's slot questions
+/// while it stands in for the classic dialog. Screen pixels.
+bool InventoryBagAt(int x, int y);
+bool InventoryBagSlotAt(int x, int y, int& iPage, int& iSlot);
+bool InventoryEquipAt(int x, int y);
+int InventoryEquipSlotAt(int x, int y);
+bool InventoryCostumeOpen();
+
 } // namespace RoseRmlUi
 
 #endif /// _ROSE_RML_UI_H_

@@ -49,6 +49,24 @@ public:
 
     bool is_costume_tab_open();
 
+    /// --- UI2 ( RoseRmlInventory ) -------------------------------------------
+    /// While UI2 replaces this dialog it stays alive hidden as the inventory's
+    /// model: its slots hold the per-PC arrangement and receive every item
+    /// event. The UI2 window draws these slots and acts through the methods
+    /// below; IsInsideInven / IsInsideEquip / GetEquipSlot / GetInvenSlot and
+    /// is_costume_tab_open answer from the UI2 window instead.
+
+    /// One bag slot: iPage is INV_WEAPON / INV_USE / INV_ETC / INV_RIDING.
+    CSlot* GetBagSlot(int iPage, int iSlot);
+    /// The drags a bag / an equipped item starts ( every drop target kept ).
+    CDragItem* GetInvenDragItem() { return m_pInvenDragItem; }
+    CDragItem* GetEquipDragItem() { return m_pEquipDragItem; }
+    /// The money button: drop money, or add it to an open trade.
+    void OnMoneyButton();
+    /// A click on a slot while repairing or appraising. True when it was
+    /// taken ( the click must then not start a drag ).
+    bool HandleStateClick(CSlot* pSlot);
+
 private:
     void DrawTuningStats();
     void UpdateTuningStats(POINT mouse);

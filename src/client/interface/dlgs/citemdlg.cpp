@@ -18,6 +18,8 @@
 #include "../../System/CGame.h"
 #include "../../Network/CNetwork.h"
 #include "../../misc/gameutil.h"
+#include "../../rmlui/RoseRmlUi.h"
+#include "../../rmlui/RoseUi2.h"
 
 #include "tgamectrl/actionevent.h"
 #include "tgamectrl/tpane.h"
@@ -261,38 +263,45 @@ CItemDlg::OnLButtonUp(unsigned uiProcID, WPARAM wParam, LPARAM lParam) {
         case IID_BTN_CLOSE:
             Hide();
             break;
-        case IID_BTN_MONEY: {
-            int iMaxDropMoney = 0;
-
-            if (g_itMGR.IsDlgOpened(DLG_TYPE_BANK)) {
-                // g_itMGR.OpenMsgBox( STR_CANT_STORE_MONEY2BANK );
-            } else if (g_itMGR.IsDlgOpened(DLG_TYPE_EXCHANGE)) {
-                CTCmdOpenNumberInputDlg OpenCmd;
-                OpenCmd.SetCommand(m_pCmdAddMyMoney2Exchange);
-                OpenCmd.SetMaximum(
-                    g_pAVATAR->Get_MONEY() - CExchange::GetInstance().GetMyTradeMoney());
-                OpenCmd.Exec(NULL);
-
-            } else {
-                CTCmdOpenNumberInputDlg OpenCmd;
-                OpenCmd.SetCommand(m_pCmdDropMoney);
-
-                __int64 i64MaxDropMoney;
-                if (MAX_DROP_MONEY >= g_pAVATAR->Get_MONEY())
-                    i64MaxDropMoney = g_pAVATAR->Get_MONEY();
-                else
-                    i64MaxDropMoney = MAX_DROP_MONEY;
-
-                OpenCmd.SetMaximum(i64MaxDropMoney);
-                OpenCmd.Exec(NULL);
-            }
-
+        case IID_BTN_MONEY:
+            OnMoneyButton();
             break;
-        }
         default:
             break;
     }
 }
+void
+CItemDlg::OnMoneyButton() {
+    if (g_itMGR.IsDlgOpened(DLG_TYPE_BANK)) {
+        // g_itMGR.OpenMsgBox( STR_CANT_STORE_MONEY2BANK );
+    } else if (g_itMGR.IsDlgOpened(DLG_TYPE_EXCHANGE)) {
+        CTCmdOpenNumberInputDlg OpenCmd;
+        OpenCmd.SetCommand(m_pCmdAddMyMoney2Exchange);
+        OpenCmd.SetMaximum(g_pAVATAR->Get_MONEY() - CExchange::GetInstance().GetMyTradeMoney());
+        OpenCmd.Exec(NULL);
+
+    } else {
+        CTCmdOpenNumberInputDlg OpenCmd;
+        OpenCmd.SetCommand(m_pCmdDropMoney);
+
+        __int64 i64MaxDropMoney;
+        if (MAX_DROP_MONEY >= g_pAVATAR->Get_MONEY())
+            i64MaxDropMoney = g_pAVATAR->Get_MONEY();
+        else
+            i64MaxDropMoney = MAX_DROP_MONEY;
+
+        OpenCmd.SetMaximum(i64MaxDropMoney);
+        OpenCmd.Exec(NULL);
+    }
+}
+
+CSlot*
+CItemDlg::GetBagSlot(int iPage, int iSlot) {
+    if (iPage < 0 || iPage >= MAX_INV_TYPE || iSlot < 0 || iSlot >= INVENTORY_PAGE_SIZE)
+        return NULL;
+    return &m_ItemSlots[iPage][iSlot];
+}
+
 void
 CItemDlg::OnLButtonDown(unsigned uiProcID, WPARAM wParam, LPARAM lParam) {
     switch (uiProcID) {
@@ -597,6 +606,9 @@ CItemDlg::ProcessSlots(unsigned uiMsg, WPARAM wParam, LPARAM lParam) {
 
 bool
 CItemDlg::IsInsideInven(POINT pt) {
+    if (RoseUi2::IsReplaced(DLG_TYPE_ITEM))
+        return RoseRmlUi::InventoryBagAt(pt.x, pt.y);
+
     RECT rc = {10, 276, 277, 502};
     POINT ptTemp = {pt.x - m_sPosition.x, pt.y - m_sPosition.y};
 
@@ -605,6 +617,9 @@ CItemDlg::IsInsideInven(POINT pt) {
 
 bool
 CItemDlg::IsInsideEquip(POINT pt) {
+    if (RoseUi2::IsReplaced(DLG_TYPE_ITEM))
+        return RoseRmlUi::InventoryEquipAt(pt.x, pt.y);
+
     RECT rc = {10, 57, 277, 252};
     POINT ptTemp = {pt.x - m_sPosition.x, pt.y - m_sPosition.y};
 
@@ -619,6 +634,9 @@ CItemDlg::IsInsideEquip(POINT pt) {
 
 int
 CItemDlg::GetEquipSlot(POINT pt) {
+    if (RoseUi2::IsReplaced(DLG_TYPE_ITEM))
+        return RoseRmlUi::InventoryEquipSlotAt(pt.x, pt.y);
+
     RECT rt;
     POINT ptTemp = {pt.x - m_sPosition.x, pt.y - m_sPosition.y};
 
@@ -639,6 +657,13 @@ CItemDlg::GetEquipSlot(POINT pt) {
 
 CSlot*
 CItemDlg::GetInvenSlot(POINT pt) {
+    if (RoseUi2::IsReplaced(DLG_TYPE_ITEM)) {
+        int iPage = -1, iSlot = -1;
+        if (!RoseRmlUi::InventoryBagSlotAt(pt.x, pt.y, iPage, iSlot))
+            return NULL;
+        return GetBagSlot(iPage, iSlot);
+    }
+
     int iInvenType = 0;
 
     if (m_iEquipTab == EQUIPMENT_TAB_TUNING)
@@ -760,76 +785,10 @@ CItemDlg::ActionPerformed(CActionEvent* e) {
                 break;
 
             switch (pSource->GetControlType()) {
-                case CTRL_SLOT: {
-                    CSlot* pSlot = (CSlot*)pSource;
-                    if (CIcon* pIcon = pSlot->GetIcon()) {
-                        switch (g_itMGR.GetState()) {
-                            case IT_MGR::STATE_REPAIR: {
-                                CGame& refGame = CGame::GetInstance();
-                                if (refGame.GetRepairMode() != CGame::REPAIR_NONE) ///수리모드일경우
-                                {
-                                    pSlot->ResetClicked();
-                                    if (IsAvailableRepair(pIcon)) {
-                                        CIconItem* pItemIcon = (CIconItem*)pIcon;
-                                        switch (refGame.GetRepairMode()) {
-                                            case CGame::REPAIR_ITEM: {
-                                                g_pNet->Send_cli_USE_ITEM_TO_REPAIR(
-                                                    refGame.GetUsingRepairItemInvenIdx(),
-                                                    pItemIcon->GetIndex());
-                                                //												CTCommand* pCmd =
-                                                //new CTCmdEndRepair;
-                                                // g_itMGR.AddTCommand( DLG_TYPE_MAX, pCmd );
-                                                return e->GetID();
-                                                break;
-                                            }
-                                            case CGame::REPAIR_NPC: {
-                                                g_pNet->Send_cli_REPAIR_FROM_NPC(
-                                                    refGame.GetRepairNpcSvrIdx(),
-                                                    pItemIcon->GetIndex());
-                                                //												CTCommand* pCmd =
-                                                //new CTCmdEndRepair;
-                                                // g_itMGR.AddTCommand( DLG_TYPE_MAX, pCmd );
-                                                return e->GetID();
-                                                break;
-                                            }
-                                            default:
-                                                break;
-                                        }
-                                    }
-                                }
-                                break;
-                            }
-                            case IT_MGR::STATE_APPRAISAL: {
-                                pSlot->ResetClicked();
-                                CIconItem* pItemIcon = (CIconItem*)pIcon;
-                                tagITEM& Item = pItemIcon->GetItem();
-                                if (Item.IsEnableAppraisal()) {
-                                    __int64 i64Price =
-                                        (ITEM_BASE_PRICE(Item.GetTYPE(), Item.GetItemNO()) + 10000)
-                                        * (Item.GetDurability() + 50) / 10000;
-                                    if (i64Price <= g_pAVATAR->Get_MONEY()) {
-                                        CGame::GetInstance().SetAppraisalCost(i64Price);
-                                        CTCommand* pCmd =
-                                            new CTCmdSendAppraisalReq(pItemIcon->GetIndex());
-                                        g_itMGR.OpenMsgBox(CStr::Printf(STR_MSG_IDENTIFY_COST,
-                                                               pItemIcon->GetName(),
-                                                               i64Price),
-                                            CMsgBox::BT_OK | CMsgBox::BT_CANCEL,
-                                            true,
-                                            0,
-                                            pCmd);
-                                    } else {
-                                        g_itMGR.OpenMsgBox(STR_NOTENOUGH_IDENTIFYCOST);
-                                    }
-                                }
-                                break;
-                            }
-                            default:
-                                break;
-                        }
-                    }
+                case CTRL_SLOT:
+                    if (HandleStateClick((CSlot*)pSource))
+                        return e->GetID();
                     break;
-                }
                 default:
                     break;
             }
@@ -839,6 +798,65 @@ CItemDlg::ActionPerformed(CActionEvent* e) {
             break;
     }
     return 0;
+}
+
+bool
+CItemDlg::HandleStateClick(CSlot* pSlot) {
+    if (pSlot == NULL)
+        return false;
+    CIcon* pIcon = pSlot->GetIcon();
+    if (pIcon == NULL)
+        return false;
+
+    switch (g_itMGR.GetState()) {
+        case IT_MGR::STATE_REPAIR: {
+            CGame& refGame = CGame::GetInstance();
+            if (refGame.GetRepairMode() == CGame::REPAIR_NONE) ///수리모드일경우
+                return false;
+
+            pSlot->ResetClicked();
+            if (IsAvailableRepair(pIcon)) {
+                CIconItem* pItemIcon = (CIconItem*)pIcon;
+                switch (refGame.GetRepairMode()) {
+                    case CGame::REPAIR_ITEM:
+                        g_pNet->Send_cli_USE_ITEM_TO_REPAIR(
+                            refGame.GetUsingRepairItemInvenIdx(), pItemIcon->GetIndex());
+                        break;
+                    case CGame::REPAIR_NPC:
+                        g_pNet->Send_cli_REPAIR_FROM_NPC(
+                            refGame.GetRepairNpcSvrIdx(), pItemIcon->GetIndex());
+                        break;
+                    default:
+                        break;
+                }
+            }
+            return true;
+        }
+        case IT_MGR::STATE_APPRAISAL: {
+            pSlot->ResetClicked();
+            CIconItem* pItemIcon = (CIconItem*)pIcon;
+            tagITEM& Item = pItemIcon->GetItem();
+            if (Item.IsEnableAppraisal()) {
+                __int64 i64Price = (ITEM_BASE_PRICE(Item.GetTYPE(), Item.GetItemNO()) + 10000)
+                    * (Item.GetDurability() + 50) / 10000;
+                if (i64Price <= g_pAVATAR->Get_MONEY()) {
+                    CGame::GetInstance().SetAppraisalCost(i64Price);
+                    CTCommand* pCmd = new CTCmdSendAppraisalReq(pItemIcon->GetIndex());
+                    g_itMGR.OpenMsgBox(
+                        CStr::Printf(STR_MSG_IDENTIFY_COST, pItemIcon->GetName(), i64Price),
+                        CMsgBox::BT_OK | CMsgBox::BT_CANCEL,
+                        true,
+                        0,
+                        pCmd);
+                } else {
+                    g_itMGR.OpenMsgBox(STR_NOTENOUGH_IDENTIFYCOST);
+                }
+            }
+            return true;
+        }
+        default:
+            return false;
+    }
 }
 
 bool
@@ -904,6 +922,10 @@ CItemDlg::RemoveActionEventListener2Slots() {
 
 bool
 CItemDlg::is_costume_tab_open() {
+    /// Every equip asks this ( CTCmdItemEquipInInventory ): with UI2 on it is
+    /// the UI2 window's section that decides costume or normal equipping.
+    if (RoseUi2::IsReplaced(DLG_TYPE_ITEM))
+        return RoseRmlUi::InventoryCostumeOpen();
     return this->m_iEquipTab == EQUIPMENT_TAB_COSTUME;
 }
 void

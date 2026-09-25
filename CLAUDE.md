@@ -319,6 +319,16 @@ call site*: `RoseRmlUi::ConfirmBox` / `NoticeBox` return false when UI2 cannot s
 the caller falls back to `IT_MGR::OpenMsgBox`; commands run through `AddTCommand(0, …)` exactly as
 `CMsgBox` runs them.
 
+**Inventory** (2026-09-25, `RoseRmlInventory`, in phases): a *view* over the hidden `CItemDlg`,
+which stays the model — its slots receive the item events and hold the per-PC arrangement
+(`GetVirtualInventory` / `ApplySavedVirtualInventory`). Drags start from `CItemDlg`'s own drag
+items, so every drop target keeps working; the window is `drop-target` `DLG_TYPE_ITEM`, and
+`CItemDlg::IsInsideInven` / `IsInsideEquip` / `GetEquipSlot` / `GetInvenSlot` /
+`is_costume_tab_open` answer from UI2 while it is on (**`is_costume_tab_open` decides costume vs
+normal equipping for every equip**). Repair/appraisal clicks go through
+`CItemDlg::HandleStateClick`. Phase 1 = bag, money, weight. Also: **a bare text node inside a flex
+container does not draw** — wrap it in a `<span>`.
+
 **RmlUi has no default stylesheet: a `div` is `display: inline` unless told otherwise**, and an
 inline box ignores width and height. `rose-theme.rcss` now declares `div { display: block; }`
 (2026-09-25). Before it, every nested bar broke — a track drew as a 2 px sliver of border, an

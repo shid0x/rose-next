@@ -30,6 +30,10 @@ const int kReplacedDialogs[] = {
     /// RoseRmlPartyOptions ( also in kReplacedWindows ). Hidden, NOT gone:
     /// CPartyOptionDlg still writes the "party settings changed" chat lines.
     DLG_TYPE_PARTYOPTION,
+    /// RoseRmlInventory ( also in kReplacedWindows ). Hidden, NOT gone:
+    /// CItemDlg stays the inventory's model ( item events, the per-PC slot
+    /// arrangement ) and answers the drop commands through the UI2 window.
+    DLG_TYPE_ITEM,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -38,6 +42,7 @@ const int kReplacedWindows[] = {
     DLG_TYPE_SKILL,
     DLG_TYPE_CHAR,
     DLG_TYPE_PARTYOPTION,
+    DLG_TYPE_ITEM,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).
