@@ -18,6 +18,7 @@
 #include "RoseRmlMessageBox.h"
 #include "RoseRmlInventory.h"
 #include "RoseRmlQuestJournal.h"
+#include "RoseRmlMinimap.h"
 #include "RoseRmlSystem.h"
 
 #include <RmlUi/Core.h>
@@ -52,6 +53,7 @@ RoseRmlPartyInvite g_PartyInvite; ///< UI2: replaces the party request message b
 RoseRmlMessageBox g_MessageBox; ///< UI2: questions and notices ( opt-in CMsgBox stand-in )
 RoseRmlInventory g_Inventory; ///< UI2: replaces CItemDlg ( a window, a view over it )
 RoseRmlQuestJournal g_QuestJournal; ///< UI2: replaces CQuestDlg ( a window )
+RoseRmlMinimap g_Minimap; ///< UI2: replaces CMinimapDLG ( a view over it )
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -277,6 +279,7 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_PartyInvite.Initialise(g_pContext, kAssetDir);
     g_Inventory.Initialise(g_pContext, kAssetDir);
     g_QuestJournal.Initialise(g_pContext, kAssetDir);
+    g_Minimap.Initialise(g_pContext, kAssetDir);
     g_MessageBox.Initialise(g_pContext, kAssetDir);
 
     /// After every document is loaded: the lock walks their <handle>s.
@@ -304,6 +307,7 @@ Shutdown() {
     g_PartyInvite.Shutdown();
     g_Inventory.Shutdown();
     g_QuestJournal.Shutdown();
+    g_Minimap.Shutdown();
     g_MessageBox.Shutdown();
     RoseRmlLayout::Shutdown();
     g_pContext = NULL;
@@ -385,6 +389,7 @@ Update() {
     g_PartyInvite.Update();
     g_Inventory.Update();
     g_QuestJournal.Update();
+    g_Minimap.Update();
     g_MessageBox.Update();
     g_pContext->Update();
 }
@@ -414,6 +419,9 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_QUEST:
             g_QuestJournal.SetOpen(bOpen);
             break;
+        case DLG_TYPE_MINIMAP:
+            g_Minimap.SetOpen(bOpen);
+            break;
         default:
             break;
     }
@@ -434,6 +442,8 @@ IsWindowOpen(int iDlgType) {
             return g_Inventory.IsOpen();
         case DLG_TYPE_QUEST:
             return g_QuestJournal.IsOpen();
+        case DLG_TYPE_MINIMAP:
+            return g_Minimap.IsOpen();
         default:
             return false;
     }
@@ -487,6 +497,18 @@ InventoryEquipSlotAt(int x, int y) {
 bool
 InventoryCostumeOpen() {
     return g_bInitialised && g_Inventory.CostumeOpen();
+}
+
+void
+MinimapToggleCollapsed() {
+    if (g_bInitialised)
+        g_Minimap.ToggleCollapsed();
+}
+
+void
+MinimapCycleSize() {
+    if (g_bInitialised)
+        g_Minimap.CycleSize();
 }
 
 void

@@ -1,0 +1,62 @@
+<rml>
+<head>
+    <title>Minimap</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="minimap.rcss"/>
+</head>
+<body data-model="minimap">
+    <!--
+        UI2 minimap ( RoseRmlMinimap ), replacing CMinimapDLG. Zone name and
+        coordinates in the title bar, with the size ( S / M / L, the L key ) and
+        collapse ( the M key ) buttons.
+
+        The map: NPC marks ( hover for the name ), the pulsing indicators
+        scripts place, party members, other players and the other team, and
+        your heading arrow. Drag it to look around; moving, or Re-center, snaps
+        it back. + / - zoom.
+    -->
+    <!-- The window takes the view's width; the title bar fits into it. -->
+    <div id="minimap" class="ui-window" data-style-width="view + 'dp'">
+        <handle move_target="minimap" class="ui-titlebar">
+            <span class="ui-title zone">{{zone}}</span>
+            <span class="coords">{{coords}}</span>
+            <span class="ui-btn mini" data-event-click="cycle_size()">{{ map_size == 0 ? 'S' : (map_size == 1 ? 'M' : 'L') }}</span>
+            <span class="ui-btn mini" data-event-click="toggle_collapsed()">{{ collapsed ? '+' : '-' }}</span>
+        </handle>
+
+        <div id="mapview" class="view ui-well" data-if="!collapsed"
+             data-style-height="view + 'dp'"
+             data-event-mousedown="pan_start()">
+            <img class="map" data-if="has_map" data-attr-src="map_src"
+                 data-style-left="map_x + 'dp'" data-style-top="map_y + 'dp'"
+                 data-style-width="map_w + 'dp'" data-style-height="map_h + 'dp'"/>
+            <div class="nomap ui-muted" data-if="!has_map">No map for this area.</div>
+
+            <div class="mark" data-for="m : marks" data-attr-tip="m.tip"
+                 data-class-ind="m.kind == 1" data-class-hot="m.tip == hover_tip"
+                 data-style-left="m.x + 'dp'" data-style-top="m.y + 'dp'">
+                <img data-attr-src="m.src" data-attr-rect="m.rect"/>
+            </div>
+
+            <img class="arrow" data-if="arrow" data-attr-src="arrow_src"
+                 data-style-left="(arrow_x - 8) + 'dp'" data-style-top="(arrow_y - 8) + 'dp'"
+                 data-style-transform="'rotate(' + arrow_deg + 'deg)'"/>
+
+            <div class="zoombox" data-if="has_map">
+                <span class="ui-btn zb" data-class-ui-static="zoom == 4" data-event-click="zoom_in()">+</span>
+                <span class="ui-btn zb" data-class-ui-static="zoom == 0" data-event-click="zoom_out()">-</span>
+            </div>
+            <span class="ui-btn recenter" data-if="exploring" data-event-click="recenter()">Re-center</span>
+        </div>
+
+        <!-- The hovered NPC's name, above its mark. A child of the window, not
+             of the clipped view, so it can overhang the map's edge. -->
+        <div id="npctip" class="npctip" data-if="hover != ''"
+             data-class-pop1="hover_pop == 1" data-class-pop2="hover_pop == 2">
+            <span class="role" data-if="hover_role != ''">{{hover_role}}</span>
+            <span class="nname">{{hover}}</span>
+        </div>
+    </div>
+</body>
+</rml>

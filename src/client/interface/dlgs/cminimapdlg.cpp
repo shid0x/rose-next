@@ -33,6 +33,8 @@
 #include "tgamectrl/timage.h"
 
 #include "AvatarInfoDlg.h"
+#include "../../rmlui/RoseRmlUi.h"
+#include "../../rmlui/RoseUi2.h"
 
 #define AVATA_POS_INFO_X 110
 #define AVATA_POS_INFO_Y 198
@@ -125,6 +127,8 @@ CMinimapDLG::SetMinimap(const char* pFname,
     FreeMinimap();
     setDelayedLoad(0);
     m_hMiniMap = loadTexture(pFname, pFname, 1, 0);
+    m_strMinimapFile = m_hMiniMap ? pFname : "";
+    m_strArrowFile = pCursorName ? pCursorName : "";
 
     if (m_hArrow == NULL)
         m_hArrow = loadTexture(pCursorName, pCursorName, 1, 0);
@@ -481,7 +485,29 @@ CMinimapDLG::On_LButtonDN(unsigned iProcID, WPARAM wParam, LPARAM lParam) {
 }
 
 void
+CMinimapDLG::GetMinimapTextureSize(int& iWidth, int& iHeight) {
+    iWidth = 0;
+    iHeight = 0;
+    if (m_hMiniMap)
+        getTextureSize(m_hMiniMap, iWidth, iHeight);
+}
+
+void
+CMinimapDLG::CollectCoordinateIndicators(int iZone, std::vector<std::pair<float, float>>& out) {
+    out.clear();
+    std::map<int, S_IndicatorCoordinates>::iterator iter;
+    for (iter = m_indicators_coordinates.begin(); iter != m_indicators_coordinates.end(); ++iter) {
+        if (iter->second.m_zoneno == iZone)
+            out.push_back(std::make_pair(iter->second.m_x, iter->second.m_y));
+    }
+}
+
+void
 CMinimapDLG::ToggleShowMinimap() {
+    if (RoseUi2::IsReplaced(DLG_TYPE_MINIMAP)) { ///< the M key, with UI2 on
+        RoseRmlUi::MinimapToggleCollapsed();
+        return;
+    }
     if (m_bExpand)
         ToggleShowMinimapBig();
     else
@@ -490,6 +516,10 @@ CMinimapDLG::ToggleShowMinimap() {
 
 void
 CMinimapDLG::ToggleZoomMinimap() {
+    if (RoseUi2::IsReplaced(DLG_TYPE_MINIMAP)) { ///< the L key, with UI2 on
+        RoseRmlUi::MinimapCycleSize();
+        return;
+    }
     if (m_bExpand)
         Reduct();
     else

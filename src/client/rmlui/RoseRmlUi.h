@@ -108,6 +108,10 @@ bool InventoryEquipAt(int x, int y);
 int InventoryEquipSlotAt(int x, int y);
 bool InventoryCostumeOpen();
 
+/// The UI2 minimap ( RoseRmlMinimap ): the M and L keys.
+void MinimapToggleCollapsed();
+void MinimapCycleSize();
+
 } // namespace RoseRmlUi
 
 #endif /// _ROSE_RML_UI_H_

@@ -348,6 +348,18 @@ and is refused while an NPC dialog is open. **Game text is in the ANSI code page
 UTF-8** -- `RoseRmlText::FromGame` converts (ASCII passes through); the older panels do not use it
 yet, which is harmless until a string carries a non-ASCII character.
 
+**Minimap** (2026-09-26, `RoseRmlMinimap`, `DLG_TYPE_MINIMAP`): a view over the hidden
+`CMinimapDLG`, which still loads each zone's map (`SetMinimap`) and keeps the scripts' indicators;
+M / L are handed over, and clan zones close it through the window routing. The previous zone's
+texture is released on each change (`Rml::ReleaseTexture`). Traps: **`size` is a reserved data
+name** (arrays' `.size`) -- binding it fails and the expression prints as text; **RmlUi only
+scissors an element whose content overflows its *scroll* size**, and content panned to negative
+offsets does not count -- a map view needs `clip: always`; **legacy tooltips draw before the RmlUi
+pass**, so anything over a UI2 panel must be an RmlUi element; and labels need
+`pointer-events: none` and whole-pixel placement (a `translate(-50%)` centring blurs odd widths).
+**CSS `transform` works now**: `RoseRmlRenderer::SetTransform` (world = translation x transform;
+Rml's column-major data read as-is is the D3D row-vector matrix).
+
 **UI2 sounds** come from the classic XML: a UI2 window plays its replaced dialog's `SHOWSID` /
 `HIDESID` (`RoseUi2::PlayWindowSound`), and a context-wide listener plays the classic `CLICKSID`
 (8) for any `.ui-btn` or `.ui-click` (`.ui-static` opts out). `CTDialog::Hide` always plays its

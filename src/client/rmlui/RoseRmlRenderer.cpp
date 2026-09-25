@@ -88,8 +88,33 @@ RoseRmlRenderer::RoseRmlRenderer():
     m_iViewportHeight(0),
     m_bScissorEnabled(false),
     m_iDrawCalls(0),
-    m_bDeviceObjectsValid(false) {
+    m_bDeviceObjectsValid(false),
+    m_bTransform(false) {
     SetRect(&m_rcScissor, 0, 0, 0, 0);
+    D3DXMatrixIdentity(&m_matTransform);
+}
+
+void
+RoseRmlRenderer::SetTransform(const Rml::Matrix4f* transform) {
+    m_bTransform = (transform != NULL);
+    if (!m_bTransform)
+        return;
+    /// Rml::Matrix4f stores columns ( column-major, for column vectors ); D3D
+    /// multiplies ROW vectors, which needs the transpose -- and the transpose
+    /// of a column-major array read row by row is the array itself.
+    m_matTransform = D3DXMATRIX(transform->data());
+}
+
+void
+RoseRmlRenderer::SetWorld(Rml::Vector2f translation) {
+    /// RmlUi translates first and transforms second ( GL backend:
+    /// transform * ( position + translate ) ); with row vectors that is
+    /// translation * transform.
+    D3DXMATRIX matWorld;
+    D3DXMatrixTranslation(&matWorld, translation.x, translation.y, 0.0f);
+    if (m_bTransform)
+        D3DXMatrixMultiply(&matWorld, &matWorld, &m_matTransform);
+    m_pDevice->SetTransform(D3DTS_WORLD, &matWorld);
 }
 
 RoseRmlRenderer::~RoseRmlRenderer() {
@@ -329,11 +354,9 @@ RoseRmlRenderer::RenderGeometry(Rml::CompiledGeometryHandle geometry,
     if (pGeom->pVB == NULL || pGeom->pIB == NULL)
         return;
 
-    /// RmlUi's per-geometry translation rides on the world matrix so the compiled
-    /// vertex buffer stays immutable.
-    D3DXMATRIX matWorld;
-    D3DXMatrixTranslation(&matWorld, translation.x, translation.y, 0.0f);
-    m_pDevice->SetTransform(D3DTS_WORLD, &matWorld);
+    /// RmlUi's per-geometry translation ( and CSS transform ) ride on the world
+    /// matrix so the compiled vertex buffer stays immutable.
+    SetWorld(translation);
 
     if (texture != 0) {
         std::map<Rml::TextureHandle, Texture*>::iterator itTex = m_Textures.find(texture);
@@ -728,9 +751,7 @@ RoseRmlRenderer::RenderShader(Rml::CompiledShaderHandle shader,
     if (pShader->pRamp == NULL || pGeom->pVB == NULL || pGeom->pIB == NULL)
         return;
 
-    D3DXMATRIX matWorld;
-    D3DXMatrixTranslation(&matWorld, translation.x, translation.y, 0.0f);
-    m_pDevice->SetTransform(D3DTS_WORLD, &matWorld);
+    SetWorld(translation);
 
     /// Project the element-local position carried in the texcoords onto the
     /// gradient axis:  t = dot(uv - p0, d) / |d|^2,  v = 0.5 ( ramp is 1 texel
@@ -893,6 +914,10 @@ void
 RoseRmlRenderer::BeginFrame() {
     if (m_pDevice == NULL)
         return;
+
+    /// RmlUi resets the transform after each transformed element; start every
+    /// frame without one regardless.
+    m_bTransform = false;
 
     /// Capture the engine's entire device state so EndFrame can put it back
     /// byte-for-byte. This is what keeps the world render unaffected by the

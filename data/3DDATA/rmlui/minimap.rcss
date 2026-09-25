@@ -1,0 +1,157 @@
+/* UI2 minimap -- LAYOUT ONLY ( colours and materials: rose-theme.rcss, plus the
+   few colours that are this panel's own states ).
+   Reload in game with /uireload. The C++ places it top right until it is
+   moved; its view size comes from the S / M / L button. */
+
+#minimap {
+    left: 800dp;
+    top: 3dp;
+}
+
+.zone {
+    flex-shrink: 1;
+    min-width: 0dp;
+    font-size: 11dp;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.coords {
+    flex-shrink: 0;
+    margin: 0dp 6dp;
+    font-size: 10dp;
+    color: #d8d8d8;
+}
+.mini {
+    width: 16dp;
+    height: 16dp;
+    line-height: 15dp;
+    margin-left: 2dp;
+    padding: 0dp;
+    font-size: 10dp;
+}
+
+/* The view clips everything drawn in it. `clip: always` is required: RmlUi
+   only scissors an element whose content overflows it by its SCROLL size,
+   and a map panned under the view overflows to the left and top ( negative
+   offsets ), which does not count -- without it the map drew over the whole
+   screen. */
+.view {
+    overflow: hidden;
+    clip: always;
+    background-color: #0a0a0aff;
+    cursor: move;
+}
+.map {
+    position: absolute;
+}
+.nomap {
+    padding: 20dp 10dp;
+    text-align: center;
+    font-size: 10dp;
+}
+
+/* Marks: a 20 dp box centred on the point, the sprite centred in it at its
+   native size. */
+.mark {
+    position: absolute;
+    box-sizing: border-box;    /* the hover ring draws inside the 20 dp box */
+    display: flex;
+    width: 20dp;
+    height: 20dp;
+    align-items: center;
+    justify-content: center;
+}
+/* A script's pointer ( a quest target ) breathes so it can be found. */
+@keyframes mark-pulse {
+    from { opacity: 1; }
+    to   { opacity: 0.35; }
+}
+.mark.ind { animation: 0.7s quadratic-in-out infinite alternate mark-pulse; }
+
+/* The hovered mark: a gold ring, so it is clear which of two close marks the
+   name belongs to. */
+.mark.hot {
+    z-index: 3;
+    border: 2dp #ffd060ff;
+    border-radius: 10dp;
+    background-color: #ffd06040;
+}
+
+/* The hovered NPC's name: an opaque plate with a gold edge above the mark,
+   role small over a bold name. The C++ places it centred above the mark on
+   whole pixels ( no translate: centring by -50% put odd widths on a half
+   pixel and blurred the text ).
+   pointer-events: none -- a label must never take the hover. It pops in over
+   the mark's top edge, and while it caught the mouse the mark lost its hover,
+   the label vanished, the mark was hovered again: the ring flashed. */
+.npctip {
+    position: absolute;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 3dp 8dp 4dp 8dp;
+    border: 1dp #d0a040ff;
+    border-radius: 3dp;
+    background-color: #0e0e0ef0;
+    white-space: nowrap;
+    pointer-events: none;
+}
+.npctip .role {
+    font-size: 9dp;
+    color: #b0b0b0;
+}
+.npctip .nname {
+    font-size: 12dp;
+    font-weight: bold;
+    color: #ffe070;
+    font-effect: shadow(1px 1px #000000);
+}
+/* The pop: a quick fade and rise each time a new NPC is hovered ( two
+   identical animations, alternated from C++, so each replays ). It ends with
+   no transform at all, so the resting label is pixel-exact. */
+@keyframes npc-pop-1 {
+    from { opacity: 0; transform: translateY(4dp); }
+    to   { opacity: 1; transform: translateY(0dp); }
+}
+@keyframes npc-pop-2 {
+    from { opacity: 0; transform: translateY(4dp); }
+    to   { opacity: 1; transform: translateY(0dp); }
+}
+.npctip.pop1 { animation: 0.14s cubic-out npc-pop-1; }
+.npctip.pop2 { animation: 0.14s cubic-out npc-pop-2; }
+
+/* Your heading: the classic 16 px cursor, turned by the C++. */
+.arrow {
+    position: absolute;
+    width: 16dp;
+    height: 16dp;
+}
+
+.zoombox {
+    position: absolute;
+    right: 3dp;
+    bottom: 3dp;
+    display: flex;
+    flex-direction: column;
+}
+.zb {
+    width: 18dp;
+    height: 18dp;
+    line-height: 17dp;
+    margin-top: 2dp;
+    padding: 0dp;
+    font-size: 12dp;
+}
+.zb.ui-static { color: #6a6a6a; }
+
+.recenter {
+    position: absolute;
+    left: 3dp;
+    bottom: 3dp;
+    height: 18dp;
+    line-height: 17dp;
+    padding: 0dp 6dp;
+    font-size: 9dp;
+}

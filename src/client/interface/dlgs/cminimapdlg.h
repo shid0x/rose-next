@@ -3,6 +3,9 @@
 
 #include "tgamectrl/tdialog.h"
 #include "tgamectrl/singlelinestring.h"
+#include <string>
+#include <utility>
+#include <vector>
 class CTAnimation;
 
 /**
@@ -89,6 +92,9 @@ private:
     std::map<int, S_IndicatorCoordinates> m_indicators_coordinates; /// 좌표
 
     CTAnimation* m_indicator; ///표시에 사용될 CTAnimation
+
+    std::string m_strMinimapFile; ///< SetMinimap's files, for UI2
+    std::string m_strArrowFile;
 public:
     CMinimapDLG();
     virtual ~CMinimapDLG();
@@ -120,6 +126,26 @@ public:
 
     void RefreshDlg();
     void SetInterfacePos_After();
+
+    /// --- UI2 ( RoseRmlMinimap ) ---------------------------------------------
+    /// While UI2 replaces this dialog it stays alive hidden as the minimap's
+    /// model: SetMinimap still loads each zone's map and works out its world
+    /// bounds, and the scripts' indicators ( GF_* ) still land here. The UI2
+    /// minimap reads them through these; ToggleShowMinimap / ToggleZoomMinimap
+    /// ( the M / L keys ) are handed to it.
+    bool HasMinimap() const { return m_hMiniMap != NULL; }
+    const std::string& GetMinimapFile() const { return m_strMinimapFile; }
+    const std::string& GetArrowFile() const { return m_strArrowFile; }
+    void GetMinimapTextureSize(int& iWidth, int& iHeight);
+    /// World x at the texture's left edge ( past its one-map border ), world y
+    /// at its top edge, and world units per texture pixel.
+    float GetMinimapWorldLeft() const { return m_fMinMinimapWorldPosX; }
+    float GetMinimapWorldTop() const { return m_fMaxMinimapWorldPosY; }
+    float GetMinimapWorldRight() const { return m_fMaxMinimapWorldPosX; }
+    float GetMinimapWorldBottom() const { return m_fMinMinimapWorldPosY; }
+    float GetWorldPerPixel() { return fGetWorldDistancePerPixel(); }
+    /// The scripts' coordinate markers in one zone.
+    void CollectCoordinateIndicators(int iZone, std::vector<std::pair<float, float>>& out);
 
     enum {
         IID_PANE_BIG = 50,

@@ -36,6 +36,10 @@ const int kReplacedDialogs[] = {
     /// arrangement ) and answers the drop commands through the UI2 window.
     DLG_TYPE_ITEM,
     DLG_TYPE_QUEST, ///< RoseRmlQuestJournal ( also in kReplacedWindows )
+    /// RoseRmlMinimap ( also in kReplacedWindows: the game opens it in field
+    /// zones and closes it in clan zones ). Hidden, NOT gone: CMinimapDLG
+    /// still loads each zone's map and keeps the scripts' indicators.
+    DLG_TYPE_MINIMAP,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -46,6 +50,7 @@ const int kReplacedWindows[] = {
     DLG_TYPE_PARTYOPTION,
     DLG_TYPE_ITEM,
     DLG_TYPE_QUEST,
+    DLG_TYPE_MINIMAP,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).

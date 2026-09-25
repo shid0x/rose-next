@@ -18,6 +18,7 @@
 #include <RmlUi/Core/RenderInterface.h>
 
 #include <d3d9.h>
+#include <d3dx9math.h>
 #include <map>
 #include <string>
 #include <vector>
@@ -67,6 +68,10 @@ public:
 
     virtual void EnableScissorRegion(bool enable);
     virtual void SetScissorRegion(Rml::Rectanglei region);
+
+    /// CSS transform ( rotate, scale ... ): every later draw goes through it
+    /// until RmlUi resets it with NULL. The minimap's heading arrow uses it.
+    virtual void SetTransform(const Rml::Matrix4f* transform);
 
     /// --- optional: gradients -----------------------------------------------
     /// Implemented because CSS-authored skins should not need image files for
@@ -168,6 +173,14 @@ private:
 
     int m_iDrawCalls;
     bool m_bDeviceObjectsValid;
+
+    /// The active CSS transform ( SetTransform ), applied after each draw's
+    /// translation.
+    bool m_bTransform;
+    D3DXMATRIX m_matTransform;
+
+    /// The world matrix for one draw: its translation, then the transform.
+    void SetWorld(Rml::Vector2f translation);
 };
 
 #endif /// _ROSE_RML_RENDERER_H_
