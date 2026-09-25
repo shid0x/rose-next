@@ -304,17 +304,22 @@ centring an odd width put the bar at x.5 and blurred every icon on it.
 `IT_MGR::OpenDialog` / `CloseDialog` / `IsDlgOpened` defer to `RoseUi2::OpenWindow` & co, so every
 opener (menu, hotkey, menu shortcut) and the Escape close-all/reopen work unchanged. UI2 panels are
 designed fresh in the 667 style around the jobs the legacy dialog did, not copied from its layout.
-Two more RmlUi layout traps: **avoid `position: absolute` fills deep inside flex items in scroll
-lists** — RmlUi resolved one against the list, not its `position: relative` parent (the whole list
-painted gold); use an in-flow block with a % width. And a scroll area must itself be positioned
-(`.ui-well` is) or it does not clip its absolutely positioned descendants.
+A scroll area must itself be positioned (`.ui-well` is) or it does not clip its absolutely
+positioned descendants.
 
 **Character window** (2026-09-25, `RoseRmlCharacterWindow`, second `kReplacedWindows` entry):
 Stats and Union tabs under a shared identity/EXP/stamina header; the Union tab the classic XML
 hid is back. Stat hover text is shared with the classic window (`interface/StatDescriptions.*`).
-One more layout trap: **a gauge must be a direct child of the window's flex column** (as the
-status panel's EXP bar is). Wrapped in a container, an absolute fill resolved against the window
-and an in-flow fill took its percentage of a zero width.
+The party frames (`RoseRmlPartyFrames`, `DLG_TYPE_PARTY`) followed: one card per other member,
+Lead/Kick for the leader; the hidden `CPartyDlg` still writes the party chat lines.
+
+**RmlUi has no default stylesheet: a `div` is `display: inline` unless told otherwise**, and an
+inline box ignores width and height. `rose-theme.rcss` now declares `div { display: block; }`
+(2026-09-25). Before it, every nested bar broke — a track drew as a 2 px sliver of border, an
+in-flow fill had no width to take a percentage of, and an absolute fill skipped its unpositioned
+inline parent and painted the whole skill list gold — while bars that were direct children of a
+flex container worked, because flex blockifies its items. That pattern read as three different
+traps across three panels; it was always this one.
 
 Also UI2: the target frame (`RoseRmlTargetFrame`, new — retail showed the target only overhead),
 the Interface window (`/ui` or the status panel's UI button: scale, lock, reset layout, back to

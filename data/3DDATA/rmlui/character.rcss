@@ -54,9 +54,6 @@
 }
 
 /* --- EXP / stamina: label line over a thin bar ------------------------------- */
-/* Direct children of the window, like the status panel's EXP bar -- keep them
-   that way ( see character.rml ). Side margins stand in for a wrapper's
-   padding. */
 .plabel {
     display: flex;
     flex-direction: row;

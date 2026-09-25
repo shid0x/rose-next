@@ -1,0 +1,68 @@
+<rml>
+<head>
+    <title>Party</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="party.rcss"/>
+</head>
+<body data-model="party">
+    <!--
+        UI2 party frames ( RoseRmlPartyFrames ), replacing CPartyDlg. Shown while
+        you are in a party; drag the title bar to move it.
+
+        One card per other member ( you are on the status panel ): name, level,
+        HP, status effects. A member out of sight shows why instead: Far,
+        Elsewhere ( another zone, or out of range ), Offline. Click a card to
+        target the member. As leader, hover a card for Lead / Kick.
+    -->
+    <div id="party" class="ui-window">
+        <handle move_target="party" class="ui-titlebar">
+            <span class="ui-title">Party</span>
+            <span class="plv"><span class="ui-muted">Lv</span> {{level}}</span>
+            <span class="ui-btn mini" data-event-click="options()">Options</span>
+            <span class="ui-btn mini" data-event-click="leave()">Leave</span>
+        </handle>
+
+        <!-- Party EXP. -->
+        <div class="expline"><span class="ui-muted">Party EXP</span><span class="exppct">{{exp_pct}}</span></div>
+        <div class="expbar ui-gauge"><div class="ui-gauge-fill exp" data-style-width="exp_width + '%'"></div></div>
+
+        <div class="empty ui-muted" data-if="members.size == 0">Waiting for members...</div>
+
+        <div class="members">
+            <div class="card" data-for="m : members" data-class-leader="m.leader"
+                 data-class-far="m.state == 1" data-class-away="m.state >= 2"
+                 data-event-click="target(m.tag)">
+                <div class="body">
+                    <div class="line1">
+                        <span class="name">{{m.name}}</span>
+                        <span class="lv" data-if="m.level != ''"><span class="ui-muted">Lv</span> {{m.level}}</span>
+                    </div>
+
+                    <div class="hpbar"><div class="hpfill" data-class-low="m.hp_low" data-style-width="m.hp_pct + '%'"></div></div>
+
+                    <div class="line2">
+                        <span class="hpval" data-if="2 > m.state">{{m.hp}}</span>
+                        <span class="state" data-if="m.state_text != ''">{{m.state_text}}</span>
+                        <span class="tag" data-if="m.leader">Leader</span>
+                        <span class="acts" data-if="is_leader">
+                            <span class="act" data-event-click="lead(m.tag)">Lead</span>
+                            <span class="act kick" data-event-click="kick(m.tag)">Kick</span>
+                        </span>
+                    </div>
+
+                    <div class="icons" data-if="m.buffs.size > 0">
+                        <div class="buff ui-tipped" data-for="b : m.buffs" data-class-ui-blink="b.expiring">
+                            <div class="frame ui-icon"><img data-attr-src="b.src" data-attr-rect="b.rect"/></div>
+                            <div class="ui-window ui-tip">
+                                <span class="ui-tip-name">{{b.name}}</span>
+                                <span class="ui-tip-body ui-muted">{{b.detail}}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</rml>

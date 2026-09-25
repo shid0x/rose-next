@@ -31,10 +31,6 @@
             <span class="level"><span class="lv ui-muted">Lv</span>{{level}}</span>
         </div>
 
-        <!-- Label lines and bars sit DIRECTLY in the window ( a flex column ),
-             exactly like the status panel's EXP bar: wrapped in a container,
-             RmlUi sized the fills wrong ( absolute: against the window; in
-             flow: a percentage of nothing ). -->
         <div class="plabel"><span class="ui-muted">EXP</span><span class="pval">{{exp}}</span><span class="ppct">{{exp_pct}}</span></div>
         <div class="pbar ui-gauge"><div class="ui-gauge-fill exp" data-style-width="exp_width + '%'"></div></div>
 

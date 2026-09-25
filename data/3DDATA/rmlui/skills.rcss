@@ -111,11 +111,8 @@
 }
 .lv .of { font-weight: normal; color: #9a9a9a; }
 
-/* Level out of the line's maximum: a thin gold bar.
-   The fill is an ordinary IN-FLOW block with a percentage width -- not an
-   absolutely positioned one. Nested this deep ( a block in a flex item in a
-   repeated card in a scroll area ) RmlUi resolved an absolute fill against
-   the list instead of this bar, and painted the whole list gold. */
+/* Level out of the line's maximum: a thin gold bar, its fill an in-flow
+   block with a percentage width. */
 .lvbar {
     height: 4dp;
     margin-top: 3dp;

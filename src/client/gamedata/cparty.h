@@ -44,6 +44,10 @@ public:
     int GetMaxExp();
     int GetMemberCount();
 
+    /// Every member, yourself included, in join order ( the leader is not
+    /// moved to the front here -- CPartyDlg does that in its own list ).
+    const std::list<PartyMember>& GetMembers() const { return m_Members; }
+
     bool GetMemberInfoByObjSvrIdx(WORD wObjSvrIdx, PartyMember& member);
     bool GetMemberInfoByTag(DWORD dwObjectTag, PartyMember& member);
 

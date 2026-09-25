@@ -1,0 +1,185 @@
+/* UI2 party frames -- LAYOUT ONLY ( colours and materials: rose-theme.rcss,
+   plus the few colours that are this panel's own states ).
+   Reload in game with /uireload. */
+
+/* Default spot: down the left edge, under the status panel and its buffs. */
+/* As wide as the status panel. */
+#party {
+    left: 3dp;
+    top: 190dp;
+    width: 230dp;
+}
+
+/* --- title bar: party level, Options, Leave --------------------------------- */
+.plv {
+    margin-right: 6dp;
+    font-size: 10dp;
+    font-weight: bold;
+    color: #ff9a5a;
+}
+.mini {
+    height: 16dp;
+    line-height: 15dp;
+    margin-left: 3dp;
+    padding-left: 6dp;
+    padding-right: 6dp;
+    font-size: 10dp;
+}
+
+/* --- party EXP ------------------------------------------------------------------ */
+.expline {
+    display: flex;
+    flex-direction: row;
+    margin-left: 3dp;
+    margin-right: 3dp;
+    font-size: 10dp;
+}
+.expline .ui-muted { flex-grow: 1; }
+.exppct { color: #e0e070; }
+.expbar {
+    height: 6dp;
+    margin: 2dp 3dp 4dp 3dp;
+}
+
+.empty {
+    padding: 6dp 3dp;
+    font-size: 10dp;
+}
+
+/* --- one card per member ------------------------------------------------------ */
+/* A row whose body grows, as the skill window's cards: that is the structure
+   whose in-flow bar fills size correctly. */
+.card {
+    display: flex;
+    flex-direction: row;
+    margin-bottom: 3dp;
+    padding: 4dp 4dp 4dp 5dp;
+    border: 1dp #ffffff10;
+    border-left: 2dp #ffffff18;
+    border-radius: 3dp;
+    background-color: #00000060;
+    cursor: pointer;
+}
+.card:hover {
+    background-color: #ffffff12;
+    border-color: #d0501a80;
+}
+/* The leader: a gold edge. */
+.card.leader { border-left-color: #d8a830ff; }
+
+/* Out of reach: dimmed, as CPartyMember greyed the name. */
+.card.far  { opacity: 0.75; }
+.card.away { opacity: 0.55; cursor: default; }
+
+.body {
+    flex-grow: 1;
+    overflow: hidden;
+}
+
+.line1 {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+.name {
+    flex-grow: 1;
+    font-size: 12dp;
+    font-weight: bold;
+    color: #f0f0f0;
+    font-effect: shadow(1px 1px #000000c0);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.lv {
+    margin-left: 4dp;
+    font-size: 11dp;
+    font-weight: bold;
+    color: #ff9a5a;
+}
+
+/* HP: the theme's recessed track and ember glass, the fill in flow. */
+.hpbar {
+    height: 11dp;
+    margin-top: 3dp;
+    margin-bottom: 2dp;
+    border-width: 1dp;
+    border-top-color: #000000c8;
+    border-left-color: #000000a0;
+    border-right-color: #000000a0;
+    border-bottom-color: #ffffff20;
+    border-radius: 3dp;
+    background-color: #0a0a0aa0;
+}
+.hpfill {
+    height: 9dp;
+    border-radius: 2dp;
+    background-color: #922500ff;
+    decorator: ui-gloss-soft;
+}
+@keyframes party-low-hp {
+    from { background-color: #922500ff; }
+    to   { background-color: #d8401cff; }
+}
+.hpfill.low { animation: 0.6s quadratic-in-out infinite alternate party-low-hp; }
+
+.line2 {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 15dp;
+    font-size: 10dp;
+}
+.hpval {
+    flex-grow: 1;
+    color: #d8d8d8;
+}
+.state {
+    flex-grow: 1;
+    color: #ff9a5a;
+}
+.tag {
+    margin-left: 4dp;
+    color: #d8a830;
+}
+
+/* Lead / Kick: the leader's tools, on hover only. */
+.acts { display: none; margin-left: 4dp; }
+.card:hover .acts { display: flex; flex-direction: row; }
+.act {
+    margin-left: 3dp;
+    padding: 0dp 4dp;
+    height: 13dp;
+    line-height: 12dp;
+    font-size: 9dp;
+    font-weight: bold;
+    color: #e6e6e6;
+    border: 1dp #565656ff;
+    border-radius: 2dp;
+    background-color: #3a3a3aff;
+    decorator: ui-gloss-soft;
+    cursor: pointer;
+}
+.act:hover { background-color: #922500ff; border-color: #d0501aff; }
+.act.kick:hover { background-color: #7a1010ff; border-color: #c03020ff; }
+
+/* --- status effects: small icons, the strip's tooltips --------------------- */
+.icons {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 2dp;
+}
+/* A .ui-tipped element: must not be position: relative ( see the theme ). */
+.buff {
+    margin-right: 2dp;
+    margin-bottom: 1dp;
+}
+.frame {
+    width: 20dp;
+    height: 20dp;
+}
+.frame img {
+    width: 16dp;
+    height: 16dp;
+}

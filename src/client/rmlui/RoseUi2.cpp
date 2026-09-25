@@ -24,6 +24,9 @@ const int kReplacedDialogs[] = {
     DLG_TYPE_QUICKBAR_EXT,
     DLG_TYPE_SKILL, ///< RoseRmlSkillWindow ( also in kReplacedWindows )
     DLG_TYPE_CHAR, ///< RoseRmlCharacterWindow ( also in kReplacedWindows )
+    /// RoseRmlPartyFrames. Hidden, NOT gone: CPartyDlg is CParty's observer
+    /// and still writes the join / leave / leader chat lines.
+    DLG_TYPE_PARTY,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )

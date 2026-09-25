@@ -12,6 +12,7 @@
 #include "RoseRmlSkillBar.h"
 #include "RoseRmlSkillWindow.h"
 #include "RoseRmlCharacterWindow.h"
+#include "RoseRmlPartyFrames.h"
 #include "RoseRmlSystem.h"
 
 #include <RmlUi/Core.h>
@@ -39,6 +40,7 @@ RoseRmlInterfacePanel g_InterfacePanel; ///< UI2: scale / lock / reset settings
 RoseRmlSkillBar g_SkillBar; ///< UI2: replaces the two CQuickBARs ( as their view )
 RoseRmlSkillWindow g_SkillWindow; ///< UI2: replaces CSkillDLG ( a window )
 RoseRmlCharacterWindow g_CharacterWindow; ///< UI2: replaces CCharacterDLG ( a window )
+RoseRmlPartyFrames g_PartyFrames; ///< UI2: replaces CPartyDlg
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -231,6 +233,7 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_SkillBar.Initialise(g_pContext, kAssetDir);
     g_SkillWindow.Initialise(g_pContext, kAssetDir);
     g_CharacterWindow.Initialise(g_pContext, kAssetDir);
+    g_PartyFrames.Initialise(g_pContext, kAssetDir);
 
     /// After every document is loaded: the lock walks their <handle>s.
     RoseRmlLayout::Initialise(g_pContext);
@@ -252,6 +255,7 @@ Shutdown() {
     g_SkillBar.Shutdown();
     g_SkillWindow.Shutdown();
     g_CharacterWindow.Shutdown();
+    g_PartyFrames.Shutdown();
     RoseRmlLayout::Shutdown();
     g_pContext = NULL;
 
@@ -327,6 +331,7 @@ Update() {
     g_SkillBar.Update();
     g_SkillWindow.Update();
     g_CharacterWindow.Update();
+    g_PartyFrames.Update();
     g_pContext->Update();
 }
 

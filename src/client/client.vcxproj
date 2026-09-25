@@ -444,6 +444,7 @@
     <ClCompile Include="rmlui\RoseRmlSkillBar.cpp" />
     <ClCompile Include="rmlui\RoseRmlSkillWindow.cpp" />
     <ClCompile Include="rmlui\RoseRmlCharacterWindow.cpp" />
+    <ClCompile Include="rmlui\RoseRmlPartyFrames.cpp" />
     <ClCompile Include="rmlui\RoseRmlSystem.cpp" />
     <ClCompile Include="rmlui\RoseRmlStatusPanel.cpp" />
     <ClCompile Include="rmlui\RoseRmlTargetFrame.cpp" />

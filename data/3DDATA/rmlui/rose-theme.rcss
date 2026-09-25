@@ -102,6 +102,14 @@ body {
 }
 body > * { pointer-events: auto; }
 
+/* DO NOT REMOVE. RmlUi ships NO default stylesheet, so without this every div
+   is display: inline -- and an inline box ignores width and height. A bar
+   track nested in a card drew as a 2 px sliver of border with no fill; that
+   was the "gauge trap" of the character window and the party frames. Divs
+   that are direct children of a flex container are blockified anyway, which
+   is why only nested ones ever broke. */
+div { display: block; }
+
 .ui-muted  { color: #9a9a9a; }
 .ui-accent { color: #ff9a5a; }
 
