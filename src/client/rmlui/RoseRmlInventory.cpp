@@ -61,6 +61,26 @@ const int kDoll[] = {EQUIP_IDX_HELMET,
     EQUIP_IDX_KNAPSACK,
     0};
 
+/// The costume doll: the gear doll's positions, each costume slot where the
+/// piece it covers sits ( COSTUME_IDX_*; 0 is a spacer ). Only these six can
+/// be worn -- equip_costume refuses the costume weapon slots.
+const int kCostumeDoll[] = {COSTUME_IDX_HELMET,
+    COSTUME_IDX_FACE_ITEM,
+    0,
+    0,
+    0,
+    COSTUME_IDX_ARMOR,
+    0,
+    0,
+    COSTUME_IDX_GAUNTLET,
+    COSTUME_IDX_BOOTS,
+    COSTUME_IDX_KNAPSACK,
+    0};
+
+/// ... and what goes in each, by COSTUME_IDX_*.
+const char* const kCostumeLabel[MAX_COSTUME_IDX] = {
+    "", "Face", "Head", "Body", "Back", "Hands", "Feet", "Weapon", "Off-hand"};
+
 /// What an empty slot is for, by EQUIP_IDX_*.
 const char* const kEquipLabel[MAX_EQUIP_IDX] = {
     "", "Face", "Head", "Body", "Back", "Hands", "Feet", "Weapon", "Off-hand", "Neck", "Ring", "Earring"};
@@ -214,6 +234,7 @@ RoseRmlInventory::Initialise(Rml::Context* pContext, const std::string& strAsset
     constructor.Bind("count2", &m_iCount[2]);
     constructor.Bind("count3", &m_iCount[3]);
     constructor.Bind("pat", &m_Pat);
+    constructor.Bind("costume", &m_Costume);
     constructor.Bind("tune", &m_Tune);
     constructor.Bind("cells", &m_Cells);
     constructor.Bind("gear", &m_Gear);
@@ -231,7 +252,7 @@ RoseRmlInventory::Initialise(Rml::Context* pContext, const std::string& strAsset
             if (args.empty())
                 return;
             const int iSection = args[0].Get<int>();
-            if ((iSection == SECTION_GEAR || iSection == SECTION_PAT) && iSection != m_iSection) {
+            if (iSection >= SECTION_GEAR && iSection <= SECTION_COSTUME && iSection != m_iSection) {
                 m_iSection = iSection;
                 m_iPressIndex = -1;
                 m_Model.DirtyVariable("section");
@@ -316,8 +337,13 @@ RoseRmlInventory::ItemDlg() const {
 
 int
 RoseRmlInventory::CurrentPage() const {
-    /// The PAT section shows the riding-parts page, as CItemDlg's tuning tab.
-    return (m_iSection == SECTION_PAT) ? INV_RIDING : m_iPage;
+    /// The PAT section shows the riding-parts page, as CItemDlg's tuning tab;
+    /// the costume section the equipment page, as its costume tab.
+    if (m_iSection == SECTION_PAT)
+        return INV_RIDING;
+    if (m_iSection == SECTION_COSTUME)
+        return INV_WEAPON;
+    return m_iPage;
 }
 
 CSlot*
@@ -334,6 +360,8 @@ RoseRmlInventory::SlotFor(int iKind, int iIndex) const {
             return pDlg->GetAmmoSlot(iIndex);
         case KIND_PAT:
             return pDlg->GetPatSlot(iIndex);
+        case KIND_COSTUME:
+            return pDlg->GetCostumeSlot(iIndex);
         default:
             return NULL;
     }
@@ -345,7 +373,7 @@ RoseRmlInventory::DragItemFor(int iKind) const {
     if (pDlg == NULL)
         return NULL;
     /// As CItemDlg wires its slots: the bag drags one way, everything worn
-    /// ( gear, ammo, PAT parts ) the other.
+    /// ( gear, ammo, PAT parts, costumes ) the other.
     return (iKind == KIND_BAG) ? pDlg->GetInvenDragItem() : pDlg->GetEquipDragItem();
 }
 
@@ -417,7 +445,10 @@ RoseRmlInventory::EquipSlotAt(int x, int y) const {
 
 bool
 RoseRmlInventory::CostumeOpen() const {
-    return false;
+    /// On screen only. The classic dialog answered from its last tab even while
+    /// closed, so armour equipped from the skill bar with the inventory shut
+    /// could land in a costume slot.
+    return m_bVisible && m_iSection == SECTION_COSTUME;
 }
 
 /// --- sampling -------------------------------------------------------------------
@@ -478,6 +509,18 @@ RoseRmlInventory::Sample() {
     }
     if (m_iSection == SECTION_PAT)
         SampleTuning();
+
+    std::vector<CellVM> costume;
+    for (int i = 0; i < (int)(sizeof(kCostumeDoll) / sizeof(kCostumeDoll[0])); ++i) {
+        CellVM vm = MakeCell(KIND_COSTUME, kCostumeDoll[i], kCostumeLabel[kCostumeDoll[i]]);
+        if (kCostumeDoll[i] != 0)
+            FillCell(vm, pDlg->GetCostumeSlot(kCostumeDoll[i]));
+        costume.push_back(vm);
+    }
+    if (costume != m_Costume) {
+        m_Costume.swap(costume);
+        m_Model.DirtyVariable("costume");
+    }
 
     /// --- what the gear adds up to ( the character window's numbers ) --------
     const Rml::String strAtk = Printf("%d", pAvatar->stats.attack_power);
@@ -604,8 +647,8 @@ RoseRmlInventory::OnPress(int iKind, int iIndex) {
     if (GetAsyncKeyState(VK_CONTROL) < 0 && pIcon->Process(WM_LBUTTONDOWN, MK_CONTROL, 0))
         return;
 
-    /// Repair / appraisal: CItemDlg listens on the bag, the worn gear and the
-    /// PAT parts, not on the ammo slots.
+    /// Repair / appraisal: CItemDlg listens on the bag, the worn gear, the PAT
+    /// parts and the costumes, not on the ammo slots.
     if (iKind != KIND_AMMO) {
         if (CItemDlg* pDlg = ItemDlg()) {
             if (pDlg->HandleStateClick(pSlot))

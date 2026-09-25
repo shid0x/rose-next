@@ -64,6 +64,8 @@ public:
     CSlot* GetAmmoSlot(int iShotType);
     /// A PAT part slot by RIDE_PART_*.
     CSlot* GetPatSlot(int iPart);
+    /// A costume slot by COSTUME_IDX_* ( 1-based ).
+    CSlot* GetCostumeSlot(int iCostumeIdx);
     /// Keeps the server's mounted-stats preview ( g_pNet->tuning_preview )
     /// requested while bActive -- the PAT section is on screen -- and
     /// invalidated when the worn parts change. Call every frame.

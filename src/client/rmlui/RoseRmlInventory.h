@@ -27,7 +27,10 @@
  *   PAT  -- the five cart / castle gear parts and the mounted stats the
  *           server previews for them ( CItemDlg::DriveTuningPreview ); the
  *           bag shows the riding-parts page.
- * The costume section follows.
+ *   Costume -- the costume slots, each where the gear piece it covers sits
+ *           on the gear doll; the bag shows the Equip page. While it is on
+ *           screen, equipping armour puts it in the costume slot
+ *           ( CostumeOpen -> CItemDlg::is_costume_tab_open ).
  */
 
 #include <RmlUi/Core/DataModelHandle.h>
@@ -78,12 +81,14 @@ public:
         KIND_EQUIP = 1, ///< index: EQUIP_IDX_* ( 0: a spacer in the doll )
         KIND_AMMO = 2, ///< index: SHOT_TYPE_*
         KIND_PAT = 3, ///< index: RIDE_PART_*
+        KIND_COSTUME = 4, ///< index: COSTUME_IDX_* ( 0: a spacer in the doll )
     };
 
     /// The left column's sections.
     enum Section {
         SECTION_GEAR = 0,
         SECTION_PAT = 1,
+        SECTION_COSTUME = 2,
     };
 
     /// One row of the mounted-stats table.
@@ -162,6 +167,7 @@ private:
     std::vector<CellVM> m_Gear; ///< the paper doll, row by row
     std::vector<CellVM> m_Ammo;
     std::vector<CellVM> m_Pat;
+    std::vector<CellVM> m_Costume;
     std::vector<TuneVM> m_Tune;
     Rml::String m_strAtk;
     Rml::String m_strDef;

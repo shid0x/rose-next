@@ -11,9 +11,12 @@
         closed through IT_MGR like any window ( menu, Alt+I, Escape ).
 
         Left, in sections: Gear ( a paper doll, the ammo row, what it adds up
-        to ) and PAT ( the five cart / castle gear parts and the mounted stats
-        the server previews for them ). Right: the bag -- three tabs of 6x5
-        slots with Gear, the riding-parts page with PAT.
+        to ), PAT ( the five cart / castle gear parts and the mounted stats
+        the server previews for them ) and Costume ( each costume slot where
+        the piece it covers sits on the gear doll -- while this is on screen,
+        equipping armour puts it in the costume slot ). Right: the bag --
+        three tabs of 6x5 slots with Gear, the riding-parts page with PAT, the
+        equipment page with Costume.
 
         Drag an item to move it: bag to doll equips ( a gem onto a socketed
         piece sockets it ), doll to bag unequips; onto a shop / the bank / a
@@ -37,6 +40,7 @@
                 <div class="tabs">
                     <span class="ui-btn tab" data-class-on="section == 0" data-event-click="set_section(0)">Gear</span>
                     <span class="ui-btn tab" data-class-on="section == 1" data-event-click="set_section(1)">PAT</span>
+                    <span class="ui-btn tab" data-class-on="section == 2" data-event-click="set_section(2)">Costume</span>
                 </div>
 
                 <div class="doll ui-well" equip-area="1" data-if="section == 0">
@@ -83,6 +87,19 @@
                     </div>
                 </div>
 
+                <!-- Costume: the same positions as the gear doll. -->
+                <div class="doll ui-well" equip-area="1" data-if="section == 2">
+                    <div class="cell ui-icon" data-for="c : costume"
+                         data-attr-slot-kind="c.kind" data-attr-slot-index="c.index"
+                         data-class-spacer="c.index == 0" data-class-empty="!c.filled"
+                         data-class-dim="c.dim" data-class-worn="c.worn"
+                         data-event-mousedown="press(c.kind, c.index)" data-event-dblclick="use(c.kind, c.index)">
+                        <img data-if="c.filled" data-attr-src="c.src" data-attr-rect="c.rect"/>
+                        <span class="label" data-if="!c.filled">{{c.label}}</span>
+                    </div>
+                </div>
+                <div class="note ui-muted" data-if="section == 2">While this tab is open, equipping armour puts it in its costume slot. Costumes change your look, not your stats.</div>
+
                 <div class="tune ui-well" data-if="section == 1">
                     <div class="trow" data-for="t : tune" data-attr-tune-tip="t.fuel ? 2 : 1">
                         <span class="tlabel">{{t.label}}</span>
@@ -100,6 +117,9 @@
                 </div>
                 <div class="tabs" data-if="section == 1">
                     <span class="ui-btn ui-static tab on">Riding parts<span class="n">{{count3}}</span></span>
+                </div>
+                <div class="tabs" data-if="section == 2">
+                    <span class="ui-btn ui-static tab on">Equip<span class="n">{{count0}}</span></span>
                 </div>
 
                 <div class="grid ui-well" bag-area="1">

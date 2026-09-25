@@ -87,6 +87,15 @@
     color: #f0f0f0;
 }
 
+/* The costume section's one-line explanation, under its doll. */
+.note {
+    width: 172dp;
+    margin-top: 5dp;
+    padding: 0dp 2dp;
+    font-size: 9dp;
+    line-height: 12dp;
+}
+
 /* What the gear adds up to. */
 .summary {
     display: flex;

@@ -328,7 +328,10 @@ items, so every drop target keeps working; the window is `drop-target` `DLG_TYPE
 normal equipping for every equip**). Repair/appraisal clicks go through
 `CItemDlg::HandleStateClick`. Phase 1 = bag, money, weight; phase 2 = the paper doll and ammo;
 phase 3 = PAT (the mounted-stats preview is requested by whoever shows it:
-`CItemDlg::DriveTuningPreview`, called by UI2 while its PAT section is on screen). Also: **a bare text node inside a flex
+`CItemDlg::DriveTuningPreview`, called by UI2 while its PAT section is on screen); phase 4 =
+costume (six wearable slots -- `equip_costume` refuses weapons -- and `is_costume_tab_open` is
+true only while that section is *on screen*, unlike the classic dialog's sticky tab). Accepted
+losses: positioned opens (trade accept) and the desktop "iconize" shortcut. Also: **a bare text node inside a flex
 container does not draw** — wrap it in a `<span>`.
 
 **RmlUi has no default stylesheet: a `div` is `display: inline` unless told otherwise**, and an

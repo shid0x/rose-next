@@ -317,6 +317,14 @@ CItemDlg::GetPatSlot(int iPart) {
 }
 
 CSlot*
+CItemDlg::GetCostumeSlot(int iCostumeIdx) {
+    /// costume_slots[i] holds COSTUME_IDX i + 1, as EID_ADD_ITEM files them.
+    if (iCostumeIdx < 1 || iCostumeIdx >= MAX_COSTUME_IDX)
+        return NULL;
+    return &costume_slots[iCostumeIdx - 1];
+}
+
+CSlot*
 CItemDlg::GetAmmoSlot(int iShotType) {
     if (iShotType < 0 || iShotType >= MAX_SHOT_TYPE)
         return NULL;
@@ -481,7 +489,9 @@ CItemDlg::Update(CObservable* pObservable, CTObject* pObj) {
                 m_BulletEquipSlots[iIndex - INVENTORY_SHOT_ITEM0].AttachIcon(pItem->CreateItemIcon());
             } else if (iIndex >= INVENTORY_RIDE_ITEM0 && iIndex < INVENTORY_RIDE_ITEM0 + MAX_RIDING_PART) {
                 m_PatEquipSlots[iIndex - INVENTORY_RIDE_ITEM0].AttachIcon(pItem->CreateItemIcon());
-            } else if (iIndex >= INVENTORY_COSTUME_ITEM0 && iIndex <= INVENTORY_COSTUME_ITEM0 + MAX_COSTUME_IDX) {
+            } else if (iIndex > INVENTORY_COSTUME_ITEM0 && iIndex < INVENTORY_COSTUME_ITEM0 + MAX_COSTUME_IDX) {
+                /// COSTUME_IDX_* 1..8 -> costume_slots[0..7]. Index COSTUME_ITEM0 itself
+                /// is COSTUME_IDX_NULL: the old >= / <= bounds mapped it to [-1].
                 costume_slots[iIndex - 1 - INVENTORY_COSTUME_ITEM0].AttachIcon(pItem->CreateItemIcon());
             } else if (iIndex >= INVENTORY_ITEM_INDEX_0 && iIndex <= INVENTORY_ITEM_INDEX_LAST) {
                 int iInvenSlotIndex = iIndex - INVENTORY_ITEM_INDEX_0;
@@ -504,8 +514,8 @@ CItemDlg::Update(CObservable* pObservable, CTObject* pObj) {
             else if (iIndex >= INVENTORY_RIDE_ITEM0
                 && iIndex < INVENTORY_RIDE_ITEM0 + MAX_RIDING_PART)
                 m_PatEquipSlots[iIndex - INVENTORY_RIDE_ITEM0].DetachIcon();
-            else if (iIndex >= INVENTORY_COSTUME_ITEM0
-                && iIndex <= INVENTORY_COSTUME_ITEM0 + MAX_COSTUME_IDX)
+            else if (iIndex > INVENTORY_COSTUME_ITEM0
+                && iIndex < INVENTORY_COSTUME_ITEM0 + MAX_COSTUME_IDX)
                 costume_slots[iIndex - 1 - INVENTORY_COSTUME_ITEM0].DetachIcon();
             else if (iIndex >= INVENTORY_ITEM_INDEX_0 && iIndex <= INVENTORY_ITEM_INDEX_LAST) {
                 int iInvenSlotIndex = iIndex - INVENTORY_ITEM_INDEX_0;
