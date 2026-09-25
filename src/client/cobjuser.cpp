@@ -607,10 +607,15 @@ CObjUSER::Set_ITEM(short nListRealNO, tagITEM& sITEM) {
         GetItemSlot()->ChangeItemStatus(nListRealNO);
     } else {
         CUserDATA::Set_ITEM(nListRealNO, sITEM);
+        /// Worn slots play the item's equip sound ( its STB column 11 ). The
+        /// PAT parts were left out of this range in the original source, so
+        /// they equipped silently although LIST_PAT gives every part one.
         if (!sITEM.IsEmpty()) {
             if ((nListRealNO > 0 && nListRealNO < INVENTORY_ITEM_INDEX_0)
                 || (nListRealNO >= INVENTORY_SHOT_ITEM0
                     && nListRealNO < INVENTORY_SHOT_ITEM0 + MAX_SHOT_TYPE)
+                || (nListRealNO >= INVENTORY_RIDE_ITEM0
+                    && nListRealNO < INVENTORY_RIDE_ITEM0 + MAX_RIDING_PART)
                 || (nListRealNO >= INVENTORY_COSTUME_ITEM0
                     && nListRealNO < INVENTORY_COSTUME_ITEM0 + MAX_COSTUME_IDX)) ///장착시
                 g_pSoundLIST->IDX_PlaySound(ITEM_EQUIP_SOUND(sITEM.GetTYPE(), sITEM.GetItemNO()));
