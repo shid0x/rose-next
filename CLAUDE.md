@@ -360,6 +360,18 @@ pass**, so anything over a UI2 panel must be an RmlUi element; and labels need
 **CSS `transform` works now**: `RoseRmlRenderer::SetTransform` (world = translation x transform;
 Rml's column-major data read as-is is the D3D row-vector matrix).
 
+**Conversation** (2026-09-26, `RoseRmlConversation`): one window for the three conversation
+dialogs (`DLG_TYPE_DIALOG` / `SELECTEVENT` / `EVENTDIALOG`, three looks). **Not a view over the
+classic dialogs**: their `Hide()` wipes text and answers (callbacks included). The engine
+(`CEvent`) reaches the UI only through `IT_MGR::OpenQueryDLG` / `QueryDLG_AppendExam` /
+`CloseQueryDlg`; the first two branch to UI2, the third already routes. A click calls the
+answer's own callback (`CEvent::Click_ITEM`), so every script action is unchanged. It closes on a
+zone change: the zone load deletes every `CEvent`, and a held answer would dangle. Classic text
+markup (`{FC=n}` / `{B}` / `{BR}`) becomes RML via `data-rml`. Also: **a `data-for` whose rows
+also read a shared variable can be evaluated past the end when the array shrinks in the same
+frame that variable changes** ("Data array index out of bounds") -- keep such arrays grow-only
+and hide unused rows (the minimap's marks).
+
 **UI2 sounds** come from the classic XML: a UI2 window plays its replaced dialog's `SHOWSID` /
 `HIDESID` (`RoseUi2::PlayWindowSound`), and a context-wide listener plays the classic `CLICKSID`
 (8) for any `.ui-btn` or `.ui-click` (`.ui-static` opts out). `CTDialog::Hide` always plays its

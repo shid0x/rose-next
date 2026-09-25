@@ -19,6 +19,7 @@
 #include "RoseRmlInventory.h"
 #include "RoseRmlQuestJournal.h"
 #include "RoseRmlMinimap.h"
+#include "RoseRmlConversation.h"
 #include "RoseRmlSystem.h"
 
 #include <RmlUi/Core.h>
@@ -54,6 +55,7 @@ RoseRmlMessageBox g_MessageBox; ///< UI2: questions and notices ( opt-in CMsgBox
 RoseRmlInventory g_Inventory; ///< UI2: replaces CItemDlg ( a window, a view over it )
 RoseRmlQuestJournal g_QuestJournal; ///< UI2: replaces CQuestDlg ( a window )
 RoseRmlMinimap g_Minimap; ///< UI2: replaces CMinimapDLG ( a view over it )
+RoseRmlConversation g_Conversation; ///< UI2: replaces the three conversation dialogs
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -280,6 +282,7 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_Inventory.Initialise(g_pContext, kAssetDir);
     g_QuestJournal.Initialise(g_pContext, kAssetDir);
     g_Minimap.Initialise(g_pContext, kAssetDir);
+    g_Conversation.Initialise(g_pContext, kAssetDir);
     g_MessageBox.Initialise(g_pContext, kAssetDir);
 
     /// After every document is loaded: the lock walks their <handle>s.
@@ -308,6 +311,7 @@ Shutdown() {
     g_Inventory.Shutdown();
     g_QuestJournal.Shutdown();
     g_Minimap.Shutdown();
+    g_Conversation.Shutdown();
     g_MessageBox.Shutdown();
     RoseRmlLayout::Shutdown();
     g_pContext = NULL;
@@ -390,6 +394,7 @@ Update() {
     g_Inventory.Update();
     g_QuestJournal.Update();
     g_Minimap.Update();
+    g_Conversation.Update();
     g_MessageBox.Update();
     g_pContext->Update();
 }
@@ -422,6 +427,15 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_MINIMAP:
             g_Minimap.SetOpen(bOpen);
             break;
+        case DLG_TYPE_DIALOG:
+            g_Conversation.SetOpen(RoseRmlConversation::MODE_NPC, bOpen);
+            break;
+        case DLG_TYPE_SELECTEVENT:
+            g_Conversation.SetOpen(RoseRmlConversation::MODE_SELECT, bOpen);
+            break;
+        case DLG_TYPE_EVENTDIALOG:
+            g_Conversation.SetOpen(RoseRmlConversation::MODE_EVENT, bOpen);
+            break;
         default:
             break;
     }
@@ -444,6 +458,12 @@ IsWindowOpen(int iDlgType) {
             return g_QuestJournal.IsOpen();
         case DLG_TYPE_MINIMAP:
             return g_Minimap.IsOpen();
+        case DLG_TYPE_DIALOG:
+            return g_Conversation.IsOpen(RoseRmlConversation::MODE_NPC);
+        case DLG_TYPE_SELECTEVENT:
+            return g_Conversation.IsOpen(RoseRmlConversation::MODE_SELECT);
+        case DLG_TYPE_EVENTDIALOG:
+            return g_Conversation.IsOpen(RoseRmlConversation::MODE_EVENT);
         default:
             return false;
     }
@@ -509,6 +529,18 @@ void
 MinimapCycleSize() {
     if (g_bInitialised)
         g_Minimap.CycleSize();
+}
+
+void
+ConversationBegin(int iMode, const char* pszText, int iOwnerClientIdx) {
+    if (g_bInitialised)
+        g_Conversation.Begin(iMode, pszText, iOwnerClientIdx);
+}
+
+void
+ConversationAddAnswer(const char* pszText, int iEventID, void (*fpHandler)(int iEventID)) {
+    if (g_bInitialised)
+        g_Conversation.AddAnswer(pszText, iEventID, fpHandler);
 }
 
 void

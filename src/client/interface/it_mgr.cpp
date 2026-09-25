@@ -2,6 +2,7 @@
 
 #include "it_mgr.h"
 #include "../rmlui/RoseUi2.h"
+#include "../rmlui/RoseRmlUi.h"
 #include "..\\Object.h"
 #include "CDragNDropMgr.h"
 #include "CHelpMgr.h"
@@ -806,6 +807,18 @@ IT_MGR::OpenQueryDLG(short nSX,
             if (!pDlg && pDlg->IsInValidShow())
                 return false;
 
+            /// UI2: the conversation window takes the line. CDialogDlg still gets
+            /// its target -- the name it keeps, and the minimap indicator it
+            /// clears -- but no script: its Hide() would wipe it anyway.
+            if (RoseUi2::IsReplaced(DLG_TYPE_DIALOG)) {
+                CObjCHAR* pTarget = (CObjCHAR*)g_pAVATAR->Get_TARGET();
+                if (pTarget)
+                    pDlg->SetTargetNpcClientObjectIndex(pTarget->Get_INDEX());
+                RoseRmlUi::ConversationBegin(0, szQuery, pTarget ? pTarget->Get_INDEX() : -1);
+                OpenDialog(DLG_TYPE_DIALOG, false);
+                break;
+            }
+
             pDlg->SetScript(szQuery);
             CObjCHAR* pTarget = (CObjCHAR*)g_pAVATAR->Get_TARGET();
             if (pTarget)
@@ -821,6 +834,12 @@ IT_MGR::OpenQueryDLG(short nSX,
             if (!pDlg && pDlg->IsInValidShow())
                 return false;
 
+            if (RoseUi2::IsReplaced(DLG_TYPE_SELECTEVENT)) {
+                RoseRmlUi::ConversationBegin(1, szQuery, iEventOwner);
+                OpenDialog(DLG_TYPE_SELECTEVENT, false);
+                break;
+            }
+
             CSelectEventDlg* pEventDlg = (CSelectEventDlg*)pDlg;
             pEventDlg->SetTitle(szQuery);
             pEventDlg->SetTargetClientObjectIndex(iEventOwner);
@@ -831,6 +850,12 @@ IT_MGR::OpenQueryDLG(short nSX,
             pDlg = (CDialogDlg*)FindDlg(DLG_TYPE_EVENTDIALOG);
             if (!pDlg && pDlg->IsInValidShow())
                 return false;
+
+            if (RoseUi2::IsReplaced(DLG_TYPE_EVENTDIALOG)) {
+                RoseRmlUi::ConversationBegin(2, szQuery, iEventOwner);
+                OpenDialog(DLG_TYPE_EVENTDIALOG, false);
+                break;
+            }
 
             CEventDialog* pEventDlg = (CEventDialog*)pDlg;
             pEventDlg->SetScript(szQuery);
@@ -847,6 +872,13 @@ IT_MGR::QueryDLG_AppendExam(char* szExam,
     int iEventID,
     void (*fpExamEvent)(int iEventID),
     int iType) {
+    /// UI2: every answer goes to the conversation window, whichever look.
+    if (RoseUi2::IsReplaced(DLG_TYPE_DIALOG)
+        && (iType == QUERYTYPE_NPC || iType == QUERYTYPE_ITEM || iType == QUERYTYPE_SELECT)) {
+        RoseRmlUi::ConversationAddAnswer(szExam, iEventID, fpExamEvent);
+        return true;
+    }
+
     switch (iType) {
         case QUERYTYPE_ITEM: {
             if (CTDialog* pDlg = g_itMGR.FindDlg(DLG_TYPE_EVENTDIALOG)) {

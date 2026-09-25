@@ -33,6 +33,9 @@ public:
     int IsInValidShow(); /// 화면에 보여질수 있는가?
     void SetNpcFace(HNODE hNode_);
     void SetNpcName(std::string strName);
+    /// The name shown ( the target NPC's, or a script's ): read by the UI2
+    /// conversation window ( RoseRmlConversation ).
+    const std::string& GetNpcName() const { return m_strNpcName; }
     void SetNpctalkinterfaceHide(float fTime);
     float GetNpctalkinterfaceHide();
 

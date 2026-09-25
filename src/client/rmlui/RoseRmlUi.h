@@ -112,6 +112,12 @@ bool InventoryCostumeOpen();
 void MinimapToggleCollapsed();
 void MinimapCycleSize();
 
+/// The UI2 conversation ( RoseRmlConversation ), fed by IT_MGR::OpenQueryDLG /
+/// QueryDLG_AppendExam while UI2 replaces the conversation dialogs. iMode is
+/// RoseRmlConversation::Mode ( 0 NPC, 1 choice, 2 event object ).
+void ConversationBegin(int iMode, const char* pszText, int iOwnerClientIdx);
+void ConversationAddAnswer(const char* pszText, int iEventID, void (*fpHandler)(int iEventID));
+
 } // namespace RoseRmlUi
 
 #endif /// _ROSE_RML_UI_H_

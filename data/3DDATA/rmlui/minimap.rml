@@ -33,8 +33,9 @@
                  data-style-width="map_w + 'dp'" data-style-height="map_h + 'dp'"/>
             <div class="nomap ui-muted" data-if="!has_map">No map for this area.</div>
 
+            <!-- Grow-only list: unused entries are kind -1, hidden ( .off ). -->
             <div class="mark" data-for="m : marks" data-attr-tip="m.tip"
-                 data-class-ind="m.kind == 1" data-class-hot="m.tip == hover_tip"
+                 data-class-off="0 > m.kind" data-class-ind="m.kind == 1" data-class-hot="m.tip == hover_tip"
                  data-style-left="m.x + 'dp'" data-style-top="m.y + 'dp'">
                 <img data-attr-src="m.src" data-attr-rect="m.rect"/>
             </div>

@@ -451,6 +451,7 @@
     <ClCompile Include="rmlui\RoseRmlInventory.cpp" />
     <ClCompile Include="rmlui\RoseRmlQuestJournal.cpp" />
     <ClCompile Include="rmlui\RoseRmlMinimap.cpp" />
+    <ClCompile Include="rmlui\RoseRmlConversation.cpp" />
     <ClCompile Include="rmlui\RoseRmlSystem.cpp" />
     <ClCompile Include="rmlui\RoseRmlStatusPanel.cpp" />
     <ClCompile Include="rmlui\RoseRmlTargetFrame.cpp" />

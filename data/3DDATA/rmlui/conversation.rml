@@ -1,0 +1,40 @@
+<rml>
+<head>
+    <title>Conversation</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="conversation.rcss"/>
+</head>
+<body data-model="conversation">
+    <!--
+        UI2 conversation ( RoseRmlConversation ), replacing the three classic
+        conversation dialogs, in three looks ( mode ):
+          0  an NPC: name ( and role ) in the title bar, the line, the answers;
+          1  a choice ( warp gates, event items ): the line as the title, the
+             choices;
+          2  an event object: the line and the answers, no name.
+        Bottom centre by default, above the skill bar; drag the title bar to
+        move it ( the spot is saved ). Walking away from the NPC closes it.
+
+        The text is RML translated from the classic markup ( data-rml ).
+    -->
+    <div id="conversation" class="ui-window">
+        <handle move_target="conversation" class="ui-titlebar">
+            <span class="ui-title" data-if="mode == 0">{{name}}</span>
+            <span class="role" data-if="mode == 0">{{role}}</span>
+            <span class="ui-title seltitle" data-if="mode == 1" data-rml="text"></span>
+            <span class="ui-title" data-if="mode == 2"></span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <div class="speech ui-well" data-if="mode != 1" data-rml="text"></div>
+
+        <div class="answers" data-if="answers.size > 0">
+            <div class="answer ui-click" data-for="a : answers" data-event-click="choose(a.index)">
+                <span class="num">{{a.index}}</span>
+                <span class="atext" data-rml="a.rml"></span>
+            </div>
+        </div>
+    </div>
+</body>
+</rml>

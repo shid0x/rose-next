@@ -481,6 +481,19 @@ RoseRmlMinimap::Sample() {
     }
 
     m_Tips.swap(tips);
+
+    /// Grow-only: an entry past the live ones is hidden ( kind -1 ), never
+    /// removed. Each mark also reads hover_tip ( its ring ), and when the
+    /// list shrank in the same frame hover_tip changed, RmlUi re-evaluated a
+    /// dying mark past the end: "Data array index out of bounds".
+    MarkVM unused;
+    unused.kind = -1;
+    unused.x = 0.0f;
+    unused.y = 0.0f;
+    unused.tip = -1;
+    while (marks.size() < m_Marks.size())
+        marks.push_back(unused);
+
     if (marks != m_Marks) {
         m_Marks.swap(marks);
         m_Model.DirtyVariable("marks");

@@ -1,0 +1,67 @@
+/* UI2 conversation -- LAYOUT ONLY ( colours and materials: rose-theme.rcss,
+   plus the few colours that are this panel's own states ).
+   Reload in game with /uireload. The C++ places it bottom centre, above the
+   skill bar, until it is moved. */
+
+#conversation {
+    left: 400dp;
+    top: 400dp;
+    width: 520dp;
+}
+
+/* The NPC's role after its name, quieter. */
+.role {
+    margin-right: 8dp;
+    font-size: 10dp;
+    color: #b0b0b0;
+}
+.seltitle {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The line: readable prose, scrolling if a script writes a lot. */
+.speech {
+    max-height: 220dp;
+    overflow-y: auto;
+    padding: 8dp 12dp;
+    font-size: 12dp;
+    line-height: 18dp;
+    color: #e6e6e6;
+}
+/* {B} in the classic markup. */
+.b { font-weight: bold; }
+
+/* The answers: full-width rows, numbered as the classic ones. */
+.answers {
+    margin-top: 4dp;
+}
+.answer {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    margin-top: 2dp;
+    padding: 5dp 8dp;
+    border: 1dp #ffffff10;
+    border-radius: 3dp;
+    background-color: #ffffff08;
+    cursor: pointer;
+}
+.answer:hover {
+    background-color: #d0501a30;
+    border-color: #d0501aa0;
+}
+.num {
+    width: 20dp;
+    font-size: 11dp;
+    font-weight: bold;
+    color: #ff9a5a;
+}
+.atext {
+    flex-grow: 1;
+    font-size: 11dp;
+    line-height: 16dp;
+    color: #f0f0f0;
+}
+.answer:hover .atext { color: #ffffff; }

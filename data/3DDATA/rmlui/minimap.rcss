@@ -67,6 +67,7 @@
     from { opacity: 1; }
     to   { opacity: 0.35; }
 }
+.mark.off { display: none; }
 .mark.ind { animation: 0.7s quadratic-in-out infinite alternate mark-pulse; }
 
 /* The hovered mark: a gold ring, so it is clear which of two close marks the

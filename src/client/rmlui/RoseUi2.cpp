@@ -40,6 +40,12 @@ const int kReplacedDialogs[] = {
     /// zones and closes it in clan zones ). Hidden, NOT gone: CMinimapDLG
     /// still loads each zone's map and keeps the scripts' indicators.
     DLG_TYPE_MINIMAP,
+    /// RoseRmlConversation, one window for the three conversation dialogs
+    /// ( also in kReplacedWindows ). The engine's text and answers reach it
+    /// through IT_MGR::OpenQueryDLG / QueryDLG_AppendExam.
+    DLG_TYPE_DIALOG,
+    DLG_TYPE_SELECTEVENT,
+    DLG_TYPE_EVENTDIALOG,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -51,6 +57,9 @@ const int kReplacedWindows[] = {
     DLG_TYPE_ITEM,
     DLG_TYPE_QUEST,
     DLG_TYPE_MINIMAP,
+    DLG_TYPE_DIALOG,
+    DLG_TYPE_SELECTEVENT,
+    DLG_TYPE_EVENTDIALOG,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).
