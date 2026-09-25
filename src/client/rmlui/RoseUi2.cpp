@@ -6,6 +6,7 @@
 #include "../interface/it_mgr.h"
 #include "../interface/interfacetype.h"
 #include "tgamectrl/tdialog.h"
+#include "../Sound/IO_Sound.h"
 
 #include "rose/common/log.h"
 
@@ -184,9 +185,27 @@ HideReplacedDialogs() {
         return;
     for (int iDlgType : kReplacedDialogs) {
         CTDialog* pDlg = g_itMGR.FindDlg(iDlgType);
-        if (pDlg != NULL && pDlg->IsVision())
+        if (pDlg != NULL && pDlg->IsVision()) {
+            /// Silently: CTDialog::Hide plays the dialog's close sound, and
+            /// game code that just re-showed it ( the party dialog on joining
+            /// a party ) already played the open one -- the pair was heard as
+            /// an open immediately followed by a close.
+            const int iHideSound = pDlg->GetSoundHideID();
+            pDlg->SetSoundHideID(0);
             pDlg->Hide();
+            pDlg->SetSoundHideID(iHideSound);
+        }
     }
+}
+
+void
+PlayWindowSound(int iDlgType, bool bOpen) {
+    CTDialog* pDlg = g_itMGR.FindDlg(iDlgType);
+    if (pDlg == NULL || g_pSoundLIST == NULL)
+        return;
+    const int iSound = bOpen ? pDlg->GetSoundShowID() : pDlg->GetSoundHideID();
+    if (iSound > 0)
+        g_pSoundLIST->IDX_PlaySound((short)iSound);
 }
 
 } // namespace RoseUi2

@@ -27,6 +27,7 @@
 #include "../interface/Dlgs/CItemDlg.h"
 #include "../interface/Dlgs/ChattingDlg.h"
 #include "../interface/Dlgs/subclass/CSlot.h"
+#include "../Network/CNetwork.h"
 
 #include "rose/common/log.h"
 
@@ -36,8 +37,11 @@
 
 namespace {
 
-/// The three bag tabs of the items section ( INV_WEAPON, INV_USE, INV_ETC ).
+/// The three bag tabs of the gear section ( INV_WEAPON, INV_USE, INV_ETC ).
 const int kBagTabs = 3;
+
+/// The PAT parts, by RIDE_PART_*.
+const char* const kPatLabel[MAX_RIDING_PART] = {"Body", "Engine", "Legs", "Special", "Arms"};
 
 /// CIconItem::Update's red tint: an item under this much life.
 const int kWornLife = 50;
@@ -157,12 +161,13 @@ RoseRmlInventory::RoseRmlInventory():
     m_iPressX(0),
     m_iPressY(0),
     m_iDropType(DLG_TYPE_ITEM),
+    m_iSection(SECTION_GEAR),
     m_iPage(INV_WEAPON),
     m_strMoney("0"),
     m_strWeight("0 / 0"),
     m_fWeightPct(0.0f),
     m_iWeightLevel(0) {
-    for (int i = 0; i < kBagTabs; ++i)
+    for (int i = 0; i < MAX_INV_TYPE; ++i)
         m_iCount[i] = 0;
 }
 
@@ -194,11 +199,22 @@ RoseRmlInventory::Initialise(Rml::Context* pContext, const std::string& strAsset
     }
     constructor.RegisterArray<std::vector<CellVM>>();
 
+    if (auto tune = constructor.RegisterStruct<TuneVM>()) {
+        tune.RegisterMember("label", &TuneVM::label);
+        tune.RegisterMember("value", &TuneVM::value);
+        tune.RegisterMember("fuel", &TuneVM::fuel);
+    }
+    constructor.RegisterArray<std::vector<TuneVM>>();
+
     constructor.Bind("drop_type", &m_iDropType);
+    constructor.Bind("section", &m_iSection);
     constructor.Bind("page", &m_iPage);
     constructor.Bind("count0", &m_iCount[0]);
     constructor.Bind("count1", &m_iCount[1]);
     constructor.Bind("count2", &m_iCount[2]);
+    constructor.Bind("count3", &m_iCount[3]);
+    constructor.Bind("pat", &m_Pat);
+    constructor.Bind("tune", &m_Tune);
     constructor.Bind("cells", &m_Cells);
     constructor.Bind("gear", &m_Gear);
     constructor.Bind("ammo", &m_Ammo);
@@ -209,6 +225,19 @@ RoseRmlInventory::Initialise(Rml::Context* pContext, const std::string& strAsset
     constructor.Bind("weight", &m_strWeight);
     constructor.Bind("weight_pct", &m_fWeightPct);
     constructor.Bind("weight_level", &m_iWeightLevel);
+
+    constructor.BindEventCallback("set_section",
+        [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
+            if (args.empty())
+                return;
+            const int iSection = args[0].Get<int>();
+            if ((iSection == SECTION_GEAR || iSection == SECTION_PAT) && iSection != m_iSection) {
+                m_iSection = iSection;
+                m_iPressIndex = -1;
+                m_Model.DirtyVariable("section");
+                Sample();
+            }
+        });
 
     constructor.BindEventCallback("set_page",
         [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
@@ -287,7 +316,8 @@ RoseRmlInventory::ItemDlg() const {
 
 int
 RoseRmlInventory::CurrentPage() const {
-    return m_iPage;
+    /// The PAT section shows the riding-parts page, as CItemDlg's tuning tab.
+    return (m_iSection == SECTION_PAT) ? INV_RIDING : m_iPage;
 }
 
 CSlot*
@@ -302,6 +332,8 @@ RoseRmlInventory::SlotFor(int iKind, int iIndex) const {
             return pDlg->GetEquipSlotCtrl(iIndex);
         case KIND_AMMO:
             return pDlg->GetAmmoSlot(iIndex);
+        case KIND_PAT:
+            return pDlg->GetPatSlot(iIndex);
         default:
             return NULL;
     }
@@ -313,7 +345,7 @@ RoseRmlInventory::DragItemFor(int iKind) const {
     if (pDlg == NULL)
         return NULL;
     /// As CItemDlg wires its slots: the bag drags one way, everything worn
-    /// ( gear, ammo ) the other.
+    /// ( gear, ammo, PAT parts ) the other.
     return (iKind == KIND_BAG) ? pDlg->GetInvenDragItem() : pDlg->GetEquipDragItem();
 }
 
@@ -325,6 +357,8 @@ RoseRmlInventory::IsInWorld() const {
 
 void
 RoseRmlInventory::SetOpen(bool bOpen) {
+    if (bOpen != m_bOpen)
+        RoseUi2::PlayWindowSound(DLG_TYPE_ITEM, bOpen);
     m_bOpen = bOpen;
     m_iPressIndex = -1;
     if (bOpen)
@@ -432,6 +466,19 @@ RoseRmlInventory::Sample() {
         m_Model.DirtyVariable("ammo");
     }
 
+    std::vector<CellVM> pat;
+    for (int i = 0; i < MAX_RIDING_PART; ++i) {
+        CellVM vm = MakeCell(KIND_PAT, i, kPatLabel[i]);
+        FillCell(vm, pDlg->GetPatSlot(i));
+        pat.push_back(vm);
+    }
+    if (pat != m_Pat) {
+        m_Pat.swap(pat);
+        m_Model.DirtyVariable("pat");
+    }
+    if (m_iSection == SECTION_PAT)
+        SampleTuning();
+
     /// --- what the gear adds up to ( the character window's numbers ) --------
     const Rml::String strAtk = Printf("%d", pAvatar->stats.attack_power);
     const Rml::String strDef = Printf("%d", pAvatar->Get_DEF());
@@ -450,8 +497,8 @@ RoseRmlInventory::Sample() {
     }
 
     /// --- tab counts -----------------------------------------------------------
-    static const char* const kCountNames[kBagTabs] = {"count0", "count1", "count2"};
-    for (int t = 0; t < kBagTabs; ++t) {
+    static const char* const kCountNames[MAX_INV_TYPE] = {"count0", "count1", "count2", "count3"};
+    for (int t = 0; t < MAX_INV_TYPE; ++t) {
         int iFilled = 0;
         for (int i = 0; i < INVENTORY_PAGE_SIZE; ++i) {
             CSlot* pSlot = pDlg->GetBagSlot(t, i);
@@ -492,6 +539,39 @@ RoseRmlInventory::Sample() {
     }
 }
 
+/// The mounted-stats table, from the server's preview ( as DrawTuningStats ).
+void
+RoseRmlInventory::SampleTuning() {
+    if (g_pNet == NULL)
+        return;
+    const Rose::Tuning::MountedStatsResult& value = g_pNet->tuning_preview.result;
+
+    static const char* const kLabels[7] = {
+        "Type", "Defense", "Magic Resist", "Fuel use", "Move speed", "Attack", "Attack speed"};
+    const int iNumbers[7] = {0, value.defence, value.resistance, value.fuel, value.speed, 0,
+        value.attack_speed};
+
+    std::vector<TuneVM> rows;
+    for (int row = 0; row < 7; ++row) {
+        TuneVM vm;
+        vm.label = kLabels[row];
+        vm.fuel = (row == 3);
+        if (!(value.valid_fields & (1 << row)))
+            vm.value = "\xE2\x80\x94"; /// em dash, UTF-8: the parts do not allow it
+        else if (row == 0)
+            vm.value = (value.vehicle_type == 2) ? "Castle Gear" : "Cart";
+        else if (row == 5)
+            vm.value = Printf("%u", value.attack);
+        else
+            vm.value = Printf("%d", iNumbers[row]);
+        rows.push_back(vm);
+    }
+    if (rows != m_Tune) {
+        m_Tune.swap(rows);
+        m_Model.DirtyVariable("tune");
+    }
+}
+
 /// --- input ------------------------------------------------------------------------
 
 /// A left press on a cell, with CSlot::Process's precedence: Alt previews,
@@ -524,8 +604,8 @@ RoseRmlInventory::OnPress(int iKind, int iIndex) {
     if (GetAsyncKeyState(VK_CONTROL) < 0 && pIcon->Process(WM_LBUTTONDOWN, MK_CONTROL, 0))
         return;
 
-    /// Repair / appraisal: CItemDlg listens on the bag and the worn gear, not
-    /// on the ammo slots.
+    /// Repair / appraisal: CItemDlg listens on the bag, the worn gear and the
+    /// PAT parts, not on the ammo slots.
     if (iKind != KIND_AMMO) {
         if (CItemDlg* pDlg = ItemDlg()) {
             if (pDlg->HandleStateClick(pSlot))
@@ -587,8 +667,10 @@ RoseRmlInventory::UpdateTooltip() {
             break;
         }
     }
-    if (iKind < 0 || iIndex < 0)
+    if (iKind < 0 || iIndex < 0) {
+        UpdateTuningTooltip();
         return;
+    }
 
     CSlot* pSlot = SlotFor(iKind, iIndex);
     CIcon* pIcon = pSlot ? pSlot->GetIcon() : NULL;
@@ -603,6 +685,11 @@ RoseRmlInventory::UpdateTooltip() {
     if (ToolTip.IsEmpty())
         return;
 
+    PlaceTooltip(ToolTip);
+}
+
+void
+RoseRmlInventory::PlaceTooltip(CInfo& ToolTip) {
     /// Beside the window, on the side chosen by where the WINDOW sits.
     POINT ptMouse;
     CGame::GetInstance().Get_MousePos(ptMouse);
@@ -629,6 +716,24 @@ RoseRmlInventory::UpdateTooltip() {
 }
 
 void
+RoseRmlInventory::UpdateTuningTooltip() {
+    int iTip = 0;
+    for (Rml::Element* pEl = m_pContext->GetHoverElement(); pEl != NULL;
+         pEl = pEl->GetParentNode()) {
+        if (pEl->HasAttribute("tune-tip")) {
+            iTip = pEl->GetAttribute<int>("tune-tip", 0);
+            break;
+        }
+    }
+    if (iTip == 0)
+        return;
+
+    CInfo ToolTip;
+    CItemDlg::BuildTuningTooltip(ToolTip, iTip == 2);
+    PlaceTooltip(ToolTip);
+}
+
+void
 RoseRmlInventory::Update() {
     if (m_pDocument == NULL)
         return;
@@ -638,6 +743,14 @@ RoseRmlInventory::Update() {
         m_bOpen = false;
 
     SetVisible(m_bOpen && bInWorld);
+
+    /// The server's mounted-stats preview runs while the PAT section is on
+    /// screen. Only while UI2 is on: otherwise CItemDlg drives it itself.
+    if (RoseUi2::IsActive()) {
+        if (CItemDlg* pDlg = ItemDlg())
+            pDlg->DriveTuningPreview(m_bVisible && m_iSection == SECTION_PAT);
+    }
+
     if (!m_bVisible)
         return;
 

@@ -27,6 +27,7 @@
 #include "../interface/CDragNDropMgr.h"
 #include "tgamectrl/winctrl.h"
 #include "../interface/interfacetype.h"
+#include "../Sound/IO_Sound.h"
 
 #include <stdlib.h>
 #include <string>
@@ -51,6 +52,32 @@ RoseRmlMessageBox g_MessageBox; ///< UI2: questions and notices ( opt-in CMsgBox
 RoseRmlInventory g_Inventory; ///< UI2: replaces CItemDlg ( a window, a view over it )
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
+
+/// The classic button click ( CLICKSID in the dialog XML: 90 of the 96
+/// buttons that have one use 8 ).
+const short kClickSound = 8;
+
+/// UI2 buttons click like the classic ones. One listener on the context sees
+/// every click ( they bubble to the root ): a .ui-btn, or any custom button
+/// marked .ui-click, plays the sound. .ui-close is left out on purpose -- the
+/// window's own close sound plays instead ( RoseUi2::PlayWindowSound ).
+class ClickSoundListener: public Rml::EventListener {
+public:
+    void ProcessEvent(Rml::Event& ev) override {
+        for (Rml::Element* pEl = ev.GetTargetElement(); pEl != NULL; pEl = pEl->GetParentNode()) {
+            if (pEl->IsClassSet("ui-static")) /// styled as a button, is not one
+                return;
+            if (pEl->IsClassSet("ui-btn") || pEl->IsClassSet("ui-click")) {
+                if (g_pSoundLIST != NULL)
+                    g_pSoundLIST->IDX_PlaySound(kClickSound);
+                return;
+            }
+            if (pEl->GetOwnerDocument() == pEl)
+                return;
+        }
+    }
+};
+ClickSoundListener g_ClickSound;
 
 /// True between a left-press on a panel and its release. Needed because a panel
 /// drag continues after the cursor leaves the panel: without it, the move and
@@ -210,6 +237,7 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     }
 
     Rml::Debugger::Initialise(g_pContext);
+    g_pContext->AddEventListener("click", &g_ClickSound);
 
     /// Fonts: the client's own UI font is Verdana ( CStringManager::
     /// GetFontNameByCharSet is hardcoded to it ), so load that from the system

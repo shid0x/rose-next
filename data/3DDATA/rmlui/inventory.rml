@@ -10,8 +10,10 @@
         UI2 inventory ( RoseRmlInventory ), replacing CItemDlg. Opened and
         closed through IT_MGR like any window ( menu, Alt+I, Escape ).
 
-        Left: what you wear ( a paper doll, the ammo row, what it adds up to ).
-        Right: the bag, three tabs of 6x5 slots.
+        Left, in sections: Gear ( a paper doll, the ammo row, what it adds up
+        to ) and PAT ( the five cart / castle gear parts and the mounted stats
+        the server previews for them ). Right: the bag -- three tabs of 6x5
+        slots with Gear, the riding-parts page with PAT.
 
         Drag an item to move it: bag to doll equips ( a gem onto a socketed
         piece sockets it ), doll to bag unequips; onto a shop / the bank / a
@@ -32,9 +34,12 @@
         <div class="columns">
             <!-- What you wear. -->
             <div class="gearcol">
-                <div class="colhead"><span>Equipment</span></div>
+                <div class="tabs">
+                    <span class="ui-btn tab" data-class-on="section == 0" data-event-click="set_section(0)">Gear</span>
+                    <span class="ui-btn tab" data-class-on="section == 1" data-event-click="set_section(1)">PAT</span>
+                </div>
 
-                <div class="doll ui-well" equip-area="1">
+                <div class="doll ui-well" equip-area="1" data-if="section == 0">
                     <div class="cell ui-icon" data-for="c : gear"
                          data-attr-slot-kind="c.kind" data-attr-slot-index="c.index"
                          data-class-spacer="c.index == 0" data-class-empty="!c.filled"
@@ -47,7 +52,7 @@
                     </div>
                 </div>
 
-                <div class="ammo ui-well" equip-area="1">
+                <div class="ammo ui-well" equip-area="1" data-if="section == 0">
                     <span class="ammohead ui-muted">Ammo</span>
                     <div class="cell ui-icon" data-for="c : ammo"
                          data-attr-slot-kind="c.kind" data-attr-slot-index="c.index"
@@ -59,19 +64,42 @@
                     </div>
                 </div>
 
-                <div class="summary">
+                <div class="summary" data-if="section == 0">
                     <span class="stat"><span class="ui-muted">ATK</span> {{atk}}</span>
                     <span class="stat"><span class="ui-muted">DEF</span> {{def}}</span>
                     <span class="stat"><span class="ui-muted">M.RES</span> {{res}}</span>
+                </div>
+
+                <!-- PAT: the parts, then what they add up to once mounted. -->
+                <div class="parts ui-well" equip-area="1" data-if="section == 1">
+                    <div class="cell ui-icon" data-for="c : pat"
+                         data-attr-slot-kind="c.kind" data-attr-slot-index="c.index"
+                         data-class-empty="!c.filled" data-class-dim="c.dim" data-class-worn="c.worn"
+                         data-event-mousedown="press(c.kind, c.index)" data-event-dblclick="use(c.kind, c.index)">
+                        <img data-if="c.filled" data-attr-src="c.src" data-attr-rect="c.rect"/>
+                        <span class="label" data-if="!c.filled">{{c.label}}</span>
+                        <div class="gem" data-if="c.socket == 2"><img data-attr-src="c.gem_src" data-attr-rect="c.gem_rect"/></div>
+                        <img class="socket" data-if="c.socket == 1" src="3DData/Control/Res/SOKET.DDS"/>
+                    </div>
+                </div>
+
+                <div class="tune ui-well" data-if="section == 1">
+                    <div class="trow" data-for="t : tune" data-attr-tune-tip="t.fuel ? 2 : 1">
+                        <span class="tlabel">{{t.label}}</span>
+                        <span class="tval">{{t.value}}</span>
+                    </div>
                 </div>
             </div>
 
             <!-- The bag. -->
             <div class="bagcol">
-                <div class="tabs">
+                <div class="tabs" data-if="section == 0">
                     <span class="ui-btn tab" data-class-on="page == 0" data-event-click="set_page(0)">Equip<span class="n">{{count0}}</span></span>
                     <span class="ui-btn tab" data-class-on="page == 1" data-event-click="set_page(1)">Use<span class="n">{{count1}}</span></span>
                     <span class="ui-btn tab" data-class-on="page == 2" data-event-click="set_page(2)">Etc<span class="n">{{count2}}</span></span>
+                </div>
+                <div class="tabs" data-if="section == 1">
+                    <span class="ui-btn ui-static tab on">Riding parts<span class="n">{{count3}}</span></span>
                 </div>
 
                 <div class="grid ui-well" bag-area="1">
@@ -90,7 +118,7 @@
         </div>
 
         <div class="footer">
-            <span class="money" data-event-click="money()"><span class="coin"></span><span class="mval">{{money}}</span></span>
+            <span class="money ui-click" data-event-click="money()"><span class="coin"></span><span class="mval">{{money}}</span></span>
             <div class="weight" data-class-heavy="weight_level == 1" data-class-over="weight_level == 2">
                 <span class="wlabel ui-muted">Weight</span>
                 <div class="wbar"><div class="wfill" data-style-width="weight_pct + '%'"></div></div>

@@ -20,19 +20,6 @@
     margin-right: 6dp;
 }
 
-/* Level with the bag's tabs; the PAT / costume sections become tabs here. */
-.colhead {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    height: 20dp;
-    margin-bottom: 4dp;
-    padding-left: 4dp;
-    font-size: 10dp;
-    font-weight: bold;
-    color: #c8c8c8;
-    border-bottom: 1dp #ffffff14;
-}
 
 /* Four cells across: 4 x ( 42 + 2 ) = 176, the content width exactly. */
 .doll {
@@ -67,6 +54,37 @@
     margin-bottom: 2dp;
     text-align: center;
     font-size: 10dp;
+}
+
+/* --- PAT: the parts ( four across, as the doll ) and the mounted stats ---- */
+.parts {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: 176dp;
+    padding: 3dp 1dp 1dp 3dp;
+}
+
+.tune {
+    width: 176dp;
+    margin-top: 4dp;
+    padding: 3dp 5dp;
+}
+.trow {
+    display: flex;
+    flex-direction: row;
+    height: 16dp;
+    align-items: center;
+    font-size: 10dp;
+}
+.trow:hover { background-color: #ffffff10; }
+.tlabel {
+    flex-grow: 1;
+    color: #9a9a9a;
+}
+.tval {
+    font-weight: bold;
+    color: #f0f0f0;
 }
 
 /* What the gear adds up to. */

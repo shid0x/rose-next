@@ -150,7 +150,10 @@ RoseRmlSkillBar::Initialise(Rml::Context* pContext, const std::string& strAssetD
             m_iPressY = ev.GetParameter<int>("mouse_y", 0);
         });
 
-    /// Release on the slot it was pressed on, without having dragged: use it.
+    /// Double-click on a slot, as the classic quickbar ( a single click does
+    /// nothing, so a stray click in a fight casts nothing ). The second press
+    /// re-arms m_iPressSlot just before RmlUi sends the dblclick; a press
+    /// that turned into a drag has cleared it.
     constructor.BindEventCallback("use",
         [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
             if (args.empty())

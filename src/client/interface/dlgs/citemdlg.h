@@ -9,6 +9,7 @@
 
 #include "tgamectrl/iactionlistener.h"
 class CDragItem;
+class CInfo;
 class CTCmdNumberInput;
 /**
  * 보유한 아이템및 장착된 아이템의 정보를 보여주는 다이얼로그
@@ -61,6 +62,14 @@ public:
     /// An equipment slot by EQUIP_IDX_* ( 1-based ), an ammo slot by SHOT_TYPE_*.
     CSlot* GetEquipSlotCtrl(int iEquipIdx);
     CSlot* GetAmmoSlot(int iShotType);
+    /// A PAT part slot by RIDE_PART_*.
+    CSlot* GetPatSlot(int iPart);
+    /// Keeps the server's mounted-stats preview ( g_pNet->tuning_preview )
+    /// requested while bActive -- the PAT section is on screen -- and
+    /// invalidated when the worn parts change. Call every frame.
+    void DriveTuningPreview(bool bActive);
+    /// The mounted-stats tooltip: the fuel row's, or the rest of the table's.
+    static void BuildTuningTooltip(CInfo& Info, bool bFuelRow);
     /// The drags a bag / an equipped item starts ( every drop target kept ).
     CDragItem* GetInvenDragItem() { return m_pInvenDragItem; }
     CDragItem* GetEquipDragItem() { return m_pEquipDragItem; }

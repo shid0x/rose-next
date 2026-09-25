@@ -14,7 +14,7 @@
         ( drop-target ): RoseRmlUi ends a legacy drag there, and the legacy
         drop command then asks for the slot under the mouse ( slot ).
 
-        Slots: click to use, press and drag to move ( drop on the ground to
+        Slots: double-click to use ( as the classic quickbar ), press and drag to move ( drop on the ground to
         remove ). The grip on the left moves the bar.
     -->
     <!-- .vertical ( Interface window ) turns the rows into columns. -->
@@ -26,13 +26,13 @@
                 <div class="pager">
                     <span class="page ui-accent">{{main_page}}</span>
                     <div class="arrows">
-                        <span class="arrow" data-event-click="page(0, -1)">&#8249;</span>
-                        <span class="arrow" data-event-click="page(0, 1)">&#8250;</span>
+                        <span class="arrow ui-click" data-event-click="page(0, -1)">&#8249;</span>
+                        <span class="arrow ui-click" data-event-click="page(0, 1)">&#8250;</span>
                     </div>
                 </div>
                 <div class="slot ui-icon" data-for="s : main" data-attr-slot="s.index"
                      data-class-empty="!s.filled" data-class-off="s.off"
-                     data-event-mousedown="press(s.index)" data-event-click="use(s.index)">
+                     data-event-mousedown="press(s.index)" data-event-dblclick="use(s.index)">
                     <img data-if="s.filled" data-attr-src="s.src" data-attr-rect="s.rect"/>
                     <div class="cd" data-if="s.cd > 0" data-style-height="s.cd + '%'"></div>
                     <span class="cd-text" data-if="s.cd_text != ''">{{s.cd_text}}</span>
@@ -45,13 +45,13 @@
                 <div class="pager">
                     <span class="page ui-accent">{{ext_page}}</span>
                     <div class="arrows">
-                        <span class="arrow" data-event-click="page(1, -1)">&#8249;</span>
-                        <span class="arrow" data-event-click="page(1, 1)">&#8250;</span>
+                        <span class="arrow ui-click" data-event-click="page(1, -1)">&#8249;</span>
+                        <span class="arrow ui-click" data-event-click="page(1, 1)">&#8250;</span>
                     </div>
                 </div>
                 <div class="slot ui-icon" data-for="s : ext" data-attr-slot="s.index"
                      data-class-empty="!s.filled" data-class-off="s.off"
-                     data-event-mousedown="press(s.index)" data-event-click="use(s.index)">
+                     data-event-mousedown="press(s.index)" data-event-dblclick="use(s.index)">
                     <img data-if="s.filled" data-attr-src="s.src" data-attr-rect="s.rect"/>
                     <div class="cd" data-if="s.cd > 0" data-style-height="s.cd + '%'"></div>
                     <span class="cd-text" data-if="s.cd_text != ''">{{s.cd_text}}</span>

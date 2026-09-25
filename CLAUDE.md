@@ -326,7 +326,9 @@ items, so every drop target keeps working; the window is `drop-target` `DLG_TYPE
 `CItemDlg::IsInsideInven` / `IsInsideEquip` / `GetEquipSlot` / `GetInvenSlot` /
 `is_costume_tab_open` answer from UI2 while it is on (**`is_costume_tab_open` decides costume vs
 normal equipping for every equip**). Repair/appraisal clicks go through
-`CItemDlg::HandleStateClick`. Phase 1 = bag, money, weight. Also: **a bare text node inside a flex
+`CItemDlg::HandleStateClick`. Phase 1 = bag, money, weight; phase 2 = the paper doll and ammo;
+phase 3 = PAT (the mounted-stats preview is requested by whoever shows it:
+`CItemDlg::DriveTuningPreview`, called by UI2 while its PAT section is on screen). Also: **a bare text node inside a flex
 container does not draw** — wrap it in a `<span>`.
 
 **RmlUi has no default stylesheet: a `div` is `display: inline` unless told otherwise**, and an
@@ -336,6 +338,12 @@ in-flow fill had no width to take a percentage of, and an absolute fill skipped 
 inline parent and painted the whole skill list gold — while bars that were direct children of a
 flex container worked, because flex blockifies its items. That pattern read as three different
 traps across three panels; it was always this one.
+
+**UI2 sounds** come from the classic XML: a UI2 window plays its replaced dialog's `SHOWSID` /
+`HIDESID` (`RoseUi2::PlayWindowSound`), and a context-wide listener plays the classic `CLICKSID`
+(8) for any `.ui-btn` or `.ui-click` (`.ui-static` opts out). `CTDialog::Hide` always plays its
+close sound, so `HideReplacedDialogs` hides silently. Skill bar slots use on **double-click**, as
+the classic quickbar.
 
 Also UI2: the target frame (`RoseRmlTargetFrame`, new — retail showed the target only overhead),
 the Interface window (`/ui` or the status panel's UI button: scale, lock, reset layout, back to

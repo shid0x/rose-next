@@ -244,6 +244,8 @@ RoseRmlSkillWindow::Shutdown() {
 
 void
 RoseRmlSkillWindow::SetOpen(bool bOpen) {
+    if (bOpen != m_bOpen)
+        RoseUi2::PlayWindowSound(DLG_TYPE_SKILL, bOpen);
     m_bOpen = bOpen;
     if (bOpen)
         Sample(); /// no stale list on the first frame

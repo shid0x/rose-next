@@ -289,6 +289,8 @@ RoseRmlCharacterWindow::Shutdown() {
 
 void
 RoseRmlCharacterWindow::SetOpen(bool bOpen) {
+    if (bOpen != m_bOpen)
+        RoseUi2::PlayWindowSound(DLG_TYPE_CHAR, bOpen);
     m_bOpen = bOpen;
     if (bOpen)
         Sample(); /// no stale numbers on the first frame

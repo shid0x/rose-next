@@ -46,8 +46,8 @@
                         <span class="state" data-if="m.state_text != ''">{{m.state_text}}</span>
                         <span class="tag" data-if="m.leader">Leader</span>
                         <span class="acts" data-if="is_leader">
-                            <span class="act" data-event-click="lead(m.tag)">Lead</span>
-                            <span class="act kick" data-event-click="kick(m.tag)">Kick</span>
+                            <span class="act ui-click" data-event-click="lead(m.tag)">Lead</span>
+                            <span class="act kick ui-click" data-event-click="kick(m.tag)">Kick</span>
                         </span>
                     </div>
 

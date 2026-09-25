@@ -310,6 +310,13 @@ CItemDlg::GetEquipSlotCtrl(int iEquipIdx) {
 }
 
 CSlot*
+CItemDlg::GetPatSlot(int iPart) {
+    if (iPart < 0 || iPart >= MAX_RIDING_PART)
+        return NULL;
+    return &m_PatEquipSlots[iPart];
+}
+
+CSlot*
 CItemDlg::GetAmmoSlot(int iShotType) {
     if (iShotType < 0 || iShotType >= MAX_SHOT_TYPE)
         return NULL;
@@ -951,10 +958,46 @@ CItemDlg::Hide() {
 
 void
 CItemDlg::UpdateTuningStats(POINT mouse) {
+    /// With UI2 on, its PAT section drives the preview ( DriveTuningPreview ).
+    if (!g_pNet || RoseUi2::IsReplaced(DLG_TYPE_ITEM))
+        return;
+    const bool active = IsVision() && m_iEquipTab == EQUIPMENT_TAB_TUNING && g_pAVATAR;
+    DriveTuningPreview(active);
+    if (!active)
+        return;
+
+    const int x = mouse.x - m_sPosition.x;
+    const int y = mouse.y - m_sPosition.y;
+    if (x >= 210 && x < 262 && y >= 116 && y < 241) {
+        CInfo tooltip;
+        BuildTuningTooltip(tooltip, y >= 170 && y < 188);
+        POINT position = {mouse.x + 12, mouse.y + 18};
+        tooltip.SetPosition(position);
+        CToolTipMgr::GetInstance().RegistInfo(tooltip);
+    }
+}
+
+void
+CItemDlg::BuildTuningTooltip(CInfo& tooltip, bool bFuelRow) {
+    if (bFuelRow) {
+        tooltip.AddString("Engine fuel consumption per deduction.");
+        tooltip.AddString("Deducted on mounting, fuel ticks and attacks.");
+        tooltip.AddString("This is not a per-second rate.");
+    } else {
+        tooltip.AddString(g_pNet && g_pNet->tuning_preview.result.vehicle_type == 2
+            ? "Mounted stats: Castle Gear" : "Mounted stats: Cart");
+        tooltip.AddString("Mounting removes beneficial buffs.");
+        tooltip.AddString("Surviving effects and weight penalties apply.");
+        tooltip.AddString("Missing parts leave dependent stats unavailable.");
+    }
+}
+
+void
+CItemDlg::DriveTuningPreview(bool active) {
     if (!g_pNet)
         return;
     auto& cache = g_pNet->tuning_preview;
-    const bool active = IsVision() && m_iEquipTab == EQUIPMENT_TAB_TUNING && g_pAVATAR;
+    active = active && g_pAVATAR;
     cache.set_active(active);
     if (!active)
         return;
@@ -981,26 +1024,6 @@ CItemDlg::UpdateTuningStats(POINT mouse) {
         std::chrono::steady_clock::now().time_since_epoch()).count();
     if (const uint32_t sequence = cache.request(static_cast<uint64_t>(now)))
         g_pNet->send_tuning_preview(sequence);
-
-    const int x = mouse.x - m_sPosition.x;
-    const int y = mouse.y - m_sPosition.y;
-    if (x >= 210 && x < 262 && y >= 116 && y < 241) {
-        CInfo tooltip;
-        if (y >= 170 && y < 188) {
-            tooltip.AddString("Engine fuel consumption per deduction.");
-            tooltip.AddString("Deducted on mounting, fuel ticks and attacks.");
-            tooltip.AddString("This is not a per-second rate.");
-        } else {
-            tooltip.AddString(cache.result.vehicle_type == 2
-                ? "Mounted stats: Castle Gear" : "Mounted stats: Cart");
-            tooltip.AddString("Mounting removes beneficial buffs.");
-            tooltip.AddString("Surviving effects and weight penalties apply.");
-            tooltip.AddString("Missing parts leave dependent stats unavailable.");
-        }
-        POINT position = {mouse.x + 12, mouse.y + 18};
-        tooltip.SetPosition(position);
-        CToolTipMgr::GetInstance().RegistInfo(tooltip);
-    }
 }
 
 void

@@ -37,7 +37,7 @@
         <div class="note" data-if="!leader">Only the party leader can change these.</div>
 
         <div class="section">Display</div>
-        <div class="toggle" data-event-click="toggle_hp()">
+        <div class="toggle ui-click" data-event-click="toggle_hp()">
             <span class="box" data-class-on="hp_gauge"></span>
             <span>Show members' HP over their heads</span>
         </div>

@@ -121,6 +121,8 @@ RoseRmlPartyOptions::Shutdown() {
 void
 RoseRmlPartyOptions::SetOpen(bool bOpen) {
     const bool bOpening = bOpen && !m_bOpen;
+    if (bOpen != m_bOpen)
+        RoseUi2::PlayWindowSound(DLG_TYPE_PARTYOPTION, bOpen);
     m_bOpen = bOpen;
     if (bOpening) {
         Sample();

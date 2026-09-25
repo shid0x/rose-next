@@ -50,7 +50,7 @@
                 </div>
 
                 <div class="up">
-                    <span class="plus" data-class-live="k.can_up"
+                    <span class="plus" data-class-live="k.can_up" data-class-ui-click="k.can_up"
                           data-event-click="level_up(k.slot)">+</span>
                     <span class="upcost" data-class-short="k.up_short">{{k.up_text}}</span>
                 </div>

@@ -62,6 +62,11 @@ bool QueryWindow(int iDlgType, bool& bOpen);
 /// once.
 void HideReplacedDialogs();
 
+/// Plays the sound the replaced legacy dialog plays when it is shown / hidden
+/// ( its XML SHOWSID / HIDESID ), for the UI2 window standing in for it. The
+/// ids stay the dialogs' own, so a data edit reaches both interfaces.
+void PlayWindowSound(int iDlgType, bool bOpen);
+
 } // namespace RoseUi2
 
 #endif /// _ROSE_UI2_H_

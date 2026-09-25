@@ -20,9 +20,14 @@
  *   repair and appraisal modes take the click through
  *   CItemDlg::HandleStateClick.
  *
- * Laid out for widescreen: the equipment on the left ( worn gear as a paper
- * doll, the ammo row, a combat summary ), the 6x5 bag on the right, money
- * and weight underneath. PAT and costume sections follow.
+ * Laid out for widescreen: the equipment on the left, the 6x5 bag on the
+ * right, money and weight underneath. The left column has sections:
+ *   Gear -- worn gear as a paper doll, the ammo row, a combat summary; the
+ *           bag shows the Equip / Use / Etc tabs.
+ *   PAT  -- the five cart / castle gear parts and the mounted stats the
+ *           server previews for them ( CItemDlg::DriveTuningPreview ); the
+ *           bag shows the riding-parts page.
+ * The costume section follows.
  */
 
 #include <RmlUi/Core/DataModelHandle.h>
@@ -34,6 +39,7 @@
 class CItemDlg;
 class CSlot;
 class CDragItem;
+class CInfo;
 
 namespace Rml {
 class Context;
@@ -71,6 +77,25 @@ public:
         KIND_BAG = 0, ///< index: slot in the page on screen
         KIND_EQUIP = 1, ///< index: EQUIP_IDX_* ( 0: a spacer in the doll )
         KIND_AMMO = 2, ///< index: SHOT_TYPE_*
+        KIND_PAT = 3, ///< index: RIDE_PART_*
+    };
+
+    /// The left column's sections.
+    enum Section {
+        SECTION_GEAR = 0,
+        SECTION_PAT = 1,
+    };
+
+    /// One row of the mounted-stats table.
+    struct TuneVM {
+        Rml::String label;
+        Rml::String value; ///< an em dash when the parts do not allow it
+        bool fuel; ///< the fuel row has its own tooltip
+
+        bool operator==(const TuneVM& o) const {
+            return label == o.label && value == o.value && fuel == o.fuel;
+        }
+        bool operator!=(const TuneVM& o) const { return !(*this == o); }
     };
 
     struct CellVM {
@@ -109,6 +134,11 @@ private:
     void OnPress(int iKind, int iIndex);
     void UpdateDragStart();
     void UpdateTooltip();
+    void SampleTuning();
+    void UpdateTuningTooltip();
+    /// A legacy tooltip beside the window, on the side chosen by where the
+    /// WINDOW sits ( as the other UI2 windows ).
+    void PlaceTooltip(CInfo& ToolTip);
 
     Rml::Context* m_pContext;
     Rml::ElementDocument* m_pDocument;
@@ -125,11 +155,14 @@ private:
 
     /// --- bound to inventory.rml ------------------------------------------
     int m_iDropType; ///< DLG_TYPE_ITEM, the window's drop-target
-    int m_iPage; ///< bag tab: INV_WEAPON / INV_USE / INV_ETC
-    int m_iCount[3]; ///< filled slots per tab
+    int m_iSection; ///< Section
+    int m_iPage; ///< bag tab in the gear section: INV_WEAPON / INV_USE / INV_ETC
+    int m_iCount[4]; ///< filled slots per page ( INV_* )
     std::vector<CellVM> m_Cells; ///< the bag page on screen
     std::vector<CellVM> m_Gear; ///< the paper doll, row by row
     std::vector<CellVM> m_Ammo;
+    std::vector<CellVM> m_Pat;
+    std::vector<TuneVM> m_Tune;
     Rml::String m_strAtk;
     Rml::String m_strDef;
     Rml::String m_strRes;

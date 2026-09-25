@@ -96,6 +96,8 @@ public:
     ///사운드
     void SetSoundShowID(int i) { m_iShowSoundID = i; } /// Dialog가 Show시 Play될 Sound ID Set
     void SetSoundHideID(int i) { m_iHideSoundID = i; } /// Dialog가 Hide시 Play될 Sound ID Set
+    int GetSoundShowID() const { return m_iShowSoundID; }
+    int GetSoundHideID() const { return m_iHideSoundID; }
 
     /// Default Position 관련
     void SetDefaultPosX(int iPosX) { m_iXPos = iPosX; }

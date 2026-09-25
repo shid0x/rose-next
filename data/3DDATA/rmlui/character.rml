@@ -53,7 +53,7 @@
                     <span class="rname">{{a.name}}</span>
                     <span class="rval">{{a.total}}</span>
                     <span class="rbonus"><span data-if="a.bonus > 0">+{{a.bonus}}</span><span class="neg" data-if="0 > a.bonus">{{a.bonus}}</span></span>
-                    <span class="plus" data-class-live="a.can_up" data-event-click="raise(a.id)">+</span>
+                    <span class="plus" data-class-live="a.can_up" data-class-ui-click="a.can_up" data-event-click="raise(a.id)">+</span>
                     <span class="upcost" data-class-short="a.up_short">{{a.up_text}}</span>
                 </div>
             </div>
