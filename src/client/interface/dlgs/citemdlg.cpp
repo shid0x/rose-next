@@ -302,6 +302,20 @@ CItemDlg::GetBagSlot(int iPage, int iSlot) {
     return &m_ItemSlots[iPage][iSlot];
 }
 
+CSlot*
+CItemDlg::GetEquipSlotCtrl(int iEquipIdx) {
+    if (iEquipIdx < 1 || iEquipIdx >= MAX_EQUIP_IDX)
+        return NULL;
+    return &m_AvatarEquipSlots[iEquipIdx - 1];
+}
+
+CSlot*
+CItemDlg::GetAmmoSlot(int iShotType) {
+    if (iShotType < 0 || iShotType >= MAX_SHOT_TYPE)
+        return NULL;
+    return &m_BulletEquipSlots[iShotType];
+}
+
 void
 CItemDlg::OnLButtonDown(unsigned uiProcID, WPARAM wParam, LPARAM lParam) {
     switch (uiProcID) {

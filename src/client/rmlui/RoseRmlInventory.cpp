@@ -42,6 +42,79 @@ const int kBagTabs = 3;
 /// CIconItem::Update's red tint: an item under this much life.
 const int kWornLife = 50;
 
+/// The paper doll, four across ( EQUIP_IDX_*; 0 is a spacer ): head and
+/// jewellery, weapons around the body, hands / feet / back.
+const int kDoll[] = {EQUIP_IDX_HELMET,
+    EQUIP_IDX_FACE_ITEM,
+    EQUIP_IDX_NECKLACE,
+    EQUIP_IDX_EARRING,
+    EQUIP_IDX_WEAPON_R,
+    EQUIP_IDX_ARMOR,
+    EQUIP_IDX_WEAPON_L,
+    EQUIP_IDX_RING,
+    EQUIP_IDX_GAUNTLET,
+    EQUIP_IDX_BOOTS,
+    EQUIP_IDX_KNAPSACK,
+    0};
+
+/// What an empty slot is for, by EQUIP_IDX_*.
+const char* const kEquipLabel[MAX_EQUIP_IDX] = {
+    "", "Face", "Head", "Body", "Back", "Hands", "Feet", "Weapon", "Off-hand", "Neck", "Ring", "Earring"};
+
+/// ... and by SHOT_TYPE_*.
+const char* const kAmmoLabel[MAX_SHOT_TYPE] = {"Arrows", "Bullets", "Throw"};
+
+/// A cell's picture and states from the classic slot behind it.
+void
+FillCell(RoseRmlInventory::CellVM& vm, CSlot* pSlot) {
+    vm.filled = false;
+    vm.count = 0;
+    vm.cd = 0.0f;
+    vm.dim = false;
+    vm.worn = false;
+    vm.socket = 0;
+
+    CIcon* pIcon = pSlot ? pSlot->GetIcon() : NULL;
+    int iModule = 0, iGraphic = 0;
+    if (pIcon == NULL || !pIcon->IsItemIcon() || !pIcon->GetSprite(iModule, iGraphic)
+        || !RoseRmlIcons::Resolve(iModule, iGraphic, vm.src, vm.rect))
+        return;
+
+    CIconItem* pItemIcon = (CIconItem*)pIcon;
+    tagITEM& Item = pItemIcon->GetItem();
+
+    vm.filled = true;
+    vm.count = pIcon->GetStackCount();
+    vm.cd = floorf(pIcon->GetCooldown(NULL) * 100.0f + 0.5f);
+    vm.dim = !pIcon->IsEnable();
+    vm.worn = !vm.dim && Item.HasLife() && Item.GetLife() < kWornLife;
+
+    /// The socket mark CIconItem::Draw puts on the icon.
+    if (Item.HasSocket()) {
+        vm.socket = 1;
+        const int iGem = Item.GetGemNO();
+        if (iGem > 300 && iGem <= (int)g_TblGEMITEM.row_count
+            && RoseRmlIcons::Resolve(
+                IMAGE_RES_SOCKETJAM_ICON, GEMITEM_MARK_IMAGE(iGem), vm.gem_src, vm.gem_rect))
+            vm.socket = 2;
+    }
+}
+
+RoseRmlInventory::CellVM
+MakeCell(int iKind, int iIndex, const char* pszLabel) {
+    RoseRmlInventory::CellVM vm;
+    vm.kind = iKind;
+    vm.index = iIndex;
+    vm.label = pszLabel ? pszLabel : "";
+    vm.filled = false;
+    vm.count = 0;
+    vm.cd = 0.0f;
+    vm.dim = false;
+    vm.worn = false;
+    vm.socket = 0;
+    return vm;
+}
+
 Rml::String
 Printf(const char* pszFormat, ...) {
     char szBuf[96];
@@ -79,7 +152,8 @@ RoseRmlInventory::RoseRmlInventory():
     m_pPanel(NULL),
     m_bOpen(false),
     m_bVisible(false),
-    m_iPressSlot(-1),
+    m_iPressKind(KIND_BAG),
+    m_iPressIndex(-1),
     m_iPressX(0),
     m_iPressY(0),
     m_iDropType(DLG_TYPE_ITEM),
@@ -104,7 +178,9 @@ RoseRmlInventory::Initialise(Rml::Context* pContext, const std::string& strAsset
         return false;
 
     if (auto cell = constructor.RegisterStruct<CellVM>()) {
+        cell.RegisterMember("kind", &CellVM::kind);
         cell.RegisterMember("index", &CellVM::index);
+        cell.RegisterMember("label", &CellVM::label);
         cell.RegisterMember("filled", &CellVM::filled);
         cell.RegisterMember("src", &CellVM::src);
         cell.RegisterMember("rect", &CellVM::rect);
@@ -124,6 +200,11 @@ RoseRmlInventory::Initialise(Rml::Context* pContext, const std::string& strAsset
     constructor.Bind("count1", &m_iCount[1]);
     constructor.Bind("count2", &m_iCount[2]);
     constructor.Bind("cells", &m_Cells);
+    constructor.Bind("gear", &m_Gear);
+    constructor.Bind("ammo", &m_Ammo);
+    constructor.Bind("atk", &m_strAtk);
+    constructor.Bind("def", &m_strDef);
+    constructor.Bind("res", &m_strRes);
     constructor.Bind("money", &m_strMoney);
     constructor.Bind("weight", &m_strWeight);
     constructor.Bind("weight_pct", &m_fWeightPct);
@@ -136,28 +217,30 @@ RoseRmlInventory::Initialise(Rml::Context* pContext, const std::string& strAsset
             const int iPage = args[0].Get<int>();
             if (iPage >= 0 && iPage < kBagTabs && iPage != m_iPage) {
                 m_iPage = iPage;
-                m_iPressSlot = -1;
+                m_iPressIndex = -1;
                 m_Model.DirtyVariable("page");
                 Sample();
             }
         });
 
+    /// press(kind, index)
     constructor.BindEventCallback("press",
         [this](Rml::DataModelHandle, Rml::Event& ev, const Rml::VariantList& args) {
-            if (args.empty() || ev.GetParameter<int>("button", 0) != 0)
+            if (args.size() < 2 || ev.GetParameter<int>("button", 0) != 0)
                 return;
             m_iPressX = ev.GetParameter<int>("mouse_x", 0);
             m_iPressY = ev.GetParameter<int>("mouse_y", 0);
-            OnPress(args[0].Get<int>());
+            OnPress(args[0].Get<int>(), args[1].Get<int>());
         });
 
-    /// Double-click: use / equip, as CSlot's WM_LBUTTONDBLCLK.
+    /// use(kind, index) -- double-click: use / equip / unequip, as CSlot's
+    /// WM_LBUTTONDBLCLK.
     constructor.BindEventCallback("use",
         [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
-            if (args.empty())
+            if (args.size() < 2)
                 return;
-            m_iPressSlot = -1;
-            CSlot* pSlot = BagSlot(args[0].Get<int>());
+            m_iPressIndex = -1;
+            CSlot* pSlot = SlotFor(args[0].Get<int>(), args[1].Get<int>());
             if (pSlot && pSlot->GetIcon())
                 pSlot->GetIcon()->ExecuteCommand();
         });
@@ -208,9 +291,30 @@ RoseRmlInventory::CurrentPage() const {
 }
 
 CSlot*
-RoseRmlInventory::BagSlot(int iSlot) const {
+RoseRmlInventory::SlotFor(int iKind, int iIndex) const {
     CItemDlg* pDlg = ItemDlg();
-    return pDlg ? pDlg->GetBagSlot(CurrentPage(), iSlot) : NULL;
+    if (pDlg == NULL)
+        return NULL;
+    switch (iKind) {
+        case KIND_BAG:
+            return pDlg->GetBagSlot(CurrentPage(), iIndex);
+        case KIND_EQUIP:
+            return pDlg->GetEquipSlotCtrl(iIndex);
+        case KIND_AMMO:
+            return pDlg->GetAmmoSlot(iIndex);
+        default:
+            return NULL;
+    }
+}
+
+CDragItem*
+RoseRmlInventory::DragItemFor(int iKind) const {
+    CItemDlg* pDlg = ItemDlg();
+    if (pDlg == NULL)
+        return NULL;
+    /// As CItemDlg wires its slots: the bag drags one way, everything worn
+    /// ( gear, ammo ) the other.
+    return (iKind == KIND_BAG) ? pDlg->GetInvenDragItem() : pDlg->GetEquipDragItem();
 }
 
 bool
@@ -222,7 +326,7 @@ RoseRmlInventory::IsInWorld() const {
 void
 RoseRmlInventory::SetOpen(bool bOpen) {
     m_bOpen = bOpen;
-    m_iPressSlot = -1;
+    m_iPressIndex = -1;
     if (bOpen)
         Sample(); /// no stale grid on the first frame
 }
@@ -233,7 +337,7 @@ RoseRmlInventory::SetVisible(bool bVisible) {
         return;
 
     m_bVisible = bVisible;
-    m_iPressSlot = -1;
+    m_iPressIndex = -1;
     if (bVisible)
         m_pDocument->Show();
     else
@@ -251,23 +355,30 @@ bool
 RoseRmlInventory::BagSlotAt(int x, int y, int& iPage, int& iSlot) const {
     if (!m_bVisible)
         return false;
-    Rml::Element* pEl = FindUp(m_pContext, x, y, "bagslot");
-    if (pEl == NULL)
+    Rml::Element* pEl = FindUp(m_pContext, x, y, "slot-kind");
+    if (pEl == NULL || pEl->GetAttribute<int>("slot-kind", -1) != KIND_BAG)
         return false;
-    iSlot = pEl->GetAttribute<int>("bagslot", -1);
+    iSlot = pEl->GetAttribute<int>("slot-index", -1);
     iPage = CurrentPage();
     return iSlot >= 0 && iSlot < INVENTORY_PAGE_SIZE;
 }
 
 bool
 RoseRmlInventory::EquipAt(int x, int y) const {
-    /// Phase 2: the equipment column.
-    return false;
+    return m_bVisible && FindUp(m_pContext, x, y, "equip-area") != NULL;
 }
 
 int
 RoseRmlInventory::EquipSlotAt(int x, int y) const {
-    return -1;
+    /// Worn gear only ( a gem is socketed into it ); the ammo row and the
+    /// doll's spacer answer -1, as the classic hit test did.
+    if (!m_bVisible)
+        return -1;
+    Rml::Element* pEl = FindUp(m_pContext, x, y, "slot-kind");
+    if (pEl == NULL || pEl->GetAttribute<int>("slot-kind", -1) != KIND_EQUIP)
+        return -1;
+    const int iIdx = pEl->GetAttribute<int>("slot-index", -1);
+    return (iIdx >= 1 && iIdx < MAX_EQUIP_IDX) ? iIdx : -1;
 }
 
 bool
@@ -288,44 +399,54 @@ RoseRmlInventory::Sample() {
     std::vector<CellVM> cells;
     cells.reserve(INVENTORY_PAGE_SIZE);
     for (int i = 0; i < INVENTORY_PAGE_SIZE; ++i) {
-        CellVM vm;
-        vm.index = i;
-        vm.filled = false;
-        vm.count = 0;
-        vm.cd = 0.0f;
-        vm.dim = false;
-        vm.worn = false;
-        vm.socket = 0;
-
-        CSlot* pSlot = pDlg->GetBagSlot(CurrentPage(), i);
-        CIcon* pIcon = pSlot ? pSlot->GetIcon() : NULL;
-        int iModule = 0, iGraphic = 0;
-        if (pIcon && pIcon->IsItemIcon() && pIcon->GetSprite(iModule, iGraphic)
-            && RoseRmlIcons::Resolve(iModule, iGraphic, vm.src, vm.rect)) {
-            CIconItem* pItemIcon = (CIconItem*)pIcon;
-            tagITEM& Item = pItemIcon->GetItem();
-
-            vm.filled = true;
-            vm.count = pIcon->GetStackCount();
-            vm.cd = floorf(pIcon->GetCooldown(NULL) * 100.0f + 0.5f);
-            vm.dim = !pIcon->IsEnable();
-            vm.worn = !vm.dim && Item.HasLife() && Item.GetLife() < kWornLife;
-
-            /// The socket mark CIconItem::Draw puts on the icon.
-            if (Item.HasSocket()) {
-                vm.socket = 1;
-                const int iGem = Item.GetGemNO();
-                if (iGem > 300 && iGem <= (int)g_TblGEMITEM.row_count
-                    && RoseRmlIcons::Resolve(IMAGE_RES_SOCKETJAM_ICON,
-                        GEMITEM_MARK_IMAGE(iGem), vm.gem_src, vm.gem_rect))
-                    vm.socket = 2;
-            }
-        }
+        CellVM vm = MakeCell(KIND_BAG, i, NULL);
+        FillCell(vm, pDlg->GetBagSlot(CurrentPage(), i));
         cells.push_back(vm);
     }
     if (cells != m_Cells) {
         m_Cells.swap(cells);
         m_Model.DirtyVariable("cells");
+    }
+
+    /// --- worn gear and ammo ---------------------------------------------------
+    std::vector<CellVM> gear;
+    for (int i = 0; i < (int)(sizeof(kDoll) / sizeof(kDoll[0])); ++i) {
+        CellVM vm = MakeCell(KIND_EQUIP, kDoll[i], kEquipLabel[kDoll[i]]);
+        if (kDoll[i] != 0)
+            FillCell(vm, pDlg->GetEquipSlotCtrl(kDoll[i]));
+        gear.push_back(vm);
+    }
+    if (gear != m_Gear) {
+        m_Gear.swap(gear);
+        m_Model.DirtyVariable("gear");
+    }
+
+    std::vector<CellVM> ammo;
+    for (int i = 0; i < MAX_SHOT_TYPE; ++i) {
+        CellVM vm = MakeCell(KIND_AMMO, i, kAmmoLabel[i]);
+        FillCell(vm, pDlg->GetAmmoSlot(i));
+        ammo.push_back(vm);
+    }
+    if (ammo != m_Ammo) {
+        m_Ammo.swap(ammo);
+        m_Model.DirtyVariable("ammo");
+    }
+
+    /// --- what the gear adds up to ( the character window's numbers ) --------
+    const Rml::String strAtk = Printf("%d", pAvatar->stats.attack_power);
+    const Rml::String strDef = Printf("%d", pAvatar->Get_DEF());
+    const Rml::String strRes = Printf("%d", pAvatar->Get_RES());
+    if (strAtk != m_strAtk) {
+        m_strAtk = strAtk;
+        m_Model.DirtyVariable("atk");
+    }
+    if (strDef != m_strDef) {
+        m_strDef = strDef;
+        m_Model.DirtyVariable("def");
+    }
+    if (strRes != m_strRes) {
+        m_strRes = strRes;
+        m_Model.DirtyVariable("res");
     }
 
     /// --- tab counts -----------------------------------------------------------
@@ -377,10 +498,10 @@ RoseRmlInventory::Sample() {
 /// Shift links, Ctrl asks for the wishlist; then repair / appraisal take it;
 /// otherwise it may become a drag.
 void
-RoseRmlInventory::OnPress(int iSlot) {
-    m_iPressSlot = -1;
+RoseRmlInventory::OnPress(int iKind, int iIndex) {
+    m_iPressIndex = -1;
 
-    CSlot* pSlot = BagSlot(iSlot);
+    CSlot* pSlot = SlotFor(iKind, iIndex);
     CIcon* pIcon = pSlot ? pSlot->GetIcon() : NULL;
     if (pIcon == NULL || !pIcon->IsItemIcon())
         return;
@@ -403,22 +524,28 @@ RoseRmlInventory::OnPress(int iSlot) {
     if (GetAsyncKeyState(VK_CONTROL) < 0 && pIcon->Process(WM_LBUTTONDOWN, MK_CONTROL, 0))
         return;
 
-    if (CItemDlg* pDlg = ItemDlg()) {
-        if (pDlg->HandleStateClick(pSlot))
-            return;
+    /// Repair / appraisal: CItemDlg listens on the bag and the worn gear, not
+    /// on the ammo slots.
+    if (iKind != KIND_AMMO) {
+        if (CItemDlg* pDlg = ItemDlg()) {
+            if (pDlg->HandleStateClick(pSlot))
+                return;
+        }
     }
 
-    if (pIcon->IsEnable())
-        m_iPressSlot = iSlot;
+    if (pIcon->IsEnable()) {
+        m_iPressKind = iKind;
+        m_iPressIndex = iIndex;
+    }
 }
 
 void
 RoseRmlInventory::UpdateDragStart() {
-    if (m_iPressSlot < 0)
+    if (m_iPressIndex < 0)
         return;
 
     if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) == 0) {
-        m_iPressSlot = -1;
+        m_iPressIndex = -1;
         return;
     }
 
@@ -430,18 +557,18 @@ RoseRmlInventory::UpdateDragStart() {
     if (abs(ptMouse.x - m_iPressX) < iSlopX && abs(ptMouse.y - m_iPressY) < iSlopY)
         return;
 
-    const int iSlot = m_iPressSlot;
-    m_iPressSlot = -1;
+    const int iKind = m_iPressKind;
+    const int iIndex = m_iPressIndex;
+    m_iPressIndex = -1;
 
-    CItemDlg* pDlg = ItemDlg();
-    CSlot* pSlot = BagSlot(iSlot);
+    CSlot* pSlot = SlotFor(iKind, iIndex);
     CIcon* pIcon = pSlot ? pSlot->GetIcon() : NULL;
-    if (pDlg == NULL || pIcon == NULL || pDlg->GetInvenDragItem() == NULL)
+    CDragItem* pDrag = DragItemFor(iKind);
+    if (pIcon == NULL || pDrag == NULL)
         return;
 
     /// CItemDlg's own drag: the clone keeps its slot ( CIconItem::Clone ),
     /// which the rearrange command needs to find where it came from.
-    CDragItem* pDrag = pDlg->GetInvenDragItem();
     pDrag->SetIcon(pIcon);
     CDragNDropMgr::GetInstance().DragStart(pDrag);
 }
@@ -451,18 +578,19 @@ RoseRmlInventory::UpdateTooltip() {
     if (CDragNDropMgr::GetInstance().IsDraging())
         return;
 
-    int iSlot = -1;
+    int iKind = -1, iIndex = -1;
     for (Rml::Element* pEl = m_pContext->GetHoverElement(); pEl != NULL;
          pEl = pEl->GetParentNode()) {
-        if (pEl->HasAttribute("bagslot")) {
-            iSlot = pEl->GetAttribute<int>("bagslot", -1);
+        if (pEl->HasAttribute("slot-kind")) {
+            iKind = pEl->GetAttribute<int>("slot-kind", -1);
+            iIndex = pEl->GetAttribute<int>("slot-index", -1);
             break;
         }
     }
-    if (iSlot < 0)
+    if (iKind < 0 || iIndex < 0)
         return;
 
-    CSlot* pSlot = BagSlot(iSlot);
+    CSlot* pSlot = SlotFor(iKind, iIndex);
     CIcon* pIcon = pSlot ? pSlot->GetIcon() : NULL;
     if (pIcon == NULL)
         return;

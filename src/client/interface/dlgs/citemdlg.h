@@ -58,6 +58,9 @@ public:
 
     /// One bag slot: iPage is INV_WEAPON / INV_USE / INV_ETC / INV_RIDING.
     CSlot* GetBagSlot(int iPage, int iSlot);
+    /// An equipment slot by EQUIP_IDX_* ( 1-based ), an ammo slot by SHOT_TYPE_*.
+    CSlot* GetEquipSlotCtrl(int iEquipIdx);
+    CSlot* GetAmmoSlot(int iShotType);
     /// The drags a bag / an equipped item starts ( every drop target kept ).
     CDragItem* GetInvenDragItem() { return m_pInvenDragItem; }
     CDragItem* GetEquipDragItem() { return m_pEquipDragItem; }

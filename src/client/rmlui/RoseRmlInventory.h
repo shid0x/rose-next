@@ -9,18 +9,20 @@
  * exit, re-applied on entering the world ). This window draws those slots
  * and acts through the same icons, drag items and commands:
  *
- * - a drag starts from CItemDlg's own drag item, so every drop target it
- *   knows ( shops, bank, trade, skill bar, ground ... ) works unchanged;
+ * - a drag starts from CItemDlg's own drag item ( bag or equipment ), so
+ *   every drop target it knows ( shops, bank, trade, skill bar, ground ... )
+ *   works unchanged;
  * - a drop onto this window is DLG_TYPE_ITEM ( drop-target ), and the drop
  *   commands' slot questions ( CItemDlg::GetInvenSlot & co ) are answered
  *   here while UI2 is on;
  * - a click does what CSlot::Process did: Alt previews, Shift links to chat,
- *   Ctrl adds to the wishlist, a double-click uses / equips; repair and
- *   appraisal modes take the click through CItemDlg::HandleStateClick.
+ *   Ctrl adds to the wishlist, a double-click uses / equips / unequips;
+ *   repair and appraisal modes take the click through
+ *   CItemDlg::HandleStateClick.
  *
- * Laid out for widescreen: the equipment ( character / PAT / costume ) on
- * the left, the 6x5 bag on the right, money and weight underneath.
- * Phase 1 is the bag; the equipment column follows.
+ * Laid out for widescreen: the equipment on the left ( worn gear as a paper
+ * doll, the ammo row, a combat summary ), the 6x5 bag on the right, money
+ * and weight underneath. PAT and costume sections follow.
  */
 
 #include <RmlUi/Core/DataModelHandle.h>
@@ -31,6 +33,7 @@
 
 class CItemDlg;
 class CSlot;
+class CDragItem;
 
 namespace Rml {
 class Context;
@@ -63,8 +66,17 @@ public:
     /// Equipping goes to the costume slots.
     bool CostumeOpen() const;
 
+    /// Which classic slots a cell stands for.
+    enum Kind {
+        KIND_BAG = 0, ///< index: slot in the page on screen
+        KIND_EQUIP = 1, ///< index: EQUIP_IDX_* ( 0: a spacer in the doll )
+        KIND_AMMO = 2, ///< index: SHOT_TYPE_*
+    };
+
     struct CellVM {
-        int index; ///< slot in the page
+        int kind;
+        int index;
+        Rml::String label; ///< what goes here, shown while it is empty
         bool filled;
         Rml::String src;
         Rml::String rect;
@@ -77,9 +89,10 @@ public:
         Rml::String gem_rect;
 
         bool operator==(const CellVM& o) const {
-            return index == o.index && filled == o.filled && src == o.src && rect == o.rect
-                && count == o.count && cd == o.cd && dim == o.dim && worn == o.worn
-                && socket == o.socket && gem_src == o.gem_src && gem_rect == o.gem_rect;
+            return kind == o.kind && index == o.index && label == o.label && filled == o.filled
+                && src == o.src && rect == o.rect && count == o.count && cd == o.cd
+                && dim == o.dim && worn == o.worn && socket == o.socket && gem_src == o.gem_src
+                && gem_rect == o.gem_rect;
         }
         bool operator!=(const CellVM& o) const { return !(*this == o); }
     };
@@ -87,12 +100,13 @@ public:
 private:
     CItemDlg* ItemDlg() const;
     int CurrentPage() const; ///< the bag page on screen ( INV_* )
-    CSlot* BagSlot(int iSlot) const; ///< a slot of the page on screen
+    CSlot* SlotFor(int iKind, int iIndex) const;
+    CDragItem* DragItemFor(int iKind) const;
     bool IsInWorld() const;
 
     void SetVisible(bool bVisible);
     void Sample();
-    void OnPress(int iSlot);
+    void OnPress(int iKind, int iIndex);
     void UpdateDragStart();
     void UpdateTooltip();
 
@@ -104,7 +118,8 @@ private:
     bool m_bVisible;
 
     /// A press on a filled cell: a drag once it moves past the slop.
-    int m_iPressSlot;
+    int m_iPressKind;
+    int m_iPressIndex; ///< -1: none
     int m_iPressX;
     int m_iPressY;
 
@@ -112,7 +127,12 @@ private:
     int m_iDropType; ///< DLG_TYPE_ITEM, the window's drop-target
     int m_iPage; ///< bag tab: INV_WEAPON / INV_USE / INV_ETC
     int m_iCount[3]; ///< filled slots per tab
-    std::vector<CellVM> m_Cells;
+    std::vector<CellVM> m_Cells; ///< the bag page on screen
+    std::vector<CellVM> m_Gear; ///< the paper doll, row by row
+    std::vector<CellVM> m_Ammo;
+    Rml::String m_strAtk;
+    Rml::String m_strDef;
+    Rml::String m_strRes;
     Rml::String m_strMoney;
     Rml::String m_strWeight;
     float m_fWeightPct;

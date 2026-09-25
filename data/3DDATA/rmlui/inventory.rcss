@@ -7,11 +7,79 @@
     top: 160dp;
 }
 
-/* Equipment on the left ( phase 2 ), the bag on the right. */
+/* Equipment on the left, the bag on the right. */
 .columns {
     display: flex;
     flex-direction: row;
 }
+
+/* --- what you wear ------------------------------------------------------------ */
+.gearcol {
+    display: flex;
+    flex-direction: column;
+    margin-right: 6dp;
+}
+
+/* Level with the bag's tabs; the PAT / costume sections become tabs here. */
+.colhead {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 20dp;
+    margin-bottom: 4dp;
+    padding-left: 4dp;
+    font-size: 10dp;
+    font-weight: bold;
+    color: #c8c8c8;
+    border-bottom: 1dp #ffffff14;
+}
+
+/* Four cells across: 4 x ( 42 + 2 ) = 176, the content width exactly. */
+.doll {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: 176dp;
+    padding: 3dp 1dp 1dp 3dp;
+}
+.cell.spacer { visibility: hidden; }
+
+/* An empty slot says what goes there. */
+.label {
+    width: 40dp;
+    margin-top: 13dp;
+    text-align: center;
+    font-size: 8dp;
+    color: #707070;
+}
+
+.ammo {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    width: 176dp;
+    margin-top: 4dp;
+    padding: 3dp 1dp 1dp 3dp;
+}
+.ammohead {
+    width: 42dp;
+    margin-right: 2dp;
+    margin-bottom: 2dp;
+    text-align: center;
+    font-size: 10dp;
+}
+
+/* What the gear adds up to. */
+.summary {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    margin-top: 5dp;
+    padding: 0dp 3dp;
+    font-size: 10dp;
+}
+.stat { font-weight: bold; color: #f0f0f0; }
+.stat .ui-muted { font-weight: normal; }
 
 /* --- bag tabs: a segmented row of the theme's buttons ---------------------- */
 .tabs {
@@ -77,8 +145,9 @@
     background-color: #000000b0;
 }
 
-/* Socket: the gem's mark -- an overlay the classic icon drew at its own
-   top-left, so it goes exactly over the item image -- or an empty ring. */
+/* Socket: the gem's mark, or the classic empty-socket overlay ( SOKET.DDS,
+   32x32 ) -- both overlays the classic icon drew at its own top-left, so they
+   go exactly over the item image, at their native size. */
 .gem {
     position: absolute;
     left: 0dp;
@@ -86,13 +155,8 @@
 }
 .socket {
     position: absolute;
-    right: 3dp;
-    top: 3dp;
-    width: 7dp;
-    height: 7dp;
-    border: 1dp #c8c8c8c0;
-    border-radius: 4dp;
-    background-color: #00000080;
+    left: 0dp;
+    top: 0dp;
 }
 
 /* Stack count, top left on a dark tab, where the classic icon drew it: item

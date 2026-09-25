@@ -10,13 +10,18 @@
         UI2 inventory ( RoseRmlInventory ), replacing CItemDlg. Opened and
         closed through IT_MGR like any window ( menu, Alt+I, Escape ).
 
-        The bag: three tabs of 6x5 slots. Drag an item to move it, onto a
-        shop / the bank / a trade / the skill bar, or out to drop it; double-
-        click to use or equip. Alt+click previews, Shift+click links it in
-        chat, Ctrl+click adds it to the wishlist. Click the money to drop some,
-        or to offer it in an open trade.
+        Left: what you wear ( a paper doll, the ammo row, what it adds up to ).
+        Right: the bag, three tabs of 6x5 slots.
 
-        The whole window is a drop target for items ( DLG_TYPE_ITEM ).
+        Drag an item to move it: bag to doll equips ( a gem onto a socketed
+        piece sockets it ), doll to bag unequips; onto a shop / the bank / a
+        trade / the skill bar, or out to drop it. Double-click to use, equip
+        or unequip. Alt+click previews, Shift+click links it in chat,
+        Ctrl+click adds it to the wishlist. Click the money to drop some, or to
+        offer it in an open trade.
+
+        The whole window is a drop target for items ( DLG_TYPE_ITEM ); every
+        cell carries slot-kind / slot-index for the drop commands' questions.
     -->
     <div id="inventory" class="ui-window" data-attr-drop-target="drop_type">
         <handle move_target="inventory" class="ui-titlebar">
@@ -25,6 +30,42 @@
         </handle>
 
         <div class="columns">
+            <!-- What you wear. -->
+            <div class="gearcol">
+                <div class="colhead"><span>Equipment</span></div>
+
+                <div class="doll ui-well" equip-area="1">
+                    <div class="cell ui-icon" data-for="c : gear"
+                         data-attr-slot-kind="c.kind" data-attr-slot-index="c.index"
+                         data-class-spacer="c.index == 0" data-class-empty="!c.filled"
+                         data-class-dim="c.dim" data-class-worn="c.worn"
+                         data-event-mousedown="press(c.kind, c.index)" data-event-dblclick="use(c.kind, c.index)">
+                        <img data-if="c.filled" data-attr-src="c.src" data-attr-rect="c.rect"/>
+                        <span class="label" data-if="!c.filled">{{c.label}}</span>
+                        <div class="gem" data-if="c.socket == 2"><img data-attr-src="c.gem_src" data-attr-rect="c.gem_rect"/></div>
+                        <img class="socket" data-if="c.socket == 1" src="3DData/Control/Res/SOKET.DDS"/>
+                    </div>
+                </div>
+
+                <div class="ammo ui-well" equip-area="1">
+                    <span class="ammohead ui-muted">Ammo</span>
+                    <div class="cell ui-icon" data-for="c : ammo"
+                         data-attr-slot-kind="c.kind" data-attr-slot-index="c.index"
+                         data-class-empty="!c.filled" data-class-dim="c.dim"
+                         data-event-mousedown="press(c.kind, c.index)" data-event-dblclick="use(c.kind, c.index)">
+                        <img data-if="c.filled" data-attr-src="c.src" data-attr-rect="c.rect"/>
+                        <span class="label" data-if="!c.filled">{{c.label}}</span>
+                        <span class="count" data-if="c.count > 0">{{c.count}}</span>
+                    </div>
+                </div>
+
+                <div class="summary">
+                    <span class="stat"><span class="ui-muted">ATK</span> {{atk}}</span>
+                    <span class="stat"><span class="ui-muted">DEF</span> {{def}}</span>
+                    <span class="stat"><span class="ui-muted">M.RES</span> {{res}}</span>
+                </div>
+            </div>
+
             <!-- The bag. -->
             <div class="bagcol">
                 <div class="tabs">
@@ -34,13 +75,14 @@
                 </div>
 
                 <div class="grid ui-well" bag-area="1">
-                    <div class="cell ui-icon" data-for="c : cells" data-attr-bagslot="c.index"
+                    <div class="cell ui-icon" data-for="c : cells"
+                         data-attr-slot-kind="c.kind" data-attr-slot-index="c.index"
                          data-class-empty="!c.filled" data-class-dim="c.dim" data-class-worn="c.worn"
-                         data-event-mousedown="press(c.index)" data-event-dblclick="use(c.index)">
+                         data-event-mousedown="press(c.kind, c.index)" data-event-dblclick="use(c.kind, c.index)">
                         <img data-if="c.filled" data-attr-src="c.src" data-attr-rect="c.rect"/>
                         <div class="cd" data-if="c.cd > 0" data-style-height="c.cd + '%'"></div>
                         <div class="gem" data-if="c.socket == 2"><img data-attr-src="c.gem_src" data-attr-rect="c.gem_rect"/></div>
-                        <div class="socket" data-if="c.socket == 1"></div>
+                        <img class="socket" data-if="c.socket == 1" src="3DData/Control/Res/SOKET.DDS"/>
                         <span class="count" data-if="c.count > 0">{{c.count}}</span>
                     </div>
                 </div>
