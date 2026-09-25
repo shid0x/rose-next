@@ -1562,9 +1562,11 @@ classUSER::Parse_CheatCODE(char* szCode) {
         if (!strcmpi(pToken, "/FULL") && B_Cheater()) {
             if (!strcmpi(pArg1, "HP")) {
                 this->Set_HP(this->Get_MaxHP());
+                this->send_update_hpmp(true, false);
                 nProcMODE = CHEAT_SEND;
             } else if (!strcmpi(pArg1, "MP")) {
                 this->Set_MP(this->Get_MaxMP());
+                this->send_update_hpmp(false, true);
                 nProcMODE = CHEAT_SEND;
             }
         } else if (!strcmpi(pToken, "/SET")) {

@@ -4122,8 +4122,10 @@ CRecvPACKET::Recv_gsv_CHANGE_OBJIDX() {
             tag_PARTY_MEMBER* pMemberInfo = &(m_pRecvPacket->m_gsv_CHANGE_OBJIDX.m_Member);
             if (pMemberInfo) ///파티원일경우
             {
-                pObjAVT->Set_HP(pMemberInfo->m_nHP);
+                // Authoritative HP: Set_HP alone would move only the visible bar, and
+                // the next hit's checkpoint fold would drag it back to the old shadow.
                 pObjAVT->Set_MaxHP(pMemberInfo->m_nMaxHP);
+                pObjAVT->Reconcile_HP(pMemberInfo->m_nHP);
                 pObjAVT->Set_CON(pMemberInfo->m_nCON);
                 pObjAVT->Set_AddRecoverHP(pMemberInfo->m_btRecoverHP);
                 pObjAVT->Set_AddRecoverMP(pMemberInfo->m_btRecoverMP);

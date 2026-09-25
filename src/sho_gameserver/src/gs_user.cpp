@@ -1678,7 +1678,8 @@ bool
 classUSER::Send_gsv_LEVELUP(short nLevelDIFF) {
     this->UpdateAbility(); // levelup
 
-    if (this->Get_HP() > 0) {
+    const bool bRefilled = this->Get_HP() > 0;
+    if (bRefilled) {
         this->Set_HP(this->Get_MaxHP());
         this->Set_MP(this->Get_MaxMP());
     }
@@ -1713,6 +1714,18 @@ classUSER::Send_gsv_LEVELUP(short nLevelDIFF) {
 
     if (this->GetPARTY()) {
         this->m_pPartyBUFF->Member_LevelUP(this->m_nPartyPOS, nLevelDIFF);
+    }
+
+    // The refill is a heal, and it has to be announced like one. The full
+    // GSV_LEVELUP above only makes our own client refill its *visible* bar, and the
+    // header-only copy the sector gets carries no HP at all, so party members kept
+    // the pre-level-up HP indefinitely (regen is synced per tick, but there is
+    // nothing left to regenerate once the bar is full). Our own client was stale
+    // the other way: its authoritative shadow HP never rose, so the next hit's
+    // checkpoint fold dragged the bar back down to the pre-level-up value.
+    // UpdateStats goes to the whole party including us, or to us alone.
+    if (bRefilled) {
+        this->send_update_hpmp();
     }
 
     return true;
@@ -6395,21 +6408,8 @@ classUSER::Recv_cli_APPRAISAL_REQ(t_PACKET* pPacket) {
     if ( pPacket->m_cli_APPRAISAL_REQ.m_wInventoryIndex < MAX_EQUIP_IDX /* || pPacket->m_cli_APPRAISAL_REQ.m_wInventoryIndex >= INVENTORY_RIDE_ITEM0 */ ) {
         // TODO:: PAT아이템은 ??
         // 장착된 장비이므로 능력치 변경됨 이속, 회복속도 변경 되면 주변에 통보 필요
-        if (this->GetPARTY()) {
-            BYTE btCurCON = this->GetCur_CON();
-            BYTE btRecvHP = this->m_btRecoverHP;
-            BYTE btRecvMP = this->m_btRecoverMP;
-
-            this->UpdateAbility(); // appraisal
-
-            // 변경에 의해 옵션이 붙어 회복이 바뀌면 파티원에게 전송.
-            if (btCurCON != this->GetCur_CON() || btRecvHP != this->m_btRecoverHP
-                || btRecvMP != this->m_btRecoverMP) {
-                this->m_pPartyBUFF->Change_ObjectIDX(this);
-            }
-        } else {
-            this->UpdateAbility(); // appraisal
-        }
+        // (UpdateAbility tells the party when CON, recovery or max HP changed.)
+        this->UpdateAbility(); // appraisal
         this->Send_gsv_EQUIP_ITEM(pPacket->m_cli_APPRAISAL_REQ.m_wInventoryIndex, pITEM);
     }
 
@@ -8877,10 +8877,25 @@ classUSER::send_update_move_speed(uint16_t move_speed) {
 
 void
 classUSER::UpdateAbility() {
+    const int iOldMaxHP = this->GetOri_MaxHP();
+    const int iOldCON = this->GetCur_CON();
+    const BYTE btOldRecoverHP = this->m_btRecoverHP;
+    const BYTE btOldRecoverMP = this->m_btRecoverMP;
+
     // Force a sync with client everytime stats are updated
     CObjAVT::UpdateAbility();
     this->send_update_stats_all();
     this->Send_gsv_SPEED_CHANGED();
+
+    // Party members hold their own copy of our max HP, CON and recovery rates, and
+    // only GSV_CHANGE_OBJIDX refreshes it. Before this, only zone entry, revive, a
+    // job change and appraisal sent one, so a level-up, a stat point, a gear swap or
+    // a gem left the party frames measuring our HP against a stale maximum.
+    if (this->GetPARTY()
+        && (iOldMaxHP != this->GetOri_MaxHP() || iOldCON != this->GetCur_CON()
+            || btOldRecoverHP != this->m_btRecoverHP || btOldRecoverMP != this->m_btRecoverMP)) {
+        this->GetPARTY()->Change_ObjectIDX(this);
+    }
 }
 
 int

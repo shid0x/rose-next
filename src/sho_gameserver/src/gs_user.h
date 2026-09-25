@@ -597,10 +597,20 @@ public:
     void Add_AbilityValueNSend(WORD wType, int iValue) {
         this->Add_AbilityValue(wType, iValue);
         this->Send_gsv_SET_ABILITY(GSV_REWARD_ADD_ABILITY, wType, iValue);
+        this->SyncRewardHPnMP(wType);
     }
     bool Set_AbilityValueNSend(WORD wType, int iValue) {
         this->Set_AbilityValue(wType, iValue);
-        return this->Send_gsv_SET_ABILITY(GSV_REWARD_SET_ABILITY, wType, iValue);
+        const bool bSent = this->Send_gsv_SET_ABILITY(GSV_REWARD_SET_ABILITY, wType, iValue);
+        this->SyncRewardHPnMP(wType);
+        return bSent;
+    }
+    // GSV_SET_ABILITY reaches only us, and the client applies an HP/MP reward to its
+    // visible bar alone: confirm the result to ourselves and the party.
+    void SyncRewardHPnMP(WORD wType) {
+        if (AT_HP == wType || AT_MP == wType) {
+            this->send_update_hpmp(AT_HP == wType, AT_MP == wType);
+        }
     }
 
     bool Quest_CHANGE_SPEED() { return this->Send_gsv_SPEED_CHANGED(); }

@@ -54,8 +54,8 @@ CParty::JoinMember(tag_PARTY_MEMBER& memberinfo, const char* pszName) {
 
             pObjAVT->m_EndurancePack.DeleteEnduranceState(memberinfo.m_dwStatusFALG);
             // increase_maxhp = pObjAVT->m_EndurancePack.GetStateValue( ING_INC_MAX_HP );
-            pObjAVT->Set_HP(memberinfo.m_nHP);
             pObjAVT->Set_MaxHP(memberinfo.m_nMaxHP);
+            pObjAVT->Reconcile_HP(memberinfo.m_nHP); // authoritative, see Recv_gsv_CHANGE_OBJIDX
             pObjAVT->Set_CON(memberinfo.m_nCON);
             pObjAVT->Set_AddRecoverHP(memberinfo.m_btRecoverHP);
             pObjAVT->Set_AddRecoverMP(memberinfo.m_btRecoverMP);
@@ -372,19 +372,10 @@ CParty::SetExp(int iExp) {
 //*----------------------------------------------------------------------
 void
 CParty::LevelUp() {
-    g_pAVATAR->Set_MP(g_pAVATAR->Get_MaxMP());
-
-    //	g_pAVATAR->Set_HP( g_pAVATAR->Get_MaxHP() );
-
-    CObjAVT* pObjAVT;
-    std::list<PartyMember>::iterator iter;
-    for (iter = m_Members.begin(); iter != m_Members.end(); ++iter) {
-        pObjAVT =
-            g_pObjMGR->Get_CharAVT(g_pObjMGR->Get_ClientObjectIndex(iter->m_Info.m_wObjectIDX),
-                true);
-        if (pObjAVT)
-            pObjAVT->Set_HP(pObjAVT->Get_MaxHP());
-    }
+    // The HP/MP refill is not guessed here any more. It used to raise only the
+    // visible bars (dead members included), which the next hit's checkpoint fold
+    // dragged back down; the server now sends every refilled member's HP/MP to the
+    // whole party (CParty::LevelUP), ahead of GSV_PARTY_LEVnEXP on the same socket.
 }
 //*-----------------------------------------------------------------------------------//
 /// @breif 파티중일경우 매프레임 Update 하는 Method

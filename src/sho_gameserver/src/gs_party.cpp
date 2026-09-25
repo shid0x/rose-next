@@ -254,6 +254,11 @@ CParty::LevelUP() {
             if (m_pPartyUSERs[nI]->m_pUSER && m_pPartyUSERs[nI]->m_pUSER->Get_HP() > 0) {
                 m_pPartyUSERs[nI]->m_pUSER->Set_HP(m_pPartyUSERs[nI]->m_pUSER->Get_MaxHP());
                 m_pPartyUSERs[nI]->m_pUSER->Set_MP(m_pPartyUSERs[nI]->m_pUSER->Get_MaxMP());
+                // Announce the refill (to the whole party, the member included). The
+                // clients used to guess it from GSV_PARTY_LEVnEXP by raising only the
+                // visible bar, which the next hit's checkpoint fold dragged back down,
+                // and the member's own HP was never raised on its screen at all.
+                m_pPartyUSERs[nI]->m_pUSER->send_update_hpmp();
             }
         }
 #else
