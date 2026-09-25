@@ -35,6 +35,7 @@ const int kReplacedDialogs[] = {
     /// CItemDlg stays the inventory's model ( item events, the per-PC slot
     /// arrangement ) and answers the drop commands through the UI2 window.
     DLG_TYPE_ITEM,
+    DLG_TYPE_QUEST, ///< RoseRmlQuestJournal ( also in kReplacedWindows )
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -44,6 +45,7 @@ const int kReplacedWindows[] = {
     DLG_TYPE_CHAR,
     DLG_TYPE_PARTYOPTION,
     DLG_TYPE_ITEM,
+    DLG_TYPE_QUEST,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).

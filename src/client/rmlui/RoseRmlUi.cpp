@@ -17,6 +17,7 @@
 #include "RoseRmlPartyOptions.h"
 #include "RoseRmlMessageBox.h"
 #include "RoseRmlInventory.h"
+#include "RoseRmlQuestJournal.h"
 #include "RoseRmlSystem.h"
 
 #include <RmlUi/Core.h>
@@ -50,6 +51,7 @@ RoseRmlPartyOptions g_PartyOptions; ///< UI2: replaces CPartyOptionDlg ( a windo
 RoseRmlPartyInvite g_PartyInvite; ///< UI2: replaces the party request message box
 RoseRmlMessageBox g_MessageBox; ///< UI2: questions and notices ( opt-in CMsgBox stand-in )
 RoseRmlInventory g_Inventory; ///< UI2: replaces CItemDlg ( a window, a view over it )
+RoseRmlQuestJournal g_QuestJournal; ///< UI2: replaces CQuestDlg ( a window )
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -274,6 +276,7 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_PartyOptions.SetAnchor(g_PartyFrames.GetPanel());
     g_PartyInvite.Initialise(g_pContext, kAssetDir);
     g_Inventory.Initialise(g_pContext, kAssetDir);
+    g_QuestJournal.Initialise(g_pContext, kAssetDir);
     g_MessageBox.Initialise(g_pContext, kAssetDir);
 
     /// After every document is loaded: the lock walks their <handle>s.
@@ -300,6 +303,7 @@ Shutdown() {
     g_PartyOptions.Shutdown();
     g_PartyInvite.Shutdown();
     g_Inventory.Shutdown();
+    g_QuestJournal.Shutdown();
     g_MessageBox.Shutdown();
     RoseRmlLayout::Shutdown();
     g_pContext = NULL;
@@ -380,6 +384,7 @@ Update() {
     g_PartyOptions.Update();
     g_PartyInvite.Update();
     g_Inventory.Update();
+    g_QuestJournal.Update();
     g_MessageBox.Update();
     g_pContext->Update();
 }
@@ -406,6 +411,9 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_ITEM:
             g_Inventory.SetOpen(bOpen);
             break;
+        case DLG_TYPE_QUEST:
+            g_QuestJournal.SetOpen(bOpen);
+            break;
         default:
             break;
     }
@@ -424,6 +432,8 @@ IsWindowOpen(int iDlgType) {
             return g_PartyOptions.IsOpen();
         case DLG_TYPE_ITEM:
             return g_Inventory.IsOpen();
+        case DLG_TYPE_QUEST:
+            return g_QuestJournal.IsOpen();
         default:
             return false;
     }

@@ -1,0 +1,160 @@
+/* UI2 quest journal -- LAYOUT ONLY ( colours and materials: rose-theme.rcss,
+   plus the few colours that are this window's own states ).
+   Reload in game with /uireload. */
+
+#quests {
+    left: 300dp;
+    top: 140dp;
+    width: 500dp;
+}
+
+.qcount {
+    margin-right: 8dp;
+    font-size: 10dp;
+    font-weight: bold;
+    color: #ff9a5a;
+}
+
+.columns {
+    display: flex;
+    flex-direction: row;
+}
+
+/* --- the list --------------------------------------------------------------- */
+.list {
+    width: 180dp;
+    height: 300dp;
+    margin-right: 6dp;
+    padding: 3dp;
+    overflow-y: auto;
+}
+.empty {
+    padding: 12dp 6dp;
+    font-size: 10dp;
+    line-height: 14dp;
+}
+.bang { font-weight: bold; color: #ffd060; }
+
+.qrow {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    min-height: 26dp;
+    margin-bottom: 2dp;
+    padding: 2dp 4dp;
+    border: 1dp #00000000;
+    border-radius: 3dp;
+    cursor: pointer;
+}
+.qrow:hover { background-color: #ffffff10; }
+.qrow.on {
+    background-color: #d0501a30;
+    border-color: #d0501a90;
+}
+.qicon {
+    width: 22dp;
+    height: 22dp;
+    margin-right: 5dp;
+}
+.qname {
+    flex-grow: 1;
+    font-size: 11dp;
+    color: #e0e0e0;
+}
+.qrow.on .qname { color: #ffffff; font-weight: bold; }
+.qtimed {
+    margin-left: 4dp;
+    font-size: 8dp;
+    color: #ff9a5a;
+}
+
+/* --- the selected quest -------------------------------------------------------- */
+.detail {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+.dname {
+    padding: 2dp 3dp 4dp 3dp;
+    font-size: 13dp;
+    font-weight: bold;
+    color: #f0f0f0;
+    font-effect: shadow(1px 1px #000000c0);
+}
+
+.timer {
+    display: flex;
+    flex-direction: row;
+    padding: 0dp 3dp 4dp 3dp;
+    font-size: 10dp;
+}
+.tval { margin-left: 6dp; font-weight: bold; color: #ffd060; }
+.timer.out .tval { color: #ff6a5a; }
+
+.desc {
+    flex-grow: 1;
+    height: 170dp;
+    padding: 6dp 8dp;
+    overflow-y: auto;
+}
+.dtext {
+    font-size: 11dp;
+    line-height: 16dp;
+    color: #d8d8d8;
+}
+
+/* Quest items: native-size icons pinned top-left, as everywhere in UI2. */
+.itemhead {
+    margin: 6dp 3dp 3dp 3dp;
+    font-size: 10dp;
+}
+.items {
+    display: flex;
+    flex-direction: row;
+    padding-left: 2dp;
+}
+.cell {
+    position: relative;
+    box-sizing: border-box;
+    width: 42dp;
+    height: 42dp;
+    margin-right: 3dp;
+    align-items: flex-start;
+    justify-content: flex-start;
+}
+.cell.empty { background-color: #00000050; }
+.count {
+    position: absolute;
+    left: 1dp;
+    top: 1dp;
+    padding: 0dp 2dp;
+    line-height: 12dp;
+    font-size: 10dp;
+    font-weight: bold;
+    color: #ffffff;
+    border-radius: 2dp;
+    background-color: #00000080;
+    font-effect: outline(1px #000000c0);
+}
+
+/* --- abandon ------------------------------------------------------------------- */
+.footer {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-top: 6dp;
+}
+.hint {
+    flex-grow: 1;
+    font-size: 9dp;
+}
+.abandon { margin-left: auto; }
+.abandon:hover { background-color: #7a1010ff; border-color: #c03020ff; }
+/* Refused while an NPC dialog is open: greyed, and no hover. */
+.abandon.off,
+.abandon.off:hover {
+    color: #6a6a6a;
+    background-color: #2a2a2aff;
+    border-color: #3a3a3aff;
+    cursor: default;
+}

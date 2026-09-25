@@ -1,0 +1,69 @@
+<rml>
+<head>
+    <title>Quests</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="quests.rcss"/>
+</head>
+<body data-model="quests">
+    <!--
+        UI2 quest journal ( RoseRmlQuestJournal ), replacing CQuestDlg. Opened
+        and closed through IT_MGR like any window ( menu, hotkey, Escape ).
+
+        The quests you carry on the left; the selected one on the right: its
+        description, the countdown of a timed quest, the quest items it holds
+        ( hover one for its name and description ) and Abandon, which asks
+        first and is refused while an NPC dialog is open.
+    -->
+    <div id="quests" class="ui-window">
+        <handle move_target="quests" class="ui-titlebar">
+            <span class="ui-title">Quests</span>
+            <span class="qcount"><span class="ui-muted">Active</span> {{count}} / {{max}}</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <div class="columns">
+            <!-- The quests you carry. -->
+            <div class="list ui-well">
+                <div class="empty ui-muted" data-if="quests.size == 0">No active quests. An NPC with a <span class="bang">!</span> over their head has one for you.</div>
+                <div class="qrow ui-click" data-for="q : quests" data-class-on="q.selected"
+                     data-event-click="select(q.slot)">
+                    <div class="qicon">
+                        <img data-if="q.has_icon" data-attr-src="q.src" data-attr-rect="q.rect"/>
+                    </div>
+                    <span class="qname">{{q.name}}</span>
+                    <span class="qtimed" data-if="q.timed">Timed</span>
+                </div>
+            </div>
+
+            <!-- The selected quest. -->
+            <div class="detail">
+                <div class="dname" data-if="has_sel">{{name}}</div>
+                <div class="timer" data-if="timed" data-class-out="timed_out">
+                    <span class="ui-muted">Time left</span>
+                    <span class="tval">{{ timed_out ? 'Timed out' : timer }}</span>
+                </div>
+
+                <div class="desc ui-well">
+                    <div class="dtext" data-if="has_sel">{{desc}}</div>
+                </div>
+
+                <div class="itemhead ui-muted" data-if="has_items">Quest items</div>
+                <div class="items" data-if="has_items">
+                    <div class="cell ui-icon" data-for="i : items" data-attr-qitem="i.index"
+                         data-class-empty="!i.filled">
+                        <img data-if="i.filled" data-attr-src="i.src" data-attr-rect="i.rect"/>
+                        <span class="count" data-if="i.count > 0">{{i.count}}</span>
+                    </div>
+                </div>
+
+                <div class="footer" data-if="has_sel">
+                    <span class="hint ui-muted" data-if="!can_abandon">Close the NPC dialog to abandon a quest.</span>
+                    <span class="ui-btn abandon" data-class-off="!can_abandon" data-class-ui-static="!can_abandon"
+                          data-event-click="abandon()">Abandon</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</rml>

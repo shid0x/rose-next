@@ -342,6 +342,12 @@ inline parent and painted the whole skill list gold — while bars that were dir
 flex container worked, because flex blockifies its items. That pattern read as three different
 traps across three panels; it was always this one.
 
+**Quest journal** (2026-09-25, `RoseRmlQuestJournal`, `DLG_TYPE_QUEST`): reads `m_Quests`
+every frame (none of `CQuestDlg`'s refresh calls needed); Abandon goes through the UI2 message box
+and is refused while an NPC dialog is open. **Game text is in the ANSI code page and RmlUi reads
+UTF-8** -- `RoseRmlText::FromGame` converts (ASCII passes through); the older panels do not use it
+yet, which is harmless until a string carries a non-ASCII character.
+
 **UI2 sounds** come from the classic XML: a UI2 window plays its replaced dialog's `SHOWSID` /
 `HIDESID` (`RoseUi2::PlayWindowSound`), and a context-wide listener plays the classic `CLICKSID`
 (8) for any `.ui-btn` or `.ui-click` (`.ui-static` opts out). `CTDialog::Hide` always plays its
