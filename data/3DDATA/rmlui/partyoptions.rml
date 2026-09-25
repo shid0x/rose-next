@@ -1,0 +1,46 @@
+<rml>
+<head>
+    <title>Party Options</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="partyoptions.rcss"/>
+</head>
+<body data-model="partyoptions">
+    <!--
+        UI2 party options ( RoseRmlPartyOptions ), replacing CPartyOptionDlg.
+        Opened from the party frames' Options button, beside them.
+
+        A choice applies as it is clicked ( no OK button ). The party's rules
+        are the leader's to change; everyone sees them. The HP gauge is your
+        own setting.
+    -->
+    <div id="partyoptions" class="ui-window">
+        <handle move_target="partyoptions" class="ui-titlebar">
+            <span class="ui-title">Party Options</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <div class="section">EXP sharing</div>
+        <div class="choice" data-class-locked="!leader">
+            <span class="ui-btn opt" data-class-on="!exp_by_level" data-event-click="set_exp(false)">Equal share</span>
+            <span class="ui-btn opt" data-class-on="exp_by_level" data-event-click="set_exp(true)">By level</span>
+        </div>
+        <div class="desc ui-muted">{{ exp_by_level ? 'Higher-level members take a bigger share.' : 'Every member gets the same share.' }}</div>
+
+        <div class="section">Loot</div>
+        <div class="choice" data-class-locked="!leader">
+            <span class="ui-btn opt" data-class-on="!loot_in_turn" data-event-click="set_loot(false)">Finders keepers</span>
+            <span class="ui-btn opt" data-class-on="loot_in_turn" data-event-click="set_loot(true)">Take turns</span>
+        </div>
+        <div class="desc ui-muted">{{ loot_in_turn ? 'Items go to each member in turn, whoever picks them up.' : 'Whoever picks an item up keeps it.' }}</div>
+
+        <div class="note" data-if="!leader">Only the party leader can change these.</div>
+
+        <div class="section">Display</div>
+        <div class="toggle" data-event-click="toggle_hp()">
+            <span class="box" data-class-on="hp_gauge"></span>
+            <span>Show members' HP over their heads</span>
+        </div>
+    </div>
+</body>
+</rml>

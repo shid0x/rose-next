@@ -38,6 +38,9 @@ public:
 
     void Update();
 
+    /// The frames' window, for panels that open beside it.
+    Rml::Element* GetPanel() const { return m_pPanel; }
+
     struct MemberVM {
         int tag; ///< user tag: stable across zones ( the server index is not )
         Rml::String name;

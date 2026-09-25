@@ -311,7 +311,13 @@ positioned descendants.
 Stats and Union tabs under a shared identity/EXP/stamina header; the Union tab the classic XML
 hid is back. Stat hover text is shared with the classic window (`interface/StatDescriptions.*`).
 The party frames (`RoseRmlPartyFrames`, `DLG_TYPE_PARTY`) followed: one card per other member,
-Lead/Kick for the leader; the hidden `CPartyDlg` still writes the party chat lines.
+Lead/Kick for the leader; the hidden `CPartyDlg` still writes the party chat lines. Then the rest
+of the party set: options (`RoseRmlPartyOptions`, `DLG_TYPE_PARTYOPTION`, applies on click, rules
+leader-only), the invitation prompt (`RoseRmlPartyInvite`, routed in `Recv_gsv_PARTY_REQ`,
+auto-declines after 30 s) and **`RoseRmlMessageBox`** — the UI2 stand-in for `CMsgBox`, *opt-in per
+call site*: `RoseRmlUi::ConfirmBox` / `NoticeBox` return false when UI2 cannot show the box and
+the caller falls back to `IT_MGR::OpenMsgBox`; commands run through `AddTCommand(0, …)` exactly as
+`CMsgBox` runs them.
 
 **RmlUi has no default stylesheet: a `div` is `display: inline` unless told otherwise**, and an
 inline box ignores width and height. `rose-theme.rcss` now declares `div { display: block; }`

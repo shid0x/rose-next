@@ -1,0 +1,44 @@
+/* UI2 party invitation -- LAYOUT ONLY ( colours and materials: rose-theme.rcss ).
+   Reload in game with /uireload. */
+
+/* Default spot: upper middle of the screen, where an answer is expected. */
+#partyinvite {
+    left: 42%;
+    top: 22%;
+    width: 260dp;
+}
+
+.secs {
+    margin-right: 4dp;
+    font-size: 10dp;
+}
+
+.msg {
+    padding: 6dp 6dp 8dp 6dp;
+    line-height: 16dp;
+}
+.who {
+    font-weight: bold;
+    color: #ff9a5a;
+}
+
+/* The countdown: drains to nothing, then the invitation is declined. */
+.timer {
+    height: 4dp;
+    margin: 0dp 4dp 8dp 4dp;
+}
+
+.buttons {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    margin-bottom: 2dp;
+}
+.answer {
+    box-sizing: border-box;
+    width: 100dp;
+    height: 22dp;
+    padding-left: 0dp;
+    padding-right: 0dp;
+}
+.answer + .answer { margin-left: 8dp; }

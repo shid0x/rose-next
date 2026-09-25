@@ -12,6 +12,8 @@
 
 #include <windows.h>
 
+class CTCommand;
+
 namespace RoseRmlUi {
 
 /// Whether the spike is switched on for this run. Cheap; safe to call per frame.
@@ -79,6 +81,24 @@ bool IsWindowOpen(int iDlgType);
 void SetSkillBarVertical(bool bVertical);
 bool IsSkillBarVertical();
 bool IsDamageMeterVisible();
+
+/// A party request arrived ( Recv_gsv_PARTY_REQ ): show it as the UI2 prompt.
+/// False when UI2 cannot, and the caller opens the legacy message box.
+bool ShowPartyInvite(unsigned short wFromObjSvrIdx, const char* pszFrom, bool bMake);
+/// A UI2 party invitation is waiting for an answer ( new requests are BUSY ).
+bool IsPartyInvitePending();
+
+/// UI2 message box ( RoseRmlMessageBox ). A question with named answers, each
+/// running its legacy CTCommand; ownership passes only on true. False when
+/// UI2 cannot show it: open the legacy IT_MGR::OpenMsgBox instead.
+bool ConfirmBox(const char* pszTitle,
+    const char* pszText,
+    const char* pszOk,
+    const char* pszCancel,
+    CTCommand* pOk,
+    CTCommand* pCancel);
+/// A notice that closes itself.
+bool NoticeBox(const char* pszTitle, const char* pszText);
 
 } // namespace RoseRmlUi
 

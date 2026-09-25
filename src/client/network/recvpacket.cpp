@@ -28,6 +28,7 @@
 #include "../GameProc/CDayNNightProc.h"
 
 #include "../Interface/TypeResource.h"
+#include "../rmlui/RoseRmlUi.h"
 #include "../Interface/CHelpMgr.h"
 #include "../Interface/CUIMediator.h"
 #include "../Interface/ExternalUI/CExternalUI.h"
@@ -3867,9 +3868,12 @@ CRecvPACKET::Recv_gsv_PARTY_REQ() {
         case PARTY_REQ_JOIN: ///파티장이 파티에 들어올것을 요청했다.
         {
             if (!Party.IsValidJoinParty() || g_itMGR.IsOpenedMsgBox(CMsgBox::MSGTYPE_RECV_PARTY_REQ)
-                || !g_ClientStorage.IsApproveParty())
+                || RoseRmlUi::IsPartyInvitePending() || !g_ClientStorage.IsApproveParty())
                 g_pNet->Send_cli_PARTY_REPLY(PARTY_REPLY_BUSY, wObjSvrIdx);
             else {
+                /// UI2 shows its own prompt; the message box is the classic one.
+                if (pObjChar && RoseRmlUi::ShowPartyInvite(wObjSvrIdx, pObjChar->Get_NAME(), false))
+                    break;
                 if (pObjChar) {
 
                     sprintf(g_MsgBuf, FORMAT_STR_PARTY_INVITE, pObjChar->Get_NAME());
@@ -3890,9 +3894,11 @@ CRecvPACKET::Recv_gsv_PARTY_REQ() {
         case PARTY_REQ_MAKE: ///파티중이 아닌 다른 아바타가 파티 결성을 요청했다.
         {
             if (!Party.IsValidJoinParty() || g_itMGR.IsOpenedMsgBox(CMsgBox::MSGTYPE_RECV_PARTY_REQ)
-                || !g_ClientStorage.IsApproveParty())
+                || RoseRmlUi::IsPartyInvitePending() || !g_ClientStorage.IsApproveParty())
                 g_pNet->Send_cli_PARTY_REPLY(PARTY_REPLY_BUSY, wObjSvrIdx);
             else {
+                if (pObjChar && RoseRmlUi::ShowPartyInvite(wObjSvrIdx, pObjChar->Get_NAME(), true))
+                    break;
                 if (pObjChar) {
 
                     sprintf(g_MsgBuf, FORMAT_STR_PARTY_MAKE_REQ, pObjChar->Get_NAME());
@@ -3972,7 +3978,8 @@ CRecvPACKET::Recv_gsv_PARTY_REPLY() {
             break;
         }
         case PAATY_REPLY_NO_CHARGE_TARGET: {
-            g_itMGR.OpenMsgBox(STR_JP_BILL_CANT_INVITED_PARTY);
+            if (!RoseRmlUi::NoticeBox("Party", STR_JP_BILL_CANT_INVITED_PARTY))
+                g_itMGR.OpenMsgBox(STR_JP_BILL_CANT_INVITED_PARTY);
         } break;
 
         case PARTY_REPLY_ACCEPT_MAKE: ///자신이 파티결성을 요청해서 상대방이 응답했을경우
@@ -3995,7 +4002,11 @@ CRecvPACKET::Recv_gsv_PARTY_REPLY() {
             if (pObjChar) {
 
                 sprintf(g_MsgBuf, FORMAT_STR_PARTY_REJECT_INVITE, pObjChar->Get_NAME());
-                g_itMGR.OpenMsgBox(g_MsgBuf, CMsgBox::BT_OK, false);
+                /// UI2: a notice that closes itself, and the line kept in chat.
+                if (RoseRmlUi::NoticeBox("Party", g_MsgBuf))
+                    g_itMGR.AppendChatMsg(g_MsgBuf, IT_MGR::CHAT_TYPE_SYSTEM);
+                else
+                    g_itMGR.OpenMsgBox(g_MsgBuf, CMsgBox::BT_OK, false);
             }
             break;
         }

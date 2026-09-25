@@ -1,0 +1,35 @@
+/* UI2 message box -- LAYOUT ONLY ( colours and materials: rose-theme.rcss ).
+   Reload in game with /uireload. */
+
+/* Default spot: upper middle of the screen, where an answer is expected. */
+#msgbox {
+    left: 42%;
+    top: 30%;
+    width: 260dp;
+}
+
+.text {
+    padding: 6dp 6dp 8dp 6dp;
+    line-height: 16dp;
+}
+
+/* A notice's countdown: drains to nothing, then the box closes. */
+.timer {
+    height: 4dp;
+    margin: 0dp 4dp 8dp 4dp;
+}
+
+.buttons {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    margin-bottom: 2dp;
+}
+.answer {
+    box-sizing: border-box;
+    width: 100dp;
+    height: 22dp;
+    padding-left: 0dp;
+    padding-right: 0dp;
+}
+.answer + .answer { margin-left: 8dp; }

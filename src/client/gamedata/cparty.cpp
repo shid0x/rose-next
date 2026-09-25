@@ -7,6 +7,7 @@
 #include "../interface/Command/CTCmdHotExec.h"
 #include "calculation.h"
 #include "../Network/CNetwork.h"
+#include "../rmlui/RoseRmlUi.h"
 //*-------------------------------------------------------------------------------------
 /// 문제 - 존서버별로 Object Server Index가 겹치는 경우
 /// 1. UserTag로 Object Server Index를 바꾸었을경우, 다른 Zone Server에 있는 아바타들끼리의 index가
@@ -444,6 +445,9 @@ CParty::IsValidJoinParty() {
         return false;
 
     if (g_itMGR.FindMsgBox(CMsgBox::MSGTYPE_RECV_PARTY_REQ))
+        return false;
+
+    if (RoseRmlUi::IsPartyInvitePending()) ///< UI2's prompt for the same request
         return false;
 
     return true;

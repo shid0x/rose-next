@@ -2,6 +2,7 @@
 
 #include "RoseRmlPartyFrames.h"
 #include "RoseRmlLayout.h"
+#include "RoseRmlUi.h"
 #include "RoseUi2.h"
 
 #include <RmlUi/Core/Context.h>
@@ -150,8 +151,12 @@ RoseRmlPartyFrames::Initialise(Rml::Context* pContext, const std::string& strAss
                 return;
             CTCmdSendPacketPartyReq* pCmd =
                 new CTCmdSendPacketPartyReq(PARTY_REQ_CHANGE_OWNER, member.m_Info.m_wObjectIDX);
-            sprintf(g_MsgBuf, FORMAT_STR_PARTY_QUERY_ENTRUST, member.m_strName.c_str());
-            g_itMGR.OpenMsgBox(g_MsgBuf, CMsgBox::BT_OK | CMsgBox::BT_CANCEL, true, 0, pCmd, NULL);
+            const std::string strText =
+                "Make " + member.m_strName + " the party leader? You will lose Lead and Kick.";
+            if (!RoseRmlUi::ConfirmBox("Hand over the lead", strText.c_str(), "Hand over", "Cancel", pCmd, NULL)) {
+                sprintf(g_MsgBuf, FORMAT_STR_PARTY_QUERY_ENTRUST, member.m_strName.c_str());
+                g_itMGR.OpenMsgBox(g_MsgBuf, CMsgBox::BT_OK | CMsgBox::BT_CANCEL, true, 0, pCmd, NULL);
+            }
         });
 
     /// Remove a member: CPartyDlg's Ban, with its confirmation.
@@ -165,23 +170,21 @@ RoseRmlPartyFrames::Initialise(Rml::Context* pContext, const std::string& strAss
                 return;
             CTCmdSendPacketPartyReq* pCmd =
                 new CTCmdSendPacketPartyReq(PARTY_REQ_BAN, member.m_Info.m_dwUserTAG);
-            sprintf(g_MsgBuf, FORMAT_STR_PARTY_QUERY_BAN, member.m_strName.c_str());
-            g_itMGR.OpenMsgBox(g_MsgBuf, CMsgBox::BT_OK | CMsgBox::BT_CANCEL, true, 0, pCmd, NULL);
+            const std::string strText = "Remove " + member.m_strName + " from the party?";
+            if (!RoseRmlUi::ConfirmBox("Kick", strText.c_str(), "Kick", "Cancel", pCmd, NULL)) {
+                sprintf(g_MsgBuf, FORMAT_STR_PARTY_QUERY_BAN, member.m_strName.c_str());
+                g_itMGR.OpenMsgBox(g_MsgBuf, CMsgBox::BT_OK | CMsgBox::BT_CANCEL, true, 0, pCmd, NULL);
+            }
         });
 
-    /// The legacy party options dialog ( item / EXP sharing ), placed beside
-    /// the frames as CPartyDlg placed it beside itself.
+    /// Party options ( EXP / loot sharing ): a toggle, routed through IT_MGR
+    /// to the UI2 window, which opens beside these frames.
     constructor.BindEventCallback("options",
-        [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
-            if (CTDialog* pDlg = g_itMGR.FindDlg(DLG_TYPE_PARTYOPTION)) {
-                const Rml::Vector2f pos = m_pPanel->GetAbsoluteOffset(Rml::BoxArea::Border);
-                const Rml::Vector2f size = m_pPanel->GetBox().GetSize(Rml::BoxArea::Border);
-                POINT pt = {(int)(pos.x + size.x) + 4, (int)pos.y};
-                if (pt.x + pDlg->GetWidth() > g_pCApp->GetWIDTH())
-                    pt.x = (int)pos.x - pDlg->GetWidth() - 4;
-                pDlg->MoveWindow(pt);
-            }
-            g_itMGR.OpenDialog(DLG_TYPE_PARTYOPTION);
+        [](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
+            if (g_itMGR.IsDlgOpened(DLG_TYPE_PARTYOPTION))
+                g_itMGR.CloseDialog(DLG_TYPE_PARTYOPTION);
+            else
+                g_itMGR.OpenDialog(DLG_TYPE_PARTYOPTION);
         });
 
     /// Leave: CPartyDlg's Leave, confirmation and all.
@@ -191,12 +194,18 @@ RoseRmlPartyFrames::Initialise(Rml::Context* pContext, const std::string& strAss
             pMacroCmd->AddSubCommand(new CTCmdSendPacketPartyReq(PARTY_REQ_LEFT,
                 g_pObjMGR->Get_ServerObjectIndex(g_pAVATAR->Get_INDEX())));
             pMacroCmd->AddSubCommand(new CTCmdLeaveParty);
-            g_itMGR.OpenMsgBox(STR_PARTY_QUERY_LEAVE,
-                CMsgBox::BT_OK | CMsgBox::BT_CANCEL,
-                true,
-                0,
-                pMacroCmd,
-                NULL);
+            if (!RoseRmlUi::ConfirmBox("Leave party",
+                    "Are you sure you want to leave the party?",
+                    "Leave",
+                    "Stay",
+                    pMacroCmd,
+                    NULL))
+                g_itMGR.OpenMsgBox(STR_PARTY_QUERY_LEAVE,
+                    CMsgBox::BT_OK | CMsgBox::BT_CANCEL,
+                    true,
+                    0,
+                    pMacroCmd,
+                    NULL);
         });
 
     m_Model = constructor.GetModelHandle();

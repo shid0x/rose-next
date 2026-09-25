@@ -1,0 +1,29 @@
+<rml>
+<head>
+    <title>Message</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="msgbox.rcss"/>
+</head>
+<body data-model="msgbox">
+    <!--
+        UI2 message box ( RoseRmlMessageBox ): a question with two named
+        answers, or a notice that closes itself when its bar runs out. Drag the
+        title bar to move it; the spot is saved.
+    -->
+    <div id="msgbox" class="ui-window">
+        <handle move_target="msgbox" class="ui-titlebar">
+            <span class="ui-title">{{title}}</span>
+        </handle>
+
+        <div class="text">{{text}}</div>
+
+        <div class="timer ui-gauge" data-if="notice"><div class="ui-gauge-fill steel" data-style-width="time_left + '%'"></div></div>
+
+        <div class="buttons">
+            <span class="ui-btn on answer" data-event-click="answer(true)">{{ok}}</span>
+            <span class="ui-btn answer" data-if="!notice" data-event-click="answer(false)">{{cancel}}</span>
+        </div>
+    </div>
+</body>
+</rml>

@@ -1,0 +1,75 @@
+/* UI2 party options -- LAYOUT ONLY ( colours and materials: rose-theme.rcss,
+   plus the few colours that are this window's own states ).
+   Reload in game with /uireload. Opens beside the party frames. */
+
+#partyoptions {
+    left: 240dp;
+    top: 190dp;
+    width: 250dp;
+}
+
+.section {
+    margin: 6dp 3dp 3dp 3dp;
+    font-size: 10dp;
+    font-weight: bold;
+    color: #c8c8c8;
+}
+
+/* Two choices side by side, the current one lit. Outer sizes ( border-box ),
+   so the pair spans the window exactly. */
+.choice {
+    display: flex;
+    flex-direction: row;
+    margin-left: 3dp;
+    margin-right: 3dp;
+}
+.opt {
+    box-sizing: border-box;
+    flex: 1;
+    height: 22dp;
+    padding-left: 0dp;
+    padding-right: 0dp;
+    font-size: 10dp;
+}
+.opt + .opt { margin-left: 4dp; }
+
+/* Not the leader: the choices show the rule but do not take clicks. */
+.choice.locked .opt { cursor: default; }
+.choice.locked .opt:hover { color: #e6e6e6; background-color: #3a3a3aff; border-color: #565656ff; }
+.choice.locked .opt.on:hover { color: #ffffff; background-color: #7a2206ff; border-color: #c04818ff; }
+
+.desc {
+    margin: 3dp 4dp 0dp 4dp;
+    font-size: 9dp;
+}
+
+.note {
+    margin: 8dp 4dp 0dp 4dp;
+    font-size: 9dp;
+    color: #ff9a5a;
+}
+
+/* A checkbox row: the whole row toggles; the box fills ember when on. */
+.toggle {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin: 0dp 3dp 3dp 3dp;
+    padding: 3dp;
+    border-radius: 3dp;
+    cursor: pointer;
+}
+.toggle:hover { background-color: #ffffff10; }
+.box {
+    width: 14dp;
+    height: 14dp;
+    margin-right: 7dp;
+    border: 1dp #565656ff;
+    border-radius: 2dp;
+    background-color: #1a1a1aff;
+}
+.box.on {
+    border-color: #d0501aff;
+    background-color: #922500ff;
+    decorator: ui-gloss;
+}

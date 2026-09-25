@@ -13,6 +13,9 @@
 #include "RoseRmlSkillWindow.h"
 #include "RoseRmlCharacterWindow.h"
 #include "RoseRmlPartyFrames.h"
+#include "RoseRmlPartyInvite.h"
+#include "RoseRmlPartyOptions.h"
+#include "RoseRmlMessageBox.h"
 #include "RoseRmlSystem.h"
 
 #include <RmlUi/Core.h>
@@ -41,6 +44,9 @@ RoseRmlSkillBar g_SkillBar; ///< UI2: replaces the two CQuickBARs ( as their vie
 RoseRmlSkillWindow g_SkillWindow; ///< UI2: replaces CSkillDLG ( a window )
 RoseRmlCharacterWindow g_CharacterWindow; ///< UI2: replaces CCharacterDLG ( a window )
 RoseRmlPartyFrames g_PartyFrames; ///< UI2: replaces CPartyDlg
+RoseRmlPartyOptions g_PartyOptions; ///< UI2: replaces CPartyOptionDlg ( a window )
+RoseRmlPartyInvite g_PartyInvite; ///< UI2: replaces the party request message box
+RoseRmlMessageBox g_MessageBox; ///< UI2: questions and notices ( opt-in CMsgBox stand-in )
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -234,6 +240,10 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_SkillWindow.Initialise(g_pContext, kAssetDir);
     g_CharacterWindow.Initialise(g_pContext, kAssetDir);
     g_PartyFrames.Initialise(g_pContext, kAssetDir);
+    g_PartyOptions.Initialise(g_pContext, kAssetDir);
+    g_PartyOptions.SetAnchor(g_PartyFrames.GetPanel());
+    g_PartyInvite.Initialise(g_pContext, kAssetDir);
+    g_MessageBox.Initialise(g_pContext, kAssetDir);
 
     /// After every document is loaded: the lock walks their <handle>s.
     RoseRmlLayout::Initialise(g_pContext);
@@ -256,6 +266,9 @@ Shutdown() {
     g_SkillWindow.Shutdown();
     g_CharacterWindow.Shutdown();
     g_PartyFrames.Shutdown();
+    g_PartyOptions.Shutdown();
+    g_PartyInvite.Shutdown();
+    g_MessageBox.Shutdown();
     RoseRmlLayout::Shutdown();
     g_pContext = NULL;
 
@@ -332,6 +345,9 @@ Update() {
     g_SkillWindow.Update();
     g_CharacterWindow.Update();
     g_PartyFrames.Update();
+    g_PartyOptions.Update();
+    g_PartyInvite.Update();
+    g_MessageBox.Update();
     g_pContext->Update();
 }
 
@@ -351,6 +367,9 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_CHAR:
             g_CharacterWindow.SetOpen(bOpen);
             break;
+        case DLG_TYPE_PARTYOPTION:
+            g_PartyOptions.SetOpen(bOpen);
+            break;
         default:
             break;
     }
@@ -365,9 +384,36 @@ IsWindowOpen(int iDlgType) {
             return g_SkillWindow.IsOpen();
         case DLG_TYPE_CHAR:
             return g_CharacterWindow.IsOpen();
+        case DLG_TYPE_PARTYOPTION:
+            return g_PartyOptions.IsOpen();
         default:
             return false;
     }
+}
+
+bool
+ShowPartyInvite(unsigned short wFromObjSvrIdx, const char* pszFrom, bool bMake) {
+    return g_bInitialised && g_PartyInvite.Show(wFromObjSvrIdx, pszFrom, bMake);
+}
+
+bool
+IsPartyInvitePending() {
+    return g_bInitialised && g_PartyInvite.IsPending();
+}
+
+bool
+ConfirmBox(const char* pszTitle,
+    const char* pszText,
+    const char* pszOk,
+    const char* pszCancel,
+    CTCommand* pOk,
+    CTCommand* pCancel) {
+    return g_bInitialised && g_MessageBox.Confirm(pszTitle, pszText, pszOk, pszCancel, pOk, pCancel);
+}
+
+bool
+NoticeBox(const char* pszTitle, const char* pszText) {
+    return g_bInitialised && g_MessageBox.Notice(pszTitle, pszText);
 }
 
 void

@@ -48,6 +48,10 @@ public:
     /// moved to the front here -- CPartyDlg does that in its own list ).
     const std::list<PartyMember>& GetMembers() const { return m_Members; }
 
+    /// BIT_PARTY_RULE_* : EXP by level, items in turn. Set optimistically by
+    /// SendChangePartyRule, then by the server's answer ( RecvPartyRule ).
+    BYTE GetPartyRule() const { return m_btPartyRule; }
+
     bool GetMemberInfoByObjSvrIdx(WORD wObjSvrIdx, PartyMember& member);
     bool GetMemberInfoByTag(DWORD dwObjectTag, PartyMember& member);
 

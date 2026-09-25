@@ -1,0 +1,35 @@
+<rml>
+<head>
+    <title>Party Invite</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="partyinvite.rcss"/>
+</head>
+<body data-model="partyinvite">
+    <!--
+        UI2 party invitation ( RoseRmlPartyInvite ), replacing the message box.
+        Who is asking and what, Accept / Decline, and a countdown: unanswered,
+        the invitation is declined when the bar runs out. Drag the title bar to
+        move it; the spot is saved.
+    -->
+    <div id="partyinvite" class="ui-window">
+        <handle move_target="partyinvite" class="ui-titlebar">
+            <span class="ui-title">Party invitation</span>
+            <span class="secs ui-muted">{{seconds}}s</span>
+        </handle>
+
+        <div class="msg">
+            <span class="who">{{from}}</span>
+            <span data-if="make"> wants to form a party with you.</span>
+            <span data-if="!make"> invites you to join their party.</span>
+        </div>
+
+        <div class="timer ui-gauge"><div class="ui-gauge-fill steel" data-style-width="time_left + '%'"></div></div>
+
+        <div class="buttons">
+            <span class="ui-btn on answer" data-event-click="accept()">Accept</span>
+            <span class="ui-btn answer" data-event-click="decline()">Decline</span>
+        </div>
+    </div>
+</body>
+</rml>

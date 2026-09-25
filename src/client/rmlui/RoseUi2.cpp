@@ -27,6 +27,9 @@ const int kReplacedDialogs[] = {
     /// RoseRmlPartyFrames. Hidden, NOT gone: CPartyDlg is CParty's observer
     /// and still writes the join / leave / leader chat lines.
     DLG_TYPE_PARTY,
+    /// RoseRmlPartyOptions ( also in kReplacedWindows ). Hidden, NOT gone:
+    /// CPartyOptionDlg still writes the "party settings changed" chat lines.
+    DLG_TYPE_PARTYOPTION,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -34,6 +37,7 @@ const int kReplacedDialogs[] = {
 const int kReplacedWindows[] = {
     DLG_TYPE_SKILL,
     DLG_TYPE_CHAR,
+    DLG_TYPE_PARTYOPTION,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).
