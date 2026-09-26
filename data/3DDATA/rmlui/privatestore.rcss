@@ -1,0 +1,198 @@
+/* UI2 own shop -- LAYOUT ONLY ( colours and materials: rose-theme.rcss, plus
+   the few colours that are this window's own states ).
+   Reload in game with /uireload. The C++ places it beside the bag the first
+   time, until it is moved.
+
+   PERFORMANCE ( see shop.rcss ): the grid is fixed-size floats, the window
+   has a definite width, flex only for the small rows. Six items of 42 + 2
+   = 264, 1 of slack, the well's 4 of padding and 2 of border: 271. */
+
+#privatestore {
+    left: 60dp;
+    top: 160dp;
+    display: block;
+    width: 271dp;
+}
+
+/* The sign. */
+.signrow {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 24dp;
+    padding: 0dp 2dp;
+}
+.slabel {
+    width: 34dp;
+    font-size: 10dp;
+}
+.sign { width: 231dp; }
+.signtext {
+    width: 231dp;
+    font-size: 11dp;
+    font-weight: bold;
+    color: #ffe070;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Open or closed, with a light. */
+.state {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 18dp;
+    margin-bottom: 4dp;
+    padding: 0dp 3dp;
+}
+.dot {
+    width: 8dp;
+    height: 8dp;
+    margin-right: 6dp;
+    border-radius: 4dp;
+    background-color: #6a6a6aff;
+}
+.state.open .dot { background-color: #6ad04aff; }
+.stext { font-size: 10dp; color: #b0b0b0; }
+.state.open .stext { color: #bff0a8; }
+
+/* Selling / Wanted, each with how many. */
+.tabs {
+    display: flex;
+    flex-direction: row;
+    margin-bottom: 4dp;
+}
+.tab {
+    flex: 1;
+    padding-left: 4dp;
+    padding-right: 4dp;
+    font-size: 10dp;
+    white-space: nowrap;
+}
+.tab + .tab { margin-left: 3dp; }
+.tab .n {
+    margin-left: 4dp;
+    font-weight: normal;
+    color: #9a9a9a;
+}
+.tab.on .n { color: #ffd2b8; }
+
+.grid {
+    display: flow-root;
+    width: 265dp;
+    padding: 3dp 1dp 0dp 3dp;
+}
+
+/* An item: its icon and its price under it, 42 x 54. */
+.item {
+    float: left;
+    width: 42dp;
+    height: 54dp;
+    margin-right: 2dp;
+    margin-bottom: 3dp;
+    cursor: pointer;
+}
+.item.empty { cursor: default; }
+.item:hover .cell { border-color: #d0501aff; }
+.item.empty:hover .cell { border-color: #000000c0; }
+/* The shop is open: nothing can be moved. */
+.grid.locked .item { cursor: default; }
+.grid.locked .item:hover .cell { border-color: #000000c0; }
+/* On the wish list without a price: not shown to visitors. */
+.item.unpriced img { opacity: 0.45; }
+
+/* .ui-icon ( theme ) is the dark backing square, a flex box that centres;
+   here a plain block with the icon pinned top-left at its NATIVE atlas size
+   ( 40x40 ). No width/height on the img. */
+.cell {
+    display: block;
+    position: relative;
+    box-sizing: border-box;
+    width: 42dp;
+    height: 42dp;
+}
+.item.empty .cell { background-color: #00000050; }
+
+.gem {
+    position: absolute;
+    left: 0dp;
+    top: 0dp;
+}
+.socket {
+    position: absolute;
+    left: 0dp;
+    top: 0dp;
+}
+
+/* How many, top left, where the classic icon drew it. */
+.count {
+    position: absolute;
+    left: 1dp;
+    top: 1dp;
+    padding: 0dp 2dp;
+    line-height: 12dp;
+    font-size: 10dp;
+    font-weight: bold;
+    color: #ffffff;
+    border-radius: 2dp;
+    background-color: #00000080;
+    font-effect: outline(1px #000000c0);
+}
+
+.price {
+    display: block;
+    height: 12dp;
+    line-height: 12dp;
+    text-align: center;
+    white-space: nowrap;
+    font-size: 9dp;
+    font-weight: bold;
+    color: #ffe070;
+    font-effect: shadow(1px 1px #000000);
+}
+/* What you pay: green, as the shop's earnings. */
+.price.pay { color: #9ad870; }
+.price.none { font-weight: normal; color: #8a8a8a; }
+
+/* The totals. */
+.sums {
+    margin-top: 4dp;
+    padding: 3dp 5dp;
+}
+.srow {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 15dp;
+    font-size: 10dp;
+}
+.srow .ui-muted { flex-grow: 1; }
+.sval {
+    font-weight: bold;
+    color: #ffe070;
+}
+.sval.earn { color: #9ad870; }
+.sval.cost { color: #ffb070; }
+.srow.short .sval.cost { color: #ff6a5a; }
+
+.buttons {
+    display: flex;
+    flex-direction: row;
+    margin-top: 6dp;
+}
+.act { flex: 1; }
+/* Nothing to sell or a wanted list you cannot pay for: Open does nothing,
+   and does not light up either. */
+.act.off { color: #a0a0a0; }
+.act.off:hover {
+    background-color: #3a3a3aff;
+    border-color: #565656ff;
+}
+
+.hint {
+    margin-top: 3dp;
+    padding: 0dp 2dp;
+    font-size: 9dp;
+    line-height: 12dp;
+}

@@ -1,0 +1,86 @@
+<rml>
+<head>
+    <title>My Shop</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="privatestore.rcss"/>
+</head>
+<body data-model="privatestore">
+    <!--
+        UI2 own shop ( RoseRmlPrivateStore ), replacing the classic personal
+        shop window. Opens beside the bag the first time; drag the title bar
+        to move it, the spot is saved.
+
+        The sign: what visitors see over your head ( up to 30 letters ).
+        Selling: drop items from your bag here and set their price.
+        Wanted: drop an item from your bag to buy more of it, and set the
+        price you pay. Items on your wish list without a price ( grey ) are
+        not shown to visitors: double-click one to price it.
+
+        The whole window is a drop target for items ( DLG_TYPE_PRIVATESTORE ).
+    -->
+    <div id="privatestore" class="ui-window" data-attr-drop-target="drop_type">
+        <handle move_target="privatestore" class="ui-titlebar">
+            <span class="ui-title">My Shop</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <!-- The sign: typed while closed, shown while open. -->
+        <div class="signrow">
+            <span class="slabel ui-muted">Sign</span>
+            <input id="sign" type="text" class="ui-field sign" maxlength="30" data-if="!selling"/>
+            <span class="signtext" data-if="selling">{{sign}}</span>
+        </div>
+
+        <div class="state" data-class-open="selling">
+            <span class="dot"></span>
+            <span class="stext" data-if="selling">Open: visitors can trade with you</span>
+            <span class="stext" data-if="!selling">Closed: set your goods, then open</span>
+        </div>
+
+        <div class="tabs">
+            <span class="ui-btn tab" data-class-on="tab == 0" data-event-click="set_tab(0)">Selling<span class="n">{{sell_count}}</span></span>
+            <span class="ui-btn tab" data-class-on="tab == 1" data-event-click="set_tab(1)">Wanted<span class="n">{{priced_count}} / {{wish_count}}</span></span>
+        </div>
+
+        <div class="grid ui-well" data-class-locked="selling">
+            <div class="item" data-for="c : cells" data-attr-slot-index="c.index"
+                 data-class-empty="!c.filled" data-class-unpriced="c.unpriced"
+                 data-event-mousedown="press(c.index)" data-event-dblclick="use(c.index)">
+                <div class="cell ui-icon">
+                    <img data-if="c.filled" data-attr-src="c.src" data-attr-rect="c.rect"/>
+                    <div class="gem" data-if="c.socket == 2"><img data-attr-src="c.gem_src" data-attr-rect="c.gem_rect"/></div>
+                    <img class="socket" data-if="c.socket == 1" src="3DData/Control/Res/SOKET.DDS"/>
+                    <span class="count" data-if="c.count > 0">{{c.count}}</span>
+                </div>
+                <span class="price" data-if="c.price != ''" data-class-pay="tab == 1">{{c.price}}</span>
+                <span class="price none" data-if="c.unpriced">no price</span>
+            </div>
+        </div>
+
+        <div class="sums ui-well">
+            <div class="srow">
+                <span class="ui-muted">Selling earns</span>
+                <span class="sval earn">{{earn}}</span>
+            </div>
+            <div class="srow" data-class-short="short">
+                <span class="ui-muted">Buying costs</span>
+                <span class="sval cost">{{cost}}</span>
+            </div>
+            <div class="srow">
+                <span class="ui-muted">Your zuly</span>
+                <span class="sval">{{money}}</span>
+            </div>
+        </div>
+
+        <div class="buttons">
+            <span class="ui-btn act" data-if="!selling"
+                  data-class-off="!can_open"
+                  data-event-click="open_shop()">Open shop</span>
+            <span class="ui-btn act" data-if="selling" data-event-click="close_shop()">Close shop</span>
+        </div>
+
+        <div class="hint ui-muted">{{hint}}</div>
+    </div>
+</body>
+</rml>

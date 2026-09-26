@@ -7,6 +7,7 @@
 #include "../dlgs/CItemDlg.h"
 #include "../dlgs/CGoodsDlg.h"
 #include "../dlgs/CPrivateStoreDlg.h"
+#include "../../rmlui/RoseUi2.h"
 #include "../Icon/CIconItem.h"
 #include "../Icon/CIconSkill.h"
 #include "../Icon/CIconQuick.h"
@@ -358,7 +359,31 @@ CTCmdDragItem2PrivateStoreDlg::Exec(CTObject* pObj) {
             }
             case CPrivateStoreDlg::TAB_BUY: ///구입목록에 추가
             {
-                CPrivateStore::GetInstance().AddItemWishList(pItemIcon->GetItem(), true);
+                CPrivateStore& refStore = CPrivateStore::GetInstance();
+                bool bHad[MAX_WISH_ITEMS];
+                for (int i = 0; i < MAX_WISH_ITEMS; ++i)
+                    bHad[i] = refStore.GetWishItem(i) != NULL;
+
+                refStore.AddItemWishList(pItemIcon->GetItem(), true);
+
+                /// UI2: one step. The classic dialog only put the item on the
+                /// wish list ( no price, never sent to visitors ) and wanted it
+                /// selected and "added" before asking a price; ask right away.
+                if (RoseUi2::IsReplaced(DLG_TYPE_PRIVATESTORE)) {
+                    for (int i = 0; i < MAX_WISH_ITEMS; ++i) {
+                        CItem* pWish = refStore.GetWishItem(i);
+                        if (bHad[i] || pWish == NULL)
+                            continue;
+                        if (CGoodsDlg* pGoodsDlg = (CGoodsDlg*)g_itMGR.FindDlg(DLG_TYPE_GOODS)) {
+                            CIcon* pWishIcon = pWish->CreateItemIcon();
+                            pGoodsDlg->SetIcon(pWishIcon); /// keeps a clone
+                            delete pWishIcon;
+                            pGoodsDlg->SetType(CGoodsDlg::ADD_BUYLIST);
+                            g_itMGR.OpenDialog(DLG_TYPE_GOODS);
+                        }
+                        break;
+                    }
+                }
                 break;
             }
             default:

@@ -14,8 +14,9 @@ CITStateDead::Enter() {
     g_itMGR.OpenDialog(DLG_TYPE_RESTART);
     g_pAVATAR->SetBattleTime(0);
 
-    if (CTDialog* pDlg = g_itMGR.FindDlg(DLG_TYPE_PRIVATESTORE))
-        pDlg->Hide();
+    /// Through IT_MGR, so UI2's shop window closes ( and the shop with it ):
+    /// the classic dialog is hidden there, and hiding it again did nothing.
+    g_itMGR.CloseDialog(DLG_TYPE_PRIVATESTORE);
 }
 
 void

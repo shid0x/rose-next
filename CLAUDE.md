@@ -433,6 +433,27 @@ dialog for its state must get UI2's answer. The walk-away close ran only while t
 was visible and is UI2's now. Zuly goes through the UI2 quantity popup; `CBankWindowDlg` is never
 shown. Double-click takes an item out (the classic icon had no command).
 
+**Personal shops** (2026-09-26): visiting one (`RoseRmlAvatarStore`, `DLG_TYPE_AVATARSTORE`) and
+your own (`RoseRmlPrivateStore`, `DLG_TYPE_PRIVATESTORE`, with the price form `RoseRmlGoodsForm`,
+`DLG_TYPE_GOODS`) are views over the hidden classic dialogs, whose `Hide()` wipes the visited shop
+or **closes your own** -- so UI2 calls their split halves (`CAvatarStoreDlg::Prepare/Reset`,
+`CPrivateStoreDlg::Prepare/Teardown`) and never shows or hides them; `citstatedead` closes the
+own shop through `IT_MGR::CloseDialog`. The bag's drop command reads the own shop's tab from the
+classic dialog (`SetTab` keeps it in step), as the storage deposit does. **The classic Wanted list
+is two steps**: a dropped item only joins the wish list (unpriced, never sent to visitors) until it
+is selected and priced -- which read as "listed at 0, invisible" and was not a bug; under UI2 a drop
+on Wanted asks the price at once. The sell list allowed 31 items (`MAX_P_STORE_ITEM_SLOT`) into a
+30-slot dialog; capped at 30. The visited shop and the price form never toggle.
+
+**Text fields** (2026-09-26): an RmlUi `<input type="text" class="ui-field">` with the focus owns
+the keyboard -- `RoseRmlUi::ProcessWndMsg` hands it every key and character (printable ASCII only:
+plain English by decision, no IME) and none reaches the game; `numeric="1"` takes digits only.
+Enter arrives as a `change` event with `linebreak`, Escape as a `keydown` (`KI_ESCAPE`); both, a
+world click, or the window closing end typing, and their `WM_CHAR` is swallowed (it would open the
+chat). Focusing a field unfocuses the classic chat box. Read a field's text from its `value`
+attribute rather than a `data-value` binding. Avoid `&&` in markup expressions (XML would need
+`&amp;&amp;`); compute such flags in the view model.
+
 **Popup sweep** (2026-09-26): classic popups draw under the UI2 windows, so while UI2 is on
 `IT_MGR::OpenMsgBox` routes every box **without a message type or an invoking dialog** to
 `RoseRmlMessageBox` -- OK-only = a self-closing notice, OK + command = one button that waits, OK/Cancel

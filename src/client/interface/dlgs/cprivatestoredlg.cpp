@@ -80,9 +80,6 @@ CPrivateStoreDlg::Show() {
     HideChild(IID_BTN_ADD_BUYLIST);
     SetEnableChild(IID_EDITBOX, true);
 
-    CPrivateStore& refPrivateStore = CPrivateStore::GetInstance();
-    m_iTab = 0;
-
     CWinCtrl* pCtrl = Find(IID_RADIOBOX);
     if (pCtrl) {
         CTRadioBox* pRadioBox = (CTRadioBox*)pCtrl;
@@ -95,6 +92,14 @@ CPrivateStoreDlg::Show() {
         pEdit->clear_text();
         pEdit->AppendText(CStr::Printf(STR_DEFAULT_PRIVATESTORE_TITLE, g_pAVATAR->Get_NAME()));
     }
+
+    Prepare();
+}
+
+void
+CPrivateStoreDlg::Prepare() {
+    CPrivateStore& refPrivateStore = CPrivateStore::GetInstance();
+    m_iTab = 0;
 
     for (int iSlot = 0; iSlot < c_iMaxSlotCount; ++iSlot)
         m_SellSlots[iSlot].DetachIcon();
@@ -118,6 +123,11 @@ void
 CPrivateStoreDlg::Hide() {
 
     CTDialog::Hide();
+    Teardown();
+}
+
+void
+CPrivateStoreDlg::Teardown() {
     CPrivateStore& refPrivateStore = CPrivateStore::GetInstance();
 
     refPrivateStore.DeleteObserver(this);
@@ -286,6 +296,13 @@ CPrivateStoreDlg::Update(CObservable* pObservable, CTObject* pObj) {
 
     CTEventPrivateStore* pEvent = (CTEventPrivateStore*)pObj;
     int iIndex = pEvent->GetIndex();
+    /// The slot events index the slot arrays directly.
+    const bool bSlotEvent = pEvent->GetID() == CTEventPrivateStore::EID_ADD_SELLLIST
+        || pEvent->GetID() == CTEventPrivateStore::EID_REMOVE_SELLLIST
+        || pEvent->GetID() == CTEventPrivateStore::EID_ADD_WISHLIST
+        || pEvent->GetID() == CTEventPrivateStore::EID_REMOVE_WISHLIST;
+    if (bSlotEvent && (iIndex < 0 || iIndex >= c_iMaxSlotCount))
+        return;
 
     switch (pEvent->GetID()) {
         case CTEventPrivateStore::EID_SORT_SELLLIST: {

@@ -48,6 +48,22 @@ public:
 
     int GetWishIndex(tagITEM& Item, int& iUnitPrice);
 
+    /// The halves of Show() / Hide() that are not about the dialog being on
+    /// screen. UI2 ( RoseRmlAvatarStore ) keeps this dialog hidden as the
+    /// shop's model and calls these instead: Hide() would wipe the shop.
+    void Prepare(); ///< on opening: the drag observer, the first tab
+    void Reset(); ///< on closing: every item freed, a pending "how many?" closed
+
+    /// UI2 draws these slots and drags with this drag item. iList: 0 their
+    /// goods for sale, 1 what they want to buy.
+    CSlot* GetSlot(int iList, int iSlot) {
+        if (iSlot < 0 || iSlot >= c_iAvatarStoreMaxSlotCount)
+            return NULL;
+        return (iList == 0) ? &m_SellSlots[iSlot] : &m_BuySlots[iSlot];
+    }
+    CDragItem* GetSellDragItem() { return m_pSellDragItem; }
+    const char* GetTitle() { return m_title.get_string(); }
+
 private:
     void OnLButtonUp(unsigned uiProcID, WPARAM wParam, LPARAM lParam);
     void OnLButtonDown(unsigned uiProcID, WPARAM wParam, LPARAM lParam);

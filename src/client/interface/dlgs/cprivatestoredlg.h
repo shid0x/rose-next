@@ -32,6 +32,22 @@ public:
     void SortItemSellList();
 
     int GetTabType();
+
+    /// The halves of Show() / Hide() that are not about the dialog being on
+    /// screen. UI2 ( RoseRmlPrivateStore ) keeps this dialog hidden as the
+    /// shop's model and calls these instead: Hide() closes the shop.
+    void Prepare(); ///< on opening: lists cleared, observer, wish list attached
+    void Teardown(); ///< on closing: the shop closed, lists cleared
+
+    /// UI2 draws these slots and drags with these drag items, and keeps the
+    /// tab in step: the drop command ( CTCmdDragItem2PrivateStoreDlg ) reads it.
+    void SetTab(int iTab) { m_iTab = iTab; }
+    CSlot* GetSellSlot(int i) { return (i >= 0 && i < c_iMaxSlotCount) ? &m_SellSlots[i] : NULL; }
+    CSlotBuyPrivateStore* GetBuySlot(int i) {
+        return (i >= 0 && i < c_iMaxSlotCount) ? &m_BuySlots[i] : NULL;
+    }
+    CDragItem* GetSellDragItem() { return m_pSellDragItem; }
+    CDragItem* GetBuyDragItem() { return m_pBuyDragItem; }
     enum {
         TAB_SELL,
         TAB_BUY,

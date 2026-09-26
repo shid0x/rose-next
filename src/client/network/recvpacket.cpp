@@ -29,6 +29,7 @@
 
 #include "../Interface/TypeResource.h"
 #include "../rmlui/RoseRmlUi.h"
+#include "../rmlui/RoseUi2.h"
 #include "../rmlui/RoseRmlText.h"
 #include <functional>
 #include "../Interface/CHelpMgr.h"
@@ -3551,6 +3552,13 @@ CRecvPACKET::Recv_gsv_P_STORE_LIST_REPLY() {
     CTDialog* pDlg = g_itMGR.FindDlg(DLG_TYPE_AVATARSTORE);
     if (pDlg) {
         CAvatarStoreDlg* pStoreDlg = (CAvatarStoreDlg*)pDlg;
+        /// UI2 keeps the dialog hidden and does not toggle it, so a second shop
+        /// clicked while one is open arrives on top of the first: free the
+        /// old goods before adding the new ones.
+        if (RoseUi2::IsReplaced(DLG_TYPE_AVATARSTORE) && g_itMGR.IsDlgOpened(DLG_TYPE_AVATARSTORE)) {
+            pStoreDlg->Reset();
+            pStoreDlg->Prepare();
+        }
         ///판매희망 목록
         for (int i = 0; i < m_pRecvPacket->m_gsv_P_STORE_LIST_REPLY.m_btSellItemCNT; ++i)
             pStoreDlg->AddItem2SellList(m_pRecvPacket->m_gsv_P_STORE_LIST_REPLY.m_SlotITEMs[i]);

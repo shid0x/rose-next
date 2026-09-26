@@ -64,9 +64,14 @@ CPrivateStore::AddItemSellList(CItem* pItem, int iQuantity, int iPrice) {
         return;
     }
 
+    /// The shop window shows 30 ( c_iAvatarStoreMaxSlotCount / c_iMaxSlotCount )
+    /// of the 31 slots MAX_P_STORE_ITEM_SLOT allows: a 31st item was written
+    /// past the end of the dialog's slot array.
+    const int kShownSlots = 30;
     std::vector<CItemFragment*>::iterator iter;
     int iSlot = 0;
-    for (iter = m_SellItems.begin(); iter != m_SellItems.end(); ++iter, ++iSlot) {
+    for (iter = m_SellItems.begin(); iter != m_SellItems.end() && iSlot < kShownSlots;
+         ++iter, ++iSlot) {
         if (*iter == NULL) {
             CItemFragment* pFragmentItem = new CItemFragment(pItem);
             pFragmentItem->SetQuantity(iQuantity);
@@ -82,6 +87,7 @@ CPrivateStore::AddItemSellList(CItem* pItem, int iQuantity, int iPrice) {
             return;
         }
     }
+    g_itMGR.AppendChatMsg("Your shop is full.", IT_MGR::CHAT_TYPE_SYSTEM);
 }
 
 template<class T>

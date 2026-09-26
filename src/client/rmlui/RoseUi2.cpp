@@ -65,6 +65,19 @@ const int kReplacedDialogs[] = {
     /// deposit command reads. Its zuly box, CBankWindowDlg, is only opened by
     /// CBankDlg's buttons, which UI2 does not show.
     DLG_TYPE_BANK,
+    /// RoseRmlAvatarStore ( also in kReplacedWindows ). Hidden, NOT gone:
+    /// CAvatarStoreDlg holds the other player's goods, the slots, the buy drag
+    /// and the wanted list the sell command checks. Its Hide() wipes the shop,
+    /// so UI2 calls Prepare() / Reset() instead.
+    DLG_TYPE_AVATARSTORE,
+    /// RoseRmlPrivateStore ( also in kReplacedWindows ). Hidden, NOT gone:
+    /// CPrivateStoreDlg observes CPrivateStore and holds both lists' slots,
+    /// the drag items and the tab the bag's drop command reads. Its Hide()
+    /// closes the shop, so UI2 calls Prepare() / Teardown() instead.
+    DLG_TYPE_PRIVATESTORE,
+    /// RoseRmlGoodsForm ( also in kReplacedWindows ): CGoodsDlg keeps the item
+    /// and the kind of question, and confirms.
+    DLG_TYPE_GOODS,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -85,6 +98,9 @@ const int kReplacedWindows[] = {
     DLG_TYPE_EXCHANGE,
     DLG_TYPE_RESTART,
     DLG_TYPE_BANK,
+    DLG_TYPE_AVATARSTORE,
+    DLG_TYPE_PRIVATESTORE,
+    DLG_TYPE_GOODS,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).
@@ -202,8 +218,13 @@ OpenWindow(int iDlgType, bool bToggle) {
     /// A quantity question is asked, never toggled: CTCmdOpenNumberInputDlg
     /// opens it with the toggle default, so a second question while one was
     /// showing closed it -- and dropped the new command with it.
-    /// Nor is a trade: the accept path opens it with the toggle set.
-    if (iDlgType == DLG_TYPE_N_INPUT || iDlgType == DLG_TYPE_EXCHANGE)
+    /// Nor is a trade: the accept path opens it with the toggle set. Nor a
+    /// player's shop: its list reply opens it with the toggle, so clicking a
+    /// second shop while one was showing closed the window on the new goods.
+    /// Nor the shop's price form: a second item dropped while it asks about
+    /// the first must ask about the second, not close the form.
+    if (iDlgType == DLG_TYPE_N_INPUT || iDlgType == DLG_TYPE_EXCHANGE
+        || iDlgType == DLG_TYPE_AVATARSTORE || iDlgType == DLG_TYPE_GOODS)
         bToggle = false;
     const bool bOpen = RoseRmlUi::IsWindowOpen(iDlgType);
     RoseRmlUi::SetWindowOpen(iDlgType, bToggle ? !bOpen : true);

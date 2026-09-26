@@ -57,7 +57,6 @@ CGoodsDlg::Process(unsigned uiMsg, WPARAM wParam, LPARAM lParam) {
                 case IID_BTN_CONFIRM: {
                     char* pszBuf;
                     int iUnitPrice = 0, iQuantity = 0;
-                    CIcon* pIcon = m_Slot.GetIcon();
                     CWinCtrl* pCtrl = Find(IID_EDIT_PRICE);
                     if (pCtrl && pCtrl->GetControlType() == CTRL_EDITBOX) {
                         CTEditBox* pEdit = (CTEditBox*)pCtrl;
@@ -73,35 +72,7 @@ CGoodsDlg::Process(unsigned uiMsg, WPARAM wParam, LPARAM lParam) {
                         if (pszBuf != NULL)
                             iQuantity = atoi(pszBuf);
                     }
-                    if (iUnitPrice > 0 && iQuantity > 0 && pIcon) {
-                        CIconItem* pItemIcon = (CIconItem*)pIcon;
-
-                        switch (m_iType) {
-                            case ADD_SELLLIST: {
-                                tagITEM Item = pItemIcon->GetItem();
-                                if (Item.IsEnableDupCNT()) {
-                                    if (iQuantity < 0)
-                                        iQuantity = 1;
-                                    if (iQuantity > Item.GetQuantity())
-                                        iQuantity = Item.GetQuantity();
-                                } else {
-                                    iQuantity = 1;
-                                }
-
-                                CPrivateStore::GetInstance().AddItemSellList(pItemIcon->GetCItem(),
-                                    iQuantity,
-                                    iUnitPrice);
-                                break;
-                            }
-                            case ADD_BUYLIST:
-                                CPrivateStore::GetInstance().AddItemBuyList(pItemIcon->GetIndex(),
-                                    iUnitPrice,
-                                    iQuantity);
-                                break;
-                            default:
-                                break;
-                        }
-                    }
+                    Confirm(iUnitPrice, iQuantity);
                     Hide();
                     break;
                 }
@@ -118,43 +89,69 @@ CGoodsDlg::Process(unsigned uiMsg, WPARAM wParam, LPARAM lParam) {
 }
 
 void
+CGoodsDlg::Confirm(int iUnitPrice, int iQuantity) {
+    CIcon* pIcon = m_Slot.GetIcon();
+    if (iUnitPrice <= 0 || iQuantity <= 0 || pIcon == NULL)
+        return;
+
+    CIconItem* pItemIcon = (CIconItem*)pIcon;
+    switch (m_iType) {
+        case ADD_SELLLIST: {
+            tagITEM Item = pItemIcon->GetItem();
+            if (Item.IsEnableDupCNT()) {
+                if (iQuantity < 0)
+                    iQuantity = 1;
+                if (iQuantity > Item.GetQuantity())
+                    iQuantity = Item.GetQuantity();
+            } else {
+                iQuantity = 1;
+            }
+
+            CPrivateStore::GetInstance().AddItemSellList(pItemIcon->GetCItem(), iQuantity, iUnitPrice);
+            break;
+        }
+        case ADD_BUYLIST:
+            CPrivateStore::GetInstance().AddItemBuyList(pItemIcon->GetIndex(), iUnitPrice, iQuantity);
+            break;
+        default:
+            break;
+    }
+}
+
+int
+CGoodsDlg::GetDefaultPrice() {
+    CIcon* pIcon = m_Slot.GetIcon();
+    if (pIcon == NULL)
+        return 1;
+    tagITEM& Item = ((CIconItem*)pIcon)->GetItem();
+    if (m_iType == ADD_SELLLIST)
+        return (int)(ITEM_BASE_PRICE(Item.GetTYPE(), Item.GetItemNO()) * 0.6);
+    return (int)(ITEM_BASE_PRICE(Item.GetTYPE(), Item.GetItemNO()) * 0.7);
+}
+
+int
+CGoodsDlg::GetDefaultQuantity() {
+    CIcon* pIcon = m_Slot.GetIcon();
+    if (pIcon != NULL && m_iType == ADD_SELLLIST)
+        return ((CIconItem*)pIcon)->GetItem().GetQuantity();
+    return 1;
+}
+
+void
 CGoodsDlg::Show() {
     CTDialog::Show();
     CWinCtrl* pCtrl = Find(IID_EDIT_PRICE);
     if (pCtrl && pCtrl->GetControlType() == CTRL_EDITBOX) {
         CTEditBox* pEdit = (CTEditBox*)pCtrl;
         pEdit->clear_text();
-
-        if (CIcon* pIcon = m_Slot.GetIcon()) {
-            CIconItem* pItemIcon = (CIconItem*)pIcon;
-            tagITEM& Item = pItemIcon->GetItem();
-
-            int iPrice = 1;
-            if (m_iType == ADD_SELLLIST)
-                iPrice = ITEM_BASE_PRICE(Item.GetTYPE(), Item.GetItemNO()) * 0.6;
-            else
-                iPrice = ITEM_BASE_PRICE(Item.GetTYPE(), Item.GetItemNO()) * 0.7;
-
-            pEdit->AppendText(CStr::Printf("%d", iPrice));
-        } else {
-            pEdit->AppendText("1");
-        }
+        pEdit->AppendText(CStr::Printf("%d", GetDefaultPrice()));
     }
 
     pCtrl = Find(IID_EDIT_QUANTITY);
     if (pCtrl && pCtrl->GetControlType() == CTRL_EDITBOX) {
         CTEditBox* pEdit = (CTEditBox*)pCtrl;
         pEdit->clear_text();
-
-        CIcon* pIcon = m_Slot.GetIcon();
-
-        if (pIcon != NULL && m_iType == ADD_SELLLIST) {
-            CIconItem* pItemIcon = (CIconItem*)pIcon;
-            tagITEM& Item = pItemIcon->GetItem();
-            pEdit->AppendText(CStr::Printf("%d", Item.GetQuantity()));
-        } else {
-            pEdit->AppendText("1");
-        }
+        pEdit->AppendText(CStr::Printf("%d", GetDefaultQuantity()));
     }
 
     switch (m_iType) {

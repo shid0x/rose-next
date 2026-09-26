@@ -21,6 +21,14 @@ public:
     void SetIcon(CIcon* pIcon);
     void SetType(int iType);
 
+    /// UI2 ( RoseRmlGoodsForm ) keeps this dialog hidden and asks it for the
+    /// item, the classic defaults and the confirmation.
+    CIcon* GetIcon() { return m_Slot.GetIcon(); }
+    int GetType() { return m_iType; }
+    int GetDefaultPrice(); ///< 60% of the base price to sell, 70% to buy
+    int GetDefaultQuantity(); ///< the whole stack to sell, 1 to buy
+    void Confirm(int iUnitPrice, int iQuantity); ///< onto the selling / buying list
+
     enum { ADD_SELLLIST, ADD_BUYLIST };
 
 private:

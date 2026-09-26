@@ -195,6 +195,36 @@ div { display: block; }
 }
 
 
+/* --- text fields ---------------------------------------------------------- */
+
+/* <input type="text" class="ui-field">: a small well you type into, ember
+   edge and caret while it has the keyboard. RoseRmlUi hands it every key
+   while focused ( plain English only ); a field marked `numeric` takes digits
+   only. Give it a width where it is used. */
+.ui-field {
+    display: inline-block;
+    box-sizing: border-box;
+    height: 20dp;
+    padding: 2dp 5dp;
+    border-width: 1dp;
+    border-top-color: #000000c0;
+    border-left-color: #00000090;
+    border-right-color: #00000090;
+    border-bottom-color: #ffffff24;
+    border-radius: 3dp;
+    background-color: #000000a0;
+    color: #f0f0f0;
+    font-size: 11dp;
+    line-height: 14dp;
+    caret-color: #ff9a5a;
+    cursor: text;
+}
+.ui-field:hover { border-color: #565656ff; }
+.ui-field:focus { border-color: #d0501aff; }
+.ui-field:disabled { color: #8a8a8a; background-color: #00000050; cursor: default; }
+.ui-field selection { background-color: #922500ff; color: #ffffff; }
+
+
 /* --- buttons -------------------------------------------------------------- */
 
 /* Grey glass at rest, ember glass under the mouse, dark ember pressed --

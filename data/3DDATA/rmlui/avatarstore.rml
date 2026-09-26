@@ -1,0 +1,58 @@
+<rml>
+<head>
+    <title>Player Shop</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="avatarstore.rcss"/>
+</head>
+<body data-model="avatarstore">
+    <!--
+        UI2 visit to another player's shop ( RoseRmlAvatarStore ), replacing
+        CAvatarStoreDlg. Opens beside the bag the first time; drag the title
+        bar to move it, the spot is saved.
+
+        For sale: their goods with the unit price ( red: more than you have ).
+        Double-click one, or drag it to your bag, to buy.
+        Wanted: what they buy and what they pay. Drop an item from your bag on
+        the window to sell it to them.
+
+        The whole window is a drop target for items ( DLG_TYPE_AVATARSTORE ).
+    -->
+    <div id="avatarstore" class="ui-window" data-attr-drop-target="drop_type">
+        <handle move_target="avatarstore" class="ui-titlebar">
+            <span class="ui-title">{{title}}</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <div class="owner ui-muted" data-if="owner != ''">{{owner}}</div>
+
+        <div class="tabs">
+            <span class="ui-btn tab" data-class-on="tab == 0" data-event-click="set_tab(0)">For sale<span class="n">{{sale_count}}</span></span>
+            <span class="ui-btn tab" data-class-on="tab == 1" data-event-click="set_tab(1)">Wanted<span class="n">{{wanted_count}}</span></span>
+        </div>
+
+        <div class="grid ui-well">
+            <div class="item" data-for="c : cells" data-attr-slot-index="c.index"
+                 data-class-empty="!c.filled"
+                 data-event-mousedown="press(c.index)" data-event-dblclick="use(c.index)">
+                <div class="cell ui-icon">
+                    <img data-if="c.filled" data-attr-src="c.src" data-attr-rect="c.rect"/>
+                    <div class="gem" data-if="c.socket == 2"><img data-attr-src="c.gem_src" data-attr-rect="c.gem_rect"/></div>
+                    <img class="socket" data-if="c.socket == 1" src="3DData/Control/Res/SOKET.DDS"/>
+                    <span class="count" data-if="c.count > 0">{{c.count}}</span>
+                </div>
+                <span class="price" data-if="c.filled" data-class-pay="tab == 1" data-class-dear="c.dear">{{c.price}}</span>
+            </div>
+        </div>
+
+        <div class="footer">
+            <span class="coin"></span>
+            <span class="mlabel ui-muted">Your zuly</span>
+            <span class="mval">{{money}}</span>
+        </div>
+
+        <div class="hint ui-muted" data-if="tab == 0">Double-click or drag to your bag: buy.</div>
+        <div class="hint ui-muted" data-if="tab == 1">Drop an item from your bag here: sell it to them.</div>
+    </div>
+</body>
+</rml>

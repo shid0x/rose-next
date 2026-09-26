@@ -55,9 +55,14 @@ CAvatarStoreDlg::~CAvatarStoreDlg(void) {
 
 void
 CAvatarStoreDlg::Show() {
+    CTDialog::Show();
+    Prepare();
+}
+
+void
+CAvatarStoreDlg::Prepare() {
     AddObserver(&CDragNDropMgr::GetInstance());
 
-    CTDialog::Show();
     CWinCtrl* pCtrl = Find(IID_RADIOBOX);
 
     if (pCtrl) {
@@ -70,7 +75,11 @@ CAvatarStoreDlg::Show() {
 void
 CAvatarStoreDlg::Hide() {
     CTDialog::Hide();
+    Reset();
+}
 
+void
+CAvatarStoreDlg::Reset() {
     if (g_itMGR.IsDlgOpened(DLG_TYPE_N_INPUT))
         g_itMGR.CloseDialog(DLG_TYPE_N_INPUT);
 

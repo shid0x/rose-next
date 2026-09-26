@@ -1,0 +1,103 @@
+/* UI2 shop price form -- LAYOUT ONLY ( colours and materials: rose-theme.rcss,
+   plus the few colours that are this window's own states ).
+   Reload in game with /uireload. The C++ opens it by the mouse. */
+
+/* Over every window, as the quantity question ( the shop that asked would
+   otherwise come to the front over it ). The message box sits higher still. */
+body { z-index: 40; }
+
+#goods {
+    left: 400dp;
+    top: 300dp;
+    display: block;
+    width: 212dp;
+}
+
+/* The item: its icon and name. */
+.what {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 6dp;
+    padding: 0dp 2dp;
+}
+/* The icon at its native 40x40, pinned top-left, as everywhere. */
+.cell {
+    box-sizing: border-box;
+    width: 42dp;
+    height: 42dp;
+    align-items: flex-start;
+    justify-content: flex-start;
+    flex-shrink: 0;
+}
+.wtext {
+    display: block;
+    margin-left: 6dp;
+    width: 150dp;
+}
+.wname {
+    display: block;
+    font-size: 11dp;
+    font-weight: bold;
+    color: #f0f0f0;
+    line-height: 14dp;
+}
+.wsub {
+    display: block;
+    font-size: 9dp;
+    line-height: 13dp;
+}
+
+/* A label and its field. */
+.row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 24dp;
+    padding: 0dp 2dp;
+}
+.label {
+    flex-grow: 1;
+    font-size: 10dp;
+}
+.num {
+    width: 96dp;
+    text-align: right;
+}
+
+/* What the line comes to. */
+.total {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 22dp;
+    margin-top: 2dp;
+    padding: 0dp 2dp;
+    border-top: 1dp #ffffff18;
+}
+.tval {
+    font-size: 11dp;
+    font-weight: bold;
+    color: #ffe070;
+}
+.total.short .tval { color: #ff6a5a; }
+.note {
+    padding: 0dp 2dp;
+    font-size: 9dp;
+    line-height: 12dp;
+    color: #ff9a8a;
+}
+
+.buttons {
+    display: flex;
+    flex-direction: row;
+    margin-top: 6dp;
+}
+.act { flex: 1; }
+.act + .act { margin-left: 4dp; }
+/* No price yet: OK has nothing to confirm, and does not light up either. */
+.ok.off { color: #a0a0a0; }
+.ok.off:hover {
+    background-color: #3a3a3aff;
+    border-color: #565656ff;
+}

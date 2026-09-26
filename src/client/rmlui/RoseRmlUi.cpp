@@ -25,6 +25,9 @@
 #include "RoseRmlTrade.h"
 #include "RoseRmlTradeInvite.h"
 #include "RoseRmlStorage.h"
+#include "RoseRmlAvatarStore.h"
+#include "RoseRmlPrivateStore.h"
+#include "RoseRmlGoodsForm.h"
 #include "RoseRmlSystem.h"
 #include "RoseRmlText.h"
 #include "RoseUi2.h"
@@ -43,6 +46,7 @@
 #include "tgamectrl/tcommand.h"
 #include "../System/CGame.h"
 #include "tgamectrl/winctrl.h"
+#include "tgamectrl/teditbox.h"
 #include "../interface/interfacetype.h"
 #include "../Sound/IO_Sound.h"
 
@@ -75,6 +79,9 @@ RoseRmlNumberInput g_NumberInput; ///< UI2: replaces CNumberInputDlg
 RoseRmlTrade g_Trade; ///< UI2: replaces CExchangeDLG ( a view over it )
 RoseRmlTradeInvite g_TradeInvite; ///< UI2: replaces the trade request message box
 RoseRmlStorage g_Storage; ///< UI2: replaces CBankDlg ( a view over it ) and its zuly box
+RoseRmlAvatarStore g_AvatarStore; ///< UI2: replaces CAvatarStoreDlg ( a view over it )
+RoseRmlPrivateStore g_PrivateStore; ///< UI2: replaces CPrivateStoreDlg ( a view over it )
+RoseRmlGoodsForm g_GoodsForm; ///< UI2: replaces CGoodsDlg ( the shop's price form )
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -238,6 +245,117 @@ ForgetReleasedWorldButtons() {
         if ((g_uWorldButtons & (1u << i)) && (GetAsyncKeyState(kVk[i]) & 0x8000) == 0)
             g_uWorldButtons &= ~(1u << i);
     }
+}
+
+/// --- text fields ----------------------------------------------------------------
+/// An RmlUi <input type="text"> ( or password, or a textarea ) with the focus
+/// owns the keyboard: every key and character goes to it and none reaches the
+/// game, or typing a shop's name would open the bag on "i". Plain English only
+/// ( printable ASCII ), no IME. A field marked numeric takes digits only.
+/// The focus goes away on Enter, Escape, a click in the world, or when its
+/// window closes; the character of an Enter / Escape answered on key-down is
+/// swallowed too ( it would open the chat ).
+
+WPARAM g_TextSwallowChar = 0;
+
+Rml::Element*
+FocusedTextField() {
+    if (g_pContext == NULL)
+        return NULL;
+    Rml::Element* pEl = g_pContext->GetFocusElement();
+    if (pEl == NULL)
+        return NULL;
+    const Rml::String& strTag = pEl->GetTagName();
+    if (strTag == "textarea") {
+    } else if (strTag == "input") {
+        const Rml::String strType = pEl->GetAttribute<Rml::String>("type", "text");
+        if (strType != "text" && strType != "password")
+            return NULL;
+    } else {
+        return NULL;
+    }
+    if (pEl->IsPseudoClassSet("disabled") || pEl->HasAttribute("disabled"))
+        return NULL;
+    Rml::ElementDocument* pDoc = pEl->GetOwnerDocument();
+    if (pDoc == NULL || !pDoc->IsVisible())
+        return NULL;
+    return pEl;
+}
+
+int
+KeyModifiers() {
+    int iMods = 0;
+    if (GetKeyState(VK_CONTROL) < 0)
+        iMods |= Rml::Input::KM_CTRL;
+    if (GetKeyState(VK_SHIFT) < 0)
+        iMods |= Rml::Input::KM_SHIFT;
+    if (GetKeyState(VK_MENU) < 0)
+        iMods |= Rml::Input::KM_ALT;
+    if (GetKeyState(VK_NUMLOCK) & 1)
+        iMods |= Rml::Input::KM_NUMLOCK;
+    return iMods;
+}
+
+Rml::Input::KeyIdentifier
+KeyFromVk(WPARAM vk) {
+    if (vk >= 'A' && vk <= 'Z')
+        return (Rml::Input::KeyIdentifier)(Rml::Input::KI_A + (int)(vk - 'A'));
+    if (vk >= '0' && vk <= '9')
+        return (Rml::Input::KeyIdentifier)(Rml::Input::KI_0 + (int)(vk - '0'));
+    if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9)
+        return (Rml::Input::KeyIdentifier)(Rml::Input::KI_NUMPAD0 + (int)(vk - VK_NUMPAD0));
+    switch (vk) {
+        case VK_BACK: return Rml::Input::KI_BACK;
+        case VK_DELETE: return Rml::Input::KI_DELETE;
+        case VK_LEFT: return Rml::Input::KI_LEFT;
+        case VK_RIGHT: return Rml::Input::KI_RIGHT;
+        case VK_UP: return Rml::Input::KI_UP;
+        case VK_DOWN: return Rml::Input::KI_DOWN;
+        case VK_HOME: return Rml::Input::KI_HOME;
+        case VK_END: return Rml::Input::KI_END;
+        case VK_PRIOR: return Rml::Input::KI_PRIOR;
+        case VK_NEXT: return Rml::Input::KI_NEXT;
+        case VK_RETURN: return Rml::Input::KI_RETURN;
+        case VK_ESCAPE: return Rml::Input::KI_ESCAPE;
+        case VK_TAB: return Rml::Input::KI_TAB;
+        default: return Rml::Input::KI_UNKNOWN;
+    }
+}
+
+/// Keys and characters for a focused text field; true = consumed.
+bool
+ProcessTextFieldKey(UINT uiMsg, WPARAM wParam) {
+    if (uiMsg == WM_CHAR && g_TextSwallowChar != 0 && wParam == g_TextSwallowChar) {
+        g_TextSwallowChar = 0;
+        return true;
+    }
+
+    Rml::Element* pField = FocusedTextField();
+    if (pField == NULL)
+        return false;
+
+    if (uiMsg == WM_CHAR) {
+        const bool bNumeric = pField->HasAttribute("numeric");
+        if (wParam >= 0x20 && wParam < 0x7F && !(GetKeyState(VK_CONTROL) < 0)
+            && (!bNumeric || (wParam >= '0' && wParam <= '9')))
+            g_pContext->ProcessTextInput((Rml::Character)wParam);
+        return true; /// nothing typed reaches the chat
+    }
+    if (uiMsg == WM_KEYUP)
+        return true;
+
+    /// WM_KEYDOWN.
+    g_TextSwallowChar = 0;
+    const Rml::Input::KeyIdentifier key = KeyFromVk(wParam);
+    if (key != Rml::Input::KI_UNKNOWN)
+        g_pContext->ProcessKeyDown(key, KeyModifiers()); /// Enter: a "change" with linebreak
+    if (wParam == VK_RETURN || wParam == VK_ESCAPE) {
+        g_TextSwallowChar = wParam;
+        /// The panel may have closed on it, taking the field with it.
+        if (Rml::Element* pStill = FocusedTextField())
+            pStill->Blur();
+    }
+    return true;
 }
 
 /// Assets live loose under the launch dir. The VFS-vs-loose decision for
@@ -437,6 +555,9 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_Trade.Initialise(g_pContext, kAssetDir);
     g_TradeInvite.Initialise(g_pContext, kAssetDir);
     g_Storage.Initialise(g_pContext, kAssetDir);
+    g_AvatarStore.Initialise(g_pContext, kAssetDir);
+    g_PrivateStore.Initialise(g_pContext, kAssetDir);
+    g_GoodsForm.Initialise(g_pContext, kAssetDir);
     /// Late, so they stack over the windows that ask them.
     g_NumberInput.Initialise(g_pContext, kAssetDir);
     g_MessageBox.Initialise(g_pContext, kAssetDir);
@@ -472,6 +593,9 @@ Shutdown() {
     g_Trade.Shutdown();
     g_TradeInvite.Shutdown();
     g_Storage.Shutdown();
+    g_AvatarStore.Shutdown();
+    g_PrivateStore.Shutdown();
+    g_GoodsForm.Shutdown();
     g_NumberInput.Shutdown();
     g_MessageBox.Shutdown();
     RoseRmlLayout::Shutdown();
@@ -561,6 +685,9 @@ Update() {
     UI_TIMED("trade", g_Trade.Update());
     UI_TIMED("tradeinvite", g_TradeInvite.Update());
     UI_TIMED("storage", g_Storage.Update());
+    UI_TIMED("avatarstore", g_AvatarStore.Update());
+    UI_TIMED("privatestore", g_PrivateStore.Update());
+    UI_TIMED("goods", g_GoodsForm.Update());
     UI_TIMED("numinput", g_NumberInput.Update());
     UI_TIMED("msgbox", g_MessageBox.Update());
     /// Data bindings, styles and layout of every document.
@@ -617,6 +744,15 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_BANK:
             g_Storage.SetOpen(bOpen);
             break;
+        case DLG_TYPE_AVATARSTORE:
+            g_AvatarStore.SetOpen(bOpen);
+            break;
+        case DLG_TYPE_PRIVATESTORE:
+            g_PrivateStore.SetOpen(bOpen);
+            break;
+        case DLG_TYPE_GOODS:
+            g_GoodsForm.SetOpen(bOpen);
+            break;
         case DLG_TYPE_RESTART:
             if (bOpen)
                 OpenRestart();
@@ -660,6 +796,12 @@ IsWindowOpen(int iDlgType) {
             return g_Trade.IsOpen();
         case DLG_TYPE_BANK:
             return g_Storage.IsOpen();
+        case DLG_TYPE_AVATARSTORE:
+            return g_AvatarStore.IsOpen();
+        case DLG_TYPE_PRIVATESTORE:
+            return g_PrivateStore.IsOpen();
+        case DLG_TYPE_GOODS:
+            return g_GoodsForm.IsOpen();
         case DLG_TYPE_RESTART:
             return g_MessageBox.IsTypePending(kMsgTypeRestart);
         default:
@@ -1026,11 +1168,18 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
             ForgetReleasedWorldButtons();
             if (g_uWorldButtons != 0 || !IsPointOverPanel(x, y)) {
                 g_uWorldButtons |= 1u << iButton;
+                /// A click in the world ends typing in a UI2 field.
+                if (Rml::Element* pField = FocusedTextField())
+                    pField->Blur();
                 return false; /// let the world have it; RmlUi gets no phantom press
             }
             if (iButton == 0)
                 g_bDragging = true;
             g_pContext->ProcessMouseButtonDown(iButton, 0);
+            /// Clicked into a UI2 field: the classic chat box stops listening,
+            /// or both would show a caret.
+            if (FocusedTextField() != NULL && CTEditBox::s_pFocusEdit != NULL)
+                CTEditBox::s_pFocusEdit->SetFocus(false);
             return true;
         }
         case WM_LBUTTONUP:
@@ -1062,9 +1211,14 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
         }
         case WM_KEYDOWN:
         case WM_CHAR:
-            /// Only the UI2 quantity question takes keys ( digits, Enter,
-            /// Escape ), and only while it is up; everything else is the game's.
-            return g_NumberInput.ProcessKey(uiMsg, wParam);
+            /// The UI2 quantity question first ( digits, Enter, Escape, only
+            /// while it is up ), then a focused text field; everything else is
+            /// the game's.
+            if (g_NumberInput.ProcessKey(uiMsg, wParam))
+                return true;
+            return ProcessTextFieldKey(uiMsg, wParam);
+        case WM_KEYUP:
+            return ProcessTextFieldKey(uiMsg, wParam);
         case WM_MOUSEWHEEL: {
             /// Wheel coordinates are screen-space, unlike every other mouse
             /// message here, so convert before hit-testing -- otherwise camera

@@ -1,0 +1,56 @@
+<rml>
+<head>
+    <title>Shop price</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="goods.rcss"/>
+</head>
+<body data-model="goods">
+    <!--
+        UI2 price form for your own shop ( RoseRmlGoodsForm ), replacing the
+        classic goods dialog. Opens by the mouse when an item goes on your
+        shop's selling or wanted list.
+
+        Type the price each ( the suggested one is selected: typing replaces
+        it ) and, for a stack, how many. Enter answers OK, Escape cancels.
+    -->
+    <div id="goods" class="ui-window" data-event-keydown="key()">
+        <handle move_target="goods" class="ui-titlebar">
+            <span class="ui-title">{{title}}</span>
+            <span class="ui-close" data-event-click="cancel()">X</span>
+        </handle>
+
+        <div class="what">
+            <div class="cell ui-icon"><img data-if="item_src != ''" data-attr-src="item_src" data-attr-rect="item_rect"/></div>
+            <div class="wtext">
+                <span class="wname">{{item_name}}</span>
+                <span class="wsub ui-muted" data-if="have != ''">{{have}}</span>
+            </div>
+        </div>
+
+        <div class="row">
+            <span class="label ui-muted">Price each</span>
+            <input id="price" type="text" class="ui-field num" numeric="1" maxlength="9"
+                   data-event-change="edited()"/>
+        </div>
+        <div class="row" data-if="stack">
+            <span class="label ui-muted" data-if="selling">How many</span>
+            <span class="label ui-muted" data-if="!selling">How many wanted</span>
+            <input id="quantity" type="text" class="ui-field num" numeric="1" maxlength="6"
+                   data-event-change="edited()"/>
+        </div>
+
+        <div class="total" data-class-short="short">
+            <span class="label ui-muted" data-if="selling">You get</span>
+            <span class="label ui-muted" data-if="!selling">You pay</span>
+            <span class="tval">{{total}}</span>
+        </div>
+        <div class="note" data-if="short">More than your zuly: the shop will not open.</div>
+
+        <div class="buttons">
+            <span class="ui-btn act" data-event-click="cancel()">Cancel</span>
+            <span class="ui-btn act ok" data-class-off="!valid" data-event-click="ok()">OK</span>
+        </div>
+    </div>
+</body>
+</rml>

@@ -61,6 +61,10 @@ CTargetMenu::OnLButtonUp(unsigned iProcID) {
                     CAvatarStoreDlg* pStoreDlg = (CAvatarStoreDlg*)pDlg;
                     pStoreDlg->SetMasterSvrObjIdx(
                         g_pObjMGR->Get_ServerObjectIndex(m_iTargetAvatarID));
+                    /// As clicking the shop does ( CObjAI ): without it the
+                    /// window kept the previous shop's sign.
+                    if (pObjAVT->GetPersonalStoreTitle())
+                        pStoreDlg->SetTitle(pObjAVT->GetPersonalStoreTitle());
                 }
             }
 
