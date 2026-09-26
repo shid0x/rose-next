@@ -223,7 +223,9 @@ div { display: block; }
 .ui-btn:active { background-color: #621800ff; border-color: #8a3010ff; }
 
 /* A selected option in a group ( scale presets, a toggle that is on ): ember
-   at rest, so the current choice reads at a glance. */
+   at rest, so the current choice reads at a glance. ONLY for a selection --
+   never to mark the "main" action button ( OK, Accept, Confirm ): an action
+   turns ember on hover only, like every other button. */
 .ui-btn.on { color: #ffffff; background-color: #7a2206ff; border-color: #c04818ff; }
 
 /* Panels locked ( /ui -> Lock panels ): RoseRmlLayout puts .locked on every

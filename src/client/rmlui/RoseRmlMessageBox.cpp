@@ -30,6 +30,39 @@ InWorld() {
         && CGame::GetInstance().GetCurrStateID() == CGame::GS_MAIN;
 }
 
+/// Plain text as RML: markup characters escaped, line breaks kept.
+Rml::String
+EscapeRml(const std::string& strText) {
+    Rml::String out;
+    out.reserve(strText.size() + 16);
+    for (size_t i = 0; i < strText.size(); ++i) {
+        const char c = strText[i];
+        switch (c) {
+            case '&':
+                out += "&amp;";
+                break;
+            case '<':
+                out += "&lt;";
+                break;
+            case '>':
+                out += "&gt;";
+                break;
+            case '"':
+                out += "&quot;";
+                break;
+            case '\n':
+                out += "<br/>";
+                break;
+            case '\r':
+                break;
+            default:
+                out += c;
+                break;
+        }
+    }
+    return out;
+}
+
 } // namespace
 
 RoseRmlMessageBox::RoseRmlMessageBox():
@@ -38,7 +71,8 @@ RoseRmlMessageBox::RoseRmlMessageBox():
     m_pPanel(NULL),
     m_bVisible(false),
     m_dwShownAt(0),
-    m_bNotice(false),
+    m_bSingle(false),
+    m_bTimed(false),
     m_fTimeLeft(100.0f) {}
 
 RoseRmlMessageBox::~RoseRmlMessageBox() {
@@ -60,7 +94,8 @@ RoseRmlMessageBox::Initialise(Rml::Context* pContext, const std::string& strAsse
     constructor.Bind("text", &m_strText);
     constructor.Bind("ok", &m_strOk);
     constructor.Bind("cancel", &m_strCancel);
-    constructor.Bind("notice", &m_bNotice);
+    constructor.Bind("single", &m_bSingle);
+    constructor.Bind("timed", &m_bTimed);
     constructor.Bind("time_left", &m_fTimeLeft);
 
     constructor.BindEventCallback("answer",
@@ -86,10 +121,10 @@ RoseRmlMessageBox::Initialise(Rml::Context* pContext, const std::string& strAsse
 
 void
 RoseRmlMessageBox::Shutdown() {
-    /// Unanswered questions die with the UI; their commands are ours to free.
+    /// Unanswered entries die with the UI; their commands are ours to free.
     while (!m_Queue.empty()) {
-        delete m_Queue.front().pOk;
-        delete m_Queue.front().pCancel;
+        delete m_Queue.front().req.pOk;
+        delete m_Queue.front().req.pCancel;
         m_Queue.pop_front();
     }
     /// The context owns the document; it is torn down with Rml::Shutdown().
@@ -105,46 +140,99 @@ RoseRmlMessageBox::CanShow() const {
 }
 
 bool
+RoseRmlMessageBox::Show(const Request& request) {
+    if (!CanShow())
+        return false;
+
+    Entry entry;
+    entry.req = request;
+    if (entry.req.ok.empty())
+        entry.req.ok = "OK";
+    entry.rml = request.bRml ? Rml::String(request.text) : EscapeRml(request.text);
+
+    if (request.bUrgent && !m_Queue.empty()) {
+        m_Queue.push_front(entry);
+        Present(); /// the shown one steps back and waits
+    } else {
+        m_Queue.push_back(entry);
+        if (m_Queue.size() == 1)
+            Present();
+    }
+    return true;
+}
+
+bool
 RoseRmlMessageBox::Confirm(const char* pszTitle,
     const char* pszText,
     const char* pszOk,
     const char* pszCancel,
     CTCommand* pOk,
     CTCommand* pCancel) {
-    if (!CanShow())
-        return false;
-
-    Entry entry;
-    entry.title = pszTitle ? pszTitle : "";
-    entry.text = pszText ? pszText : "";
-    entry.ok = pszOk ? pszOk : "OK";
-    entry.cancel = (pszCancel && pszCancel[0]) ? pszCancel : "Cancel";
-    entry.pOk = pOk;
-    entry.pCancel = pCancel;
-    Push(entry);
-    return true;
+    Request req;
+    req.title = pszTitle ? pszTitle : "";
+    req.text = pszText ? pszText : "";
+    req.ok = pszOk ? pszOk : "OK";
+    req.cancel = (pszCancel && pszCancel[0]) ? pszCancel : "Cancel";
+    req.pOk = pOk;
+    req.pCancel = pCancel;
+    return Show(req);
 }
 
 bool
 RoseRmlMessageBox::Notice(const char* pszTitle, const char* pszText) {
-    if (!CanShow())
-        return false;
+    Request req;
+    req.title = pszTitle ? pszTitle : "";
+    req.text = pszText ? pszText : "";
+    req.dwTimeoutMs = kNoticeMs;
+    req.bTimeoutOk = true;
+    return Show(req);
+}
 
-    Entry entry;
-    entry.title = pszTitle ? pszTitle : "";
-    entry.text = pszText ? pszText : "";
-    entry.ok = "OK";
-    entry.pOk = NULL;
-    entry.pCancel = NULL;
-    Push(entry);
-    return true;
+bool
+RoseRmlMessageBox::IsTypePending(int iType) const {
+    if (iType == 0)
+        return false;
+    for (size_t i = 0; i < m_Queue.size(); ++i) {
+        if (m_Queue[i].req.iType == iType)
+            return true;
+    }
+    return false;
 }
 
 void
-RoseRmlMessageBox::Push(const Entry& entry) {
-    m_Queue.push_back(entry);
-    if (m_Queue.size() == 1)
+RoseRmlMessageBox::CloseType(int iType) {
+    if (iType == 0)
+        return;
+    const bool bFrontGoes = !m_Queue.empty() && m_Queue.front().req.iType == iType;
+    for (std::deque<Entry>::iterator it = m_Queue.begin(); it != m_Queue.end();) {
+        if (it->req.iType == iType) {
+            delete it->req.pOk;
+            delete it->req.pCancel;
+            it = m_Queue.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    if (bFrontGoes)
         Present();
+}
+
+void
+RoseRmlMessageBox::SetTypeText(int iType, const char* pszText) {
+    if (iType == 0)
+        return;
+    const Rml::String rml = EscapeRml(pszText ? pszText : "");
+    for (size_t i = 0; i < m_Queue.size(); ++i) {
+        if (m_Queue[i].req.iType != iType)
+            continue;
+        m_Queue[i].req.text = pszText ? pszText : "";
+        m_Queue[i].req.bRml = false;
+        m_Queue[i].rml = rml;
+        if (i == 0 && rml != m_strText) {
+            m_strText = rml;
+            m_Model.DirtyVariable("text");
+        }
+    }
 }
 
 void
@@ -153,11 +241,12 @@ RoseRmlMessageBox::Present() {
         return;
 
     const Entry& entry = m_Queue.front();
-    m_strTitle = entry.title;
-    m_strText = entry.text;
-    m_strOk = entry.ok;
-    m_strCancel = entry.cancel;
-    m_bNotice = entry.cancel.empty();
+    m_strTitle = entry.req.title;
+    m_strText = entry.rml;
+    m_strOk = entry.req.ok;
+    m_strCancel = entry.req.cancel;
+    m_bSingle = entry.req.cancel.empty();
+    m_bTimed = entry.req.dwTimeoutMs > 0;
     m_fTimeLeft = 100.0f;
     m_dwShownAt = GetTickCount();
 
@@ -165,7 +254,8 @@ RoseRmlMessageBox::Present() {
     m_Model.DirtyVariable("text");
     m_Model.DirtyVariable("ok");
     m_Model.DirtyVariable("cancel");
-    m_Model.DirtyVariable("notice");
+    m_Model.DirtyVariable("single");
+    m_Model.DirtyVariable("timed");
     m_Model.DirtyVariable("time_left");
 }
 
@@ -179,8 +269,8 @@ RoseRmlMessageBox::Answer(bool bOk) {
 
     /// Run the chosen command the way CMsgBox does ( IT_MGR executes and
     /// frees it ); free the other.
-    CTCommand* pRun = bOk ? entry.pOk : entry.pCancel;
-    CTCommand* pDrop = bOk ? entry.pCancel : entry.pOk;
+    CTCommand* pRun = bOk ? entry.req.pOk : entry.req.pCancel;
+    CTCommand* pDrop = bOk ? entry.req.pCancel : entry.req.pOk;
     delete pDrop;
     if (pRun)
         g_itMGR.AddTCommand(0, pRun);
@@ -205,22 +295,34 @@ RoseRmlMessageBox::Update() {
     if (m_pDocument == NULL)
         return;
 
-    /// Out of the world: questions are answered "no", notices dropped.
+    /// Out of the world: requests are declined, questions answered "no",
+    /// one-button entries dropped without running.
     if (!InWorld()) {
         while (!m_Queue.empty())
             Answer(false);
     }
 
-    if (!m_Queue.empty() && m_bNotice) {
-        const DWORD dwElapsed = GetTickCount() - m_dwShownAt;
-        if (dwElapsed >= kNoticeMs) {
-            Answer(true);
-        } else {
-            const float fLeft =
-                floorf(1000.0f * (float)(kNoticeMs - dwElapsed) / (float)kNoticeMs) / 10.0f;
-            if (fLeft != m_fTimeLeft) {
-                m_fTimeLeft = fLeft;
-                m_Model.DirtyVariable("time_left");
+    if (!m_Queue.empty()) {
+        const Request& req = m_Queue.front().req;
+        if (req.valid && !req.valid()) {
+            /// The request lost its point ( a cart ride whose carts drifted
+            /// apart ): declined, as the classic box did.
+            Answer(false);
+        } else if (req.dwTimeoutMs > 0) {
+            const DWORD dwElapsed = GetTickCount() - m_dwShownAt;
+            if (dwElapsed >= req.dwTimeoutMs) {
+                const std::string strChat = req.timeoutChat;
+                Answer(req.bTimeoutOk);
+                if (!strChat.empty())
+                    g_itMGR.AppendChatMsg(strChat.c_str(), IT_MGR::CHAT_TYPE_SYSTEM);
+            } else {
+                const float fLeft = floorf(1000.0f * (float)(req.dwTimeoutMs - dwElapsed)
+                                        / (float)req.dwTimeoutMs)
+                    / 10.0f;
+                if (fLeft != m_fTimeLeft) {
+                    m_fTimeLeft = fLeft;
+                    m_Model.DirtyVariable("time_left");
+                }
             }
         }
     }

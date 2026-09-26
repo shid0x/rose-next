@@ -1283,14 +1283,29 @@ IT_MGR::OpenMsgBox(const char* szMsg,
     CTCommand* pCmdOk,
     CTCommand* pCmdCancel,
     int iMsgType) {
-    /// UI2: a plain notice ( OK only, nothing to run, no type anything looks
-    /// it up by, no invoker ) is shown by the UI2 message box -- a classic
-    /// box draws under the UI2 windows, and the shop's "not enough money"
-    /// landed right behind the shop. Anything else stays classic.
-    if (RoseUi2::IsActive() && iButtonType == CMsgBox::BT_OK && pCmdOk == NULL
-        && pCmdCancel == NULL && iMsgType == 0 && iInvokerDlgID == 0 && szMsg != NULL
-        && RoseRmlUi::NoticeBox("Notice", RoseRmlText::FromGame(szMsg).c_str()))
-        return;
+    /// UI2: the UI2 message box shows it -- a classic box draws under the UI2
+    /// windows ( the shop's "not enough money" landed right behind the shop,
+    /// the drop-item question behind the bag ). Everything without a message
+    /// type ( something looks those up ) or an invoking dialog ( the crafting
+    /// windows, still classic, own theirs ):
+    ///   OK, nothing to run   -> a notice that closes itself
+    ///   OK that runs a command -> one button, waits for the click
+    ///   OK / Cancel          -> a question
+    if (RoseUi2::IsActive() && iMsgType == 0 && iInvokerDlgID == 0 && szMsg != NULL) {
+        const std::string strText = RoseRmlText::FromGame(szMsg);
+        if (iButtonType == CMsgBox::BT_OK && pCmdOk == NULL && pCmdCancel == NULL) {
+            if (RoseRmlUi::NoticeBox("Notice", strText.c_str()))
+                return;
+        } else if (iButtonType == CMsgBox::BT_OK) {
+            if (RoseRmlUi::AlertBox("Notice", strText.c_str(), "OK", pCmdOk)) {
+                delete pCmdCancel; /// no Cancel button to run it
+                return;
+            }
+        } else if (iButtonType == (CMsgBox::BT_OK | CMsgBox::BT_CANCEL)) {
+            if (RoseRmlUi::ConfirmBox("Confirm", strText.c_str(), "OK", "Cancel", pCmdOk, pCmdCancel))
+                return;
+        }
+    }
 
     CreateMsgBoxData Data;
     Data.bModal = bModal;

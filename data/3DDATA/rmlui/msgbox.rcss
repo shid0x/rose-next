@@ -9,13 +9,18 @@ body { z-index: 50; }
 #msgbox {
     left: 42%;
     top: 30%;
-    width: 260dp;
+    width: 280dp;
 }
 
+/* Long texts ( the tutorial's notices ) scroll rather than grow off screen. */
 .text {
+    max-height: 300dp;
+    overflow-y: auto;
     padding: 6dp 6dp 8dp 6dp;
     line-height: 16dp;
 }
+/* {B} in the tutorial's markup. */
+.text .b { font-weight: bold; }
 
 /* A notice's countdown: drains to nothing, then the box closes. */
 .timer {

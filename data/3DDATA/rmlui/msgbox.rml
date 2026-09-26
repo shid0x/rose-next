@@ -7,22 +7,25 @@
 </head>
 <body data-model="msgbox">
     <!--
-        UI2 message box ( RoseRmlMessageBox ): a question with two named
-        answers, or a notice that closes itself when its bar runs out. Drag the
-        title bar to move it; the spot is saved.
+        UI2 message box ( RoseRmlMessageBox ): every popup UI2 shows -- a
+        notice that closes itself when its bar runs out, a question with two
+        named answers, an OK that runs something, a request from another
+        player ( declined when its bar runs out ), the death window, the
+        logout countdown. Drag the title bar to move it; the spot is saved.
     -->
     <div id="msgbox" class="ui-window">
         <handle move_target="msgbox" class="ui-titlebar">
             <span class="ui-title">{{title}}</span>
         </handle>
 
-        <div class="text">{{text}}</div>
+        <!-- RML: plain text arrives escaped, the tutorial's markup converted. -->
+        <div class="text" data-rml="text"></div>
 
-        <div class="timer ui-gauge" data-if="notice"><div class="ui-gauge-fill steel fill" data-style-transform="'scaleX(' + (time_left + 0.1) / 100 + ')'"></div></div>
+        <div class="timer ui-gauge" data-if="timed"><div class="ui-gauge-fill steel fill" data-style-transform="'scaleX(' + (time_left + 0.1) / 100 + ')'"></div></div>
 
         <div class="buttons">
-            <span class="ui-btn on answer" data-event-click="answer(true)">{{ok}}</span>
-            <span class="ui-btn answer" data-if="!notice" data-event-click="answer(false)">{{cancel}}</span>
+            <span class="ui-btn answer" data-event-click="answer(true)">{{ok}}</span>
+            <span class="ui-btn answer" data-if="!single" data-event-click="answer(false)">{{cancel}}</span>
         </div>
     </div>
 </body>

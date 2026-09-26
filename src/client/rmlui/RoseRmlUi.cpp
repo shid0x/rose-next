@@ -25,6 +25,8 @@
 #include "RoseRmlTrade.h"
 #include "RoseRmlTradeInvite.h"
 #include "RoseRmlSystem.h"
+#include "RoseRmlText.h"
+#include "RoseUi2.h"
 
 #include <RmlUi/Core.h>
 #include <RmlUi/Debugger.h>
@@ -34,6 +36,10 @@
 #include "../interface/CDragNDropMgr.h"
 #include "../interface/CInfo.h"
 #include "../interface/CToolTipMgr.h"
+#include "../Network/CNetwork.h"
+#include "../CObjUSER.h"
+#include "../Game.h"
+#include "tgamectrl/tcommand.h"
 #include "../System/CGame.h"
 #include "tgamectrl/winctrl.h"
 #include "../interface/interfacetype.h"
@@ -168,6 +174,45 @@ ReportSlowUiFrame() {
     if (g_pRenderer)
         g_pRenderer->TakeWorkStats(); /// per frame
     g_iUiSlices = 0;
+}
+
+/// The death window's answers ( CRestartDLG's buttons ). Only while still dead:
+/// a box answered late must not ask for a second revive.
+class CTCmdRevive: public CTCommand {
+public:
+    explicit CTCmdRevive(BYTE btType): m_btType(btType) {}
+    virtual bool Exec(CTObject*) {
+        if (g_pNet != NULL && g_pAVATAR != NULL && g_pAVATAR->Get_HP() <= 0)
+            g_pNet->Send_cli_REVIVE_REQ(m_btType);
+        return true;
+    }
+
+private:
+    BYTE m_btType;
+};
+
+/// The death window: a message box entry, urgent, of its own type, which
+/// IT_MGR's open / close / "is open" for DLG_TYPE_RESTART reach through the
+/// window routing.
+void
+OpenRestart() {
+    if (g_MessageBox.IsTypePending(RoseRmlUi::kMsgTypeRestart))
+        return;
+    RoseRmlMessageBox::Request req;
+    req.title = "You have fallen";
+    req.text = "Where do you want to revive?";
+    req.ok = "Save point";
+    req.cancel = "Revive here";
+    req.pOk = new CTCmdRevive(REVIVE_TYPE_SAVE_POS);
+    req.pCancel = new CTCmdRevive(REVIVE_TYPE_REVIVE_POS);
+    req.iType = RoseRmlUi::kMsgTypeRestart;
+    req.bUrgent = true;
+    if (g_MessageBox.Show(req)) {
+        RoseUi2::PlayWindowSound(DLG_TYPE_RESTART, true);
+    } else {
+        delete req.pOk;
+        delete req.pCancel;
+    }
 }
 
 /// True between a left-press on a panel and its release. Needed because a panel
@@ -546,6 +591,12 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_EXCHANGE:
             g_Trade.SetOpen(bOpen);
             break;
+        case DLG_TYPE_RESTART:
+            if (bOpen)
+                OpenRestart();
+            else
+                g_MessageBox.CloseType(kMsgTypeRestart);
+            break;
         default:
             break;
     }
@@ -581,6 +632,8 @@ IsWindowOpen(int iDlgType) {
             return g_NumberInput.IsOpen();
         case DLG_TYPE_EXCHANGE:
             return g_Trade.IsOpen();
+        case DLG_TYPE_RESTART:
+            return g_MessageBox.IsTypePending(kMsgTypeRestart);
         default:
             return false;
     }
@@ -624,6 +677,81 @@ ConfirmBox(const char* pszTitle,
 bool
 NoticeBox(const char* pszTitle, const char* pszText) {
     return g_bInitialised && g_MessageBox.Notice(pszTitle, pszText);
+}
+
+bool
+AlertBox(const char* pszTitle,
+    const char* pszText,
+    const char* pszOk,
+    CTCommand* pOk,
+    int iType,
+    bool bUrgent) {
+    if (!g_bInitialised)
+        return false;
+    RoseRmlMessageBox::Request req;
+    req.title = pszTitle ? pszTitle : "";
+    req.text = pszText ? pszText : "";
+    req.ok = (pszOk && pszOk[0]) ? pszOk : "OK";
+    req.pOk = pOk;
+    req.iType = iType;
+    req.bUrgent = bUrgent;
+    return g_MessageBox.Show(req);
+}
+
+bool
+RequestBox(const char* pszTitle,
+    const char* pszText,
+    const char* pszOk,
+    const char* pszCancel,
+    CTCommand* pOk,
+    CTCommand* pCancel,
+    int iType,
+    unsigned long dwTimeoutMs,
+    const char* pszTimeoutChat,
+    std::function<bool()> valid) {
+    if (!g_bInitialised)
+        return false;
+    RoseRmlMessageBox::Request req;
+    req.title = pszTitle ? pszTitle : "";
+    req.text = pszText ? pszText : "";
+    req.ok = (pszOk && pszOk[0]) ? pszOk : "Accept";
+    req.cancel = (pszCancel && pszCancel[0]) ? pszCancel : "Decline";
+    req.pOk = pOk;
+    req.pCancel = pCancel;
+    req.iType = iType;
+    req.dwTimeoutMs = dwTimeoutMs;
+    req.bTimeoutOk = false;
+    req.timeoutChat = pszTimeoutChat ? pszTimeoutChat : "";
+    req.valid = valid;
+    return g_MessageBox.Show(req);
+}
+
+bool
+MarkupNoticeBox(const char* pszTitle, const char* pszGameMarkup) {
+    if (!g_bInitialised)
+        return false;
+    RoseRmlMessageBox::Request req;
+    req.title = pszTitle ? pszTitle : "";
+    req.text = RoseRmlConversation::MarkupToRml(pszGameMarkup);
+    req.bRml = true;
+    return g_MessageBox.Show(req);
+}
+
+bool
+IsMessageTypePending(int iType) {
+    return g_bInitialised && g_MessageBox.IsTypePending(iType);
+}
+
+void
+CloseMessageType(int iType) {
+    if (g_bInitialised)
+        g_MessageBox.CloseType(iType);
+}
+
+void
+SetMessageText(int iType, const char* pszText) {
+    if (g_bInitialised)
+        g_MessageBox.SetTypeText(iType, pszText);
 }
 
 bool

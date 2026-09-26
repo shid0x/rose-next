@@ -6,6 +6,8 @@
 #include "../command/uicommand.h"
 #include "../../System/CGame.h"
 #include "../../System/TCmdSystem.h"
+#include "../../rmlui/RoseRmlUi.h"
+#include "../../rmlui/RoseRmlText.h"
 
 CITStateWaitDisconnect::CITStateWaitDisconnect(void) {
     m_iID = IT_MGR::STATE_WAITDISCONNECT;
@@ -16,6 +18,23 @@ CITStateWaitDisconnect::~CITStateWaitDisconnect(void) {}
 void
 CITStateWaitDisconnect::Enter() {
     m_iWaitDisconnectedTime = g_itMGR.GetWaitDisconnectTime();
+
+    /// UI2: the countdown in the UI2 message box ( the special box draws under
+    /// the UI2 windows ), in front of anything waiting; Cancel stays.
+    CTCommand* pUi2Cancel = new CTCmdCancelWaitDisconnect;
+    if (RoseRmlUi::AlertBox("Leaving the game",
+            RoseRmlText::FromGame(CStr::Printf(STR_WAITTIME_EXITGAME, m_iWaitDisconnectedTime))
+                .c_str(),
+            "Cancel",
+            pUi2Cancel,
+            RoseRmlUi::kMsgTypeLogout,
+            true)) {
+        m_dwEnterTime = g_GameDATA.GetGameTime();
+        m_dwPrevUpdateTime = m_dwEnterTime;
+        return;
+    }
+    delete pUi2Cancel;
+
     if (CTDialog* pDlg = g_itMGR.FindDlg(DLG_TYPE_MSGBOX_SPECIAL)) {
         CMsgBoxSpecial* pSpecialMsgBox = (CMsgBoxSpecial*)pDlg;
         pSpecialMsgBox->SetString(CStr::Printf(STR_WAITTIME_EXITGAME, m_iWaitDisconnectedTime));
@@ -37,6 +56,7 @@ CITStateWaitDisconnect::Enter() {
 
 void
 CITStateWaitDisconnect::Leave() {
+    RoseRmlUi::CloseMessageType(RoseRmlUi::kMsgTypeLogout);
     g_itMGR.CloseDialog(DLG_TYPE_MSGBOX_SPECIAL);
 }
 
@@ -77,6 +97,8 @@ CITStateWaitDisconnect::Update(POINT ptMouse) {
             CMsgBoxSpecial* pSpecialMsgBox = (CMsgBoxSpecial*)pDlg;
             pSpecialMsgBox->SetString(CStr::Printf(STR_WAITTIME_EXITGAME, iWaitTime));
         }
+        RoseRmlUi::SetMessageText(RoseRmlUi::kMsgTypeLogout,
+            RoseRmlText::FromGame(CStr::Printf(STR_WAITTIME_EXITGAME, iWaitTime)).c_str());
         m_dwPrevUpdateTime = dwCurrTime;
     }
 }

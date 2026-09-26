@@ -58,6 +58,8 @@ const int kReplacedDialogs[] = {
     /// observes CExchange and keeps the icons, drag items and commands. Its
     /// Hide() ends the trade, so the classic dialog must never be shown.
     DLG_TYPE_EXCHANGE,
+    /// The death window: a UI2 message box entry ( RoseRmlUi, OpenRestart ).
+    DLG_TYPE_RESTART,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -76,6 +78,7 @@ const int kReplacedWindows[] = {
     DLG_TYPE_DEAL,
     DLG_TYPE_N_INPUT,
     DLG_TYPE_EXCHANGE,
+    DLG_TYPE_RESTART,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).

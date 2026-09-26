@@ -57,7 +57,7 @@
 
         <div class="buttons">
             <span class="ui-btn act" data-event-click="cancel()">Cancel</span>
-            <span class="ui-btn on act" data-event-click="ok()">OK</span>
+            <span class="ui-btn act" data-event-click="ok()">OK</span>
         </div>
     </div>
 </body>

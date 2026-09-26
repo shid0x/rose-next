@@ -30,6 +30,7 @@
 #include "../Interface/TypeResource.h"
 #include "../rmlui/RoseRmlUi.h"
 #include "../rmlui/RoseRmlText.h"
+#include <functional>
 #include "../Interface/CHelpMgr.h"
 #include "../Interface/CUIMediator.h"
 #include "../Interface/ExternalUI/CExternalUI.h"
@@ -4586,6 +4587,21 @@ CRecvPACKET::Recv_tag_MCMD_HEADER() {
                     new CTCmdRejectAddFriend(m_pRecvPacket->m_wsv_MCMD_APPEND_REQ.m_wUserIDX,
                         m_pRecvPacket->m_wsv_MCMD_APPEND_REQ.m_szName);
 
+                /// UI2: a request prompt, declined when nobody answers.
+                if (RoseRmlUi::RequestBox("Friend request",
+                        RoseRmlText::FromGame(CStr::Printf(F_STR_QUERY_APPEND_FRIEND_REQ,
+                                                  m_pRecvPacket->m_wsv_MCMD_APPEND_REQ.m_szName))
+                            .c_str(),
+                        "Accept",
+                        "Decline",
+                        pAcceptCmd,
+                        pRejectCmd,
+                        0,
+                        30 * 1000,
+                        CStr::Printf("Friend request from %s declined (no answer).",
+                            m_pRecvPacket->m_wsv_MCMD_APPEND_REQ.m_szName)))
+                    break;
+
                 g_itMGR.OpenMsgBox(CStr::Printf(F_STR_QUERY_APPEND_FRIEND_REQ,
                                        m_pRecvPacket->m_wsv_MCMD_APPEND_REQ.m_szName),
                     CMsgBox::BT_OK | CMsgBox::BT_CANCEL,
@@ -5590,9 +5606,22 @@ CRecvPACKET::Recv_wsv_CLAN_COMMAND() {
             assert(pszMaster);
             if (pszMaster) {
                 // MSGTYPE_RECV_CLANJOIN_REQ
-                if (g_itMGR.FindMsgBox(CMsgBox::MSGTYPE_RECV_CLANJOIN_REQ) == NULL) {
+                if (g_itMGR.FindMsgBox(CMsgBox::MSGTYPE_RECV_CLANJOIN_REQ) == NULL
+                    && !RoseRmlUi::IsMessageTypePending(CMsgBox::MSGTYPE_RECV_CLANJOIN_REQ)) {
                     CTCommand* pCmdYes = new CTCmdAcceptReqJoinClan(pszMaster);
                     CTCommand* pCmdNo = new CTCmdRejectReqJoinClan(pszMaster);
+                    /// UI2: a request prompt, declined when nobody answers.
+                    if (RoseRmlUi::RequestBox("Clan invitation",
+                            RoseRmlText::FromGame(CStr::Printf(STR_CLAN_GCMD_INVITE_REQ, pszMaster))
+                                .c_str(),
+                            "Join",
+                            "Decline",
+                            pCmdYes,
+                            pCmdNo,
+                            CMsgBox::MSGTYPE_RECV_CLANJOIN_REQ,
+                            30 * 1000,
+                            CStr::Printf("Clan invitation from %s declined (no answer).", pszMaster)))
+                        break;
                     g_itMGR.OpenMsgBox(CStr::Printf(STR_CLAN_GCMD_INVITE_REQ, pszMaster),
                         CMsgBox::BT_OK | CMsgBox::BT_CANCEL,
                         false,
@@ -6600,6 +6629,33 @@ CRecvPACKET::Recv_gsv_CART_RIDE() {
             CTCmdRejectCartRide* pCmdCancel =
                 new CTCmdRejectCartRide(m_pRecvPacket->m_gsv_CART_RIDE.m_wOwnerObjIDX,
                     m_pRecvPacket->m_gsv_CART_RIDE.m_wGuestObjIDX);
+
+            /// UI2: a request prompt. Like CMsgBox_CartRide it is declined once
+            /// the two carts are further apart than the cart ride skill reaches.
+            {
+                const WORD wOwner = m_pRecvPacket->m_gsv_CART_RIDE.m_wOwnerObjIDX;
+                const WORD wGuest = m_pRecvPacket->m_gsv_CART_RIDE.m_wGuestObjIDX;
+                std::function<bool()> valid = [wOwner, wGuest]() -> bool {
+                    CObjAVT* pOwner =
+                        g_pObjMGR->Get_CharAVT(g_pObjMGR->Get_ClientObjectIndex(wOwner), true);
+                    CObjAVT* pGuest =
+                        g_pObjMGR->Get_CharAVT(g_pObjMGR->Get_ClientObjectIndex(wGuest), true);
+                    if (pOwner && pGuest)
+                        return pOwner->Get_DISTANCE(pGuest) <= SKILL_SCOPE(25); /// cart ride skill 25
+                    return true;
+                };
+                if (RoseRmlUi::RequestBox("Cart ride",
+                        RoseRmlText::FromGame(g_MsgBuf).c_str(),
+                        "Board",
+                        "Decline",
+                        pCmdOk,
+                        pCmdCancel,
+                        CMsgBox::MSGTYPE_RECV_CART_RIDE_REQ,
+                        30 * 1000,
+                        CStr::Printf("Cart ride from %s declined (no answer).", pAVT->Get_NAME()),
+                        valid))
+                    break;
+            }
 
             g_itMGR.OpenMsgBox_CartRide(g_MsgBuf,
                 CMsgBox::BT_OK | CMsgBox::BT_CANCEL,

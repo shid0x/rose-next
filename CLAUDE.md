@@ -425,6 +425,18 @@ to 12 ms, a tab switch from 12-25 ms to nothing measurable):
 - `[rmlui] slow UI frame:` in `client-*.log` names the panels and phases whenever UI2 takes more
   than 8 ms of a frame, plus what the renderer had to build. Measure with it before guessing.
 
+**Popup sweep** (2026-09-26): classic popups draw under the UI2 windows, so while UI2 is on
+`IT_MGR::OpenMsgBox` routes every box **without a message type or an invoking dialog** to
+`RoseRmlMessageBox` -- OK-only = a self-closing notice, OK + command = one button that waits, OK/Cancel
+= a question. Typed boxes stay classic unless routed by name (something looks them up): party,
+trade, friend, clan and cart-ride requests have UI2 prompts that decline after 30 s (the cart one
+also once the carts drift apart, as `CMsgBox_CartRide` did). The death window (`DLG_TYPE_RESTART`)
+is a routed window backed by a typed message-box entry (`kMsgTypeRestart`), the logout countdown
+another (`kMsgTypeLogout`, re-worded every second), both *urgent* (front of the queue); the
+tutorial's `SC_ShowNotifyMessage` renders its markup. Still classic: the crafting/break-down result
+boxes (their windows are classic), the GM announcement/help banner, and the dead name-input dialog.
+`.ui-btn.on` (ember at rest) is for a *selected* tab/toggle only -- action buttons turn ember on hover.
+
 **UI2 sounds** come from the classic XML: a UI2 window plays its replaced dialog's `SHOWSID` /
 `HIDESID` (`RoseUi2::PlayWindowSound`), and a context-wide listener plays the classic `CLICKSID`
 (8) for any `.ui-btn` or `.ui-click` (`.ui-static` opts out). `CTDialog::Hide` always plays its

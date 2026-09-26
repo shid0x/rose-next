@@ -12,6 +12,9 @@
 
 #include <windows.h>
 
+#include <functional>
+#include <string>
+
 class CTCommand;
 class CInfo;
 
@@ -116,6 +119,43 @@ bool ConfirmBox(const char* pszTitle,
     CTCommand* pCancel);
 /// A notice that closes itself.
 bool NoticeBox(const char* pszTitle, const char* pszText);
+
+/// One button that runs its command ( ownership passes only on true ); waits
+/// for the click. iType lets the caller find, re-word or close it later;
+/// bUrgent puts it in front of anything waiting.
+bool AlertBox(const char* pszTitle,
+    const char* pszText,
+    const char* pszOk,
+    CTCommand* pOk,
+    int iType = 0,
+    bool bUrgent = false);
+
+/// A request from another player: Accept / Decline, declined after
+/// dwTimeoutMs ( with pszTimeoutChat, game code page, in the chat ), or as
+/// soon as valid() says it lost its point. Ownership passes only on true.
+bool RequestBox(const char* pszTitle,
+    const char* pszText,
+    const char* pszOk,
+    const char* pszCancel,
+    CTCommand* pOk,
+    CTCommand* pCancel,
+    int iType,
+    unsigned long dwTimeoutMs,
+    const char* pszTimeoutChat,
+    std::function<bool()> valid = std::function<bool()>());
+
+/// A notice in the game's text markup ( {FC=n}, {B}, {BR} ), read at leisure:
+/// the tutorial's notices ( SC_ShowNotifyMessage ).
+bool MarkupNoticeBox(const char* pszTitle, const char* pszGameMarkup);
+
+/// Message types UI2 adds to CMsgBox's own ( MSGTYPE_* stop at 4 ).
+const int kMsgTypeRestart = 100; ///< the death window ( DLG_TYPE_RESTART )
+const int kMsgTypeLogout = 101; ///< the logout countdown
+
+bool IsMessageTypePending(int iType);
+void CloseMessageType(int iType);
+/// Re-word a shown or waiting box of this type ( plain text, UTF-8 ).
+void SetMessageText(int iType, const char* pszText);
 
 /// The UI2 inventory ( RoseRmlInventory ) answering CItemDlg's slot questions
 /// while it stands in for the classic dialog. Screen pixels.

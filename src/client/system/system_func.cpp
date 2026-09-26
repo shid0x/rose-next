@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "../rmlui/RoseRmlUi.h"
 
 #include "System_FUNC.h"
 #include "IO_Basic.h"
@@ -444,6 +445,12 @@ SC_RunEventObjectEvent(int iOwnerIndex, ZSTRING szQuestFILE, int iEventIDX) {
 void
 SC_ShowNotifyMessage(int iStringIDX) {
     const char* pMsg = CStringManager::GetSingleton().GetNotifyMessageString(iStringIDX);
+
+    /// UI2: the UI2 message box, markup and all ( CNotifyDlg draws under the
+    /// UI2 windows ); it scrolls where the classic one paged.
+    if (pMsg != NULL && RoseRmlUi::MarkupNoticeBox("Notice", pMsg))
+        return;
+
     CTDialog* pDlg = g_itMGR.FindDlg(DLG_TYPE_NOTIFY);
     assert(pDlg);
     if (pDlg) {

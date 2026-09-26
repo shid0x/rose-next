@@ -26,7 +26,7 @@
         <div class="timer ui-gauge"><div class="ui-gauge-fill steel fill" data-style-transform="'scaleX(' + (time_left + 0.001) + ')'"></div></div>
 
         <div class="buttons">
-            <span class="ui-btn on answer" data-event-click="accept()">Accept</span>
+            <span class="ui-btn answer" data-event-click="accept()">Accept</span>
             <span class="ui-btn answer" data-event-click="decline()">Decline</span>
         </div>
     </div>
