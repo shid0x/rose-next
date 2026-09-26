@@ -13,6 +13,7 @@
 #include <windows.h>
 
 class CTCommand;
+class CInfo;
 
 namespace RoseRmlUi {
 
@@ -46,6 +47,12 @@ void OnResize(int iWidth, int iHeight);
 /// Returns true when RmlUi consumed the message and it must not reach the
 /// legacy dialog chain. Call FIRST in CGameStateMain::ProcWndMsgInstant.
 bool ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam);
+
+/// A classic tooltip ( CInfo ) for a UI2 panel, placed as the classic slots
+/// place theirs: at the cursor, 20 px to its right -- to its left when that
+/// runs off the screen -- and registered with CToolTipMgr. Under UI2 the
+/// tooltip is drawn after the RmlUi pass, so it may sit over any window.
+void PlaceTooltipAtCursor(CInfo& ToolTip);
 
 /// Draw-call count of the last rendered frame, for the debug HUD.
 int GetDrawCallCount();
@@ -87,6 +94,16 @@ bool IsDamageMeterVisible();
 bool ShowPartyInvite(unsigned short wFromObjSvrIdx, const char* pszFrom, bool bMake);
 /// A UI2 party invitation is waiting for an answer ( new requests are BUSY ).
 bool IsPartyInvitePending();
+
+/// A trade request arrived ( Recv_gsv_TRADE_P2P ): show it as the UI2 prompt.
+/// False when UI2 cannot, and the caller opens the legacy message box.
+bool ShowTradeInvite(unsigned short wFromObjSvrIdx, const char* pszFrom);
+/// A UI2 trade request is waiting for an answer ( new requests are BUSY ).
+bool IsTradeInvitePending();
+/// The other side changed its offer while we were ready ( Recv_gsv_TRADE_P2P_ITEM ):
+/// the UI2 trade window takes our readiness back and says why. False when no
+/// UI2 trade is showing ( the caller warns the classic way ).
+bool TradeOfferChangedWhileReady();
 
 /// UI2 message box ( RoseRmlMessageBox ). A question with named answers, each
 /// running its legacy CTCommand; ownership passes only on true. False when

@@ -36,6 +36,12 @@ void Shutdown();
 /// direct child of <body> ).
 void Track(Rml::Element* pPanel, const char* pszKey);
 
+/// The element under the mouse, if it belongs to pDocument; NULL otherwise.
+/// Panels find their cells by walking up to an attribute ( slot-kind ... ), and
+/// two panels can use the same one: the inventory read an empty trade slot
+/// ( slot-kind 0 = your offer ) as bag slot 0 and showed that item's tooltip.
+Rml::Element* HoverIn(Rml::Context* pContext, Rml::Element* pDocument);
+
 /// Keep the whole panel on screen. Cheap when it already is; call per frame
 /// while the panel is visible.
 void Clamp(Rml::Element* pPanel, int iViewportW, int iViewportH);

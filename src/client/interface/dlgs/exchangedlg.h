@@ -37,6 +37,17 @@ public:
 
     virtual void Update(CObservable* pObservable, CTObject* pObj);
 
+    /// UI2 ( RoseRmlTrade ) draws these slots and drags with these drag items
+    /// while this dialog stays hidden as the trade's view model.
+    CSlot* GetMySlot(int i) {
+        return (i >= 0 && i < TOTAL_EXCHANGE_INVENTORY) ? &m_MySlots[i] : NULL;
+    }
+    CSlot* GetOtherSlot(int i) {
+        return (i >= 0 && i < TOTAL_EXCHANGE_INVENTORY) ? &m_OtherSlots[i] : NULL;
+    }
+    CDragItem* GetMyDragItem() { return m_pDragItem; }
+    CDragItem* GetOtherDragItem() { return m_pOtherItemDragItem; }
+
     enum {
         IID_BTN_CLOSE = 10,
         IID_BTN_EXCHANGE = 11,

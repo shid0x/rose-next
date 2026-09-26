@@ -3750,7 +3750,13 @@ CRecvPACKET::Recv_gsv_TRADE_P2P() {
                 CTDialog* pDlg = g_itMGR.FindDlg(DLG_TYPE_EXCHANGE);
                 if (pDlg && !pDlg->IsVision() && !pDlg->IsInValidShow()
                     && g_itMGR.FindMsgBox(CMsgBox::MSGTYPE_RECV_TRADE_REQ) == NULL
+                    && !RoseRmlUi::IsTradeInvitePending()
                     && g_ClientStorage.IsApproveExchange()) {
+                    /// UI2 shows its own prompt; the message box is the classic one.
+                    if (RoseRmlUi::ShowTradeInvite(
+                            m_pRecvPacket->m_gsv_TRADE_P2P.m_wObjectIDX, pObjChar->Get_NAME()))
+                        break;
+
                     char szTemp[128];
                     sprintf(szTemp, FORMAT_STR_RECEIVE_TRADE_REQ, pObjChar->Get_NAME());
 
@@ -3853,7 +3859,10 @@ CRecvPACKET::Recv_gsv_TRADE_P2P() {
 
 void
 CRecvPACKET::Recv_gsv_TRADE_P2P_ITEM() {
-    if (CExchange::GetInstance().IsReadyMe())
+    /// The other side changed its offer while we were ready. UI2 takes our
+    /// readiness back ( the server keeps it otherwise, and the offer we agreed
+    /// to is gone ) and says so in the trade window; classic only warned.
+    if (CExchange::GetInstance().IsReadyMe() && !RoseRmlUi::TradeOfferChangedWhileReady())
         g_itMGR.OpenMsgBox(STR_CHANGE_TRADEITEM_IN_MYREADY);
 
     CExchange::GetInstance().UpdateOtherItem(m_pRecvPacket->m_gsv_TRADE_P2P_ITEM.m_cTradeSLOT,

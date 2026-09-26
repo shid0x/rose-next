@@ -117,7 +117,9 @@ CITStateNormal::Process(unsigned uiMsg, WPARAM wParam, LPARAM lParam) {
     }
 
     ///교환중일경우 이동을 막는다.
-    if ((pDlg = g_itMGR.FindDlg(DLG_TYPE_EXCHANGE)) && pDlg->IsVision())
+    /// Asked through IT_MGR, not the dialog: the UI2 trade window stands in for
+    /// it and the classic one stays hidden.
+    if (g_itMGR.IsDlgOpened(DLG_TYPE_EXCHANGE))
         return uiMsg;
 
     return uiRet;

@@ -66,6 +66,67 @@ ReadFromVFS(const char* pPath, std::vector<unsigned char>& Out) {
     return bOk;
 }
 
+bool
+ReadFromDisk(const char* pPath, std::vector<unsigned char>& Out) {
+    FILE* fp = fopen(pPath, "rb");
+    if (fp == NULL)
+        return false;
+    fseek(fp, 0, SEEK_END);
+    const long lSize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    bool bOk = false;
+    if (lSize > 0) {
+        Out.resize((size_t)lSize);
+        bOk = fread(&Out[0], 1, (size_t)lSize, fp) == (size_t)lSize;
+    }
+    fclose(fp);
+    return bOk;
+}
+
+/// UI2's own folder ( 3ddata/rmlui/, where .rml/.rcss and their images live ):
+/// paths RmlUi resolved against a document, or written out in full.
+bool
+IsAuthoringPath(const std::string& strPath) {
+    static const char kRoot[] = "3ddata/rmlui/";
+    const size_t nRoot = sizeof(kRoot) - 1;
+    if (strPath.size() < nRoot)
+        return false;
+    for (size_t i = 0; i < nRoot; ++i) {
+        char c = (char)tolower((unsigned char)strPath[i]);
+        if (c == '\\')
+            c = '/';
+        if (c != kRoot[i])
+            return false;
+    }
+    return true;
+}
+
+/// Where a texture comes from.
+///
+/// **Game art resolves as the classic client resolves it**: the VFS first, a
+/// loose file only when the VFS has none ( CVFS_Manager's own order ). UI2
+/// used to prefer the loose file for everything, and a stale loose icon sheet
+/// in the launch folder ( icon52.dds from before the Jrose shields were added )
+/// drew those shields as empty squares in UI2 while the classic UI, reading the
+/// VFS, drew them fine -- the same icon must look the same in both.
+///
+/// **UI2's own folder keeps loose files first**: a player who drops an image
+/// next to the .rcss overrides whatever the skin shipped with, which is the
+/// point of authoring UI from editable files.
+bool
+ReadTextureSource(const std::string& strPath, std::vector<unsigned char>& Out, bool& bFromVFS) {
+    if (IsAuthoringPath(strPath)) {
+        if (ReadFromDisk(strPath.c_str(), Out)) {
+            bFromVFS = false;
+            return true;
+        }
+        bFromVFS = true;
+        return ReadFromVFS(strPath.c_str(), Out);
+    }
+    bFromVFS = true;
+    return ReadFromVFS(strPath.c_str(), Out);
+}
+
 /// In-place RGBA -> BGRA channel swap for a raw pixel buffer.
 void
 SwizzleRGBAtoBGRA(unsigned char* p, size_t nPixels) {
@@ -442,40 +503,30 @@ RoseRmlRenderer::ReloadTexture(Texture& tex) {
         return false;
 
     /// D3DX handles DDS / PNG / TGA / BMP, covering both loose authoring art and
-    /// the game's DDS atlases.
-    ///
-    /// **Loose files win.** A player who drops an image next to the .rcss must be
-    /// able to override whatever the skin shipped with -- that is the whole point
-    /// of authoring UI from editable files rather than baked atlases. The VFS is
-    /// only the fallback, for the occasional case where a skin deliberately
-    /// reuses existing game art ( class icons and the like ).
+    /// the game's DDS atlases. Which copy is used: ReadTextureSource.
     ///
     /// **In the file's own format**, straight into the DEFAULT pool: the game's
     /// icon sheets are DXT5, and decompressing one to A8R8G8B8 on the CPU and
     /// premultiplying it pixel by pixel cost ~7 ms a sheet ( 2 ms for an
     /// uncompressed one ) -- the UI2 shop's first open stalled on fifteen of
     /// them. Kept compressed it is a copy. The alpha stays straight, and stage 1
-    /// premultiplies at draw time. Nothing is retained: a device rebuild reads
-    /// the file again.
+    /// premultiplies at draw time. No pixels are retained: a device rebuild
+    /// reads the file again.
     LARGE_INTEGER start;
     QueryPerformanceCounter(&start);
 
-    IDirect3DTexture9* pLoaded = NULL;
-    bool bFromVFS = false;
+    if (tex.FileBytes.empty() && !ReadTextureSource(tex.strSource, tex.FileBytes, tex.bFromVFS))
+        return false;
 
-    if (FAILED(D3DXCreateTextureFromFileExA(m_pDevice, tex.strSource.c_str(),
-            D3DX_DEFAULT_NONPOW2, D3DX_DEFAULT_NONPOW2, 1, 0, D3DFMT_UNKNOWN, D3DPOOL_DEFAULT,
-            D3DX_FILTER_NONE, D3DX_FILTER_NONE, 0, NULL, NULL, &pLoaded))) {
-        std::vector<unsigned char> FileBytes;
-        if (!ReadFromVFS(tex.strSource.c_str(), FileBytes))
-            return false;
-        if (FAILED(D3DXCreateTextureFromFileInMemoryEx(m_pDevice, &FileBytes[0],
-                (UINT)FileBytes.size(), D3DX_DEFAULT_NONPOW2, D3DX_DEFAULT_NONPOW2, 1, 0,
-                D3DFMT_UNKNOWN, D3DPOOL_DEFAULT, D3DX_FILTER_NONE, D3DX_FILTER_NONE, 0, NULL,
-                NULL, &pLoaded)))
-            return false;
-        bFromVFS = true;
-    }
+    IDirect3DTexture9* pLoaded = NULL;
+    const HRESULT hr = D3DXCreateTextureFromFileInMemoryEx(m_pDevice, &tex.FileBytes[0],
+        (UINT)tex.FileBytes.size(), D3DX_DEFAULT_NONPOW2, D3DX_DEFAULT_NONPOW2, 1, 0,
+        D3DFMT_UNKNOWN, D3DPOOL_DEFAULT, D3DX_FILTER_NONE, D3DX_FILTER_NONE, 0, NULL, NULL,
+        &pLoaded);
+    const bool bFromVFS = tex.bFromVFS;
+    std::vector<unsigned char>().swap(tex.FileBytes); /// used: free it
+    if (FAILED(hr))
+        return false;
 
     D3DSURFACE_DESC desc;
     pLoaded->GetLevelDesc(0, &desc);
@@ -501,23 +552,23 @@ RoseRmlRenderer::LoadTexture(Rml::Vector2i& texture_dimensions, const Rml::Strin
     if (m_pDevice == NULL)
         return 0;
 
-    /// Only the header now: RmlUi needs the size to lay out and map a sprite
-    /// rect, not the pixels. The decode is queued for ProcessPendingTextures,
-    /// so a window showing many new icon sheets at once does not stall a frame.
-    /// Same source order as ReloadTexture: loose file first, then the VFS.
+    /// Only the size now: RmlUi needs it to lay out and map a sprite rect, not
+    /// the pixels. The decode is queued for ProcessPendingTextures, so a window
+    /// showing many new icon sheets at once does not stall a frame. The file
+    /// read here is kept for that decode.
+    std::vector<unsigned char> FileBytes;
+    bool bFromVFS = false;
     D3DXIMAGE_INFO info;
-    if (FAILED(D3DXGetImageInfoFromFileA(source.c_str(), &info))) {
-        std::vector<unsigned char> FileBytes;
-        if (!ReadFromVFS(source.c_str(), FileBytes)
-            || FAILED(D3DXGetImageInfoFromFileInMemory(
-                &FileBytes[0], (UINT)FileBytes.size(), &info))) {
-            Rml::Log::Message(Rml::Log::LT_WARNING,
-                "RoseRmlRenderer: failed to load texture '%s'.", source.c_str());
-            return 0;
-        }
+    if (!ReadTextureSource(source.c_str(), FileBytes, bFromVFS)
+        || FAILED(D3DXGetImageInfoFromFileInMemory(&FileBytes[0], (UINT)FileBytes.size(), &info))) {
+        Rml::Log::Message(Rml::Log::LT_WARNING,
+            "RoseRmlRenderer: failed to load texture '%s'.", source.c_str());
+        return 0;
     }
 
     Texture* pTex = new Texture();
+    pTex->FileBytes.swap(FileBytes);
+    pTex->bFromVFS = bFromVFS;
     pTex->pTexture = NULL;
     pTex->iWidth = (int)info.Width;
     pTex->iHeight = (int)info.Height;
@@ -581,6 +632,7 @@ RoseRmlRenderer::GenerateTexture(Rml::Span<const Rml::byte> source, Rml::Vector2
     pTex->iHeight = h;
     pTex->bPending = false;
     pTex->bStraightAlpha = false;
+    pTex->bFromVFS = false;
 
     /// Already premultiplied by RmlUi; only the channel order needs fixing.
     pTex->Pixels.assign(source.begin(), source.end());

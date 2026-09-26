@@ -2,6 +2,7 @@
 
 #include "RoseRmlCharacterWindow.h"
 #include "RoseRmlLayout.h"
+#include "RoseRmlUi.h"
 #include "RoseUi2.h"
 
 #include <RmlUi/Core/Context.h>
@@ -494,7 +495,7 @@ RoseRmlCharacterWindow::UpdateTooltip() {
         return;
 
     int iStat = -1;
-    for (Rml::Element* pEl = m_pContext->GetHoverElement(); pEl != NULL;
+    for (Rml::Element* pEl = RoseRmlLayout::HoverIn(m_pContext, m_pDocument); pEl != NULL;
          pEl = pEl->GetParentNode()) {
         if (pEl->HasAttribute("stat")) {
             iStat = pEl->GetAttribute<int>("stat", -1);
@@ -514,30 +515,7 @@ RoseRmlCharacterWindow::UpdateTooltip() {
     ToolTip.Clear();
     BuildStatToolTip(*pDesc, ToolTip);
 
-    /// Beside the window, on the side chosen by where the WINDOW sits ( as
-    /// the skill window does ): per-tooltip sides flip wide ones across.
-    POINT ptMouse;
-    CGame::GetInstance().Get_MousePos(ptMouse);
-    const Rml::Vector2f pos = m_pPanel->GetAbsoluteOffset(Rml::BoxArea::Border);
-    const Rml::Vector2f size = m_pPanel->GetBox().GetSize(Rml::BoxArea::Border);
-    const int iScreenW = g_pCApp->GetWIDTH();
-    const int iScreenH = g_pCApp->GetHEIGHT();
-
-    POINT pt;
-    const bool bRightSide = (pos.x + size.x * 0.5f) < (float)iScreenW * 0.5f;
-    pt.x = bRightSide ? (int)(pos.x + size.x) + 4 : (int)pos.x - ToolTip.GetWidth() - 4;
-    if (pt.x > iScreenW - ToolTip.GetWidth())
-        pt.x = iScreenW - ToolTip.GetWidth();
-    if (pt.x < 0)
-        pt.x = 0;
-    pt.y = ptMouse.y - ToolTip.GetHeight() / 2;
-    if (pt.y > iScreenH - ToolTip.GetHeight())
-        pt.y = iScreenH - ToolTip.GetHeight();
-    if (pt.y < 0)
-        pt.y = 0;
-
-    ToolTip.SetPosition(pt);
-    CToolTipMgr::GetInstance().RegistInfo(ToolTip);
+    RoseRmlUi::PlaceTooltipAtCursor(ToolTip);
 }
 
 void

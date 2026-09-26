@@ -37,3 +37,10 @@ body { z-index: 50; }
     padding-right: 0dp;
 }
 .answer + .answer { margin-left: 8dp; }
+
+/* The bar is full width and shrinks from the right by the bound scaleX: a
+   changing width would re-lay out the window every frame. */
+.timer .fill {
+    right: 0dp;
+    transform-origin: 0% 50%;
+}

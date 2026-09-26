@@ -3,6 +3,7 @@
 #include "RoseRmlShop.h"
 #include "RoseRmlIcons.h"
 #include "RoseRmlLayout.h"
+#include "RoseRmlUi.h"
 #include "RoseRmlText.h"
 #include "RoseUi2.h"
 
@@ -665,7 +666,7 @@ RoseRmlShop::UpdateTooltip() {
         return;
 
     int iKind = -1, iIndex = -1;
-    for (Rml::Element* pEl = m_pContext->GetHoverElement(); pEl != NULL;
+    for (Rml::Element* pEl = RoseRmlLayout::HoverIn(m_pContext, m_pDocument); pEl != NULL;
          pEl = pEl->GetParentNode()) {
         if (pEl->HasAttribute("slot-kind")) {
             iKind = pEl->GetAttribute<int>("slot-kind", -1);
@@ -689,34 +690,7 @@ RoseRmlShop::UpdateTooltip() {
     if (ToolTip.IsEmpty())
         return;
 
-    PlaceTooltip(ToolTip);
-}
-
-void
-RoseRmlShop::PlaceTooltip(CInfo& ToolTip) {
-    /// Beside the window, on the side chosen by where the WINDOW sits.
-    POINT ptMouse;
-    CGame::GetInstance().Get_MousePos(ptMouse);
-    const Rml::Vector2f pos = m_pPanel->GetAbsoluteOffset(Rml::BoxArea::Border);
-    const Rml::Vector2f size = m_pPanel->GetBox().GetSize(Rml::BoxArea::Border);
-    const int iScreenW = g_pCApp->GetWIDTH();
-    const int iScreenH = g_pCApp->GetHEIGHT();
-
-    POINT pt;
-    const bool bRightSide = (pos.x + size.x * 0.5f) < (float)iScreenW * 0.5f;
-    pt.x = bRightSide ? (int)(pos.x + size.x) + 4 : (int)pos.x - ToolTip.GetWidth() - 4;
-    if (pt.x > iScreenW - ToolTip.GetWidth())
-        pt.x = iScreenW - ToolTip.GetWidth();
-    if (pt.x < 0)
-        pt.x = 0;
-    pt.y = ptMouse.y - ToolTip.GetHeight() / 2;
-    if (pt.y > iScreenH - ToolTip.GetHeight())
-        pt.y = iScreenH - ToolTip.GetHeight();
-    if (pt.y < 0)
-        pt.y = 0;
-
-    ToolTip.SetPosition(pt);
-    CToolTipMgr::GetInstance().RegistInfo(ToolTip);
+    RoseRmlUi::PlaceTooltipAtCursor(ToolTip);
 }
 
 void

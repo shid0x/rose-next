@@ -349,7 +349,7 @@ RoseRmlSkillBar::UpdateTooltip() {
 
     /// The slot under the mouse, if any.
     int iSlot = -1;
-    for (Rml::Element* pEl = m_pContext->GetHoverElement(); pEl != NULL;
+    for (Rml::Element* pEl = RoseRmlLayout::HoverIn(m_pContext, m_pDocument); pEl != NULL;
          pEl = pEl->GetParentNode()) {
         if (pEl->HasAttribute("slot")) {
             iSlot = pEl->GetAttribute<int>("slot", -1);

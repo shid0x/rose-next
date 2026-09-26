@@ -1,0 +1,99 @@
+<rml>
+<head>
+    <title>Trade</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="trade.rcss"/>
+</head>
+<body data-model="trade">
+    <!--
+        UI2 player-to-player trade ( RoseRmlTrade ), replacing CExchangeDLG.
+        Opens beside the bag the first time; drag the title bar to move it,
+        the spot is saved.
+
+        Left, your offer: drag items from the bag onto the window, double-click
+        or drag one off to take it back. Set asks how much money to offer, x
+        takes it all back ( the bag's money button still adds ). Right, theirs:
+        hover for the full stats, Alt+click to try it on, Shift+click to link it.
+
+        Ready locks your offer; click again to take it back. When both sides
+        are ready, Trade; the trade goes through once both have pressed it. If
+        they change their offer while you are ready, your Ready is taken back
+        and the window says so.
+
+        The whole window is a drop target for items ( DLG_TYPE_EXCHANGE ).
+    -->
+    <div id="trade" class="ui-window" data-attr-drop-target="drop_type">
+        <handle move_target="trade" class="ui-titlebar">
+            <span class="ui-title">Trade</span>
+            <span class="ui-close" data-event-click="cancel()">X</span>
+        </handle>
+
+        <div class="banner" data-if="changed">
+            <span class="bwho">{{other}}</span><span> changed their offer. Your Ready was taken back: check it before you ready again.</span>
+        </div>
+
+        <div class="sides">
+            <!-- Yours. -->
+            <div class="side" data-class-locked="me_ready">
+                <div class="head">
+                    <span class="hname">{{me}}</span>
+                    <span class="badge on" data-if="me_ready">Ready</span>
+                    <span class="badge" data-if="!me_ready">Not ready</span>
+                </div>
+                <div class="cart ui-well">
+                    <div class="cell ui-icon" data-for="c : mine"
+                         data-attr-slot-kind="c.kind" data-attr-slot-index="c.index"
+                         data-class-empty="!c.filled"
+                         data-event-mousedown="press(c.kind, c.index)" data-event-dblclick="use(c.kind, c.index)">
+                        <img data-if="c.filled" data-attr-src="c.src" data-attr-rect="c.rect"/>
+                        <div class="gem" data-if="c.socket == 2"><img data-attr-src="c.gem_src" data-attr-rect="c.gem_rect"/></div>
+                        <img class="socket" data-if="c.socket == 1" src="3DData/Control/Res/SOKET.DDS"/>
+                        <span class="count" data-if="c.count > 0">{{c.count}}</span>
+                    </div>
+                </div>
+                <div class="money">
+                    <span class="coin"></span>
+                    <span class="mval">{{my_money}}</span>
+                    <span class="ui-btn mbtn" data-if="!me_ready" data-event-click="set_money()">Set</span>
+                    <span class="ui-btn mbtn clear" data-if="!me_ready" data-event-click="clear_money()">x</span>
+                </div>
+            </div>
+
+            <!-- Theirs. -->
+            <div class="side theirs" data-class-locked="they_ready">
+                <div class="head">
+                    <span class="hname">{{other}}</span>
+                    <span class="badge on" data-if="they_ready">Ready</span>
+                    <span class="badge" data-if="!they_ready">Not ready</span>
+                </div>
+                <div class="cart ui-well">
+                    <div class="cell ui-icon" data-for="c : theirs"
+                         data-attr-slot-kind="c.kind" data-attr-slot-index="c.index"
+                         data-class-empty="!c.filled"
+                         data-event-mousedown="press(c.kind, c.index)">
+                        <img data-if="c.filled" data-attr-src="c.src" data-attr-rect="c.rect"/>
+                        <div class="gem" data-if="c.socket == 2"><img data-attr-src="c.gem_src" data-attr-rect="c.gem_rect"/></div>
+                        <img class="socket" data-if="c.socket == 1" src="3DData/Control/Res/SOKET.DDS"/>
+                        <span class="count" data-if="c.count > 0">{{c.count}}</span>
+                    </div>
+                </div>
+                <div class="money">
+                    <span class="coin"></span>
+                    <span class="mval">{{their_money}}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="hint ui-muted">Drag items from your bag onto the window. Double-click one of yours to take it back.</div>
+
+        <div class="buttons">
+            <span class="ui-btn act" data-event-click="cancel()">Cancel</span>
+            <span class="ui-btn act" data-if="!me_ready" data-event-click="ready()">Ready</span>
+            <span class="ui-btn act" data-if="me_ready" data-event-click="ready()">Unready</span>
+            <span class="ui-btn act go" data-class-off="!me_ready || !they_ready" data-if="!done" data-event-click="trade()">Trade</span>
+            <span class="ui-btn ui-static act go waiting" data-if="done">Waiting...</span>
+        </div>
+    </div>
+</body>
+</rml>

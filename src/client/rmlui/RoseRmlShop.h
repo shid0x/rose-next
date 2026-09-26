@@ -110,7 +110,6 @@ private:
     void OnUse(int iKind, int iIndex);
     void UpdateDragStart();
     void UpdateTooltip();
-    void PlaceTooltip(CInfo& ToolTip);
     void PlaceDefault();
 
     Rml::Context* m_pContext;

@@ -141,9 +141,6 @@ private:
     void UpdateTooltip();
     void SampleTuning();
     void UpdateTuningTooltip();
-    /// A legacy tooltip beside the window, on the side chosen by where the
-    /// WINDOW sits ( as the other UI2 windows ).
-    void PlaceTooltip(CInfo& ToolTip);
 
     Rml::Context* m_pContext;
     Rml::ElementDocument* m_pDocument;

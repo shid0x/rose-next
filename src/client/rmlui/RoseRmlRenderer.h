@@ -157,6 +157,10 @@ private:
         /// A LoadTexture() whose decode is queued ( ProcessPendingTextures ):
         /// its size is known, its pixels are not, and it draws nothing yet.
         bool bPending;
+        /// The file, read when the size was asked for and kept until the
+        /// queued decode uses it ( then freed ).
+        std::vector<unsigned char> FileBytes;
+        bool bFromVFS;
         /// Loaded from a file in its own format ( DXT stays compressed ), so
         /// its alpha is STRAIGHT: the premultiply RmlUi expects is done by
         /// texture stage 1 at draw time ( SetStraightAlphaStage ).

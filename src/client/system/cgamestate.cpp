@@ -6,6 +6,7 @@
 #include "rmlui/RoseRmlUi.h"
 #include "rmlui/RoseUi2.h"
 #include "interface/CDragNDropMgr.h"
+#include "interface/CToolTipMgr.h"
 #include "System/CGame.h"
 
 CGameState::CGameState(void):
@@ -92,6 +93,14 @@ CGameState::render_dev_ui(void) {
     /// owns the device for the duration of the pass.
     RoseRmlUi::Update();
     RoseRmlUi::Render();
+
+    /// The tooltip, classic or UI2's, is drawn over the RmlUi panels under UI2
+    /// ( IT_MGR::Update skips it then ), so it can sit at the cursor.
+    if (RoseUi2::IsActive()) {
+        ::beginSprite(D3DXSPRITE_ALPHABLEND);
+        CToolTipMgr::GetInstance().Draw();
+        ::endSprite();
+    }
 
     /// A legacy drag in progress is drawn last under UI2, above the RmlUi
     /// panels it may be dropped on ( IT_MGR::Update skips it then ).

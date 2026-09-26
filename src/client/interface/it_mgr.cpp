@@ -703,7 +703,10 @@ IT_MGR::DrawDLGs(POINT ptMouse) {
     if (!RoseUi2::IsPieceReplaced(RoseUi2::PIECE_BUFF_BAR))
         g_pAVATAR->m_EndurancePack.Draw();
 
-    CToolTipMgr::GetInstance().Draw();
+    /// UI2 draws the tooltip after the RmlUi pass instead
+    /// ( CGameState::render_dev_ui ), or every UI2 window would cover it.
+    if (!RoseUi2::IsActive())
+        CToolTipMgr::GetInstance().Draw();
 
     //	m_Indicate.Update( ptMouse );
     //	m_Indicate.Draw();

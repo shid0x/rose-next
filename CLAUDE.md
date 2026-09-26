@@ -244,8 +244,10 @@ Off by default — enable with `[VIDEO] RMLUI=1` in `rose-next.ini` or `ROSE_RML
 **Scope is new/custom panels only.** `tgamectrl`, the 56 retail XML dialogs, chat input and **IME**
 are out — RmlUi has no IME composition handling, and the input boundary is the fiddliest part of the
 integration. The purpose is quick, player-editable interfaces, **not** reproducing the original
-TSI/atlas workflow: `.rml`/`.rcss` are loaded loose (never via the VFS) so players can edit them, and
-texture loading resolves **disk first, VFS second** so a player's file overrides shipped art.
+TSI/atlas workflow: `.rml`/`.rcss` are loaded loose (never via the VFS) so players can edit them.
+Textures under `3ddata/rmlui/` resolve **disk first** (a player's file overrides the skin's); **game
+art resolves VFS first**, as the classic client does -- a stale loose `icon52.dds` in the launch
+folder once drew freshly imported items as empty squares in UI2 only (2026-09-26).
 
 **The shared look lives in `3ddata/rmlui/rose-theme.rcss`** (2026-09-23): the 667 build's "glass"
 UI re-expressed as gradients — palette sampled from `GLASSUI_*.DDS`, a colour-neutral `ui-gloss`
@@ -354,8 +356,11 @@ M / L are handed over, and clan zones close it through the window routing. The p
 texture is released on each change (`Rml::ReleaseTexture`). Traps: **`size` is a reserved data
 name** (arrays' `.size`) -- binding it fails and the expression prints as text; **RmlUi only
 scissors an element whose content overflows its *scroll* size**, and content panned to negative
-offsets does not count -- a map view needs `clip: always`; **legacy tooltips draw before the RmlUi
-pass**, so anything over a UI2 panel must be an RmlUi element; and labels need
+offsets does not count -- a map view needs `clip: always`; **classic drawing happens before the
+RmlUi pass**, so anything over a UI2 panel must be an RmlUi element -- except `CToolTipMgr`'s
+tooltip and a legacy drag, which UI2 draws after the pass (`CGameState::render_dev_ui`); panels
+place tooltips at the cursor like the classic slots (`RoseRmlUi::PlaceTooltipAtCursor`, 2026-09-26);
+and labels need
 `pointer-events: none` and whole-pixel placement (a `translate(-50%)` centring blurs odd widths).
 **CSS `transform` works now**: `RoseRmlRenderer::SetTransform` (world = translation x transform;
 Rml's column-major data read as-is is the D3D row-vector matrix).
@@ -385,6 +390,20 @@ Backspace, Enter, Escape -- the Enter/Escape `WM_CHAR` is swallowed or it opens 
 the same reason `IT_MGR::OpenMsgBox` sends a plain notice (OK only, no command, no type, no
 invoker) to the UI2 message box while UI2 is on. The popup and the message box stay on top with
 `body { z-index }`: a click pulls its document to the front.
+
+**Trade** (2026-09-26, `RoseRmlTrade`, `DLG_TYPE_EXCHANGE`): a view over the hidden
+`CExchangeDLG` (both offers' slots, drag items, commands). **Its `Hide()` ends the trade**, so the
+classic dialog must never be shown, and the UI2 window ends it itself on every close; Cancel/X also
+sends `RESULT_TRADE_CANCEL`. The request prompt (`RoseRmlTradeInvite`) replaces the *typed*
+`MSGTYPE_RECV_TRADE_REQ` box -- typed boxes stay classic under the plain-notice routing -- and
+declines after 30 s. Two changes from classic: Ready can be taken back (`RESULT_TRADE_UNCHECK_READY`,
+which the server always had), and when the other side changes its offer while you are ready your
+Ready is taken back for you (classic only warned; the server lets the unready side keep editing).
+`citstatenormal.cpp` blocked world clicks during a trade by testing the classic dialog's
+`IsVision()`, always false once UI2 hides it -- **any classic check of a replaced dialog's
+visibility must go through `IT_MGR::IsDlgOpened`**. Also: a panel's hover/point lookups must stay
+in its own document (`RoseRmlLayout::HoverIn`) -- `slot-kind` is used by three windows, and the
+inventory read an empty trade slot as bag slot 0.
 
 **RmlUi performance rules** (measured 2026-09-26; the shop's first open went from a 93 ms frame
 to 12 ms, a tab switch from 12-25 ms to nothing measurable):

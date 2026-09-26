@@ -24,7 +24,7 @@
             <span data-if="!make"> invites you to join their party.</span>
         </div>
 
-        <div class="timer ui-gauge"><div class="ui-gauge-fill steel" data-style-width="time_left + '%'"></div></div>
+        <div class="timer ui-gauge"><div class="ui-gauge-fill steel fill" data-style-transform="'scaleX(' + (time_left + 0.1) / 100 + ')'"></div></div>
 
         <div class="buttons">
             <span class="ui-btn on answer" data-event-click="accept()">Accept</span>

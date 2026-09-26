@@ -22,6 +22,8 @@
 #include "RoseRmlConversation.h"
 #include "RoseRmlShop.h"
 #include "RoseRmlNumberInput.h"
+#include "RoseRmlTrade.h"
+#include "RoseRmlTradeInvite.h"
 #include "RoseRmlSystem.h"
 
 #include <RmlUi/Core.h>
@@ -30,6 +32,9 @@
 #include "rose/common/log.h"
 
 #include "../interface/CDragNDropMgr.h"
+#include "../interface/CInfo.h"
+#include "../interface/CToolTipMgr.h"
+#include "../System/CGame.h"
 #include "tgamectrl/winctrl.h"
 #include "../interface/interfacetype.h"
 #include "../Sound/IO_Sound.h"
@@ -60,6 +65,8 @@ RoseRmlMinimap g_Minimap; ///< UI2: replaces CMinimapDLG ( a view over it )
 RoseRmlConversation g_Conversation; ///< UI2: replaces the three conversation dialogs
 RoseRmlShop g_Shop; ///< UI2: replaces CStoreDLG + CDealDLG ( a view over them )
 RoseRmlNumberInput g_NumberInput; ///< UI2: replaces CNumberInputDlg
+RoseRmlTrade g_Trade; ///< UI2: replaces CExchangeDLG ( a view over it )
+RoseRmlTradeInvite g_TradeInvite; ///< UI2: replaces the trade request message box
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -362,6 +369,8 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_Minimap.Initialise(g_pContext, kAssetDir);
     g_Conversation.Initialise(g_pContext, kAssetDir);
     g_Shop.Initialise(g_pContext, kAssetDir);
+    g_Trade.Initialise(g_pContext, kAssetDir);
+    g_TradeInvite.Initialise(g_pContext, kAssetDir);
     /// Late, so they stack over the windows that ask them.
     g_NumberInput.Initialise(g_pContext, kAssetDir);
     g_MessageBox.Initialise(g_pContext, kAssetDir);
@@ -394,6 +403,8 @@ Shutdown() {
     g_Minimap.Shutdown();
     g_Conversation.Shutdown();
     g_Shop.Shutdown();
+    g_Trade.Shutdown();
+    g_TradeInvite.Shutdown();
     g_NumberInput.Shutdown();
     g_MessageBox.Shutdown();
     RoseRmlLayout::Shutdown();
@@ -480,6 +491,8 @@ Update() {
     UI_TIMED("minimap", g_Minimap.Update());
     UI_TIMED("talk", g_Conversation.Update());
     UI_TIMED("shop", g_Shop.Update());
+    UI_TIMED("trade", g_Trade.Update());
+    UI_TIMED("tradeinvite", g_TradeInvite.Update());
     UI_TIMED("numinput", g_NumberInput.Update());
     UI_TIMED("msgbox", g_MessageBox.Update());
     /// Data bindings, styles and layout of every document.
@@ -530,6 +543,9 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_N_INPUT:
             g_NumberInput.SetOpen(bOpen);
             break;
+        case DLG_TYPE_EXCHANGE:
+            g_Trade.SetOpen(bOpen);
+            break;
         default:
             break;
     }
@@ -563,6 +579,8 @@ IsWindowOpen(int iDlgType) {
             return g_Shop.IsOpen();
         case DLG_TYPE_N_INPUT:
             return g_NumberInput.IsOpen();
+        case DLG_TYPE_EXCHANGE:
+            return g_Trade.IsOpen();
         default:
             return false;
     }
@@ -576,6 +594,21 @@ ShowPartyInvite(unsigned short wFromObjSvrIdx, const char* pszFrom, bool bMake) 
 bool
 IsPartyInvitePending() {
     return g_bInitialised && g_PartyInvite.IsPending();
+}
+
+bool
+ShowTradeInvite(unsigned short wFromObjSvrIdx, const char* pszFrom) {
+    return g_bInitialised && g_TradeInvite.Show(wFromObjSvrIdx, pszFrom);
+}
+
+bool
+IsTradeInvitePending() {
+    return g_bInitialised && g_TradeInvite.IsPending();
+}
+
+bool
+TradeOfferChangedWhileReady() {
+    return g_bInitialised && g_Trade.OfferChangedWhileReady();
 }
 
 bool
@@ -873,6 +906,34 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
     }
 
     return false;
+}
+
+void
+PlaceTooltipAtCursor(CInfo& ToolTip) {
+    POINT ptMouse;
+    CGame::GetInstance().Get_MousePos(ptMouse);
+    const int iScreenW = g_pCApp->GetWIDTH();
+    const int iScreenH = g_pCApp->GetHEIGHT();
+    const int iWidth = ToolTip.GetWidth();
+    const int iHeight = ToolTip.GetHeight();
+
+    /// CSlot::Update's spot: 20 px right of the cursor, top at the cursor.
+    /// Near the right edge it goes to the cursor's left rather than being
+    /// clamped back under it.
+    POINT pt;
+    pt.x = ptMouse.x + 20;
+    if (pt.x + iWidth > iScreenW)
+        pt.x = ptMouse.x - iWidth - 8;
+    pt.y = ptMouse.y;
+    if (pt.y + iHeight > iScreenH)
+        pt.y = iScreenH - iHeight;
+    if (pt.x < 0)
+        pt.x = 0;
+    if (pt.y < 0)
+        pt.y = 0;
+
+    ToolTip.SetPosition(pt);
+    CToolTipMgr::GetInstance().RegistInfo(ToolTip);
 }
 
 int

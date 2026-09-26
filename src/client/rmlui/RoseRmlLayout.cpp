@@ -225,3 +225,15 @@ IsLocked() {
 }
 
 } // namespace RoseRmlLayout
+
+namespace RoseRmlLayout {
+
+Rml::Element*
+HoverIn(Rml::Context* pContext, Rml::Element* pDocument) {
+    if (pContext == NULL || pDocument == NULL)
+        return NULL;
+    Rml::Element* pHover = pContext->GetHoverElement();
+    return (pHover != NULL && pHover->GetOwnerDocument() == pDocument) ? pHover : NULL;
+}
+
+} // namespace RoseRmlLayout

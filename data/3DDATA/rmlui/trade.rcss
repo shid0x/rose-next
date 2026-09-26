@@ -1,0 +1,185 @@
+/* UI2 trade -- LAYOUT ONLY ( colours and materials: rose-theme.rcss, plus the
+   few colours that are this window's own states ).
+   Reload in game with /uireload. The C++ places it beside the bag the first
+   time, until it is moved.
+
+   PERFORMANCE ( see shop.rcss ): the offers are fixed-size floats, the window
+   has a definite width, flex only for the small rows. Two sides of 227 ( 5 x
+   ( 42 + 2 ) = 220 of cells, 1 of slack, the well's 4 of padding and 2 of
+   border ) with 10 between: 464. */
+
+#trade {
+    left: 60dp;
+    top: 160dp;
+    display: block;
+    width: 464dp;
+}
+
+/* Their offer changed while you were ready. */
+.banner {
+    margin-bottom: 5dp;
+    padding: 5dp 7dp;
+    border: 1dp #c08020ff;
+    border-radius: 3dp;
+    background-color: #5a3a0ad0;
+    font-size: 10dp;
+    line-height: 13dp;
+    color: #ffe0a0;
+}
+.bwho { font-weight: bold; }
+
+.sides { display: flow-root; }
+
+.side {
+    float: left;
+    width: 227dp;
+}
+.side + .side { margin-left: 10dp; }
+
+/* Name and readiness. */
+.head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 20dp;
+    padding: 0dp 2dp;
+}
+.hname {
+    flex-grow: 1;
+    font-size: 11dp;
+    font-weight: bold;
+    color: #f0f0f0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.badge {
+    padding: 0dp 6dp;
+    line-height: 14dp;
+    font-size: 9dp;
+    font-weight: bold;
+    color: #9a9a9a;
+    border: 1dp #4a4a4aff;
+    border-radius: 7dp;
+}
+.badge.on {
+    color: #d8ffc0;
+    border-color: #4f9a28ff;
+    background-color: #2c5a14c0;
+}
+
+/* The offer: five across. */
+.cart {
+    display: flow-root;
+    width: 221dp;
+    padding: 3dp 1dp 1dp 3dp;
+}
+/* A ready side is locked: a green rim says so. */
+.side.locked .cart { border-color: #4f9a28ff; }
+
+/* .ui-icon ( theme ) is the dark backing square, a flex box that centres;
+   here a plain block with the icon pinned top-left at its NATIVE atlas size
+   ( 40x40 ), as in the inventory. No width/height on the img. */
+.cell {
+    float: left;
+    display: block;
+    position: relative;
+    box-sizing: border-box;
+    width: 42dp;
+    height: 42dp;
+    margin-right: 2dp;
+    margin-bottom: 2dp;
+    cursor: pointer;
+}
+.cell:hover { border-color: #d0501aff; }
+.cell.empty { background-color: #00000050; cursor: default; }
+.cell.empty:hover { border-color: #000000c0; }
+
+.gem {
+    position: absolute;
+    left: 0dp;
+    top: 0dp;
+}
+.socket {
+    position: absolute;
+    left: 0dp;
+    top: 0dp;
+}
+
+/* How many, top left, where the classic icon drew it. */
+.count {
+    position: absolute;
+    left: 1dp;
+    top: 1dp;
+    padding: 0dp 2dp;
+    line-height: 12dp;
+    font-size: 10dp;
+    font-weight: bold;
+    color: #ffffff;
+    border-radius: 2dp;
+    background-color: #00000080;
+    font-effect: outline(1px #000000c0);
+}
+
+/* Money on the offer. */
+.money {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 24dp;
+    margin-top: 3dp;
+    padding: 0dp 3dp;
+}
+.coin {
+    width: 9dp;
+    height: 9dp;
+    margin-right: 6dp;
+    border: 1dp #a07818ff;
+    border-radius: 5dp;
+    background-color: #e0b030ff;
+    decorator: ui-gloss-soft;
+}
+.mval {
+    flex-grow: 1;
+    font-weight: bold;
+    color: #ffe070;
+}
+.mbtn {
+    height: 18dp;
+    line-height: 17dp;
+    padding-left: 8dp;
+    padding-right: 8dp;
+    font-size: 10dp;
+}
+.mbtn + .mbtn { margin-left: 3dp; }
+
+.hint {
+    margin-top: 5dp;
+    padding: 0dp 2dp;
+    font-size: 9dp;
+    line-height: 12dp;
+}
+
+.buttons {
+    display: flex;
+    flex-direction: row;
+    margin-top: 6dp;
+}
+.act { flex: 1; }
+.act + .act { margin-left: 4dp; }
+
+/* Trade: nothing to press until both sides are ready; while waiting for the
+   other side it is a label. */
+.go.off { color: #a0a0a0; }
+.go.off:hover {
+    background-color: #3a3a3aff;
+    border-color: #565656ff;
+}
+.go.waiting {
+    color: #d8ffc0;
+    cursor: default;
+}
+.go.waiting:hover {
+    background-color: #3a3a3aff;
+    border-color: #565656ff;
+}

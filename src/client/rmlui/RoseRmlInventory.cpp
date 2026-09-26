@@ -3,6 +3,7 @@
 #include "RoseRmlInventory.h"
 #include "RoseRmlIcons.h"
 #include "RoseRmlLayout.h"
+#include "RoseRmlUi.h"
 #include "RoseUi2.h"
 
 #include <RmlUi/Core/Context.h>
@@ -154,12 +155,16 @@ Printf(const char* pszFormat, ...) {
 /// root, returning the first element carrying pszAttr on the way ( NULL when
 /// there is none, or the point is not over this window ).
 Rml::Element*
-FindUp(Rml::Context* pContext, int x, int y, const char* pszAttr) {
+FindUp(Rml::Context* pContext, Rml::Element* pDocument, int x, int y, const char* pszAttr) {
     if (pContext == NULL)
         return NULL;
     for (Rml::Element* pEl = pContext->GetElementAtPoint(Rml::Vector2f((float)x, (float)y));
          pEl != NULL;
          pEl = pEl->GetParentNode()) {
+        /// Only this window's elements: the shop and the trade window use
+        /// slot-kind too, with other meanings.
+        if (pEl->GetOwnerDocument() != pDocument)
+            return NULL;
         if (pEl->HasAttribute(pszAttr))
             return pEl;
         if (pEl->GetId() == "inventory")
@@ -410,14 +415,14 @@ RoseRmlInventory::SetVisible(bool bVisible) {
 
 bool
 RoseRmlInventory::BagAt(int x, int y) const {
-    return m_bVisible && FindUp(m_pContext, x, y, "bag-area") != NULL;
+    return m_bVisible && FindUp(m_pContext, m_pDocument, x, y, "bag-area") != NULL;
 }
 
 bool
 RoseRmlInventory::BagSlotAt(int x, int y, int& iPage, int& iSlot) const {
     if (!m_bVisible)
         return false;
-    Rml::Element* pEl = FindUp(m_pContext, x, y, "slot-kind");
+    Rml::Element* pEl = FindUp(m_pContext, m_pDocument, x, y, "slot-kind");
     if (pEl == NULL || pEl->GetAttribute<int>("slot-kind", -1) != KIND_BAG)
         return false;
     iSlot = pEl->GetAttribute<int>("slot-index", -1);
@@ -427,7 +432,7 @@ RoseRmlInventory::BagSlotAt(int x, int y, int& iPage, int& iSlot) const {
 
 bool
 RoseRmlInventory::EquipAt(int x, int y) const {
-    return m_bVisible && FindUp(m_pContext, x, y, "equip-area") != NULL;
+    return m_bVisible && FindUp(m_pContext, m_pDocument, x, y, "equip-area") != NULL;
 }
 
 int
@@ -436,7 +441,7 @@ RoseRmlInventory::EquipSlotAt(int x, int y) const {
     /// doll's spacer answer -1, as the classic hit test did.
     if (!m_bVisible)
         return -1;
-    Rml::Element* pEl = FindUp(m_pContext, x, y, "slot-kind");
+    Rml::Element* pEl = FindUp(m_pContext, m_pDocument, x, y, "slot-kind");
     if (pEl == NULL || pEl->GetAttribute<int>("slot-kind", -1) != KIND_EQUIP)
         return -1;
     const int iIdx = pEl->GetAttribute<int>("slot-index", -1);
@@ -702,7 +707,7 @@ RoseRmlInventory::UpdateTooltip() {
         return;
 
     int iKind = -1, iIndex = -1;
-    for (Rml::Element* pEl = m_pContext->GetHoverElement(); pEl != NULL;
+    for (Rml::Element* pEl = RoseRmlLayout::HoverIn(m_pContext, m_pDocument); pEl != NULL;
          pEl = pEl->GetParentNode()) {
         if (pEl->HasAttribute("slot-kind")) {
             iKind = pEl->GetAttribute<int>("slot-kind", -1);
@@ -728,40 +733,13 @@ RoseRmlInventory::UpdateTooltip() {
     if (ToolTip.IsEmpty())
         return;
 
-    PlaceTooltip(ToolTip);
-}
-
-void
-RoseRmlInventory::PlaceTooltip(CInfo& ToolTip) {
-    /// Beside the window, on the side chosen by where the WINDOW sits.
-    POINT ptMouse;
-    CGame::GetInstance().Get_MousePos(ptMouse);
-    const Rml::Vector2f pos = m_pPanel->GetAbsoluteOffset(Rml::BoxArea::Border);
-    const Rml::Vector2f size = m_pPanel->GetBox().GetSize(Rml::BoxArea::Border);
-    const int iScreenW = g_pCApp->GetWIDTH();
-    const int iScreenH = g_pCApp->GetHEIGHT();
-
-    POINT pt;
-    const bool bRightSide = (pos.x + size.x * 0.5f) < (float)iScreenW * 0.5f;
-    pt.x = bRightSide ? (int)(pos.x + size.x) + 4 : (int)pos.x - ToolTip.GetWidth() - 4;
-    if (pt.x > iScreenW - ToolTip.GetWidth())
-        pt.x = iScreenW - ToolTip.GetWidth();
-    if (pt.x < 0)
-        pt.x = 0;
-    pt.y = ptMouse.y - ToolTip.GetHeight() / 2;
-    if (pt.y > iScreenH - ToolTip.GetHeight())
-        pt.y = iScreenH - ToolTip.GetHeight();
-    if (pt.y < 0)
-        pt.y = 0;
-
-    ToolTip.SetPosition(pt);
-    CToolTipMgr::GetInstance().RegistInfo(ToolTip);
+    RoseRmlUi::PlaceTooltipAtCursor(ToolTip);
 }
 
 void
 RoseRmlInventory::UpdateTuningTooltip() {
     int iTip = 0;
-    for (Rml::Element* pEl = m_pContext->GetHoverElement(); pEl != NULL;
+    for (Rml::Element* pEl = RoseRmlLayout::HoverIn(m_pContext, m_pDocument); pEl != NULL;
          pEl = pEl->GetParentNode()) {
         if (pEl->HasAttribute("tune-tip")) {
             iTip = pEl->GetAttribute<int>("tune-tip", 0);
@@ -773,7 +751,7 @@ RoseRmlInventory::UpdateTuningTooltip() {
 
     CInfo ToolTip;
     CItemDlg::BuildTuningTooltip(ToolTip, iTip == 2);
-    PlaceTooltip(ToolTip);
+    RoseRmlUi::PlaceTooltipAtCursor(ToolTip);
 }
 
 void

@@ -453,6 +453,8 @@
     <ClCompile Include="rmlui\RoseRmlMinimap.cpp" />
     <ClCompile Include="rmlui\RoseRmlConversation.cpp" />
     <ClCompile Include="rmlui\RoseRmlShop.cpp" />
+    <ClCompile Include="rmlui\RoseRmlTrade.cpp" />
+    <ClCompile Include="rmlui\RoseRmlTradeInvite.cpp" />
     <ClCompile Include="rmlui\RoseRmlNumberInput.cpp" />
     <ClCompile Include="rmlui\RoseRmlSystem.cpp" />
     <ClCompile Include="rmlui\RoseRmlStatusPanel.cpp" />

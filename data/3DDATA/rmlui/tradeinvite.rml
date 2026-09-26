@@ -1,0 +1,34 @@
+<rml>
+<head>
+    <title>Trade Request</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="tradeinvite.rcss"/>
+</head>
+<body data-model="tradeinvite">
+    <!--
+        UI2 trade request ( RoseRmlTradeInvite ), replacing the message box.
+        Who is asking, Accept / Decline, and a countdown: unanswered, the
+        request is declined when the bar runs out. Drag the title bar to move
+        it; the spot is saved.
+    -->
+    <div id="tradeinvite" class="ui-window">
+        <handle move_target="tradeinvite" class="ui-titlebar">
+            <span class="ui-title">Trade request</span>
+            <span class="secs ui-muted">{{seconds}}s</span>
+        </handle>
+
+        <div class="msg">
+            <span class="who">{{from}}</span><span> wants to trade with you.</span>
+        </div>
+
+        <!-- scaleX, not a width: a width re-lays out the window every frame. -->
+        <div class="timer ui-gauge"><div class="ui-gauge-fill steel fill" data-style-transform="'scaleX(' + (time_left + 0.001) + ')'"></div></div>
+
+        <div class="buttons">
+            <span class="ui-btn on answer" data-event-click="accept()">Accept</span>
+            <span class="ui-btn answer" data-event-click="decline()">Decline</span>
+        </div>
+    </div>
+</body>
+</rml>

@@ -54,6 +54,10 @@ const int kReplacedDialogs[] = {
     /// RoseRmlNumberInput ( also in kReplacedWindows ). Hidden, NOT gone:
     /// CNumberInputDlg holds the command the answer runs.
     DLG_TYPE_N_INPUT,
+    /// RoseRmlTrade ( also in kReplacedWindows ). Hidden, NOT gone: CExchangeDLG
+    /// observes CExchange and keeps the icons, drag items and commands. Its
+    /// Hide() ends the trade, so the classic dialog must never be shown.
+    DLG_TYPE_EXCHANGE,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -71,6 +75,7 @@ const int kReplacedWindows[] = {
     DLG_TYPE_STORE,
     DLG_TYPE_DEAL,
     DLG_TYPE_N_INPUT,
+    DLG_TYPE_EXCHANGE,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).
@@ -188,7 +193,8 @@ OpenWindow(int iDlgType, bool bToggle) {
     /// A quantity question is asked, never toggled: CTCmdOpenNumberInputDlg
     /// opens it with the toggle default, so a second question while one was
     /// showing closed it -- and dropped the new command with it.
-    if (iDlgType == DLG_TYPE_N_INPUT)
+    /// Nor is a trade: the accept path opens it with the toggle set.
+    if (iDlgType == DLG_TYPE_N_INPUT || iDlgType == DLG_TYPE_EXCHANGE)
         bToggle = false;
     const bool bOpen = RoseRmlUi::IsWindowOpen(iDlgType);
     RoseRmlUi::SetWindowOpen(iDlgType, bToggle ? !bOpen : true);

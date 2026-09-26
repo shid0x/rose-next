@@ -566,7 +566,7 @@ RoseRmlMinimap::UpdateTooltip() {
     /// The hovered mark's NPC name, as a label above the mark.
     int iTip = -1;
     if (!m_bPanning && !CDragNDropMgr::GetInstance().IsDraging()) {
-        for (Rml::Element* pEl = m_pContext->GetHoverElement(); pEl != NULL;
+        for (Rml::Element* pEl = RoseRmlLayout::HoverIn(m_pContext, m_pDocument); pEl != NULL;
              pEl = pEl->GetParentNode()) {
             if (pEl->HasAttribute("tip")) {
                 iTip = pEl->GetAttribute<int>("tip", -1);

@@ -1,14 +1,14 @@
-/* UI2 party invitation -- LAYOUT ONLY ( colours and materials: rose-theme.rcss ).
+/* UI2 trade request -- LAYOUT ONLY ( colours and materials: rose-theme.rcss ).
    Reload in game with /uireload. */
 
 /* Over the windows ( a click on one pulls its document to the front ); the
    quantity popup is at 40, the message box at 50. */
 body { z-index: 45; }
 
-/* Default spot: upper middle of the screen, where an answer is expected. */
-#partyinvite {
+/* Default spot: upper middle of the screen, under the party invitation's. */
+#tradeinvite {
     left: 42%;
-    top: 22%;
+    top: 34%;
     width: 260dp;
 }
 
@@ -26,13 +26,12 @@ body { z-index: 45; }
     color: #ff9a5a;
 }
 
-/* The countdown: drains to nothing, then the invitation is declined. */
+/* The countdown: drains to nothing, then the request is declined. Full
+   width, shrunk from the right by the bound scaleX. */
 .timer {
     height: 4dp;
     margin: 0dp 4dp 8dp 4dp;
 }
-/* The bar is full width and shrinks from the right by the bound scaleX: a
-   changing width would re-lay out the window every frame. */
 .timer .fill {
     right: 0dp;
     transform-origin: 0% 50%;
