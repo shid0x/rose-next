@@ -425,6 +425,14 @@ to 12 ms, a tab switch from 12-25 ms to nothing measurable):
 - `[rmlui] slow UI frame:` in `client-*.log` names the panels and phases whenever UI2 takes more
   than 8 ms of a frame, plus what the renderer had to build. Measure with it before guessing.
 
+**Storage** (2026-09-26, `RoseRmlStorage`, `DLG_TYPE_BANK`): a view over the hidden `CBankDlg`.
+**The deposit command reads the tab from the classic dialog** (`CTCmdMoveItemInv2Bank` ->
+`CBankDlg::GetCurrentTab()` decides a Platinum deposit), so the UI2 window keeps it in step
+(`SetCurrentTab`) -- the same shape as the trade's movement lock: classic code that asks a hidden
+dialog for its state must get UI2's answer. The walk-away close ran only while the classic dialog
+was visible and is UI2's now. Zuly goes through the UI2 quantity popup; `CBankWindowDlg` is never
+shown. Double-click takes an item out (the classic icon had no command).
+
 **Popup sweep** (2026-09-26): classic popups draw under the UI2 windows, so while UI2 is on
 `IT_MGR::OpenMsgBox` routes every box **without a message type or an invoking dialog** to
 `RoseRmlMessageBox` -- OK-only = a self-closing notice, OK + command = one button that waits, OK/Cancel

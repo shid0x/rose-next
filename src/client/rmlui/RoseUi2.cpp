@@ -60,6 +60,11 @@ const int kReplacedDialogs[] = {
     DLG_TYPE_EXCHANGE,
     /// The death window: a UI2 message box entry ( RoseRmlUi, OpenRestart ).
     DLG_TYPE_RESTART,
+    /// RoseRmlStorage ( also in kReplacedWindows ). Hidden, NOT gone: CBankDlg
+    /// observes CBank, keeps the icons and the drag, and holds the tab the
+    /// deposit command reads. Its zuly box, CBankWindowDlg, is only opened by
+    /// CBankDlg's buttons, which UI2 does not show.
+    DLG_TYPE_BANK,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -79,6 +84,7 @@ const int kReplacedWindows[] = {
     DLG_TYPE_N_INPUT,
     DLG_TYPE_EXCHANGE,
     DLG_TYPE_RESTART,
+    DLG_TYPE_BANK,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).

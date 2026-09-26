@@ -24,6 +24,7 @@
 #include "RoseRmlNumberInput.h"
 #include "RoseRmlTrade.h"
 #include "RoseRmlTradeInvite.h"
+#include "RoseRmlStorage.h"
 #include "RoseRmlSystem.h"
 #include "RoseRmlText.h"
 #include "RoseUi2.h"
@@ -73,6 +74,7 @@ RoseRmlShop g_Shop; ///< UI2: replaces CStoreDLG + CDealDLG ( a view over them )
 RoseRmlNumberInput g_NumberInput; ///< UI2: replaces CNumberInputDlg
 RoseRmlTrade g_Trade; ///< UI2: replaces CExchangeDLG ( a view over it )
 RoseRmlTradeInvite g_TradeInvite; ///< UI2: replaces the trade request message box
+RoseRmlStorage g_Storage; ///< UI2: replaces CBankDlg ( a view over it ) and its zuly box
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -416,6 +418,7 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_Shop.Initialise(g_pContext, kAssetDir);
     g_Trade.Initialise(g_pContext, kAssetDir);
     g_TradeInvite.Initialise(g_pContext, kAssetDir);
+    g_Storage.Initialise(g_pContext, kAssetDir);
     /// Late, so they stack over the windows that ask them.
     g_NumberInput.Initialise(g_pContext, kAssetDir);
     g_MessageBox.Initialise(g_pContext, kAssetDir);
@@ -450,6 +453,7 @@ Shutdown() {
     g_Shop.Shutdown();
     g_Trade.Shutdown();
     g_TradeInvite.Shutdown();
+    g_Storage.Shutdown();
     g_NumberInput.Shutdown();
     g_MessageBox.Shutdown();
     RoseRmlLayout::Shutdown();
@@ -538,6 +542,7 @@ Update() {
     UI_TIMED("shop", g_Shop.Update());
     UI_TIMED("trade", g_Trade.Update());
     UI_TIMED("tradeinvite", g_TradeInvite.Update());
+    UI_TIMED("storage", g_Storage.Update());
     UI_TIMED("numinput", g_NumberInput.Update());
     UI_TIMED("msgbox", g_MessageBox.Update());
     /// Data bindings, styles and layout of every document.
@@ -591,6 +596,9 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_EXCHANGE:
             g_Trade.SetOpen(bOpen);
             break;
+        case DLG_TYPE_BANK:
+            g_Storage.SetOpen(bOpen);
+            break;
         case DLG_TYPE_RESTART:
             if (bOpen)
                 OpenRestart();
@@ -632,6 +640,8 @@ IsWindowOpen(int iDlgType) {
             return g_NumberInput.IsOpen();
         case DLG_TYPE_EXCHANGE:
             return g_Trade.IsOpen();
+        case DLG_TYPE_BANK:
+            return g_Storage.IsOpen();
         case DLG_TYPE_RESTART:
             return g_MessageBox.IsTypePending(kMsgTypeRestart);
         default:

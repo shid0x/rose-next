@@ -1,0 +1,55 @@
+<rml>
+<head>
+    <title>Storage</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="storage.rcss"/>
+</head>
+<body data-model="storage">
+    <!--
+        UI2 storage ( RoseRmlStorage ), replacing CBankDlg and its zuly box.
+        Opens beside the bag the first time; drag the title bar to move it,
+        the spot is saved.
+
+        Four tabs of 8x5 ( the fourth is Platinum: only Platinum members can
+        store there ). Drag an item from the bag onto the window to store it
+        ( the bag's tooltip shows the fee ); drag a stored item to the bag, or
+        double-click it, to take it out. Deposit / Withdraw move zuly.
+
+        The whole window is a drop target for items ( DLG_TYPE_BANK ).
+    -->
+    <div id="storage" class="ui-window" data-attr-drop-target="drop_type">
+        <handle move_target="storage" class="ui-titlebar">
+            <span class="ui-title">{{title}}</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <div class="tabs">
+            <span class="ui-btn tab" data-for="t : tabs" data-class-on="tab == t.index"
+                  data-event-click="set_tab(t.index)">{{t.name}}<span class="n">{{t.count}}</span></span>
+        </div>
+
+        <div class="grid ui-well">
+            <div class="cell ui-icon" data-for="c : cells" data-attr-slot-index="c.index"
+                 data-class-empty="!c.filled"
+                 data-event-mousedown="press(c.index)" data-event-dblclick="use(c.index)">
+                <img data-if="c.filled" data-attr-src="c.src" data-attr-rect="c.rect"/>
+                <div class="gem" data-if="c.socket == 2"><img data-attr-src="c.gem_src" data-attr-rect="c.gem_rect"/></div>
+                <img class="socket" data-if="c.socket == 1" src="3DData/Control/Res/SOKET.DDS"/>
+                <span class="count" data-if="c.count > 0">{{c.count}}</span>
+            </div>
+        </div>
+
+        <div class="note" data-if="platinum_locked">{{platinum_note}}</div>
+
+        <div class="footer">
+            <span class="coin"></span>
+            <span class="mval">{{money}}</span>
+            <span class="ui-btn mbtn" data-event-click="deposit()">{{deposit_label}}</span>
+            <span class="ui-btn mbtn" data-event-click="withdraw()">{{withdraw_label}}</span>
+        </div>
+
+        <div class="hint ui-muted">Drag items between your bag and storage. Double-click a stored item to take it out.</div>
+    </div>
+</body>
+</rml>

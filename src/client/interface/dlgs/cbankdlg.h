@@ -34,6 +34,21 @@ public:
     int GetCurrentTab();
     bool IsFullFirstTab(); /// 현재 첫번째 탭이 꽉 차 있는가?
 
+    /// UI2 ( RoseRmlStorage ) draws these slots and drags with this drag item
+    /// while this dialog stays hidden as the storage's view model. The tab is
+    /// kept in step with the UI2 window's: CTCmdMoveItemInv2Bank asks
+    /// GetCurrentTab() whether a deposit goes to the Platinum tab.
+    CSlot* GetSlot(int iPage, int iSlot) {
+        return (iPage >= 0 && iPage < g_iPageCount && iSlot >= 0 && iSlot < g_iSlotCountPerPage)
+            ? &m_Slots[iPage][iSlot]
+            : NULL;
+    }
+    CDragItem* GetDragItem() { return m_pDragItem; }
+    void SetCurrentTab(int iPage) {
+        if (iPage >= 0 && iPage < g_iPageCount)
+            m_iCurrBankPage = iPage;
+    }
+
     enum {
         IID_BTN_CLOSE = 20,
         IID_BTN_SAVE = 21, ///줄리 보관 버튼
