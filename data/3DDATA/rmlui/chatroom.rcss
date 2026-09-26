@@ -1,0 +1,78 @@
+/* UI2 chat room -- LAYOUT ONLY ( colours and materials: rose-theme.rcss, plus
+   the few colours that are this window's own states ).
+   Reload in game with /uireload. The C++ places it left of the community
+   window the first time, until it is moved.
+
+   PERFORMANCE ( see shop.rcss ): definite widths, the log and the members
+   are two floats side by side ( both floated: fine ), lines and members are
+   plain blocks, never removed, only hidden. */
+
+#chatroom {
+    left: 300dp;
+    top: 200dp;
+    display: block;
+    width: 420dp;
+}
+
+.body { display: flow-root; }
+
+/* The conversation. */
+.log {
+    float: left;
+    width: 284dp;
+    height: 240dp;
+    overflow-y: auto;
+    padding: 4dp 5dp;
+}
+.line {
+    display: block;
+    margin-bottom: 2dp;
+    line-height: 15dp;
+}
+.line.unused { display: none; }
+.who { font-weight: bold; color: #ffb070; }
+.line.mine .who { color: #9ad870; }
+.txt { color: #e6e6e6; }
+.line.note .txt { color: #9a9a9a; font-size: 10dp; }
+
+/* Who is in the room, the master first. */
+.members {
+    float: left;
+    width: 100dp;
+    height: 240dp;
+    margin-left: 6dp;
+    overflow-y: auto;
+    padding: 4dp 5dp;
+}
+.mhead {
+    display: block;
+    margin-bottom: 4dp;
+    font-size: 9dp;
+}
+.member {
+    display: block;
+    line-height: 16dp;
+    font-size: 10dp;
+    color: #e6e6e6;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.member.unused { display: none; }
+.member.master { font-weight: bold; color: #ffe070; }
+
+.sayrow {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 26dp;
+    margin-top: 4dp;
+}
+.say { width: 346dp; }
+.sendbtn {
+    margin-left: 6dp;
+    width: 54dp;
+    box-sizing: border-box;
+    padding-left: 0dp;
+    padding-right: 0dp;
+}

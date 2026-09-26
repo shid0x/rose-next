@@ -4,6 +4,7 @@
 #include "../../Game.h"
 #include "../../GameData/CChatRoom.h"
 #include "../../Network/CNetwork.h"
+#include "../../rmlui/RoseUi2.h"
 
 #include "tgamectrl/tscrollbar.h"
 #include "tgamectrl/teditbox.h"
@@ -267,8 +268,19 @@ CChatRoomDlg::Update(CObservable* pObservable, CTObject* pObj) {
             break;
         }
         case CTEventChatRoom::EID_STATE_DEACTIVATED:
+            /// UI2: the room is gone ( left, or kicked -- classic kept the
+            /// window open on an empty room ).
+            if (RoseUi2::IsReplaced(DLG_TYPE_CHATROOM))
+                g_itMGR.CloseDialog(DLG_TYPE_CHATROOM);
             break;
         case CTEventChatRoom::EID_STATE_ACTIVATED: {
+            /// UI2 keeps this dialog hidden -- its Hide() leaves the room, so a
+            /// direct Show() here would be undone on the next frame, taking
+            /// the room with it. Open through IT_MGR, which routes to UI2.
+            if (RoseUi2::IsReplaced(DLG_TYPE_CHATROOM)) {
+                g_itMGR.OpenDialog(DLG_TYPE_CHATROOM, false);
+                break;
+            }
             Show();
             CWinCtrl* pCtrl = FindChildInPane(IID_PANE_TOP, IID_TABBEDPANE);
             if (pCtrl && pCtrl->GetControlType() == CTRL_TABBEDPANE) {
@@ -346,6 +358,16 @@ CChatRoomDlg::Show() {
             pCtrl->Hide();
     }
 }
+const char*
+CChatRoomDlg::GetMemberName(WORD wServerIdx) {
+    std::list<CChatMember>::iterator iter;
+    for (iter = m_Members.begin(); iter != m_Members.end(); ++iter) {
+        if (iter->GetServerIdx() == wServerIdx)
+            return iter->GetName();
+    }
+    return NULL;
+}
+
 void
 CChatRoomDlg::RecvChatMsg(WORD wUserID, const char* pszMsg) {
     std::list<CChatMember>::iterator iter;

@@ -33,6 +33,9 @@
 #include "RoseRmlCraft.h"
 #include "RoseRmlMenuBar.h"
 #include "RoseRmlSystemMenu.h"
+#include "RoseRmlCommunity.h"
+#include "RoseRmlMessages.h"
+#include "RoseRmlChatRoom.h"
 #include "RoseRmlSystem.h"
 #include "RoseRmlText.h"
 #include "RoseRmlIcons.h"
@@ -98,6 +101,9 @@ RoseRmlUpgrade g_Upgrade; ///< UI2: replaces CUpgradeDlg ( refine )
 RoseRmlCraft g_Craft; ///< UI2: replaces CMakeDLG ( crafting )
 RoseRmlMenuBar g_MenuBar; ///< UI2: replaces CMenuDlg ( the pop-up menu ), always shown
 RoseRmlSystemMenu g_SystemMenu; ///< UI2: replaces CSystemDLG ( exit / character select )
+RoseRmlCommunity g_Community; ///< UI2: replaces CCommDlg + CAddFriendDlg ( friends )
+RoseRmlMessages g_Messages; ///< UI2: replaces the CPrivateChatDlg windows ( one, tabbed )
+RoseRmlChatRoom g_ChatRoom; ///< UI2: replaces CChatRoomDlg ( the room you are in )
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -412,9 +418,14 @@ ProcessTextFieldKey(UINT uiMsg, WPARAM wParam) {
         g_pContext->ProcessKeyDown(key, KeyModifiers()); /// Enter: a "change" with linebreak
     if (wParam == VK_RETURN || wParam == VK_ESCAPE) {
         g_TextSwallowChar = wParam;
-        /// The panel may have closed on it, taking the field with it.
-        if (Rml::Element* pStill = FocusedTextField())
-            pStill->Blur();
+        /// The panel may have closed on it, taking the field with it. A
+        /// conversation's field ( keep-focus ) keeps the keyboard on Enter:
+        /// the next line is typed straight away, as in the classic chat
+        /// windows -- only Escape or a click elsewhere lets go.
+        if (Rml::Element* pStill = FocusedTextField()) {
+            if (wParam == VK_ESCAPE || !pStill->HasAttribute("keep-focus"))
+                pStill->Blur();
+        }
     }
     return true;
 }
@@ -624,6 +635,9 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_Craft.Initialise(g_pContext, kAssetDir);
     g_MenuBar.Initialise(g_pContext, kAssetDir);
     g_SystemMenu.Initialise(g_pContext, kAssetDir);
+    g_Community.Initialise(g_pContext, kAssetDir);
+    g_Messages.Initialise(g_pContext, kAssetDir);
+    g_ChatRoom.Initialise(g_pContext, kAssetDir);
     /// Late, so they stack over the windows that ask them.
     g_NumberInput.Initialise(g_pContext, kAssetDir);
     g_MessageBox.Initialise(g_pContext, kAssetDir);
@@ -667,6 +681,9 @@ Shutdown() {
     g_Craft.Shutdown();
     g_MenuBar.Shutdown();
     g_SystemMenu.Shutdown();
+    g_Community.Shutdown();
+    g_Messages.Shutdown();
+    g_ChatRoom.Shutdown();
     g_NumberInput.Shutdown();
     g_MessageBox.Shutdown();
     RoseRmlLayout::Shutdown();
@@ -764,6 +781,9 @@ Update() {
     UI_TIMED("craft", g_Craft.Update());
     UI_TIMED("menubar", g_MenuBar.Update());
     UI_TIMED("sysmenu", g_SystemMenu.Update());
+    UI_TIMED("community", g_Community.Update());
+    UI_TIMED("messages", g_Messages.Update());
+    UI_TIMED("chatroom", g_ChatRoom.Update());
     UI_TIMED("numinput", g_NumberInput.Update());
     UI_TIMED("msgbox", g_MessageBox.Update());
     /// Data bindings, styles and layout of every document.
@@ -845,6 +865,20 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_SYSTEM:
             g_SystemMenu.SetOpen(bOpen);
             break;
+        case DLG_TYPE_COMMUNITY:
+            g_Community.SetOpen(bOpen);
+            break;
+        case DLG_TYPE_ADDFRIEND:
+            /// The add-friend box is the community window's name field.
+            if (bOpen)
+                g_Community.FocusAddFriend();
+            break;
+        case DLG_TYPE_PRIVATECHAT:
+            g_Messages.SetOpen(bOpen);
+            break;
+        case DLG_TYPE_CHATROOM:
+            g_ChatRoom.SetOpen(bOpen);
+            break;
         case DLG_TYPE_RESTART:
             if (bOpen)
                 OpenRestart();
@@ -904,6 +938,14 @@ IsWindowOpen(int iDlgType) {
             return true;
         case DLG_TYPE_SYSTEM:
             return g_SystemMenu.IsOpen();
+        case DLG_TYPE_COMMUNITY:
+            return g_Community.IsOpen();
+        case DLG_TYPE_ADDFRIEND:
+            return false;
+        case DLG_TYPE_PRIVATECHAT:
+            return g_Messages.IsOpen();
+        case DLG_TYPE_CHATROOM:
+            return g_ChatRoom.IsOpen();
         case DLG_TYPE_RESTART:
             return g_MessageBox.IsTypePending(kMsgTypeRestart);
         default:
@@ -1490,6 +1532,35 @@ ReportUiStats() {
 } // namespace
 
 namespace RoseRmlUi {
+
+bool
+MessagesOpen(DWORD dwUserTag, const char* pszName) {
+    if (!g_bInitialised || !RoseUi2::IsActive())
+        return false;
+    g_Messages.OpenConversation(dwUserTag, pszName);
+    return true;
+}
+
+bool
+MessagesReceive(DWORD dwUserTag, const char* pszName, const char* pszMsg) {
+    if (!g_bInitialised || !RoseUi2::IsActive())
+        return false;
+    g_Messages.Receive(dwUserTag, pszName, pszMsg);
+    return true;
+}
+
+bool
+ChatRoomMessage(WORD wUserId, const char* pszMsg) {
+    if (!g_bInitialised || !RoseUi2::IsReplaced(DLG_TYPE_CHATROOM))
+        return false;
+    g_ChatRoom.Receive(wUserId, pszMsg);
+    return true;
+}
+
+bool
+HasMessages() {
+    return g_bInitialised && g_Messages.HasConversations();
+}
 
 bool
 BlinkButton(int iDlgType, int iButtonId) {

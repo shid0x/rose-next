@@ -36,7 +36,7 @@ const MenuEntry kEntries[] = {
     {DLG_TYPE_ITEM, MENU_BTN_ITEM, "Bag", "Inventory", "Alt+I"},
     {DLG_TYPE_SKILL, MENU_BTN_SKILL, "Skills", "Skills", "Alt+S"},
     {DLG_TYPE_QUEST, MENU_BTN_QUEST, "Quests", "Quest journal", "Alt+Q"},
-    {DLG_TYPE_COMMUNITY, MENU_BTN_COMMUNITY, "Friends", "Community", "Alt+C"},
+    {DLG_TYPE_COMMUNITY, MENU_BTN_COMMUNITY, "Community", "Friends and chat rooms", "Alt+C"},
     {DLG_TYPE_CLAN, MENU_BTN_CLAN, "Clan", "Clan", "Alt+N"},
     {DLG_TYPE_OPTION, MENU_BTN_OPTION, "Options", "Options", "Alt+O"},
     {DLG_TYPE_SYSTEM, MENU_BTN_EXIT, "System", "Log out or exit", "Alt+X"},

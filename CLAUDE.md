@@ -480,7 +480,7 @@ dialog back to NORMAL; a request with no answer frees the window after 20 s. Kin
 grow-only lists (rows hidden, never removed).
 
 **Menu bar and system menu** (2026-09-26): `RoseRmlMenuBar` replaces the classic pop-up menu
-(`DLG_TYPE_MENU`) with an always-shown bar (Char, Bag, Skills, Quests, Friends, Clan, Options,
+(`DLG_TYPE_MENU`) with an always-shown bar (Char, Bag, Skills, Quests, Community, Clan, Options,
 System -- Help and Game Info dropped); the routing makes opening the menu a no-op and its close (every
 world click) harmless. **The tutorial blinks menu buttons** (`SC_SetButtonBlink(DLG_TYPE_MENU,
 MENU_BTN_*)`): on a replaced dialog that would blink the hidden classic button, so
@@ -489,12 +489,26 @@ MENU_BTN_*)`): on a replaced dialog that would blink the hidden classic button, 
 `.ui-btn`'s 1dp border is outside its width unless `box-sizing: border-box` -- a row of fixed-width
 buttons wrapped on it.
 
+**Community** (2026-09-26; mail/memos deliberately not ported): `RoseRmlCommunity` (Friends and
+Rooms tabs, `DLG_TYPE_COMMUNITY` + `ADDFRIEND`), `RoseRmlMessages` (one tabbed window for the
+private chats, `DLG_TYPE_PRIVATECHAT`) and `RoseRmlChatRoom` (`DLG_TYPE_CHATROOM`). **There is no
+friends-list model**: the list is `CCommDlg`'s list-box items, which the messenger packets update
+directly -- UI2 reads them (`GetFriendAt`). **Classic private chats and the room window show
+themselves** (`CTCmdOpenPrivateChatDlg` / the `CChatRoom` activated event call `Show()`, not
+`OpenDialog`) and **their `Hide()` destroys the chat / leaves the room** -- so under UI2
+`IT_MGR::OpenPrivateChatDlg`, `Recv_wsv_MESSENGER_CHAT` and `Recv_wsv_CHATROOM_MSG` branch to UI2,
+and the room dialog opens and closes through `IT_MGR` (which also closes the window when kicked).
+Room messages are named from the hidden `CChatRoomDlg`'s members (`GetMemberName`). The client
+never requested the room list (`Send_cli_CHAT_ROOM_LIST` had no caller): the Rooms tab asks, and
+`Recv_wsv_CHATROOM` asks for the next 15 on a non-final page.
+
 **Text fields** (2026-09-26): an RmlUi `<input type="text" class="ui-field">` with the focus owns
 the keyboard -- `RoseRmlUi::ProcessWndMsg` hands it every key and character (printable ASCII only:
 plain English by decision, no IME) and none reaches the game; `numeric="1"` takes digits only.
 Enter arrives as a `change` event with `linebreak`, Escape as a `keydown` (`KI_ESCAPE`); both, a
 world click, or the window closing end typing, and their `WM_CHAR` is swallowed (it would open the
-chat). Focusing a field unfocuses the classic chat box. Read a field's text from its `value`
+chat); a field marked `keep-focus="1"` (a conversation's) keeps the keyboard on Enter. Focusing a
+field unfocuses the classic chat box. Read a field's text from its `value`
 attribute rather than a `data-value` binding. Avoid `&&` in markup expressions (XML would need
 `&amp;&amp;`); compute such flags in the view model.
 

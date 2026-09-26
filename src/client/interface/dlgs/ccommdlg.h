@@ -27,6 +27,13 @@ public:
     CFriendListItem* FindFriend(DWORD dwUserTag);
     CFriendListItem* FindFriendByName(const char* pszName);
 
+    /// The friends list lives only in this dialog's list box ( CCommunity is
+    /// empty ); UI2 ( RoseRmlCommunity ) keeps the dialog hidden and reads it.
+    int GetFriendCount();
+    CFriendListItem* GetFriendAt(int iIndex);
+    int GetChatRoomCount();
+    class CChatRoomListItem* GetChatRoomAt(int iIndex);
+
     ///우편함목록 관련
     void ClearMemoList();
     void AddMemo(int iRowid, const char* pszFromName, const char* pszMemo, DWORD dwRecvTime);

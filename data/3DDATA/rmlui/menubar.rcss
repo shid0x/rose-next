@@ -6,16 +6,16 @@
    PERFORMANCE ( see shop.rcss ): definite width, the buttons are fixed-size
    floats, and the caption shows by visibility ( no layout ) above the bar. */
 
-/* Eight buttons of 62 + 2 ( 512; border-box, so a button's border is inside
-   its 62 ), the grip and its gap ( 16 ), the glass's padding and border
-   ( 10 ): 538, and 4 to spare so rounding at odd UI scales cannot push the
-   last button onto a second row. */
+/* Eight buttons of 66 + 2 ( 544; border-box, so a button's border is inside
+   its 66 -- "Community" is the widest label ), the grip and its gap ( 16 ),
+   the glass's padding and border ( 10 ): 570, and 4 to spare so rounding at
+   odd UI scales cannot push the last button onto a second row. */
 #menubar {
     position: absolute;
     left: 400dp;
     top: 600dp;
     display: block;
-    width: 542dp;
+    width: 574dp;
 }
 
 /* The hovered button's name and shortcut, just above the bar ( glass from
@@ -59,7 +59,7 @@ body.locked .grip { cursor: default; }
     float: left;
     display: block;
     box-sizing: border-box;
-    width: 62dp;
+    width: 66dp;
     height: 28dp;
     line-height: 26dp;
     margin-right: 2dp;

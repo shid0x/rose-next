@@ -1,0 +1,94 @@
+<rml>
+<head>
+    <title>Community</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="community.rcss"/>
+</head>
+<body data-model="community">
+    <!--
+        UI2 community window ( RoseRmlCommunity ), replacing the classic
+        community window and its add-friend box. Drag the title bar to move
+        it, the spot is saved.
+
+        Friends: online first. Type a name and press Enter ( or Add ) to send
+        a friend request. Click a friend to select them, double-click to talk;
+        Remove asks before it removes the selected friend.
+
+        Rooms: the open chat rooms ( refreshed when the tab opens ).
+        Double-click one to join it, or name a new room and make it.
+    -->
+    <div id="community" class="ui-window">
+        <handle move_target="community" class="ui-titlebar">
+            <span class="ui-title">Community</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <div class="tabs">
+            <span class="ui-btn tab" data-class-on="tab == 0" data-event-click="set_tab(0)">Friends</span>
+            <span class="ui-btn tab" data-class-on="tab == 1" data-event-click="set_tab(1)">Rooms</span>
+        </div>
+
+        <!-- Friends. -->
+        <div class="page" data-if="tab == 0">
+            <div class="addrow">
+                <input id="addname" type="text" class="ui-field addname" maxlength="16"
+                       data-event-change="add_edited()"/>
+                <span class="ui-btn addbtn" data-event-click="add()">Add</span>
+            </div>
+
+            <div class="list ui-well">
+                <div class="friend ui-click" data-for="f : friends" data-class-unused="!f.used"
+                     data-class-on="f.on" data-class-offline="!f.online"
+                     data-event-click="select(f.index)" data-event-dblclick="talk(f.index)">
+                    <span class="dot"></span>
+                    <span class="fstate">{{f.state}}</span>
+                    <span class="fname">{{f.name}}</span>
+                </div>
+                <div class="empty ui-muted" data-if="total == 0">No friends yet. Type a name above to add one.</div>
+            </div>
+
+            <div class="foot">
+                <span class="count ui-muted">{{online}} online / {{total}}</span>
+                <span class="ui-btn msgbtn" data-if="has_messages" data-event-click="messages()">Messages</span>
+                <span class="ui-btn removebtn" data-class-off="!has_selection" data-event-click="remove()">Remove</span>
+            </div>
+
+            <div class="hint ui-muted">Double-click a friend to talk.</div>
+        </div>
+
+        <!-- Rooms. -->
+        <div class="page" data-if="tab == 1">
+            <div class="inroom" data-if="in_room">
+                <span class="irlabel ui-muted">You are in</span>
+                <span class="irtitle">{{room_title}}</span>
+                <span class="ui-btn openbtn" data-event-click="open_room()">Open</span>
+            </div>
+
+            <div class="rlist ui-well">
+                <div class="room ui-click" data-for="r : rooms" data-class-unused="!r.used"
+                     data-event-dblclick="join(r.index)">
+                    <span class="rusers">{{r.users}}</span>
+                    <span class="rtitle">{{r.title}}</span>
+                </div>
+                <div class="empty ui-muted" data-if="room_count == 0">No open rooms right now. Make one below.</div>
+            </div>
+
+            <div class="foot">
+                <span class="count ui-muted">{{room_count}} rooms</span>
+                <span class="ui-btn refreshbtn" data-event-click="refresh()">Refresh</span>
+            </div>
+
+            <div class="makehead ui-muted">Make a room: name, and max people (2-8)</div>
+            <div class="makerow">
+                <input id="roomtitle" type="text" class="ui-field roomtitle" maxlength="25"
+                       data-event-change="make_edited()"/>
+                <input id="roommax" type="text" class="ui-field roommax" numeric="1" maxlength="1" value="8"/>
+                <span class="ui-btn makebtn" data-event-click="make()">Make</span>
+            </div>
+
+            <div class="hint ui-muted">Double-click a room to join it.</div>
+        </div>
+    </div>
+</body>
+</rml>

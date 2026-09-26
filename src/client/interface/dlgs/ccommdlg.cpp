@@ -178,6 +178,34 @@ CCommDlg::RemoveFriend(DWORD dwUserTag) {
     }
 }
 
+int
+CCommDlg::GetFriendCount() {
+    CZListBox* pZlist = GetZListBox(TAB_FRIEND, IID_ZLIST_FRIEND);
+    return pZlist ? pZlist->GetSize() : 0;
+}
+
+CFriendListItem*
+CCommDlg::GetFriendAt(int iIndex) {
+    CZListBox* pZlist = GetZListBox(TAB_FRIEND, IID_ZLIST_FRIEND);
+    if (pZlist == NULL || iIndex < 0 || iIndex >= pZlist->GetSize())
+        return NULL;
+    return (CFriendListItem*)pZlist->GetItem(iIndex);
+}
+
+int
+CCommDlg::GetChatRoomCount() {
+    CZListBox* pZlist = GetZListBox(TAB_CHATROOM, IID_ZLIST_CHATROOM);
+    return pZlist ? pZlist->GetSize() : 0;
+}
+
+CChatRoomListItem*
+CCommDlg::GetChatRoomAt(int iIndex) {
+    CZListBox* pZlist = GetZListBox(TAB_CHATROOM, IID_ZLIST_CHATROOM);
+    if (pZlist == NULL || iIndex < 0 || iIndex >= pZlist->GetSize())
+        return NULL;
+    return (CChatRoomListItem*)pZlist->GetItem(iIndex);
+}
+
 CFriendListItem*
 CCommDlg::FindFriend(DWORD dwUserTag) {
     CWinCtrl* pCtrl = NULL;

@@ -28,6 +28,11 @@ public:
     void RecvChatMsg(WORD wUserID,
         const char* pszMsg); /// 서버로 부터 받은 채팅룸의 채팅메세지 처리
 
+    /// The room's members as this observer keeps them ( CChatRoom has no
+    /// getter ); the master first. UI2 ( RoseRmlChatRoom ) reads them.
+    const std::list<CChatMember>& GetMembers() { return m_Members; }
+    const char* GetMemberName(WORD wServerIdx);
+
 private:
     void AddChatMsg(const char* pszMsg, DWORD dwColor);
 

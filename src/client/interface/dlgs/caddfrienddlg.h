@@ -14,6 +14,11 @@ public:
 
     virtual unsigned Process(unsigned uiMsg, WPARAM wParam, LPARAM lParam);
 
+    /// The request for a typed name ( shared with UI2's community window ):
+    /// false for an empty name or your own, which the dialog ignored; a
+    /// friend already listed gets its notice and still counts as handled.
+    static bool RequestAddFriend(const char* pszName);
+
 protected:
     enum { IID_BTN_CLOSE = 10, IID_BTN_CONFIRM = 11, IID_EDITBOX = 20 };
 

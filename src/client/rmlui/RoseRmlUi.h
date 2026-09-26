@@ -62,6 +62,17 @@ void PlaceTooltipAtCursor(CInfo& ToolTip);
 /// Draw-call count of the last rendered frame, for the debug HUD.
 int GetDrawCallCount();
 
+/// UI2 private messages ( RoseRmlMessages ): a friend's conversation opened
+/// ( IT_MGR::OpenPrivateChatDlg ), an incoming message ( Recv_wsv_MESSENGER_CHAT;
+/// game code page ). False when UI2 is off: the classic windows take them.
+bool MessagesOpen(DWORD dwUserTag, const char* pszName);
+bool MessagesReceive(DWORD dwUserTag, const char* pszName, const char* pszMsg);
+bool HasMessages();
+
+/// A chat room message ( Recv_wsv_CHATROOM_MSG ) for the UI2 room window;
+/// false when UI2 is off.
+bool ChatRoomMessage(WORD wUserId, const char* pszMsg);
+
 /// SC_SetButtonBlink on a replaced dialog: the tutorial points at a button
 /// ( the menu's MENU_BTN_* ). False when UI2 has no such button.
 bool BlinkButton(int iDlgType, int iButtonId);

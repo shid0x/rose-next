@@ -1,0 +1,37 @@
+<rml>
+<head>
+    <title>Chat Room</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="chatroom.rcss"/>
+</head>
+<body data-model="chatroom">
+    <!--
+        UI2 chat room ( RoseRmlChatRoom ): the room you are in. Rooms are
+        listed, made and joined in the community window's Rooms tab. Closing
+        this window leaves the room. Drag the title bar to move it.
+    -->
+    <div id="chatroom" class="ui-window">
+        <handle move_target="chatroom" class="ui-titlebar">
+            <span class="ui-title">{{title}}</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <div class="body">
+            <div id="roomlog" class="log ui-well">
+                <div class="line" data-for="l : lines" data-class-unused="!l.used"
+                     data-class-mine="l.kind == 1" data-class-note="l.kind == 2"><span class="who" data-if="l.kind != 2">{{l.who}}: </span><span class="txt">{{l.text}}</span></div>
+            </div>
+            <div class="members ui-well">
+                <div class="mhead ui-muted">In the room ({{member_count}})</div>
+                <div class="member" data-for="m : members" data-class-unused="!m.used" data-class-master="m.master">{{m.name}}</div>
+            </div>
+        </div>
+
+        <div class="sayrow">
+            <input id="roomsay" type="text" class="ui-field say" maxlength="100" keep-focus="1" data-event-change="edited()"/>
+            <span class="ui-btn sendbtn" data-event-click="send()">Send</span>
+        </div>
+    </div>
+</body>
+</rml>

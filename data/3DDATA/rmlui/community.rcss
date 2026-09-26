@@ -1,0 +1,214 @@
+/* UI2 community window -- LAYOUT ONLY ( colours and materials: rose-theme.rcss,
+   plus the few colours that are this window's own states ).
+   Reload in game with /uireload. The C++ places it right of the middle the
+   first time, until it is moved.
+
+   PERFORMANCE ( see shop.rcss ): definite width, the list rows are plain
+   positioned blocks ( the dot and the state pinned, the name in flow ),
+   flex only for the small rows. Rows are never removed, only hidden. */
+
+#community {
+    left: 700dp;
+    top: 200dp;
+    display: block;
+    width: 250dp;
+}
+
+/* The name field and Add. */
+.addrow {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 26dp;
+    margin-bottom: 4dp;
+}
+.addname { width: 180dp; }
+.addbtn {
+    margin-left: 6dp;
+    width: 54dp;
+    box-sizing: border-box;
+    padding-left: 0dp;
+    padding-right: 0dp;
+}
+
+/* The friends: a scrolling well. */
+.list {
+    height: 300dp;
+    overflow-y: auto;
+    padding: 3dp;
+}
+.friend {
+    position: relative;
+    height: 22dp;
+    margin-bottom: 1dp;
+    border-radius: 3dp;
+    cursor: pointer;
+}
+.friend.unused { display: none; }
+.friend:hover { background-color: #ffffff12; }
+.friend.on { background-color: #7a220660; }
+
+/* Online / offline light, at the start of the row. */
+.dot {
+    position: absolute;
+    left: 6dp;
+    top: 7dp;
+    width: 8dp;
+    height: 8dp;
+    border-radius: 4dp;
+    background-color: #6ad04aff;
+}
+.friend.offline .dot { background-color: #5a5a5aff; }
+
+.fname {
+    display: block;
+    margin-left: 20dp;
+    margin-right: 84dp;
+    line-height: 22dp;
+    color: #f0f0f0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.friend.on .fname { font-weight: bold; color: #ffffff; }
+.friend.offline .fname { color: #8a8a8a; }
+
+/* The state, pinned right. */
+.fstate {
+    position: absolute;
+    right: 6dp;
+    top: 0dp;
+    line-height: 22dp;
+    font-size: 10dp;
+    color: #9ad870;
+}
+.friend.offline .fstate { color: #707070; }
+
+.empty {
+    padding: 8dp 4dp;
+    font-size: 10dp;
+    line-height: 14dp;
+}
+
+.foot {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 26dp;
+    margin-top: 4dp;
+}
+.count {
+    flex-grow: 1;
+    padding-left: 3dp;
+    font-size: 10dp;
+}
+.msgbtn { width: 76dp; box-sizing: border-box; padding-left: 0dp; padding-right: 0dp; margin-right: 4dp; }
+.removebtn { width: 70dp; box-sizing: border-box; padding-left: 0dp; padding-right: 0dp; }
+/* Nothing selected: does nothing, and does not light up either. */
+.removebtn.off { color: #a0a0a0; }
+.removebtn.off:hover {
+    background-color: #3a3a3aff;
+    border-color: #565656ff;
+}
+
+.hint {
+    margin-top: 3dp;
+    padding: 0dp 2dp;
+    font-size: 9dp;
+    line-height: 12dp;
+}
+
+/* --- tabs ---------------------------------------------------------------- */
+.tabs {
+    display: flex;
+    flex-direction: row;
+    margin-bottom: 5dp;
+}
+.tab {
+    flex: 1;
+    font-size: 10dp;
+}
+.tab + .tab { margin-left: 3dp; }
+.page { display: block; }
+
+/* --- rooms ----------------------------------------------------------------- */
+
+/* The room you are in, and the way back to it. */
+.inroom {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 24dp;
+    margin-bottom: 4dp;
+    padding: 0dp 3dp;
+}
+.irlabel { font-size: 10dp; margin-right: 5dp; }
+.irtitle {
+    flex-grow: 1;
+    font-weight: bold;
+    color: #ffe070;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.openbtn { width: 54dp; box-sizing: border-box; padding-left: 0dp; padding-right: 0dp; }
+
+.rlist {
+    height: 210dp;
+    overflow-y: auto;
+    padding: 3dp;
+}
+.room {
+    position: relative;
+    height: 22dp;
+    margin-bottom: 1dp;
+    border-radius: 3dp;
+    cursor: pointer;
+}
+.room.unused { display: none; }
+.room:hover { background-color: #ffffff12; }
+.rtitle {
+    display: block;
+    margin-left: 6dp;
+    margin-right: 40dp;
+    line-height: 22dp;
+    color: #f0f0f0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* How many are in it, pinned right. */
+.rusers {
+    position: absolute;
+    right: 6dp;
+    top: 0dp;
+    line-height: 22dp;
+    font-size: 10dp;
+    color: #9ad870;
+}
+.refreshbtn { width: 70dp; box-sizing: border-box; padding-left: 0dp; padding-right: 0dp; }
+
+.makehead {
+    margin: 6dp 0dp 3dp 0dp;
+    padding: 0dp 2dp;
+    font-size: 9dp;
+}
+.makerow {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 26dp;
+}
+.roomtitle { width: 152dp; }
+.roommax {
+    width: 28dp;
+    margin-left: 4dp;
+    text-align: center;
+}
+.makebtn {
+    margin-left: 4dp;
+    width: 50dp;
+    box-sizing: border-box;
+    padding-left: 0dp;
+    padding-right: 0dp;
+}

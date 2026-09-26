@@ -17,6 +17,13 @@ public:
     virtual unsigned Process(unsigned uiMsg, WPARAM wParam, LPARAM lParam);
     virtual void SetSelected();
 
+    /// UI2 ( RoseRmlCommunity's Rooms tab ) reads the list from the hidden
+    /// community dialog.
+    WORD GetRoomID() { return m_wID; }
+    BYTE GetRoomType() { return m_btRoomType; }
+    BYTE GetUserCount() { return m_btUserCount; }
+    const char* GetTitle() { return m_strTitle.c_str(); }
+
 protected:
     WORD m_wID;
     BYTE m_btRoomType;

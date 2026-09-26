@@ -4570,6 +4570,7 @@ CRecvPACKET::Recv_wsv_CHATROOM() {
                 break;
 
             CCommDlg* pCommDlg = (CCommDlg*)pDlg;
+            short nLastRoom = -1;
             for (short nI = 0; nI < m_pRecvPacket->m_wsv_CHAT_ROOM_LIST.m_cRoomCNT; nI++) {
                 pRoom = (tag_CHAT_ROOM*)Packet_GetDataPtr(m_pRecvPacket,
                     nOffset,
@@ -4580,7 +4581,12 @@ CRecvPACKET::Recv_wsv_CHATROOM() {
                     pRoom->m_btRoomTYPE,
                     pRoom->m_nRoomIDX,
                     pRoom->m_cUserCNT);
+                nLastRoom = pRoom->m_nRoomIDX;
             }
+            /// The server sends 15 rooms a page: LIST means more to come, from
+            /// the room after the last one ( END closes the list ).
+            if (m_pRecvPacket->m_tag_CHAT_HEADER.m_btCMD == CHAT_REPLY_ROOM_LIST && nLastRoom >= 0)
+                g_pNet->Send_cli_CHAT_ROOM_LIST(0, (WORD)(nLastRoom + 1));
             break;
         }
     }
@@ -4726,6 +4732,11 @@ CRecvPACKET::Recv_wsv_MESSENGER_CHAT() {
     CFriendListItem* pItem = pCommDlg->FindFriend(m_pRecvPacket->m_wsv_MESSENGER_CHAT.m_dwUserTAG);
     if (pItem) {
         if (g_ClientStorage.IsApproveMessanger()) {
+            /// UI2: into the Messages window, no classic window.
+            if (RoseRmlUi::MessagesReceive(m_pRecvPacket->m_wsv_MESSENGER_CHAT.m_dwUserTAG,
+                    pItem->GetName(),
+                    m_pRecvPacket->m_wsv_MESSENGER_CHAT.m_szMSG))
+                return;
             CPrivateChatDlg* pPrivateChatDlg =
                 g_itMGR.GetPrivateChatDlg(m_pRecvPacket->m_wsv_MESSENGER_CHAT.m_dwUserTAG);
             if (pPrivateChatDlg == NULL)
@@ -4810,6 +4821,10 @@ CRecvPACKET::Recv_wsv_MEMO() {
 #include "../interface/dlgs/CChatRoomDlg.h"
 void
 CRecvPACKET::Recv_wsv_CHATROOM_MSG() {
+    /// UI2: into the UI2 room window ( the hidden dialog still names the sender ).
+    if (RoseRmlUi::ChatRoomMessage(m_pRecvPacket->m_wsv_CHATROOM_MSG.m_wObjectID,
+            m_pRecvPacket->m_wsv_CHATROOM_MSG.m_szMSG))
+        return;
     CTDialog* pDlg = g_itMGR.FindDlg(DLG_TYPE_CHATROOM);
     assert(pDlg);
     if (pDlg) {

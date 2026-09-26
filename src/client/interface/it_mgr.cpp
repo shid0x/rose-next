@@ -1617,6 +1617,9 @@ IT_MGR::GetPrivateChatDlg(DWORD dwUserTag) {
 
 void
 IT_MGR::OpenPrivateChatDlg(DWORD dwUserTag, BYTE btStatus, const char* pszName) {
+    /// UI2: the friend's tab in the Messages window, no classic window.
+    if (RoseRmlUi::MessagesOpen(dwUserTag, pszName))
+        return;
     CTCmdOpenPrivateChatDlg Cmd(dwUserTag, btStatus, pszName);
     Cmd.Exec(NULL);
 }

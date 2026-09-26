@@ -99,6 +99,21 @@ const int kReplacedDialogs[] = {
     /// RoseRmlSystemMenu ( also in kReplacedWindows ): exit / character
     /// select through CSystemDLG::RequestLeave.
     DLG_TYPE_SYSTEM,
+    /// RoseRmlCommunity ( also in kReplacedWindows ). Hidden, NOT gone: the
+    /// friends list lives only in CCommDlg's list box, which the messenger
+    /// packets update directly. The add-friend box is the window's field.
+    DLG_TYPE_COMMUNITY,
+    DLG_TYPE_ADDFRIEND,
+    /// RoseRmlMessages ( also in kReplacedWindows ): under UI2 no classic
+    /// private chat is created ( IT_MGR::OpenPrivateChatDlg and
+    /// Recv_wsv_MESSENGER_CHAT branch to UI2 ); one left from before a live
+    /// switch is hidden, which deletes it -- CPrivateChatDlg::Hide's job.
+    DLG_TYPE_PRIVATECHAT,
+    /// RoseRmlChatRoom ( also in kReplacedWindows ). Hidden, NOT gone:
+    /// CChatRoomDlg observes CChatRoom and keeps the members. Its Hide()
+    /// leaves the room -- it must never be shown ( under UI2 its "room
+    /// joined" event opens through IT_MGR instead of Show() ).
+    DLG_TYPE_CHATROOM,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -127,6 +142,10 @@ const int kReplacedWindows[] = {
     DLG_TYPE_MAKE,
     DLG_TYPE_MENU,
     DLG_TYPE_SYSTEM,
+    DLG_TYPE_COMMUNITY,
+    DLG_TYPE_ADDFRIEND,
+    DLG_TYPE_PRIVATECHAT,
+    DLG_TYPE_CHATROOM,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).

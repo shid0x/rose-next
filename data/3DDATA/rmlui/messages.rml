@@ -1,0 +1,49 @@
+<rml>
+<head>
+    <title>Messages</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="messages.rcss"/>
+</head>
+<body data-model="messages">
+    <!--
+        UI2 private messages ( RoseRmlMessages ), replacing the classic
+        one-window-per-friend chats. Drag the title bar to move it, the spot
+        is saved.
+
+        A tab per conversation ( x closes it; a lit tab has unread messages ).
+        Type and press Enter ( or Send ). The conversation stays while you
+        play, even with the window closed.
+    -->
+    <div id="messages" class="ui-window">
+        <handle move_target="messages" class="ui-titlebar">
+            <span class="ui-title">Messages</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <div class="tabs">
+            <div class="ui-btn tab" data-for="t : tabs" data-class-unused="!t.used" data-class-on="t.on"
+                 data-class-unread="t.unread" data-class-offline="!t.online" data-event-click="set_tab(t.index)">
+                <span class="tdot"></span><span class="tname">{{t.name}}</span>
+                <span class="tx" data-event-click="close_tab(t.index)">x</span>
+            </div>
+        </div>
+
+        <div class="with" data-if="has_conv">
+            <span class="wname">{{with}}</span>
+            <span class="wstate" data-class-offline="!online">{{state}}</span>
+        </div>
+
+        <div id="log" class="log ui-well">
+            <div class="line" data-for="l : lines" data-class-unused="!l.used"
+                 data-class-mine="l.kind == 1" data-class-note="l.kind == 2"><span class="who" data-if="l.kind != 2">{{l.who}}: </span><span class="txt">{{l.text}}</span></div>
+            <div class="empty ui-muted" data-if="!has_conv">Double-click a friend to talk.</div>
+        </div>
+
+        <div class="sayrow">
+            <input id="say" type="text" class="ui-field say" maxlength="100" keep-focus="1" data-event-change="edited()"/>
+            <span class="ui-btn sendbtn" data-event-click="send()">Send</span>
+        </div>
+    </div>
+</body>
+</rml>
