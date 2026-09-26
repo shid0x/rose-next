@@ -99,58 +99,9 @@ CSeparateDlg::Process(unsigned uiMsg, WPARAM wParam, LPARAM lParam) {
 
         if (uiMsg == WM_LBUTTONUP) {
             switch (uiProcID) {
-                case IID_BTN_START: {
-
-                    CSeparate& Separate = CSeparate::GetInstance();
-                    CIcon* pIcon = m_MaterialItemSlot.GetIcon();
-                    if (pIcon == NULL) ///재료가 없다면 Disable
-                    {
-                        g_itMGR.OpenMsgBox(STR_SEPARATE_EMPTY_TARGETITEM);
-                        break;
-                    }
-
-                    int iCount = 0;
-                    std::vector<CSlot>::iterator iterOutput;
-                    for (iterOutput = m_OutputItemSlots.begin();
-                         iterOutput != m_OutputItemSlots.end();
-                         ++iterOutput) {
-                        if (iterOutput->GetIcon())
-                            ++iCount;
-                    }
-
-                    if (iCount <= 0) {
-                        g_itMGR.OpenMsgBox(STR_CANT_SEPARATE);
-                        break;
-                    }
-
-                    switch (Separate.GetType()) {
-                        case CSeparate::TYPE_SKILL: {
-                            if (Separate.GetRequireMp() > g_pAVATAR->Get_MP()) {
-                                g_itMGR.OpenMsgBox(STR_NOT_ENOUGH_MANA);
-                                return uiMsg;
-                            }
-                            break;
-                        }
-                        case CSeparate::TYPE_NPC: {
-                            if (Separate.GetRequireMoney() > g_pAVATAR->Get_MONEY()) {
-                                g_itMGR.OpenMsgBox(STR_NOT_ENOUGH_MONEY);
-                                return uiMsg;
-                            }
-                            break;
-                        }
-                        default:
-                            break;
-                    }
-
-                    CIconItem* pItem = (CIconItem*)pIcon;
-                    if (!HasEnoughInventoryEmptySlot(pItem, m_OutputItemSlots)) {
-                        g_itMGR.OpenMsgBox(STR_NOTENOUGH_EMPTY_INVENTORYSLOT);
-                        break;
-                    }
-
-                    CSeparate::GetInstance().Send_CRAFT_BREAKUP_REQ();
+                case IID_BTN_START:
+                    Start();
                     break;
-                }
                 case IID_BTN_CLOSE: {
                     Hide();
                     CSeparate::GetInstance().RemoveItem();
@@ -163,6 +114,57 @@ CSeparateDlg::Process(unsigned uiMsg, WPARAM wParam, LPARAM lParam) {
         return uiMsg;
     }
     return 0;
+}
+
+void
+CSeparateDlg::Start() {
+    CSeparate& Separate = CSeparate::GetInstance();
+    CIcon* pIcon = m_MaterialItemSlot.GetIcon();
+    if (pIcon == NULL) ///재료가 없다면 Disable
+    {
+        g_itMGR.OpenMsgBox(STR_SEPARATE_EMPTY_TARGETITEM);
+        return;
+    }
+
+    int iCount = 0;
+    std::vector<CSlot>::iterator iterOutput;
+    for (iterOutput = m_OutputItemSlots.begin(); iterOutput != m_OutputItemSlots.end();
+         ++iterOutput) {
+        if (iterOutput->GetIcon())
+            ++iCount;
+    }
+
+    if (iCount <= 0) {
+        g_itMGR.OpenMsgBox(STR_CANT_SEPARATE);
+        return;
+    }
+
+    switch (Separate.GetType()) {
+        case CSeparate::TYPE_SKILL: {
+            if (Separate.GetRequireMp() > g_pAVATAR->Get_MP()) {
+                g_itMGR.OpenMsgBox(STR_NOT_ENOUGH_MANA);
+                return;
+            }
+            break;
+        }
+        case CSeparate::TYPE_NPC: {
+            if (Separate.GetRequireMoney() > g_pAVATAR->Get_MONEY()) {
+                g_itMGR.OpenMsgBox(STR_NOT_ENOUGH_MONEY);
+                return;
+            }
+            break;
+        }
+        default:
+            break;
+    }
+
+    CIconItem* pItem = (CIconItem*)pIcon;
+    if (!HasEnoughInventoryEmptySlot(pItem, m_OutputItemSlots)) {
+        g_itMGR.OpenMsgBox(STR_NOTENOUGH_EMPTY_INVENTORYSLOT);
+        return;
+    }
+
+    CSeparate::GetInstance().Send_CRAFT_BREAKUP_REQ();
 }
 
 void

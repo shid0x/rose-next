@@ -26,6 +26,17 @@ public:
 
     virtual void Update(CObservable* pObservable, CTObject* pObj);
 
+    /// The Start button: checks ( each refusal says why ) and sends the
+    /// request. UI2 ( RoseRmlSeparate ) keeps this dialog hidden and calls it.
+    void Start();
+
+    CSlot* GetMaterialSlot() { return &m_MaterialItemSlot; }
+    CSlot* GetOutputSlot(int i) {
+        return (i >= 0 && i < (int)m_OutputItemSlots.size()) ? &m_OutputItemSlots[i] : NULL;
+    }
+    int GetOutputSlotCount() { return (int)m_OutputItemSlots.size(); }
+    CDragItem* GetDragItem() { return m_pDragItem; }
+
 protected:
     bool HasEnoughInventoryEmptySlot(CIconItem* pItemIcon, std::vector<CSlot>& OutputItems);
 

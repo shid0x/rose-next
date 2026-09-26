@@ -45,6 +45,11 @@ public:
     WORD GetNpcSvrIdx();
     int GetType();
 
+    /// TYPE_SEPARATE ( the gem comes out ) or TYPE_DECOMPOSITION ( the item
+    /// breaks into materials ) for the item in place; TYPE_NONE when empty.
+    int GetBreakType() { return m_pMaterialItem ? m_iType : TYPE_NONE; }
+    bool IsWaitingReply() { return m_bWaitServerReply; }
+
 private:
     int GetQuantity(tagITEM& Item, int iRequireQuantity);
 

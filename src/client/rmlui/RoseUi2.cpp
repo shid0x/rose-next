@@ -78,6 +78,10 @@ const int kReplacedDialogs[] = {
     /// RoseRmlGoodsForm ( also in kReplacedWindows ): CGoodsDlg keeps the item
     /// and the kind of question, and confirms.
     DLG_TYPE_GOODS,
+    /// RoseRmlSeparate ( also in kReplacedWindows ). Hidden, NOT gone:
+    /// CSeparateDlg observes CSeparate, holds the item and output slots and
+    /// the drag item, and its Start() runs the checks and sends.
+    DLG_TYPE_SEPARATE,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -101,6 +105,7 @@ const int kReplacedWindows[] = {
     DLG_TYPE_AVATARSTORE,
     DLG_TYPE_PRIVATESTORE,
     DLG_TYPE_GOODS,
+    DLG_TYPE_SEPARATE,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).

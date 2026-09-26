@@ -28,8 +28,10 @@
 #include "RoseRmlAvatarStore.h"
 #include "RoseRmlPrivateStore.h"
 #include "RoseRmlGoodsForm.h"
+#include "RoseRmlSeparate.h"
 #include "RoseRmlSystem.h"
 #include "RoseRmlText.h"
+#include "RoseRmlIcons.h"
 #include "RoseUi2.h"
 
 #include <RmlUi/Core.h>
@@ -48,7 +50,10 @@
 #include "tgamectrl/winctrl.h"
 #include "tgamectrl/teditbox.h"
 #include "../interface/interfacetype.h"
+#include "../interface/IO_ImageRes.h"
+#include "../gamecommon/item.h"
 #include "../Sound/IO_Sound.h"
+#include "rose/io/stb.h"
 
 #include <stdlib.h>
 #include <string>
@@ -82,6 +87,7 @@ RoseRmlStorage g_Storage; ///< UI2: replaces CBankDlg ( a view over it ) and its
 RoseRmlAvatarStore g_AvatarStore; ///< UI2: replaces CAvatarStoreDlg ( a view over it )
 RoseRmlPrivateStore g_PrivateStore; ///< UI2: replaces CPrivateStoreDlg ( a view over it )
 RoseRmlGoodsForm g_GoodsForm; ///< UI2: replaces CGoodsDlg ( the shop's price form )
+RoseRmlSeparate g_Separate; ///< UI2: replaces CSeparateDlg ( break down )
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -558,6 +564,7 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_AvatarStore.Initialise(g_pContext, kAssetDir);
     g_PrivateStore.Initialise(g_pContext, kAssetDir);
     g_GoodsForm.Initialise(g_pContext, kAssetDir);
+    g_Separate.Initialise(g_pContext, kAssetDir);
     /// Late, so they stack over the windows that ask them.
     g_NumberInput.Initialise(g_pContext, kAssetDir);
     g_MessageBox.Initialise(g_pContext, kAssetDir);
@@ -596,6 +603,7 @@ Shutdown() {
     g_AvatarStore.Shutdown();
     g_PrivateStore.Shutdown();
     g_GoodsForm.Shutdown();
+    g_Separate.Shutdown();
     g_NumberInput.Shutdown();
     g_MessageBox.Shutdown();
     RoseRmlLayout::Shutdown();
@@ -688,6 +696,7 @@ Update() {
     UI_TIMED("avatarstore", g_AvatarStore.Update());
     UI_TIMED("privatestore", g_PrivateStore.Update());
     UI_TIMED("goods", g_GoodsForm.Update());
+    UI_TIMED("separate", g_Separate.Update());
     UI_TIMED("numinput", g_NumberInput.Update());
     UI_TIMED("msgbox", g_MessageBox.Update());
     /// Data bindings, styles and layout of every document.
@@ -753,6 +762,9 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_GOODS:
             g_GoodsForm.SetOpen(bOpen);
             break;
+        case DLG_TYPE_SEPARATE:
+            g_Separate.SetOpen(bOpen);
+            break;
         case DLG_TYPE_RESTART:
             if (bOpen)
                 OpenRestart();
@@ -802,6 +814,8 @@ IsWindowOpen(int iDlgType) {
             return g_PrivateStore.IsOpen();
         case DLG_TYPE_GOODS:
             return g_GoodsForm.IsOpen();
+        case DLG_TYPE_SEPARATE:
+            return g_Separate.IsOpen();
         case DLG_TYPE_RESTART:
             return g_MessageBox.IsTypePending(kMsgTypeRestart);
         default:
@@ -904,6 +918,45 @@ MarkupNoticeBox(const char* pszTitle, const char* pszGameMarkup) {
     req.title = pszTitle ? pszTitle : "";
     req.text = RoseRmlConversation::MarkupToRml(pszGameMarkup);
     req.bRml = true;
+    return g_MessageBox.Show(req);
+}
+
+bool
+ItemsBox(const char* pszTitle, const char* pszGameText, const std::vector<tagITEM>& items) {
+    if (!g_bInitialised)
+        return false;
+
+    /// The text, then one row per item: its icon at the native 40x40, the
+    /// name, how many ( stacks ).
+    Rml::String rml = RoseRmlText::Escape(RoseRmlText::FromGame(pszGameText));
+    rml += "<div class=\"gains\">";
+    for (size_t i = 0; i < items.size(); ++i) {
+        tagITEM Item = items[i];
+        if (Item.IsEmpty())
+            continue;
+        Rml::String strSrc, strRect;
+        const bool bIcon = RoseRmlIcons::Resolve(
+            IMAGE_RES_ITEM, ITEM_ICON_NO(Item.GetTYPE(), Item.GetItemNO()), strSrc, strRect);
+        rml += "<div class=\"gain\"><div class=\"gcell ui-icon\">";
+        if (bIcon)
+            rml += "<img src=\"" + strSrc + "\" rect=\"" + strRect + "\"/>";
+        rml += "</div><span class=\"gname\">" + RoseRmlText::Escape(RoseRmlText::FromGame(Item.GetName()))
+            + "</span>";
+        if (Item.IsEnableDupCNT()) {
+            char szCount[32];
+            _snprintf(szCount, sizeof(szCount), "x %u", Item.GetQuantity());
+            szCount[sizeof(szCount) - 1] = '\0';
+            rml += "<span class=\"gcount\">" + Rml::String(szCount) + "</span>";
+        }
+        rml += "</div>";
+    }
+    rml += "</div>";
+
+    RoseRmlMessageBox::Request req;
+    req.title = pszTitle ? pszTitle : "";
+    req.text = rml;
+    req.bRml = true;
+    req.ok = "OK";
     return g_MessageBox.Show(req);
 }
 

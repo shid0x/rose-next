@@ -4974,6 +4974,7 @@ CRecvPACKET::Recv_gsv_CRAFT_ITEM_REPLY() {
                 CreateMsgBoxData MsgBoxData;
                 MsgBoxData.strMsg = STR_CRAFE_BREAKUP_SUCCESS;
                 CIconItem* pItemIcon = NULL;
+                std::vector<tagITEM> Gained; ///< the same list, for the UI2 box
 
                 g_pAVATAR->SetWaitUpdateInventory(true);
                 for (int i = 0; i < m_pRecvPacket->m_gsv_CRAFT_ITEM_REPLY.m_btOutCNT; i++) {
@@ -4982,6 +4983,7 @@ CRecvPACKET::Recv_gsv_CRAFT_ITEM_REPLY() {
                         if (!pItem->IsEnableDupCNT()) {
                             pItemIcon = new CIconItem(pItem);
                             MsgBoxData.m_Icons.push_back(pItemIcon);
+                            Gained.push_back(*pItem);
                         } else {
                             ItemData = *pItem;
                             if (ItemData.m_uiQuantity
@@ -4998,6 +5000,7 @@ CRecvPACKET::Recv_gsv_CRAFT_ITEM_REPLY() {
                                         .m_uiQuantity;
                                 pItemIcon = new CIconItem(&ItemData);
                                 MsgBoxData.m_Icons.push_back(pItemIcon);
+                                Gained.push_back(ItemData);
                             }
                         }
                     }
@@ -5009,7 +5012,18 @@ CRecvPACKET::Recv_gsv_CRAFT_ITEM_REPLY() {
                 g_pAVATAR->SetWaitUpdateInventory(false);
                 g_pAVATAR->UpdateInventory();
 
-                g_itMGR.OpenMsgBox2(MsgBoxData);
+                /// UI2: its own box -- the classic one ( with icons ) draws under
+                /// the UI2 windows. The icons were made for it: freed here.
+                if (RoseUi2::IsActive()
+                    && RoseRmlUi::ItemsBox("Broken down", MsgBoxData.strMsg.c_str(), Gained)) {
+                    for (std::list<CIcon*>::iterator it = MsgBoxData.m_Icons.begin();
+                         it != MsgBoxData.m_Icons.end();
+                         ++it)
+                        delete *it;
+                    MsgBoxData.m_Icons.clear();
+                } else {
+                    g_itMGR.OpenMsgBox2(MsgBoxData);
+                }
                 SE_SuccessSeparate(g_pAVATAR->Get_INDEX());
             }
             break;

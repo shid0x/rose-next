@@ -1,0 +1,138 @@
+/* UI2 break-down window -- LAYOUT ONLY ( colours and materials:
+   rose-theme.rcss, plus the few colours that are this window's own states ).
+   Reload in game with /uireload. The C++ places it beside the bag the first
+   time, until it is moved.
+
+   PERFORMANCE ( see shop.rcss ): definite width, rows are blocks with the
+   icon pinned absolutely, flex only for the small rows.
+
+   Not a float beside the text: RmlUi puts a block that follows a float
+   BELOW it instead of beside it ( the names landed one row down ). */
+
+#separate {
+    left: 60dp;
+    top: 160dp;
+    display: block;
+    width: 250dp;
+}
+
+/* With your skill / At <NPC>. */
+.where {
+    height: 14dp;
+    line-height: 14dp;
+    margin-bottom: 4dp;
+    padding: 0dp 3dp;
+    font-size: 10dp;
+}
+
+/* An icon cell: the native 40x40 pinned top-left, as everywhere; placed
+   absolutely at the start of its row ( the row is positioned ). */
+.cell {
+    position: absolute;
+    left: 0dp;
+    top: 0dp;
+    display: block;
+    box-sizing: border-box;
+    width: 42dp;
+    height: 42dp;
+    cursor: pointer;
+}
+.cell:hover { border-color: #d0501aff; }
+.cell.empty { background-color: #00000050; cursor: default; }
+.cell.empty:hover { border-color: #000000c0; }
+
+/* The item and what happens to it. */
+.input {
+    padding: 4dp;
+}
+.irow {
+    position: relative;
+    height: 42dp;
+}
+.itext {
+    margin-left: 50dp;
+    padding-top: 5dp;
+}
+.iname {
+    display: block;
+    line-height: 15dp;
+    font-weight: bold;
+    color: #f0f0f0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ikind, .iempty {
+    display: block;
+    line-height: 14dp;
+    font-size: 10dp;
+}
+.iempty { padding-top: 7dp; }
+
+.head {
+    margin: 6dp 0dp 3dp 0dp;
+    padding: 0dp 3dp;
+    font-size: 10dp;
+}
+
+/* What comes out: up to four rows. */
+.outs {
+    padding: 4dp 4dp 0dp 4dp;
+}
+.out {
+    position: relative;
+    height: 42dp;
+    margin-bottom: 4dp;
+}
+.out .cell { cursor: default; }
+.out .cell:hover { border-color: #000000c0; }
+.out.empty .cell { background-color: #00000030; }
+.oname {
+    display: block;
+    margin-left: 50dp;
+    padding-top: 6dp;
+    line-height: 15dp;
+    color: #e6e6e6;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ocount {
+    display: block;
+    margin-left: 50dp;
+    line-height: 14dp;
+    font-size: 10dp;
+    font-weight: bold;
+    color: #ffe070;
+}
+
+/* The price, and what you have. */
+.cost {
+    margin-top: 6dp;
+    padding: 3dp 5dp;
+}
+.crow {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 15dp;
+    font-size: 10dp;
+}
+.crow .ui-muted { flex-grow: 1; }
+.cval { font-weight: bold; color: #ffb070; }
+.crow.short .cval { color: #ff6a5a; }
+.hval { font-weight: bold; color: #ffe070; }
+
+.buttons {
+    display: flex;
+    flex-direction: row;
+    margin-top: 6dp;
+}
+.act { flex: 1; }
+/* Nothing to break or not enough to pay: does nothing, and does not light
+   up either. */
+.act.off { color: #a0a0a0; }
+.act.off:hover {
+    background-color: #3a3a3aff;
+    border-color: #565656ff;
+}

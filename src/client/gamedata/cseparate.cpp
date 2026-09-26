@@ -81,6 +81,10 @@ CSeparate::RemoveItem() {
     }
 
     m_iRequireMoney = 0;
+    /// The reply clears the wait only when it changes the item in place:
+    /// taken off ( or the window closed ) before it came, the wait stayed
+    /// and no later break-down was ever sent.
+    m_bWaitServerReply = false;
 }
 
 void

@@ -1,0 +1,73 @@
+<rml>
+<head>
+    <title>Break Down</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="separate.rcss"/>
+</head>
+<body data-model="separate">
+    <!--
+        UI2 break-down window ( RoseRmlSeparate ), replacing the classic
+        separate dialog. Opens beside the bag the first time; drag the title
+        bar to move it, the spot is saved.
+
+        Drop an item from your bag here: a socketed item gives its gem back,
+        anything made from a recipe breaks into materials. What you will get
+        and what it costs ( MP with the skill, zuly at an NPC ) show before
+        you press Break down. Double-click the item, or drag it off, to take
+        it back.
+
+        The whole window is a drop target for items ( DLG_TYPE_SEPARATE ).
+    -->
+    <div id="separate" class="ui-window" data-attr-drop-target="drop_type">
+        <handle move_target="separate" class="ui-titlebar">
+            <span class="ui-title">Break Down</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <div class="where ui-muted">{{where}}</div>
+
+        <!-- The item. -->
+        <div class="input ui-well"><div class="irow">
+            <div class="cell ui-icon" slot-kind="0" slot-index="0" data-class-empty="!has_item"
+                 data-event-mousedown="press(0, 0)" data-event-dblclick="take_out()">
+                <img data-if="has_item" data-attr-src="item_src" data-attr-rect="item_rect"/>
+            </div>
+            <div class="itext">
+                <span class="iname" data-if="has_item">{{item_name}}</span>
+                <span class="ikind ui-muted" data-if="has_item">{{kind}}</span>
+                <span class="iempty ui-muted" data-if="!has_item">Drop an item from your bag here.</span>
+            </div>
+        </div></div>
+
+        <!-- What comes out. -->
+        <div class="head ui-muted">You get</div>
+        <div class="outs ui-well">
+            <div class="out" data-for="o : outs" data-class-empty="!o.filled">
+                <div class="cell ui-icon" slot-kind="1" data-attr-slot-index="o.index"
+                     data-event-mousedown="press(1, o.index)">
+                    <img data-if="o.filled" data-attr-src="o.src" data-attr-rect="o.rect"/>
+                </div>
+                <span class="oname">{{o.name}}</span>
+                <span class="ocount">{{o.count}}</span>
+            </div>
+        </div>
+
+        <div class="cost ui-well">
+            <div class="crow" data-class-short="short">
+                <span class="ui-muted">Costs</span>
+                <span class="cval">{{cost}} {{cost_label}}</span>
+            </div>
+            <div class="crow">
+                <span class="ui-muted">You have</span>
+                <span class="hval">{{have}} {{cost_label}}</span>
+            </div>
+        </div>
+
+        <div class="buttons">
+            <span class="ui-btn act" data-class-off="!can_start" data-if="!busy" data-event-click="start()">Break down</span>
+            <span class="ui-btn ui-static act off" data-if="busy">Working...</span>
+        </div>
+    </div>
+</body>
+</rml>

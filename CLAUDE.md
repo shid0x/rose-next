@@ -445,6 +445,21 @@ is selected and priced -- which read as "listed at 0, invisible" and was not a b
 on Wanted asks the price at once. The sell list allowed 31 items (`MAX_P_STORE_ITEM_SLOT`) into a
 30-slot dialog; capped at 30. The visited shop and the price form never toggle.
 
+**Crafting windows** (2026-09-26, in progress): **a hidden classic dialog does nothing per
+frame** -- `CTDialog::Update` (and each dialog's own `Update`/`Process`) returns while
+`!IsVision()`, which also stops its command queue. Upgrading and crafting play their result
+animation in that per-frame code and only there apply the result to the bag
+(`CUpgradeDlgStateResult::Leave` -> `ApplyResultItemSet`, `CMakeStateResult::Update` ->
+`Add_ITEM`); `Recv_gsv_CREATE_ITEM_REPLY` drops the reply unless `CMakeDLG` is visible, and the
+crafting result boxes are invoked by `DLG_TYPE_MAKE` with a command that runs from its queue. So
+those two cannot be a pure view: UI2 drives start/wait/result itself and keeps the classic dialogs
+for slots and drag items. Break down (`RoseRmlSeparate`, `DLG_TYPE_SEPARATE`) is done: a view over
+`CSeparateDlg` (`Start()` holds the button's checks), the decomposition result's icon box
+(`OpenMsgBox2`, classic only) is `RoseRmlUi::ItemsBox`, and `CSeparate::RemoveItem` now clears the
+wait flag -- closing mid-request left breaking down stuck until relog. **RmlUi puts a block that
+follows a float *below* it, not beside it**: an icon beside text is pinned `position: absolute`
+in a positioned row, never floated (floats are fine for grids of equal cells).
+
 **Text fields** (2026-09-26): an RmlUi `<input type="text" class="ui-field">` with the focus owns
 the keyboard -- `RoseRmlUi::ProcessWndMsg` hands it every key and character (printable ASCII only:
 plain English by decision, no IME) and none reaches the game; `numeric="1"` takes digits only.

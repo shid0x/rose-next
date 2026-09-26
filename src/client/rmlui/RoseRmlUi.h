@@ -14,9 +14,11 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 class CTCommand;
 class CInfo;
+struct tagITEM;
 
 namespace RoseRmlUi {
 
@@ -143,6 +145,11 @@ bool RequestBox(const char* pszTitle,
     unsigned long dwTimeoutMs,
     const char* pszTimeoutChat,
     std::function<bool()> valid = std::function<bool()>());
+
+/// A notice that lists items ( icon, name, how many ): what breaking an item
+/// down gave you -- the classic box with icons ( IT_MGR::OpenMsgBox2 ). The
+/// text is in the game's code page; one OK, no command.
+bool ItemsBox(const char* pszTitle, const char* pszGameText, const std::vector<tagITEM>& items);
 
 /// A notice in the game's text markup ( {FC=n}, {B}, {BR} ), read at leisure:
 /// the tutorial's notices ( SC_ShowNotifyMessage ).

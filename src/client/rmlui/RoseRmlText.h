@@ -47,6 +47,24 @@ FromGame(const char* pszText) {
     return out;
 }
 
+/// Text for RML markup: the markup characters escaped ( names built into a
+/// data-rml string ). UTF-8 in, UTF-8 out.
+inline Rml::String
+Escape(const Rml::String& strText) {
+    Rml::String out;
+    out.reserve(strText.size() + 8);
+    for (size_t i = 0; i < strText.size(); ++i) {
+        switch (strText[i]) {
+            case '&': out += "&amp;"; break;
+            case '<': out += "&lt;"; break;
+            case '>': out += "&gt;"; break;
+            case '"': out += "&quot;"; break;
+            default: out += strText[i]; break;
+        }
+    }
+    return out;
+}
+
 } // namespace RoseRmlText
 
 #endif /// _ROSE_RML_TEXT_H_

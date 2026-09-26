@@ -49,3 +49,41 @@ body { z-index: 50; }
     right: 0dp;
     transform-origin: 0% 50%;
 }
+
+/* Items gained ( RoseRmlUi::ItemsBox: what breaking an item down gave ):
+   one row each, the icon at its native 40x40, the name, how many. Rows are
+   blocks with the icon pinned absolutely -- not flex ( see shop.rcss on
+   nested flex ), and not a float: RmlUi puts a block that follows a float
+   below it, not beside it. */
+.gains {
+    margin-top: 6dp;
+}
+.gain {
+    position: relative;
+    height: 44dp;
+    margin-bottom: 2dp;
+}
+.gcell {
+    position: absolute;
+    left: 0dp;
+    top: 0dp;
+    display: block;
+    box-sizing: border-box;
+    width: 42dp;
+    height: 42dp;
+}
+.gname {
+    display: block;
+    margin-left: 50dp;
+    padding-top: 6dp;
+    line-height: 14dp;
+    font-weight: bold;
+    color: #f0f0f0;
+}
+.gcount {
+    display: block;
+    margin-left: 50dp;
+    line-height: 14dp;
+    font-size: 10dp;
+    color: #ffe070;
+}
