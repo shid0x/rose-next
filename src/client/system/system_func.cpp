@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "../rmlui/RoseRmlUi.h"
+#include "../rmlui/RoseUi2.h"
 
 #include "System_FUNC.h"
 #include "IO_Basic.h"
@@ -565,6 +566,12 @@ SC_OpenMsgbox(ZSTRING pszMsg) {
 SYSTEM_SCRIPT
 void
 SC_SetButtonBlink(int iParentDlg, int iButtonID) {
+    /// UI2: the classic dialog is hidden; its button would blink unseen. The
+    /// menu's buttons are on the UI2 menu bar.
+    if (RoseUi2::IsReplaced(iParentDlg)) {
+        RoseRmlUi::BlinkButton(iParentDlg, iButtonID);
+        return;
+    }
     if (CTDialog* pDlg = g_itMGR.FindDlg(iParentDlg)) {
         if (CWinCtrl* pCtrl = pDlg->Find(iButtonID)) {
             if (pCtrl->GetControlType() == CTRL_BUTTON) {

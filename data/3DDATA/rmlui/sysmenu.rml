@@ -1,0 +1,28 @@
+<rml>
+<head>
+    <title>System Menu</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="sysmenu.rcss"/>
+</head>
+<body data-model="sysmenu">
+    <!--
+        UI2 system menu ( RoseRmlSystemMenu ), replacing the classic system
+        dialog: back to the game, character select, or exit. Opens from the
+        menu bar, Alt+X, Escape, or the game window's close button.
+
+        Leaving is refused for 10 seconds after a fight ( a line in the chat
+        says so ), then counts down in a message box.
+    -->
+    <div id="sysmenu" class="ui-window">
+        <handle move_target="sysmenu" class="ui-titlebar">
+            <span class="ui-title">Game</span>
+            <span class="ui-close" data-event-click="resume()">X</span>
+        </handle>
+
+        <span class="ui-btn choice" data-event-click="resume()">Back to the game</span>
+        <span class="ui-btn choice" data-event-click="char_select()">Character select</span>
+        <span class="ui-btn choice" data-event-click="exit_game()">Exit game</span>
+    </div>
+</body>
+</rml>

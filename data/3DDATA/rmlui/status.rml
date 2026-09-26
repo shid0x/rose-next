@@ -10,7 +10,7 @@
         UI2 replacement for the legacy avatar info panel ( DlgInfo.xml ).
         Shown by RoseRmlStatusPanel only while UI2 is on and you are in the
         world. Clicking anywhere on the panel targets yourself; dragging it
-        moves it ( the spot is saved ); the Menu button opens the game menu.
+        moves it ( the spot is saved ); the UI button opens the interface settings.
 
         Bars: numbers are exact and immediate, fills ease over 400 ms ( done in
         C++, since RmlUi does not transition inline style changes ).
@@ -63,9 +63,9 @@
                 <span class="stat"><span class="ui-muted">EXP</span> {{exp_pct}}</span>
                 <span class="stat"><span class="ui-muted">WT</span> {{weight}}</span>
             </div>
-            <!-- UI2 interface settings: scale, lock panels, reset layout. -->
+            <!-- UI2 interface settings: scale, lock panels, reset layout. The
+                 game menu is the menu bar now ( RoseRmlMenuBar ). -->
             <span class="ui-btn menu" data-event-click="open_ui()">UI</span>
-            <span class="ui-btn menu" data-event-click="open_menu()">Menu</span>
         </div>
     </handle>
 </body>

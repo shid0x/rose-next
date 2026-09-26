@@ -1,0 +1,78 @@
+/* UI2 menu bar -- LAYOUT ONLY ( colours and materials: rose-theme.rcss, plus
+   the few colours that are this panel's own states ).
+   Reload in game with /uireload. The C++ places it bottom right the first
+   time, until it is moved.
+
+   PERFORMANCE ( see shop.rcss ): definite width, the buttons are fixed-size
+   floats, and the caption shows by visibility ( no layout ) above the bar. */
+
+/* Eight buttons of 62 + 2 ( 512; border-box, so a button's border is inside
+   its 62 ), the grip and its gap ( 16 ), the glass's padding and border
+   ( 10 ): 538, and 4 to spare so rounding at odd UI scales cannot push the
+   last button onto a second row. */
+#menubar {
+    position: absolute;
+    left: 400dp;
+    top: 600dp;
+    display: block;
+    width: 542dp;
+}
+
+/* The hovered button's name and shortcut, just above the bar ( glass from
+   .ui-window, but a plain block pinned to the bar's top right ). */
+.caption {
+    display: block;
+    position: absolute;
+    right: 0dp;
+    bottom: 100%;
+    margin-bottom: 3dp;
+    padding: 2dp 8dp;
+    white-space: nowrap;
+    font-size: 11dp;
+    line-height: 15dp;
+    color: #f0f0f0;
+    pointer-events: none;
+}
+
+/* The glass strip: .ui-window's look, in flow ( not its absolute flex
+   column ), so #menubar takes its size. */
+.bar {
+    position: relative;
+    display: flow-root;
+    padding: 4dp;
+}
+
+/* The grip: the bar moves by it, so a button never starts a drag. */
+.grip {
+    float: left;
+    display: block;
+    width: 11dp;
+    height: 28dp;
+    margin-right: 5dp;
+    border-radius: 2dp;
+    background-color: #ffffff14;
+    cursor: move;
+}
+body.locked .grip { cursor: default; }
+
+.mbtn {
+    float: left;
+    display: block;
+    box-sizing: border-box;
+    width: 62dp;
+    height: 28dp;
+    line-height: 26dp;
+    margin-right: 2dp;
+    padding-left: 0dp;
+    padding-right: 0dp;
+    font-size: 11dp;
+}
+
+/* The tutorial points at a button: it pulses ember until hovered. */
+@keyframes menu-blink {
+    from { background-color: #3a3a3aff; border-color: #565656ff; }
+    to   { background-color: #b0360eff; border-color: #e0602aff; }
+}
+.mbtn.blink {
+    animation: 0.5s quadratic-in-out infinite alternate menu-blink;
+}

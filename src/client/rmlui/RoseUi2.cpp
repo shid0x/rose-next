@@ -92,6 +92,13 @@ const int kReplacedDialogs[] = {
     /// answer ( RecvResult skips the classic result state under UI2 ). Hidden,
     /// it does not update: RoseRmlCraft plays and applies the result.
     DLG_TYPE_MAKE,
+    /// RoseRmlMenuBar ( also in kReplacedWindows ): the classic pop-up menu,
+    /// now an always-shown bar -- the routing makes its open a no-op and its
+    /// close ( every world click ) harmless.
+    DLG_TYPE_MENU,
+    /// RoseRmlSystemMenu ( also in kReplacedWindows ): exit / character
+    /// select through CSystemDLG::RequestLeave.
+    DLG_TYPE_SYSTEM,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -118,6 +125,8 @@ const int kReplacedWindows[] = {
     DLG_TYPE_SEPARATE,
     DLG_TYPE_UPGRADE,
     DLG_TYPE_MAKE,
+    DLG_TYPE_MENU,
+    DLG_TYPE_SYSTEM,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).

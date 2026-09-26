@@ -16,6 +16,10 @@ public:
 
     unsigned int Process(UINT uiMsg, WPARAM wParam, LPARAM lParam);
 
+    /// Exit the game, or go back to character select ( the classic buttons,
+    /// shared with UI2's system menu ): refused within 10 s of a fight.
+    static void RequestLeave(bool bCharacterSelect);
+
 protected:
     enum {
         IID_BTN_EXIT = 10,

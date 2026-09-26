@@ -31,6 +31,8 @@
 #include "RoseRmlSeparate.h"
 #include "RoseRmlUpgrade.h"
 #include "RoseRmlCraft.h"
+#include "RoseRmlMenuBar.h"
+#include "RoseRmlSystemMenu.h"
 #include "RoseRmlSystem.h"
 #include "RoseRmlText.h"
 #include "RoseRmlIcons.h"
@@ -94,6 +96,8 @@ RoseRmlGoodsForm g_GoodsForm; ///< UI2: replaces CGoodsDlg ( the shop's price fo
 RoseRmlSeparate g_Separate; ///< UI2: replaces CSeparateDlg ( break down )
 RoseRmlUpgrade g_Upgrade; ///< UI2: replaces CUpgradeDlg ( refine )
 RoseRmlCraft g_Craft; ///< UI2: replaces CMakeDLG ( crafting )
+RoseRmlMenuBar g_MenuBar; ///< UI2: replaces CMenuDlg ( the pop-up menu ), always shown
+RoseRmlSystemMenu g_SystemMenu; ///< UI2: replaces CSystemDLG ( exit / character select )
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -618,6 +622,8 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_Separate.Initialise(g_pContext, kAssetDir);
     g_Upgrade.Initialise(g_pContext, kAssetDir);
     g_Craft.Initialise(g_pContext, kAssetDir);
+    g_MenuBar.Initialise(g_pContext, kAssetDir);
+    g_SystemMenu.Initialise(g_pContext, kAssetDir);
     /// Late, so they stack over the windows that ask them.
     g_NumberInput.Initialise(g_pContext, kAssetDir);
     g_MessageBox.Initialise(g_pContext, kAssetDir);
@@ -659,6 +665,8 @@ Shutdown() {
     g_Separate.Shutdown();
     g_Upgrade.Shutdown();
     g_Craft.Shutdown();
+    g_MenuBar.Shutdown();
+    g_SystemMenu.Shutdown();
     g_NumberInput.Shutdown();
     g_MessageBox.Shutdown();
     RoseRmlLayout::Shutdown();
@@ -754,6 +762,8 @@ Update() {
     UI_TIMED("separate", g_Separate.Update());
     UI_TIMED("upgrade", g_Upgrade.Update());
     UI_TIMED("craft", g_Craft.Update());
+    UI_TIMED("menubar", g_MenuBar.Update());
+    UI_TIMED("sysmenu", g_SystemMenu.Update());
     UI_TIMED("numinput", g_NumberInput.Update());
     UI_TIMED("msgbox", g_MessageBox.Update());
     /// Data bindings, styles and layout of every document.
@@ -828,6 +838,13 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_MAKE:
             g_Craft.SetOpen(bOpen);
             break;
+        case DLG_TYPE_MENU:
+            /// The bar is always shown: opening is a no-op, and the classic
+            /// "close the pop-up on a world click" is ignored.
+            break;
+        case DLG_TYPE_SYSTEM:
+            g_SystemMenu.SetOpen(bOpen);
+            break;
         case DLG_TYPE_RESTART:
             if (bOpen)
                 OpenRestart();
@@ -883,6 +900,10 @@ IsWindowOpen(int iDlgType) {
             return g_Upgrade.IsOpen();
         case DLG_TYPE_MAKE:
             return g_Craft.IsOpen();
+        case DLG_TYPE_MENU:
+            return true;
+        case DLG_TYPE_SYSTEM:
+            return g_SystemMenu.IsOpen();
         case DLG_TYPE_RESTART:
             return g_MessageBox.IsTypePending(kMsgTypeRestart);
         default:
@@ -1469,6 +1490,15 @@ ReportUiStats() {
 } // namespace
 
 namespace RoseRmlUi {
+
+bool
+BlinkButton(int iDlgType, int iButtonId) {
+    if (!g_bInitialised)
+        return false;
+    if (iDlgType == DLG_TYPE_MENU)
+        return g_MenuBar.Blink(iButtonId);
+    return false;
+}
 
 int
 GetDrawCallCount() {

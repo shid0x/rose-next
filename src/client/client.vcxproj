@@ -462,6 +462,8 @@
     <ClCompile Include="rmlui\RoseRmlSeparate.cpp" />
     <ClCompile Include="rmlui\RoseRmlUpgrade.cpp" />
     <ClCompile Include="rmlui\RoseRmlCraft.cpp" />
+    <ClCompile Include="rmlui\RoseRmlMenuBar.cpp" />
+    <ClCompile Include="rmlui\RoseRmlSystemMenu.cpp" />
     <ClCompile Include="rmlui\RoseRmlNumberInput.cpp" />
     <ClCompile Include="rmlui\RoseRmlSystem.cpp" />
     <ClCompile Include="rmlui\RoseRmlStatusPanel.cpp" />

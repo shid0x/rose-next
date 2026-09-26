@@ -479,6 +479,16 @@ the bars, applies the result (`SubItemsAfterRecvResult` + `Add_ITEM`), reports i
 dialog back to NORMAL; a request with no answer frees the window after 20 s. Kinds and recipes are
 grow-only lists (rows hidden, never removed).
 
+**Menu bar and system menu** (2026-09-26): `RoseRmlMenuBar` replaces the classic pop-up menu
+(`DLG_TYPE_MENU`) with an always-shown bar (Char, Bag, Skills, Quests, Friends, Clan, Options,
+System -- Help and Game Info dropped); the routing makes opening the menu a no-op and its close (every
+world click) harmless. **The tutorial blinks menu buttons** (`SC_SetButtonBlink(DLG_TYPE_MENU,
+MENU_BTN_*)`): on a replaced dialog that would blink the hidden classic button, so
+`SC_SetButtonBlink` forwards to `RoseRmlUi::BlinkButton`. `RoseRmlSystemMenu` replaces
+`CSystemDLG` (`DLG_TYPE_SYSTEM`) through the shared `CSystemDLG::RequestLeave`. Also: a
+`.ui-btn`'s 1dp border is outside its width unless `box-sizing: border-box` -- a row of fixed-width
+buttons wrapped on it.
+
 **Text fields** (2026-09-26): an RmlUi `<input type="text" class="ui-field">` with the focus owns
 the keyboard -- `RoseRmlUi::ProcessWndMsg` hands it every key and character (printable ASCII only:
 plain English by decision, no IME) and none reaches the game; `numeric="1"` takes digits only.

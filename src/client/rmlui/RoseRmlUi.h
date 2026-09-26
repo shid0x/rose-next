@@ -62,6 +62,10 @@ void PlaceTooltipAtCursor(CInfo& ToolTip);
 /// Draw-call count of the last rendered frame, for the debug HUD.
 int GetDrawCallCount();
 
+/// SC_SetButtonBlink on a replaced dialog: the tutorial points at a button
+/// ( the menu's MENU_BTN_* ). False when UI2 has no such button.
+bool BlinkButton(int iDlgType, int iButtonId);
+
 /// /uistats: measures the UI for the next few seconds ( per-frame time for
 /// the panels' updates and RmlUi's render, draw calls and what batching could
 /// merge, the whole frame, the open UI2 windows ), then writes one line in

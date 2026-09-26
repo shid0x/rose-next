@@ -1,0 +1,28 @@
+<rml>
+<head>
+    <title>Menu Bar</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="menubar.rcss"/>
+</head>
+<body data-model="menubar">
+    <!--
+        UI2 menu bar ( RoseRmlMenuBar ), replacing the classic pop-up menu.
+        Bottom right by default; drag it by the grip at its left end, the
+        spot is saved.
+
+        One button per window: it lights while that window is open, and a
+        click opens or closes it, as the Alt shortcuts do ( the caption above
+        the bar names the hovered button and its shortcut ).
+    -->
+    <div id="menubar">
+        <div class="caption ui-window" data-visible="has_caption">{{caption}}</div>
+        <div class="bar ui-window">
+            <handle move_target="menubar" class="grip"></handle>
+            <span class="ui-btn mbtn" data-for="e : entries" data-class-on="e.on" data-class-blink="e.blink"
+                  data-event-click="open(e.index)" data-event-mouseover="hover(e.index)"
+                  data-event-mouseout="unhover()">{{e.label}}</span>
+        </div>
+    </div>
+</body>
+</rml>

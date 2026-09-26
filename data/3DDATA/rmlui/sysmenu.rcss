@@ -1,0 +1,22 @@
+/* UI2 system menu -- LAYOUT ONLY ( colours and materials: rose-theme.rcss ).
+   Reload in game with /uireload. The C++ centres it the first time, until
+   it is moved. */
+
+/* Over the windows, under the message box ( 50 ), where the logout
+   countdown shows. */
+body { z-index: 45; }
+
+#sysmenu {
+    left: 400dp;
+    top: 300dp;
+    display: block;
+    width: 200dp;
+}
+
+.choice {
+    display: block;
+    height: 26dp;
+    line-height: 25dp;
+    margin-top: 6dp;
+}
+.choice:last-child { margin-bottom: 2dp; }
