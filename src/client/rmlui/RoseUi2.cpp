@@ -82,6 +82,11 @@ const int kReplacedDialogs[] = {
     /// CSeparateDlg observes CSeparate, holds the item and output slots and
     /// the drag item, and its Start() runs the checks and sends.
     DLG_TYPE_SEPARATE,
+    /// RoseRmlUpgrade ( also in kReplacedWindows ). Hidden, NOT gone:
+    /// CUpgradeDlg holds the slots, the drag items and the state machine the
+    /// result's OK box leaves ( which applies the result ). Hidden, its result
+    /// state does not animate: RoseRmlUpgrade plays the result itself.
+    DLG_TYPE_UPGRADE,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -106,6 +111,7 @@ const int kReplacedWindows[] = {
     DLG_TYPE_PRIVATESTORE,
     DLG_TYPE_GOODS,
     DLG_TYPE_SEPARATE,
+    DLG_TYPE_UPGRADE,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).

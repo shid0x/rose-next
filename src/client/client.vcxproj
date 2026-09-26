@@ -460,6 +460,7 @@
     <ClCompile Include="rmlui\RoseRmlPrivateStore.cpp" />
     <ClCompile Include="rmlui\RoseRmlGoodsForm.cpp" />
     <ClCompile Include="rmlui\RoseRmlSeparate.cpp" />
+    <ClCompile Include="rmlui\RoseRmlUpgrade.cpp" />
     <ClCompile Include="rmlui\RoseRmlNumberInput.cpp" />
     <ClCompile Include="rmlui\RoseRmlSystem.cpp" />
     <ClCompile Include="rmlui\RoseRmlStatusPanel.cpp" />

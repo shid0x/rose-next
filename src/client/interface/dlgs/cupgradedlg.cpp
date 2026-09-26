@@ -75,6 +75,37 @@ CUpgradeDlg::ChangeState(int iID) {
     }
 }
 
+int
+CUpgradeDlg::GetState() {
+    for (int i = 0; i < STATE_MAX; ++i) {
+        if (m_pCurrState == m_pStates[i])
+            return i;
+    }
+    return STATE_NORMAL;
+}
+
+bool
+CUpgradeDlg::Start() {
+    if (g_pAVATAR) {
+        if (g_pAVATAR->Get_STATE() != CS_STOP) {
+            g_itMGR.AppendChatMsg(STR_ACTION_COMMAND_STOP_STATE_FAILED, IT_MGR::CHAT_TYPE_SYSTEM);
+            return false;
+        }
+
+        if (g_pAVATAR->GetPetMode() >= 0) {
+            if ((g_pAVATAR->GetPetState() != CS_STOP)) {
+                g_itMGR.AppendChatMsg(STR_ACTION_COMMAND_STOP_STATE_FAILED,
+                    IT_MGR::CHAT_TYPE_SYSTEM);
+                return false;
+            }
+        }
+    }
+    if (!CUpgrade::GetInstance().SendPacketUpgrade())
+        return false;
+    ChangeState(STATE_WAIT);
+    return true;
+}
+
 void
 CUpgradeDlg::Update(POINT ptMouse) {
     if (!IsVision())

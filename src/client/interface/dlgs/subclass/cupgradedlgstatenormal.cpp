@@ -36,23 +36,7 @@ CUpgradeDlgStateNormal::Process(unsigned uiMsg, WPARAM wParam, LPARAM lParam) {
         if (uiMsg == WM_LBUTTONUP) {
             switch (uiProcID) {
                 case IID_BTN_START:
-                    if (g_pAVATAR) {
-                        if (g_pAVATAR->Get_STATE() != CS_STOP) {
-                            g_itMGR.AppendChatMsg(STR_ACTION_COMMAND_STOP_STATE_FAILED,
-                                IT_MGR::CHAT_TYPE_SYSTEM);
-                            break;
-                        }
-
-                        if (g_pAVATAR->GetPetMode() >= 0) {
-                            if ((g_pAVATAR->GetPetState() != CS_STOP)) {
-                                g_itMGR.AppendChatMsg(STR_ACTION_COMMAND_STOP_STATE_FAILED,
-                                    IT_MGR::CHAT_TYPE_SYSTEM);
-                                break;
-                            }
-                        }
-                    }
-                    if (CUpgrade::GetInstance().SendPacketUpgrade())
-                        m_pParent->ChangeState(CUpgradeDlg::STATE_WAIT);
+                    m_pParent->Start();
                     break;
                 case IID_BTN_CLOSE:
                     m_pParent->Hide();

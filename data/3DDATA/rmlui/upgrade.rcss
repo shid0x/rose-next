@@ -1,0 +1,175 @@
+/* UI2 upgrade window -- LAYOUT ONLY ( colours and materials: rose-theme.rcss,
+   plus the few colours that are this window's own states ).
+   Reload in game with /uireload. The C++ places it beside the bag the first
+   time, until it is moved.
+
+   PERFORMANCE ( see shop.rcss ): definite width, rows are positioned blocks
+   with the icon pinned absolutely ( never floated beside text: RmlUi puts a
+   block that follows a float below it ), flex only for the small rows. The
+   result bar moves by transform, never by width. */
+
+#upgrade {
+    left: 60dp;
+    top: 160dp;
+    display: block;
+    width: 250dp;
+}
+
+/* With your skill / At <NPC>. */
+.where {
+    height: 14dp;
+    line-height: 14dp;
+    margin-bottom: 4dp;
+    padding: 0dp 3dp;
+    font-size: 10dp;
+}
+
+/* A row: the icon at the start, the text beside it. */
+.row {
+    position: relative;
+    height: 42dp;
+}
+.rtext {
+    margin-left: 50dp;
+    padding-top: 5dp;
+}
+
+/* An icon cell: the native 40x40 pinned top-left, as everywhere. */
+.cell {
+    position: absolute;
+    left: 0dp;
+    top: 0dp;
+    display: block;
+    box-sizing: border-box;
+    width: 42dp;
+    height: 42dp;
+    cursor: pointer;
+}
+.cell:hover { border-color: #d0501aff; }
+.cell.empty { background-color: #00000050; cursor: default; }
+.cell.empty:hover { border-color: #000000c0; }
+
+/* The item to upgrade. */
+.target { padding: 4dp; }
+.tname {
+    display: block;
+    line-height: 15dp;
+    font-weight: bold;
+    color: #f0f0f0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.tgrade {
+    display: block;
+    line-height: 14dp;
+    font-size: 10dp;
+    font-weight: bold;
+    color: #ffb070;
+}
+.tempty {
+    display: block;
+    padding-top: 7dp;
+    font-size: 10dp;
+}
+
+.head {
+    margin: 6dp 0dp 3dp 0dp;
+    padding: 0dp 3dp;
+    font-size: 10dp;
+}
+
+/* The materials: three rows, the ones asked for named. */
+.mats { padding: 4dp 4dp 0dp 4dp; }
+.mat { margin-bottom: 4dp; }
+.mname {
+    display: block;
+    line-height: 15dp;
+    color: #e6e6e6;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.mcount {
+    display: block;
+    line-height: 14dp;
+    font-size: 10dp;
+    font-weight: bold;
+    color: #ffe070;
+}
+/* Asked for and not placed yet. */
+.mat.missing .mname { color: #ff9a8a; }
+.mat.missing .cell { border-color: #8a3010ff; }
+
+/* Chance, cost, and what you have. */
+.sums {
+    margin-top: 6dp;
+    padding: 3dp 5dp;
+}
+.srow {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 15dp;
+    font-size: 10dp;
+}
+.srow .ui-muted { flex-grow: 1; }
+.chance { font-weight: bold; color: #9ad870; }
+.cval { font-weight: bold; color: #ffb070; }
+.srow.short .cval { color: #ff6a5a; }
+.hval { font-weight: bold; color: #ffe070; }
+
+/* The result bar: a roll, not progress -- it eases to where it lands, red,
+   green past the point where it succeeds ( the labelled mark ); it grows by
+   scaleX from the left. */
+.result { margin-top: 18dp; }
+.bar { height: 12dp; }
+.bfill {
+    right: 0dp;
+    transform-origin: 0% 50%;
+}
+.bmark {
+    position: absolute;
+    top: -3dp;
+    bottom: -3dp;
+    width: 2dp;
+    margin-left: -1dp;
+    background-color: #ffffffe0;
+}
+/* The mark's label, above the bar, starting at the line. */
+.blabel {
+    position: absolute;
+    left: 3dp;
+    top: -14dp;
+    white-space: nowrap;
+    font-size: 9dp;
+    line-height: 12dp;
+    color: #e6e6e6;
+    font-effect: shadow(1px 1px #000000);
+    pointer-events: none;
+}
+.blabel.high {
+    left: auto;
+    right: 3dp;
+}
+.outcome {
+    margin-top: 4dp;
+    text-align: center;
+    font-weight: bold;
+    color: #ff6a5a;
+}
+.outcome.good { color: #9ad870; }
+
+.buttons {
+    display: flex;
+    flex-direction: row;
+    margin-top: 6dp;
+}
+.act { flex: 1; }
+/* Not ready ( a material missing, not enough to pay ), or busy: does
+   nothing, and does not light up either. */
+.act.off { color: #a0a0a0; }
+.act.off:hover {
+    background-color: #3a3a3aff;
+    border-color: #565656ff;
+}

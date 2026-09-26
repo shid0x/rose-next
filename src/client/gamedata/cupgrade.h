@@ -63,6 +63,9 @@ public:
 
     BYTE GetResult();
     void ApplyResultItemSet();
+    /// What the server set in the bag ( applied on OK ): UI2 shows the
+    /// target's new grade from it before that.
+    const std::list<tag_SET_INVITEM>& GetResultItemSet() { return m_ResultItemSet; }
 
     int GetRequireMoney();
     int GetType();

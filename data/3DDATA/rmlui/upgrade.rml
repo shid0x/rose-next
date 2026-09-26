@@ -1,0 +1,90 @@
+<rml>
+<head>
+    <title>Upgrade</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="upgrade.rcss"/>
+</head>
+<body data-model="upgrade">
+    <!--
+        UI2 upgrade window ( RoseRmlUpgrade ), replacing the classic refine
+        dialog. Opens beside the bag the first time; drag the title bar to
+        move it, the spot is saved.
+
+        Drop the item to upgrade from your bag, then the materials each row
+        asks for. The chance, the cost ( MP with the skill, zuly at an NPC )
+        and the grade it goes to show before you press Upgrade. The result
+        bar fills for five seconds and turns green where it succeeds; OK on
+        the result puts the item back in your bag. Double-click an item, or
+        drag it off, to take it back.
+
+        The whole window is a drop target for items ( DLG_TYPE_UPGRADE ).
+    -->
+    <div id="upgrade" class="ui-window" data-attr-drop-target="drop_type">
+        <handle move_target="upgrade" class="ui-titlebar">
+            <span class="ui-title">Upgrade</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <div class="where ui-muted">{{where}}</div>
+
+        <!-- The item to upgrade. -->
+        <div class="target ui-well"><div class="row">
+            <div class="cell ui-icon" slot-kind="0" slot-index="0" data-class-empty="!has_target"
+                 data-event-mousedown="press(0, 0)" data-event-dblclick="use(0, 0)">
+                <img data-if="has_target" data-attr-src="target_src" data-attr-rect="target_rect"/>
+            </div>
+            <div class="rtext">
+                <span class="tname" data-if="has_target">{{target_name}}</span>
+                <span class="tgrade" data-if="has_target">{{grade}}</span>
+                <span class="tempty ui-muted" data-if="!has_target">Drop the item to upgrade here.</span>
+            </div>
+        </div></div>
+
+        <!-- What it takes. -->
+        <div class="head ui-muted">Materials</div>
+        <div class="mats ui-well">
+            <div class="row mat" data-for="m : mats" data-class-missing="m.missing">
+                <div class="cell ui-icon" slot-kind="1" data-attr-slot-index="m.index" data-class-empty="!m.placed"
+                     data-event-mousedown="press(1, m.index)" data-event-dblclick="use(1, m.index)">
+                    <img data-if="m.placed" data-attr-src="m.src" data-attr-rect="m.rect"/>
+                </div>
+                <div class="rtext">
+                    <span class="mname">{{m.name}}</span>
+                    <span class="mcount">{{m.count}}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="sums ui-well">
+            <div class="srow">
+                <span class="ui-muted">Chance</span>
+                <span class="chance">{{chance}}</span>
+            </div>
+            <div class="srow" data-class-short="short">
+                <span class="ui-muted">Costs</span>
+                <span class="cval">{{cost}} {{cost_label}}</span>
+            </div>
+            <div class="srow">
+                <span class="ui-muted">You have</span>
+                <span class="hval">{{have}} {{cost_label}}</span>
+            </div>
+        </div>
+
+        <!-- The result: the bar, then what happened. -->
+        <div class="result" data-if="show_bar">
+            <div class="bar ui-gauge">
+                <div class="ui-gauge-fill hp bfill" data-class-green="green" data-style-transform="fill"></div>
+                <div class="bmark" data-style-left="mark"><span class="blabel" data-class-high="mark_high">success</span></div>
+            </div>
+            <div class="outcome" data-class-good="outcome_good" data-if="outcome != ''">{{outcome}}</div>
+        </div>
+
+        <div class="buttons">
+            <span class="ui-btn act" data-class-off="!can_start" data-if="state == 0" data-event-click="start()">Upgrade</span>
+            <span class="ui-btn ui-static act off" data-if="state == 1">Working...</span>
+            <span class="ui-btn ui-static act off" data-if="state == 2">Upgrading...</span>
+        </div>
+    </div>
+</body>
+</rml>

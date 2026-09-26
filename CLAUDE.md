@@ -458,7 +458,13 @@ for slots and drag items. Break down (`RoseRmlSeparate`, `DLG_TYPE_SEPARATE`) is
 (`OpenMsgBox2`, classic only) is `RoseRmlUi::ItemsBox`, and `CSeparate::RemoveItem` now clears the
 wait flag -- closing mid-request left breaking down stuck until relog. **RmlUi puts a block that
 follows a float *below* it, not beside it**: an icon beside text is pinned `position: absolute`
-in a positioned row, never floated (floats are fine for grids of equal cells).
+in a positioned row, never floated (floats are fine for grids of equal cells). Upgrade
+(`RoseRmlUpgrade`, `DLG_TYPE_UPGRADE`) is done: `CUpgradeDlg` keeps slots, drag items and the state
+machine (`GetState`, `Start()`); UI2 plays the result bar itself and opens the classic result box
+(routed to UI2), whose OK (`CTCmdChangeStateUpgradeDlg`) leaves the result state and applies the
+result -- so the window refuses to close (and the NPC walk-away waits) while a request or result is
+pending. The bar is a **roll, not progress**: it stops where it lands (short of the success mark on
+a failure), eased and with the mark labelled.
 
 **Text fields** (2026-09-26): an RmlUi `<input type="text" class="ui-field">` with the focus owns
 the keyboard -- `RoseRmlUi::ProcessWndMsg` hands it every key and character (printable ASCII only:

@@ -139,7 +139,7 @@ CUpgradeDlgStateResult::Update(POINT ptMouse) {
                 int itemno = 0;
                 if (CItemFragment* pTargetItem = CUpgrade::GetInstance().GetTargetItem()) {
                     itemtype = pTargetItem->GetItem().GetTYPE();
-                    itemtype = pTargetItem->GetItem().GetItemNO();
+                    itemno = pTargetItem->GetItem().GetItemNO();
                 }
 
                 g_pNet->Send_cli_ITEM_RESULT_REPORT(REPORT_ITEM_UPGRADE_SUCCESS, itemtype, itemno);
@@ -154,7 +154,7 @@ CUpgradeDlgStateResult::Update(POINT ptMouse) {
                 int itemno = 0;
                 if (CItemFragment* pTargetItem = CUpgrade::GetInstance().GetTargetItem()) {
                     itemtype = pTargetItem->GetItem().GetTYPE();
-                    itemtype = pTargetItem->GetItem().GetItemNO();
+                    itemno = pTargetItem->GetItem().GetItemNO();
                 }
                 g_pNet->Send_cli_ITEM_RESULT_REPORT(REPORT_ITEM_UPGRADE_FAILED, itemtype, itemno);
                 break;

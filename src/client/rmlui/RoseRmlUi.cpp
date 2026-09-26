@@ -29,6 +29,7 @@
 #include "RoseRmlPrivateStore.h"
 #include "RoseRmlGoodsForm.h"
 #include "RoseRmlSeparate.h"
+#include "RoseRmlUpgrade.h"
 #include "RoseRmlSystem.h"
 #include "RoseRmlText.h"
 #include "RoseRmlIcons.h"
@@ -88,6 +89,7 @@ RoseRmlAvatarStore g_AvatarStore; ///< UI2: replaces CAvatarStoreDlg ( a view ov
 RoseRmlPrivateStore g_PrivateStore; ///< UI2: replaces CPrivateStoreDlg ( a view over it )
 RoseRmlGoodsForm g_GoodsForm; ///< UI2: replaces CGoodsDlg ( the shop's price form )
 RoseRmlSeparate g_Separate; ///< UI2: replaces CSeparateDlg ( break down )
+RoseRmlUpgrade g_Upgrade; ///< UI2: replaces CUpgradeDlg ( refine )
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -565,6 +567,7 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_PrivateStore.Initialise(g_pContext, kAssetDir);
     g_GoodsForm.Initialise(g_pContext, kAssetDir);
     g_Separate.Initialise(g_pContext, kAssetDir);
+    g_Upgrade.Initialise(g_pContext, kAssetDir);
     /// Late, so they stack over the windows that ask them.
     g_NumberInput.Initialise(g_pContext, kAssetDir);
     g_MessageBox.Initialise(g_pContext, kAssetDir);
@@ -604,6 +607,7 @@ Shutdown() {
     g_PrivateStore.Shutdown();
     g_GoodsForm.Shutdown();
     g_Separate.Shutdown();
+    g_Upgrade.Shutdown();
     g_NumberInput.Shutdown();
     g_MessageBox.Shutdown();
     RoseRmlLayout::Shutdown();
@@ -697,6 +701,7 @@ Update() {
     UI_TIMED("privatestore", g_PrivateStore.Update());
     UI_TIMED("goods", g_GoodsForm.Update());
     UI_TIMED("separate", g_Separate.Update());
+    UI_TIMED("upgrade", g_Upgrade.Update());
     UI_TIMED("numinput", g_NumberInput.Update());
     UI_TIMED("msgbox", g_MessageBox.Update());
     /// Data bindings, styles and layout of every document.
@@ -765,6 +770,9 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_SEPARATE:
             g_Separate.SetOpen(bOpen);
             break;
+        case DLG_TYPE_UPGRADE:
+            g_Upgrade.SetOpen(bOpen);
+            break;
         case DLG_TYPE_RESTART:
             if (bOpen)
                 OpenRestart();
@@ -816,6 +824,8 @@ IsWindowOpen(int iDlgType) {
             return g_GoodsForm.IsOpen();
         case DLG_TYPE_SEPARATE:
             return g_Separate.IsOpen();
+        case DLG_TYPE_UPGRADE:
+            return g_Upgrade.IsOpen();
         case DLG_TYPE_RESTART:
             return g_MessageBox.IsTypePending(kMsgTypeRestart);
         default:
