@@ -62,6 +62,13 @@ void PlaceTooltipAtCursor(CInfo& ToolTip);
 /// Draw-call count of the last rendered frame, for the debug HUD.
 int GetDrawCallCount();
 
+/// /uistats: measures the UI for the next few seconds ( per-frame time for
+/// the panels' updates and RmlUi's render, draw calls and what batching could
+/// merge, the whole frame, the open UI2 windows ), then writes one line in
+/// client.log and a short one in the chat. Nothing is recorded until it is
+/// asked for. False when RmlUi is off.
+bool LogUiStats();
+
 /// Re-reads every stylesheet of every loaded .rml document from disk ( the
 /// "/uireload" chat command ), so a skin can be tuned with the game running.
 /// Styles only: markup and data bindings still need a restart. Returns the

@@ -103,6 +103,24 @@ public:
         return m_iDrawCalls;
     }
 
+    /// This frame's draw work, for /uistats: what batching could merge.
+    struct FrameStats {
+        int iDraws; ///< every DrawIndexedPrimitiveUP
+        int iGradients; ///< of which gradient ( shader ) draws
+        int iTextured; ///< of which textured ( icons, text glyphs )
+        int iTextureSwitches; ///< texture changes between consecutive draws
+        int iScissorChanges;
+    };
+    FrameStats GetFrameStats() const {
+        FrameStats stats;
+        stats.iDraws = m_iDrawCalls;
+        stats.iGradients = m_iGradientDraws;
+        stats.iTextured = m_iTexturedDraws;
+        stats.iTextureSwitches = m_iTextureSwitches;
+        stats.iScissorChanges = m_iScissorChanges;
+        return stats;
+    }
+
     /// Work done since the last call, for the slow-frame report: geometry
     /// compiled, textures generated ( font glyph atlases and effects ) and
     /// gradients compiled, with their times.
@@ -211,6 +229,11 @@ private:
     RECT m_rcScissor;
 
     int m_iDrawCalls;
+    int m_iGradientDraws;
+    int m_iTexturedDraws;
+    int m_iTextureSwitches;
+    int m_iScissorChanges;
+    IDirect3DBaseTexture9* m_pLastTexture; ///< for counting switches only
     WorkStats m_Work;
     bool m_bDeviceObjectsValid;
 

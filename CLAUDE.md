@@ -424,6 +424,13 @@ to 12 ms, a tab switch from 12-25 ms to nothing measurable):
   compiled in while the client's headers had it off. Fixed; it was not the layout cost.
 - `[rmlui] slow UI frame:` in `client-*.log` names the panels and phases whenever UI2 takes more
   than 8 ms of a frame, plus what the renderer had to build. Measure with it before guessing.
+- `/uistats` (2026-09-26) measures the next 3 s -- UI update and render time per frame, the whole
+  frame, draw calls split into gradients / textured / texture switches, the open documents -- and
+  writes one line to `client.log`; nothing is recorded until it is typed. Measure with `vsync=0`.
+  First reading: the UI2 HUD alone costs 0.73 ms a frame (the whole frame ran faster than the classic
+  HUD's), seven windows 1.4 ms and 542 draws; texture switches ~ draws (text, icons and shapes
+  alternate in paint order), so draw-call batching would save ~0.5 ms and stays pinned until the UI
+  passes ~2 ms. Also seen: with UI2 off the panels' updates still cost 0.37 ms a frame.
 
 **Storage** (2026-09-26, `RoseRmlStorage`, `DLG_TYPE_BANK`): a view over the hidden `CBankDlg`.
 **The deposit command reads the tab from the classic dialog** (`CTCmdMoveItemInv2Bank` ->

@@ -554,6 +554,18 @@ CChatDLG::SendChatMsg(char* szMsg) {
         return;
     }
 
+    /// "/uistats" logs what the RmlUi layer costs over the last seconds ( see
+    /// RoseRmlUi::LogUiStats ). Local command, never sent.
+    if (stMsg == "/uistats") {
+        if (!RoseRmlUi::LogUiStats())
+            g_itMGR.AppendChatMsg("RmlUi is off ( [VIDEO] RMLUI=1 ).", IT_MGR::CHAT_TYPE_SYSTEM);
+
+        CWinCtrl* pEditCtrl = Find(IID_EDITBOX);
+        if (pEditCtrl != NULL && pEditCtrl->GetControlType() == CTRL_EDITBOX)
+            ((CTEditBox*)pEditCtrl)->clear_text();
+        return;
+    }
+
     /// "/uireload" re-reads the RmlUi stylesheets ( rose-theme.rcss and each
     /// panel's own ) from the loose 3ddata/rmlui folder, so a skin can be tuned
     /// without restarting. Styles only. Local command, never sent.

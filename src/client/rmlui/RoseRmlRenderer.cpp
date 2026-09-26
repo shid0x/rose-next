@@ -171,6 +171,11 @@ RoseRmlRenderer::RoseRmlRenderer():
     m_iViewportHeight(0),
     m_bScissorEnabled(false),
     m_iDrawCalls(0),
+    m_iGradientDraws(0),
+    m_iTexturedDraws(0),
+    m_iTextureSwitches(0),
+    m_iScissorChanges(0),
+    m_pLastTexture(NULL),
     m_bDeviceObjectsValid(false),
     m_bTransform(false) {
     m_Work = WorkStats();
@@ -379,7 +384,13 @@ RoseRmlRenderer::RenderGeometry(Rml::CompiledGeometryHandle geometry,
         if (itTex != m_Textures.end() && itTex->second->bPending)
             return;
         Texture* pTex = (itTex != m_Textures.end()) ? itTex->second : NULL;
-        m_pDevice->SetTexture(0, pTex ? pTex->pTexture : NULL);
+        IDirect3DBaseTexture9* pBind = pTex ? pTex->pTexture : NULL;
+        if (pBind != m_pLastTexture) {
+            ++m_iTextureSwitches;
+            m_pLastTexture = pBind;
+        }
+        ++m_iTexturedDraws;
+        m_pDevice->SetTexture(0, pBind);
         m_pDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
         m_pDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE);
         m_pDevice->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
@@ -388,6 +399,10 @@ RoseRmlRenderer::RenderGeometry(Rml::CompiledGeometryHandle geometry,
     } else {
         /// Untextured geometry ( solid backgrounds, borders ): take colour from
         /// the vertex diffuse only, otherwise stage 0 samples a stale texture.
+        if (m_pLastTexture != NULL) {
+            ++m_iTextureSwitches;
+            m_pLastTexture = NULL;
+        }
         m_pDevice->SetTexture(0, NULL);
         m_pDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
         m_pDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
@@ -846,6 +861,11 @@ RoseRmlRenderer::RenderShader(Rml::CompiledShaderHandle shader,
     m_pDevice->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
 
     SetStraightAlphaStage(NULL);
+    ++m_iGradientDraws;
+    if ((IDirect3DBaseTexture9*)pShader->pRamp != m_pLastTexture) {
+        ++m_iTextureSwitches;
+        m_pLastTexture = pShader->pRamp;
+    }
     m_pDevice->SetTexture(0, pShader->pRamp);
     m_pDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
     m_pDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE);
@@ -893,6 +913,7 @@ RoseRmlRenderer::SetScissorRegion(Rml::Rectanglei region) {
     m_rcScissor.top = region.Top();
     m_rcScissor.right = region.Right();
     m_rcScissor.bottom = region.Bottom();
+    ++m_iScissorChanges;
     m_pDevice->SetScissorRect(&m_rcScissor);
 }
 
@@ -998,6 +1019,11 @@ RoseRmlRenderer::BeginFrame() {
         m_pSavedState->Capture();
 
     m_iDrawCalls = 0;
+    m_iGradientDraws = 0;
+    m_iTexturedDraws = 0;
+    m_iTextureSwitches = 0;
+    m_iScissorChanges = 0;
+    m_pLastTexture = NULL;
     m_bScissorEnabled = false;
     m_pDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
 

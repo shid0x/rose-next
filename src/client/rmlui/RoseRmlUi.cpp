@@ -52,12 +52,14 @@
 #include "tgamectrl/winctrl.h"
 #include "tgamectrl/teditbox.h"
 #include "../interface/interfacetype.h"
+#include "../interface/it_mgr.h"
 #include "../interface/IO_ImageRes.h"
 #include "../gamecommon/item.h"
 #include "../Sound/IO_Sound.h"
 #include "rose/io/stb.h"
 
 #include <stdlib.h>
+#include <deque>
 #include <string>
 
 namespace {
@@ -164,6 +166,51 @@ AddSlice(const char* pszName, double fMs) {
         stmt;                                  \
         AddSlice(name, NowMs() - fStart_);     \
     } while (0)
+
+/// --- /uistats -------------------------------------------------------------------
+/// One sample per rendered frame during a capture of kStatsWindowMs, started
+/// by /uistats -- nothing is recorded otherwise: what the UI cost ( panel
+/// updates + RmlUi's update; RmlUi's render ) and what it drew.
+const double kStatsWindowMs = 3000.0;
+bool g_bStatsCapture = false;
+double g_fStatsCaptureEnd = 0.0;
+void ReportUiStats();
+
+struct UiFrameSample {
+    double fAt; ///< NowMs() when it was taken
+    double fFrameMs; ///< since the previous rendered frame
+    double fUpdateMs;
+    double fRenderMs;
+    RoseRmlRenderer::FrameStats draw;
+};
+std::deque<UiFrameSample> g_UiSamples;
+double g_fLastRenderAt = 0.0;
+
+void
+RecordUiFrameSample(double fRenderMs) {
+    const double fNow = NowMs();
+    UiFrameSample s;
+    s.fAt = fNow;
+    s.fFrameMs = (g_fLastRenderAt > 0.0) ? fNow - g_fLastRenderAt : 0.0;
+    g_fLastRenderAt = fNow;
+    s.fRenderMs = fRenderMs;
+    s.fUpdateMs = 0.0;
+    for (int i = 0; i < g_iUiSlices; ++i) {
+        if (strcmp(g_UiSlices[i].pszName, "rml-begin") != 0
+            && strcmp(g_UiSlices[i].pszName, "rml-render") != 0)
+            s.fUpdateMs += g_UiSlices[i].fMs;
+    }
+    s.draw = g_pRenderer ? g_pRenderer->GetFrameStats() : RoseRmlRenderer::FrameStats();
+    /// The first frame has no previous one to measure from.
+    if (s.fFrameMs > 0.0)
+        g_UiSamples.push_back(s);
+
+    if (fNow >= g_fStatsCaptureEnd) {
+        g_bStatsCapture = false;
+        ReportUiStats();
+        g_UiSamples.clear();
+    }
+}
 
 void
 ReportSlowUiFrame() {
@@ -1112,9 +1159,12 @@ Render() {
         return;
 
     /// BeginFrame also decodes queued textures ( within its own budget ).
+    const double fRenderStart = g_bStatsCapture ? NowMs() : 0.0;
     UI_TIMED("rml-begin", g_pRenderer->BeginFrame());
     UI_TIMED("rml-render", g_pContext->Render());
     g_pRenderer->EndFrame();
+    if (g_bStatsCapture)
+        RecordUiFrameSample(NowMs() - fRenderStart);
     ReportSlowUiFrame();
 }
 
@@ -1338,6 +1388,87 @@ PlaceTooltipAtCursor(CInfo& ToolTip) {
     ToolTip.SetPosition(pt);
     CToolTipMgr::GetInstance().RegistInfo(ToolTip);
 }
+
+bool
+LogUiStats() {
+    if (!g_bInitialised || g_pContext == NULL)
+        return false;
+    if (g_bStatsCapture)
+        return true; /// already measuring
+
+    g_UiSamples.clear();
+    g_fLastRenderAt = 0.0;
+    g_fStatsCaptureEnd = NowMs() + kStatsWindowMs;
+    g_bStatsCapture = true;
+    g_itMGR.AppendChatMsg("Measuring the UI for 3 seconds...", IT_MGR::CHAT_TYPE_SYSTEM);
+    return true;
+}
+
+} // namespace RoseRmlUi
+
+namespace {
+
+void
+ReportUiStats() {
+    if (g_pContext == NULL)
+        return;
+
+    const size_t n = g_UiSamples.size();
+    double fFrame = 0.0, fFrameMax = 0.0, fUpd = 0.0, fUpdMax = 0.0, fRen = 0.0, fRenMax = 0.0;
+    double fUi = 0.0, fUiMax = 0.0;
+    double fDraws = 0.0, fGrad = 0.0, fTex = 0.0, fSwitch = 0.0, fScis = 0.0;
+    int iDrawsMax = 0;
+    for (size_t i = 0; i < n; ++i) {
+        const UiFrameSample& s = g_UiSamples[i];
+        fFrame += s.fFrameMs;
+        fFrameMax = max(fFrameMax, s.fFrameMs);
+        fUpd += s.fUpdateMs;
+        fUpdMax = max(fUpdMax, s.fUpdateMs);
+        fRen += s.fRenderMs;
+        fRenMax = max(fRenMax, s.fRenderMs);
+        fUi += s.fUpdateMs + s.fRenderMs;
+        fUiMax = max(fUiMax, s.fUpdateMs + s.fRenderMs);
+        fDraws += s.draw.iDraws;
+        iDrawsMax = max(iDrawsMax, s.draw.iDraws);
+        fGrad += s.draw.iGradients;
+        fTex += s.draw.iTextured;
+        fSwitch += s.draw.iTextureSwitches;
+        fScis += s.draw.iScissorChanges;
+    }
+    const double d = n > 0 ? (double)n : 1.0;
+
+    /// The open UI2 windows ( and HUD pieces ): every visible document, by
+    /// its <title>.
+    std::string strDocs;
+    int iDocs = 0;
+    for (int i = 0; i < g_pContext->GetNumDocuments(); ++i) {
+        Rml::ElementDocument* pDoc = g_pContext->GetDocument(i);
+        if (pDoc == NULL || !pDoc->IsVisible())
+            continue;
+        ++iDocs;
+        if (!strDocs.empty())
+            strDocs += ", ";
+        strDocs += pDoc->GetTitle().empty() ? std::string("?") : pDoc->GetTitle();
+    }
+
+    LOG_INFO("[rmlui] uistats over {} frames ({:.1f} s): frame {:.2f} ms avg / {:.2f} max ({:.0f} fps) | "
+             "UI {:.2f} ms avg / {:.2f} max = update {:.2f} / {:.2f} + render {:.2f} / {:.2f} | "
+             "draws {:.0f} avg / {} max: gradients {:.0f}, textured {:.0f}, texture switches {:.0f}, "
+             "scissors {:.0f} | ui2={} | {} documents: {}",
+        n, kStatsWindowMs / 1000.0, fFrame / d, fFrameMax, (fFrame > 0.0) ? 1000.0 * d / fFrame : 0.0,
+        fUi / d, fUiMax, fUpd / d, fUpdMax, fRen / d, fRenMax, fDraws / d, iDrawsMax, fGrad / d,
+        fTex / d, fSwitch / d, fScis / d, RoseUi2::IsActive() ? "on" : "off", iDocs, strDocs.c_str());
+
+    char szChat[200];
+    _snprintf(szChat, sizeof(szChat), "UI: %.2f ms/frame (max %.2f), %.0f draws, frame %.2f ms. Details in client.log.",
+        fUi / d, fUiMax, fDraws / d, fFrame / d);
+    szChat[sizeof(szChat) - 1] = '\0';
+    g_itMGR.AppendChatMsg(szChat, IT_MGR::CHAT_TYPE_SYSTEM);
+}
+
+} // namespace
+
+namespace RoseRmlUi {
 
 int
 GetDrawCallCount() {
