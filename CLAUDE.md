@@ -445,6 +445,13 @@ tutorial's `SC_ShowNotifyMessage` renders its markup. Still classic: the craftin
 boxes (their windows are classic), the GM announcement/help banner, and the dead name-input dialog.
 `.ui-btn.on` (ember at rest) is for a *selected* tab/toggle only -- action buttons turn ember on hover.
 
+**Mouse ownership** (2026-09-26): a button pressed outside the UI2 panels keeps the mouse for the
+world until it comes back up (`g_uWorldButtons` in `RoseRmlUi::ProcessWndMsg`) -- moves and that
+release go to the world wherever the cursor is, and RmlUi is not told. Before, a right-drag camera
+crossing a panel had its moves eaten there: the camera froze, then jumped when the cursor came out.
+A legacy icon drag is checked first: it can start in a classic window (a world press) and still end
+on a UI2 panel.
+
 **UI2 sounds** come from the classic XML: a UI2 window plays its replaced dialog's `SHOWSID` /
 `HIDESID` (`RoseUi2::PlayWindowSound`), and a context-wide listener plays the classic `CLICKSID`
 (8) for any `.ui-btn` or `.ui-click` (`.ui-static` opts out). `CTDialog::Hide` always plays its

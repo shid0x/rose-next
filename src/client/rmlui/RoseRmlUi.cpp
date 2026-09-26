@@ -222,6 +222,24 @@ OpenRestart() {
 /// release events stop being forwarded mid-drag and the handle latches on.
 bool g_bDragging = false;
 
+/// Buttons pressed in the world ( not over a panel ), one bit per RmlUi
+/// button index. Until such a button comes back up the mouse is the world's,
+/// wherever the cursor goes -- as in the classic UI: a right-drag rotating the
+/// camera that crossed a panel used to have its moves eaten there, the camera
+/// froze, then jumped by the whole distance once the cursor came out.
+unsigned g_uWorldButtons = 0;
+
+/// A release outside the game window never arrives: drop any world button
+/// that is no longer physically down.
+void
+ForgetReleasedWorldButtons() {
+    static const int kVk[3] = {VK_LBUTTON, VK_RBUTTON, VK_MBUTTON};
+    for (int i = 0; i < 3; ++i) {
+        if ((g_uWorldButtons & (1u << i)) && (GetAsyncKeyState(kVk[i]) & 0x8000) == 0)
+            g_uWorldButtons &= ~(1u << i);
+    }
+}
+
 /// Assets live loose under the launch dir. The VFS-vs-loose decision for
 /// shipping .rml/.rcss is Phase 1 work ( see doc/rmlui-evaluation.md ); the
 /// spike deliberately uses loose files so iteration needs no rebake.
@@ -984,9 +1002,15 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
 
     switch (uiMsg) {
         case WM_MOUSEMOVE: {
-            /// RmlUi always sees the move -- an in-progress panel drag has to
-            /// keep tracking once the cursor leaves the panel. Only the consume
-            /// decision depends on where the cursor is.
+            /// A world drag ( camera, click-to-move ) keeps every move, over a
+            /// panel or not; RmlUi is not told either, so nothing it passes
+            /// over lights up or shows a tooltip.
+            ForgetReleasedWorldButtons();
+            if (g_uWorldButtons != 0)
+                return false;
+            /// Otherwise RmlUi always sees the move -- an in-progress panel
+            /// drag has to keep tracking once the cursor leaves the panel.
+            /// Only the consume decision depends on where the cursor is.
             g_pContext->ProcessMouseMove(x, y, 0);
             return g_bDragging || IsPointOverPanel(x, y);
         }
@@ -997,8 +1021,13 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
             const int iButton = MouseButtonFromMsg(uiMsg);
             if (iButton < 0)
                 return false;
-            if (!IsPointOverPanel(x, y))
+            /// Pressed in the world, or while another button already drags
+            /// there: the world's, until it comes back up.
+            ForgetReleasedWorldButtons();
+            if (g_uWorldButtons != 0 || !IsPointOverPanel(x, y)) {
+                g_uWorldButtons |= 1u << iButton;
                 return false; /// let the world have it; RmlUi gets no phantom press
+            }
             if (iButton == 0)
                 g_bDragging = true;
             g_pContext->ProcessMouseButtonDown(iButton, 0);
@@ -1010,8 +1039,17 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
             const int iButton = MouseButtonFromMsg(uiMsg);
             if (iButton < 0)
                 return false;
-            if (iButton == 0 && CDragNDropMgr::GetInstance().IsDraging())
+            /// A legacy icon drag first: it can start in a classic window ( a
+            /// world press, here ) and still end on a UI2 panel.
+            if (iButton == 0 && CDragNDropMgr::GetInstance().IsDraging()) {
+                g_uWorldButtons &= ~1u;
                 return ReleaseLegacyDrag(x, y);
+            }
+            /// The release of a world press is the world's too.
+            if (g_uWorldButtons & (1u << iButton)) {
+                g_uWorldButtons &= ~(1u << iButton);
+                return false;
+            }
             /// A release that ends a panel drag must reach RmlUi even if the
             /// cursor has left the panel, or the handle keeps dragging forever.
             const bool bConsume = g_bDragging || IsPointOverPanel(x, y);
