@@ -63,8 +63,25 @@ public:
     void RecvResult(t_PACKET* pRecvPacket);
     void ChangeState(int iState);
 
-private:
     enum STATE_TYPE { STATE_NORMAL, STATE_WAIT, STATE_RESULT, STATE_MAX };
+
+    /// UI2 ( RoseRmlCraft ) keeps this dialog hidden as the model: slots, the
+    /// drag item, the Start checks and the server's answer. A hidden dialog
+    /// does not update, so UI2 plays the result and applies it itself.
+    int GetState();
+    void ResetState() { m_pCurrState = m_pMakeState[STATE_NORMAL]; } ///< as Show
+    bool Start(); ///< the Start button: checks ( each refusal says why ), sends, waits
+    CSlot* GetMakeSlot() { return &m_MakeItemSlot; }
+    CSlot* GetMaterialSlot(int i) {
+        return (i >= 0 && i < (int)m_listMaterialSlot.size()) ? &m_listMaterialSlot[i] : NULL;
+    }
+    CDragItem* GetDragItem() { return m_pDragItem; }
+    BYTE GetResultCode() { return m_btRESULT; }
+    short GetResultStep() { return m_nStepORInvIDX; } ///< failed step, or the bag slot
+    tagITEM& GetCreatedItem() { return m_CreateITEM; }
+    short GetResultPoint(int i) { return (i >= 0 && i < g_iMaxCountMaterial) ? m_nPRO_POINT[i] : 0; }
+
+private:
 
     ///첫번째 슬롯에 아이템이 등록된후 계산된다.
     ///만약 첫번째 아이템이 없다면 예상확률을 계산할수 없다( fMatQuality );

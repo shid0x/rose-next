@@ -87,6 +87,11 @@ const int kReplacedDialogs[] = {
     /// result's OK box leaves ( which applies the result ). Hidden, its result
     /// state does not animate: RoseRmlUpgrade plays the result itself.
     DLG_TYPE_UPGRADE,
+    /// RoseRmlCraft ( also in kReplacedWindows ). Hidden, NOT gone: CMakeDLG
+    /// holds the slots, the drag item, the Start checks and the server's
+    /// answer ( RecvResult skips the classic result state under UI2 ). Hidden,
+    /// it does not update: RoseRmlCraft plays and applies the result.
+    DLG_TYPE_MAKE,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -112,6 +117,7 @@ const int kReplacedWindows[] = {
     DLG_TYPE_GOODS,
     DLG_TYPE_SEPARATE,
     DLG_TYPE_UPGRADE,
+    DLG_TYPE_MAKE,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).

@@ -1,0 +1,110 @@
+<rml>
+<head>
+    <title>Crafting</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="craft.rcss"/>
+</head>
+<body data-model="craft">
+    <!--
+        UI2 crafting window ( RoseRmlCraft ), replacing the classic make
+        dialog. Opens beside the bag the first time; drag the title bar to
+        move it, the spot is saved.
+
+        Left, the kinds your skill can make; middle, the items of that kind
+        your skill level allows; right, the chosen item and its materials.
+        Drop the materials from your bag ( each goes to the row that asks for
+        it ). Each row's bar has a mark: when you craft, the bar fills and
+        must pass it, or the attempt fails there and the materials up to it
+        are used up. Double-click a material, or drag it off, to take it back.
+
+        The whole window is a drop target for items ( DLG_TYPE_MAKE ).
+    -->
+    <div id="craft" class="ui-window" data-attr-drop-target="drop_type" data-class-locked="locked">
+        <handle move_target="craft" class="ui-titlebar">
+            <span class="ui-title">Crafting</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <div class="columns">
+            <!-- The kinds. -->
+            <div class="kindcol">
+                <div class="head ui-muted">Kind</div>
+                <div class="kinds ui-well">
+                    <div class="ui-btn kind" data-for="c : classes" data-class-unused="!c.used"
+                         data-class-on="c.on" data-event-click="set_class(c.index)">{{c.name}}</div>
+                </div>
+            </div>
+
+            <!-- The items of that kind. -->
+            <div class="itemcol">
+                <div class="head ui-muted">Item</div>
+                <div class="items ui-well">
+                    <div class="irow ui-click" data-for="it : items" data-class-unused="!it.used"
+                         data-class-on="it.on" slot-kind="2" data-attr-slot-index="it.index"
+                         data-event-click="set_item(it.index)" data-event-mousedown="press(2, it.index)">
+                        <div class="cell ui-icon"><img data-if="it.used" data-attr-src="it.src" data-attr-rect="it.rect"/></div>
+                        <span class="iname">{{it.name}}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- The chosen item and its materials. -->
+            <div class="detailcol">
+                <div class="head ui-muted">To make</div>
+                <div class="target ui-well"><div class="row">
+                    <div class="cell ui-icon" slot-kind="0" slot-index="0" data-class-empty="!has_item"
+                         data-event-mousedown="press(0, 0)">
+                        <img data-if="has_item" data-attr-src="item_src" data-attr-rect="item_rect"/>
+                    </div>
+                    <div class="rtext">
+                        <span class="tname" data-if="has_item">{{item_name}}</span>
+                        <span class="tempty ui-muted" data-if="!has_item">Pick an item on the left.</span>
+                    </div>
+                </div></div>
+
+                <div class="head ui-muted">Materials</div>
+                <div class="mats ui-well">
+                    <div class="row mat" data-for="m : mats" data-if="m.needed" data-class-missing="m.missing">
+                        <div class="cell ui-icon" slot-kind="1" data-attr-slot-index="m.index" data-class-empty="!m.placed"
+                             data-event-mousedown="press(1, m.index)" data-event-dblclick="use(1, m.index)">
+                            <img data-if="m.placed" data-attr-src="m.src" data-attr-rect="m.rect"/>
+                        </div>
+                        <div class="rtext">
+                            <div class="mhead">
+                                <span class="mname">{{m.name}}</span>
+                                <span class="mcount">{{m.count}}</span>
+                            </div>
+                            <div class="mbar ui-gauge">
+                                <div class="ui-gauge-fill hp mfill" data-class-green="m.green" data-style-transform="m.fill"></div>
+                                <div class="mmark" data-style-left="m.mark"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sums ui-well">
+                    <div class="srow" data-class-short="short">
+                        <span class="ui-muted">Costs</span>
+                        <span class="cval">{{cost}} MP</span>
+                    </div>
+                    <div class="srow">
+                        <span class="ui-muted">You have</span>
+                        <span class="hval">{{have}} MP</span>
+                    </div>
+                </div>
+
+                <div class="outcome" data-class-good="outcome_good" data-if="outcome != ''">{{outcome}}</div>
+
+                <div class="buttons">
+                    <span class="ui-btn act" data-class-off="!can_start" data-if="button == 0" data-event-click="start()">Craft</span>
+                    <span class="ui-btn ui-static act off" data-if="button == 1">Working...</span>
+                    <span class="ui-btn ui-static act off" data-if="button == 2">Crafting...</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="hint ui-muted">Drop the materials from your bag. Each bar must pass its mark, or the attempt fails there.</div>
+    </div>
+</body>
+</rml>

@@ -1,0 +1,230 @@
+/* UI2 crafting window -- LAYOUT ONLY ( colours and materials: rose-theme.rcss,
+   plus the few colours that are this window's own states ).
+   Reload in game with /uireload. The C++ places it beside the bag the first
+   time, until it is moved.
+
+   PERFORMANCE ( see shop.rcss ): definite widths, the three columns are
+   floats side by side ( all floated: fine ), rows are positioned blocks with
+   the icon pinned absolutely -- never an icon floated beside text: RmlUi
+   puts a block that follows a float BELOW it. Flex only for the small rows.
+   The result bars move by transform, never by width. */
+
+#craft {
+    left: 60dp;
+    top: 160dp;
+    display: block;
+    width: 646dp;
+}
+
+.columns { display: flow-root; }
+
+.head {
+    height: 16dp;
+    line-height: 16dp;
+    padding: 0dp 3dp;
+    font-size: 10dp;
+}
+
+/* --- the kinds ------------------------------------------------------------ */
+.kindcol {
+    float: left;
+    width: 170dp;
+}
+.kinds {
+    height: 320dp;
+    overflow-y: auto;
+    padding: 3dp;
+}
+/* A kind's whole name: long ones wrap onto a second line rather than being
+   cut ( the button grows with them ). */
+.kind {
+    display: block;
+    height: auto;
+    min-height: 22dp;
+    line-height: 14dp;
+    margin-bottom: 3dp;
+    padding: 4dp 6dp;
+    box-sizing: border-box;
+    font-size: 10dp;
+    text-align: left;
+    white-space: normal;
+}
+.kind.unused { display: none; }
+
+/* --- the items ------------------------------------------------------------ */
+.itemcol {
+    float: left;
+    width: 206dp;
+    margin-left: 6dp;
+}
+.items {
+    height: 320dp;
+    overflow-y: auto;
+    padding: 3dp;
+}
+.irow {
+    position: relative;
+    height: 42dp;
+    margin-bottom: 2dp;
+    border-radius: 3dp;
+    cursor: pointer;
+}
+.irow.unused { display: none; }
+.irow:hover { background-color: #ffffff12; }
+.irow.on { background-color: #7a220660; }
+.irow .cell { cursor: pointer; }
+.iname {
+    display: block;
+    margin-left: 48dp;
+    padding-top: 13dp;
+    line-height: 15dp;
+    color: #e6e6e6;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.irow.on .iname { color: #ffffff; font-weight: bold; }
+
+/* --- the chosen item ---------------------------------------------------------- */
+.detailcol {
+    float: left;
+    width: 258dp;
+    margin-left: 6dp;
+}
+
+/* A row: the icon at the start, the text beside it. */
+.row {
+    position: relative;
+    height: 42dp;
+}
+.rtext { margin-left: 50dp; }
+
+/* An icon cell: the native 40x40 pinned top-left, as everywhere. */
+.cell {
+    position: absolute;
+    left: 0dp;
+    top: 0dp;
+    display: block;
+    box-sizing: border-box;
+    width: 42dp;
+    height: 42dp;
+    cursor: pointer;
+}
+.cell:hover { border-color: #d0501aff; }
+.cell.empty { background-color: #00000050; cursor: default; }
+.cell.empty:hover { border-color: #000000c0; }
+
+.target { padding: 4dp; margin-bottom: 4dp; }
+.tname {
+    display: block;
+    padding-top: 12dp;
+    line-height: 16dp;
+    font-weight: bold;
+    color: #f0f0f0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.tempty {
+    display: block;
+    padding-top: 13dp;
+    font-size: 10dp;
+}
+
+/* The materials: a row per requirement, its bar under the name. */
+.mats {
+    padding: 4dp 4dp 0dp 4dp;
+    margin-bottom: 4dp;
+}
+.mat { margin-bottom: 4dp; }
+.mhead {
+    display: flex;
+    flex-direction: row;
+    height: 16dp;
+    padding-top: 4dp;
+}
+.mname {
+    flex-grow: 1;
+    line-height: 15dp;
+    color: #e6e6e6;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.mcount {
+    margin-left: 4dp;
+    line-height: 15dp;
+    font-size: 10dp;
+    font-weight: bold;
+    color: #ffe070;
+}
+/* Asked for and not placed yet. */
+.mat.missing .mname { color: #ff9a8a; }
+.mat.missing .cell { border-color: #8a3010ff; }
+
+/* The bar: the mark is the success point, the fill grows by scaleX from the
+   left when you craft ( red, green once past the mark ). */
+.mbar {
+    height: 8dp;
+    margin-top: 5dp;
+}
+.mfill {
+    right: 0dp;
+    transform-origin: 0% 50%;
+}
+.mmark {
+    position: absolute;
+    top: -3dp;
+    bottom: -3dp;
+    width: 2dp;
+    margin-left: -1dp;
+    background-color: #ffffffe0;
+}
+
+/* Cost, and what you have. */
+.sums { padding: 3dp 5dp; }
+.srow {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 15dp;
+    font-size: 10dp;
+}
+.srow .ui-muted { flex-grow: 1; }
+.cval { font-weight: bold; color: #ffb070; }
+.srow.short .cval { color: #ff6a5a; }
+.hval { font-weight: bold; color: #ffe070; }
+
+.outcome {
+    margin-top: 5dp;
+    text-align: center;
+    font-weight: bold;
+    color: #ff6a5a;
+}
+.outcome.good { color: #9ad870; }
+
+.buttons {
+    display: flex;
+    flex-direction: row;
+    margin-top: 6dp;
+}
+.act { flex: 1; }
+/* Not ready, or busy: does nothing, and does not light up either. */
+.act.off { color: #a0a0a0; }
+.act.off:hover {
+    background-color: #3a3a3aff;
+    border-color: #565656ff;
+}
+
+/* Busy: the lists and slots take no clicks. */
+#craft.locked .irow,
+#craft.locked .irow .cell,
+#craft.locked .kind,
+#craft.locked .cell { cursor: default; }
+
+.hint {
+    margin-top: 5dp;
+    padding: 0dp 2dp;
+    font-size: 9dp;
+    line-height: 12dp;
+}

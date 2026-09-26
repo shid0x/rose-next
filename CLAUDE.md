@@ -445,7 +445,7 @@ is selected and priced -- which read as "listed at 0, invisible" and was not a b
 on Wanted asks the price at once. The sell list allowed 31 items (`MAX_P_STORE_ITEM_SLOT`) into a
 30-slot dialog; capped at 30. The visited shop and the price form never toggle.
 
-**Crafting windows** (2026-09-26, in progress): **a hidden classic dialog does nothing per
+**Crafting windows** (2026-09-26): **a hidden classic dialog does nothing per
 frame** -- `CTDialog::Update` (and each dialog's own `Update`/`Process`) returns while
 `!IsVision()`, which also stops its command queue. Upgrading and crafting play their result
 animation in that per-frame code and only there apply the result to the bag
@@ -464,7 +464,13 @@ machine (`GetState`, `Start()`); UI2 plays the result bar itself and opens the c
 (routed to UI2), whose OK (`CTCmdChangeStateUpgradeDlg`) leaves the result state and applies the
 result -- so the window refuses to close (and the NPC walk-away waits) while a request or result is
 pending. The bar is a **roll, not progress**: it stops where it lands (short of the success mark on
-a failure), eased and with the mark labelled.
+a failure), eased and with the mark labelled. Crafting (`RoseRmlCraft`, `DLG_TYPE_MAKE`) completes
+the set: `Recv_gsv_CREATE_ITEM_REPLY` asks `IT_MGR::IsDlgOpened` under UI2 (it dropped the answer
+while the classic dialog was hidden), `CMakeDLG::RecvResult` skips the classic result state's
+`Init` under UI2 (its boxes are invoked by the hidden dialog and their OK never runs), and UI2 plays
+the bars, applies the result (`SubItemsAfterRecvResult` + `Add_ITEM`), reports it and puts the
+dialog back to NORMAL; a request with no answer frees the window after 20 s. Kinds and recipes are
+grow-only lists (rows hidden, never removed).
 
 **Text fields** (2026-09-26): an RmlUi `<input type="text" class="ui-field">` with the focus owns
 the keyboard -- `RoseRmlUi::ProcessWndMsg` hands it every key and character (printable ASCII only:

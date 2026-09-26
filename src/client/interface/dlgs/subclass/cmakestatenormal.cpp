@@ -133,61 +133,8 @@ CMakeStateNormal::OnLButtonUp(unsigned iProcID, WPARAM wParam, LPARAM lParam) {
         case CMakeDLG::IID_BTN_CLOSE:
             m_pParent->Hide();
             return;
-        case CMakeDLG::IID_BTN_START: {
-            if (int iRet = CManufacture::GetInstance().IsValidSendMakeItemReq()) {
-                if (iRet) {
-                    switch (iRet) {
-                        case 1:
-                            g_itMGR.OpenMsgBox(STR_NOTSELECT_MAKEITEM);
-                            break;
-                        case 2:
-                            g_itMGR.OpenMsgBox(STR_NOT_ENOUGH_INVENTORY_SPACE);
-                            break;
-                        case 3:
-                            g_itMGR.OpenMsgBox(STR_NOT_ENOUGH_MANA);
-                            break;
-                        case 4:
-                            g_itMGR.OpenMsgBox(STR_NOT_EXIST_MATERIAL);
-                            break;
-                        case 5:
-                            g_itMGR.OpenMsgBox(STR_NOT_ENOUGH_MATERIAL);
-                            break;
-                        default:
-                            break;
-                    }
-                }
-                break;
-            }
-
-            short nUseItemINV[g_iMaxCountMaterial];
-            ZeroMemory(nUseItemINV, sizeof(short) * g_iMaxCountMaterial);
-            CIcon* pIcon = NULL;
-            CIconItem* pItemIcon = NULL;
-
-            for (int i = 0; i < g_iMaxCountMaterial; ++i) {
-                if (pIcon = m_pParent->m_listMaterialSlot[i].GetIcon()) {
-                    pItemIcon = (CIconItem*)pIcon;
-                    nUseItemINV[i] = pItemIcon->GetIndex();
-                } else {
-                    nUseItemINV[i] = 0;
-                }
-            }
-
-            m_pParent->ChangeState(CMakeDLG::STATE_WAIT);
-            pIcon = m_pParent->m_MakeItemSlot.GetIcon();
-            if (pIcon) {
-                pItemIcon = (CIconItem*)pIcon;
-                tagITEM& Item = pItemIcon->GetItem();
-                if (!Item.IsEmpty()) {
-                    g_pNet->Send_cli_CREATE_ITEM_REQ(
-                        (BYTE)CManufacture::GetInstance().GetSkillSlotIndex(),
-                        (char)Item.GetTYPE(),
-                        (short)Item.GetItemNO(),
-                        nUseItemINV);
-                    g_pAVATAR->Skill_UseAbilityValue(CManufacture::GetInstance().GetSkillIndex());
-                }
-            }
-        }
+        case CMakeDLG::IID_BTN_START:
+            m_pParent->Start();
             return;
         default:
             break;

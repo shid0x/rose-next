@@ -25,6 +25,7 @@
 #include "../Icon/CIconItem.h"
 
 #include "../../GameData/Event/CTEventManufacture.h"
+#include "../../rmlui/RoseUi2.h"
 
 #include <algorithm>
 #include "../CToolTipMgr.h"
@@ -404,7 +405,78 @@ CMakeDLG::RecvResult(t_PACKET* pRecvPacket) {
             pRecvPacket->m_gsv_CREATE_ITEM_REPLY.m_nPRO_POINT,
             sizeof(short) * g_iMaxCountMaterial);
 
+    /// UI2 plays and applies the result ( RoseRmlCraft ): the result state's
+    /// Init would open boxes invoked by this hidden dialog, whose OK commands
+    /// only run from its command queue -- which a hidden dialog never runs.
+    if (RoseUi2::IsReplaced(DLG_TYPE_MAKE)) {
+        m_pCurrState = m_pMakeState[STATE_RESULT];
+        return;
+    }
     ChangeState(STATE_RESULT);
+}
+
+int
+CMakeDLG::GetState() {
+    for (int i = 0; i < STATE_MAX; ++i) {
+        if (m_pCurrState == m_pMakeState[i])
+            return i;
+    }
+    return STATE_NORMAL;
+}
+
+bool
+CMakeDLG::Start() {
+    if (int iRet = CManufacture::GetInstance().IsValidSendMakeItemReq()) {
+        switch (iRet) {
+            case 1:
+                g_itMGR.OpenMsgBox(STR_NOTSELECT_MAKEITEM);
+                break;
+            case 2:
+                g_itMGR.OpenMsgBox(STR_NOT_ENOUGH_INVENTORY_SPACE);
+                break;
+            case 3:
+                g_itMGR.OpenMsgBox(STR_NOT_ENOUGH_MANA);
+                break;
+            case 4:
+                g_itMGR.OpenMsgBox(STR_NOT_EXIST_MATERIAL);
+                break;
+            case 5:
+                g_itMGR.OpenMsgBox(STR_NOT_ENOUGH_MATERIAL);
+                break;
+            default:
+                break;
+        }
+        return false;
+    }
+
+    short nUseItemINV[g_iMaxCountMaterial];
+    ZeroMemory(nUseItemINV, sizeof(short) * g_iMaxCountMaterial);
+    CIcon* pIcon = NULL;
+    CIconItem* pItemIcon = NULL;
+
+    for (int i = 0; i < g_iMaxCountMaterial; ++i) {
+        if (pIcon = m_listMaterialSlot[i].GetIcon()) {
+            pItemIcon = (CIconItem*)pIcon;
+            nUseItemINV[i] = pItemIcon->GetIndex();
+        } else {
+            nUseItemINV[i] = 0;
+        }
+    }
+
+    ChangeState(STATE_WAIT);
+    pIcon = m_MakeItemSlot.GetIcon();
+    if (pIcon) {
+        pItemIcon = (CIconItem*)pIcon;
+        tagITEM& Item = pItemIcon->GetItem();
+        if (!Item.IsEmpty()) {
+            g_pNet->Send_cli_CREATE_ITEM_REQ((BYTE)CManufacture::GetInstance().GetSkillSlotIndex(),
+                (char)Item.GetTYPE(),
+                (short)Item.GetItemNO(),
+                nUseItemINV);
+            g_pAVATAR->Skill_UseAbilityValue(CManufacture::GetInstance().GetSkillIndex());
+        }
+    }
+    return true;
 }
 
 int

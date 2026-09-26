@@ -4176,7 +4176,12 @@ CRecvPACKET::Recv_gsv_CHANGE_OBJIDX() {
 void
 CRecvPACKET::Recv_gsv_CREATE_ITEM_REPLY() {
     CTDialog* pDlg = g_itMGR.FindDlg(DLG_TYPE_MAKE);
-    if (pDlg && pDlg->IsVision()) {
+    /// UI2 keeps the classic dialog hidden ( never IsVision ): ask IT_MGR,
+    /// which asks the UI2 window -- or the answer was dropped and the result
+    /// never reached the bag.
+    const bool bOpen = RoseUi2::IsReplaced(DLG_TYPE_MAKE) ? g_itMGR.IsDlgOpened(DLG_TYPE_MAKE)
+                                                          : (pDlg && pDlg->IsVision());
+    if (pDlg && bOpen) {
         CMakeDLG* pMakeDlg = (CMakeDLG*)pDlg;
         pMakeDlg->RecvResult(m_pRecvPacket);
     }
