@@ -1,0 +1,107 @@
+/* UI2 quantity question -- LAYOUT ONLY ( colours and materials:
+   rose-theme.rcss, plus the few colours that are this window's own states ).
+   Reload in game with /uireload. The C++ opens it by the mouse. */
+
+/* Over every window ( a click on one pulls its document to the front, which
+   would bury the question under the shop that asked it ). The message box
+   sits higher still. */
+body { z-index: 40; }
+
+#numinput {
+    left: 400dp;
+    top: 300dp;
+    width: 172dp;
+}
+
+/* What is counted: the item's icon and name, or the coin. */
+.what {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 5dp;
+    padding: 0dp 2dp;
+}
+/* The icon at its native 40x40, pinned top-left, as everywhere. */
+.cell {
+    box-sizing: border-box;
+    width: 42dp;
+    height: 42dp;
+    align-items: flex-start;
+    justify-content: flex-start;
+    flex-shrink: 0;
+}
+.wtext {
+    display: flex;
+    flex-direction: column;
+    margin-left: 6dp;
+    width: 116dp;
+}
+.wname {
+    font-size: 11dp;
+    font-weight: bold;
+    color: #f0f0f0;
+    line-height: 14dp;
+}
+.wmax {
+    font-size: 9dp;
+    line-height: 13dp;
+}
+.coin {
+    width: 14dp;
+    height: 14dp;
+    margin: 0dp 14dp;
+    border: 1dp #a07818ff;
+    border-radius: 7dp;
+    background-color: #e0b030ff;
+    decorator: ui-gloss-soft;
+    flex-shrink: 0;
+}
+
+/* The number, right-aligned like a calculator. The suggested 1 reads as
+   selected: the first digit replaces it. */
+.display {
+    height: 26dp;
+    padding: 0dp 8dp;
+    text-align: right;
+}
+.dval {
+    line-height: 26dp;
+    font-size: 16dp;
+    font-weight: bold;
+    color: #ffffff;
+}
+.display.fresh .dval {
+    color: #ffe0c8;
+    background-color: #d0501a60;
+    border-radius: 2dp;
+    padding: 0dp 3dp;
+}
+
+/* The pad, three across: 3 x 52 + 2 x 4 = 164, the content width. */
+.pad {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 5dp;
+}
+.key {
+    width: 52dp;
+    height: 24dp;
+    line-height: 23dp;
+    margin-bottom: 4dp;
+    padding-left: 0dp;
+    padding-right: 0dp;
+    font-size: 12dp;
+}
+.key.wide { font-size: 10dp; }
+/* Every third key ends a row. */
+.key { margin-right: 4dp; }
+.key:nth-child(3n) { margin-right: 0dp; }
+
+.buttons {
+    display: flex;
+    flex-direction: row;
+    margin-top: 2dp;
+}
+.act { flex: 1; }
+.act + .act { margin-left: 4dp; }

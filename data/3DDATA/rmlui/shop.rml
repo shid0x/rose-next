@@ -1,0 +1,126 @@
+<rml>
+<head>
+    <title>Shop</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="shop.rcss"/>
+</head>
+<body data-model="shop">
+    <!--
+        UI2 NPC shop ( RoseRmlShop ), one window for the classic store and
+        basket. Opens beside the inventory the first time; drag the title bar
+        to move it, the spot is saved.
+
+        Left, the shelf: the merchant's tabs, 8x6 items with their price
+        ( red: more than you have ). Double-click an item to put some in the
+        basket, drag it onto your bag to buy it right away. Drop an item from
+        your bag here to sell it right away.
+
+        Right, the basket: what you are buying and selling, with totals and
+        the money you are left with. Drop items from your bag on it to put
+        them on the selling list; double-click or drag an item off to take it
+        back. Confirm sends the whole basket as one trade.
+
+        The window is a drop target: the shelf side DLG_TYPE_STORE, the
+        basket side DLG_TYPE_DEAL ( the classic dialogs the drops were made
+        for ). Every cell carries slot-kind / slot-index.
+    -->
+    <div id="shop" class="ui-window" data-attr-drop-target="store_drop">
+        <handle move_target="shop" class="ui-titlebar">
+            <span class="ui-title">{{name}}</span>
+            <span class="role" data-if="role != ''">{{role}}</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <div class="columns">
+            <!-- The shelf. -->
+            <div class="shelfcol">
+                <div class="tabs">
+                    <span class="ui-btn tab" click-sid="1" data-for="t : tabs" data-class-on="tab == t.index"
+                          data-event-click="set_tab(t.index)">{{t.name}}</span>
+                </div>
+
+                <div class="shelf ui-well">
+                    <div class="item" data-for="c : store"
+                         data-attr-slot-kind="c.kind" data-attr-slot-index="c.index"
+                         data-class-empty="!c.filled"
+                         data-event-mousedown="press(c.kind, c.index)" data-event-dblclick="use(c.kind, c.index)">
+                        <div class="cell ui-icon">
+                            <img data-if="c.filled" data-attr-src="c.src" data-attr-rect="c.rect"/>
+                            <div class="gem" data-if="c.socket == 2"><img data-attr-src="c.gem_src" data-attr-rect="c.gem_rect"/></div>
+                            <img class="socket" data-if="c.socket == 1" src="3DData/Control/Res/SOKET.DDS"/>
+                        </div>
+                        <span class="price" data-if="c.filled" data-class-dear="c.dear">{{c.price}}</span>
+                    </div>
+                </div>
+
+                <div class="hint ui-muted">Double-click: add to basket. Drag to your bag: buy now. Drop from your bag: sell now.</div>
+            </div>
+
+            <!-- The basket. -->
+            <div class="cartcol" data-attr-drop-target="deal_drop">
+                <div class="head">
+                    <span class="htitle">Buying</span>
+                    <span class="hcount ui-muted">{{buy_count}} / 10</span>
+                </div>
+                <div class="cart ui-well">
+                    <div class="cell ui-icon" data-for="c : buy"
+                         data-attr-slot-kind="c.kind" data-attr-slot-index="c.index"
+                         data-class-empty="!c.filled"
+                         data-event-mousedown="press(c.kind, c.index)" data-event-dblclick="use(c.kind, c.index)">
+                        <img data-if="c.filled" data-attr-src="c.src" data-attr-rect="c.rect"/>
+                        <div class="gem" data-if="c.socket == 2"><img data-attr-src="c.gem_src" data-attr-rect="c.gem_rect"/></div>
+                        <img class="socket" data-if="c.socket == 1" src="3DData/Control/Res/SOKET.DDS"/>
+                        <span class="count" data-if="c.count > 0">{{c.count}}</span>
+                    </div>
+                </div>
+                <div class="total">
+                    <span class="ui-muted">Cost</span>
+                    <span class="tval cost">
+                        <img class="umark" data-if="union" data-attr-src="union_src" data-attr-rect="union_rect"/>
+                        <span>{{buy_total}}</span>
+                    </span>
+                </div>
+
+                <div class="head">
+                    <span class="htitle">Selling</span>
+                    <span class="hcount ui-muted">{{sell_count}} / 10</span>
+                </div>
+                <div class="cart ui-well">
+                    <div class="cell ui-icon" data-for="c : sell"
+                         data-attr-slot-kind="c.kind" data-attr-slot-index="c.index"
+                         data-class-empty="!c.filled"
+                         data-event-mousedown="press(c.kind, c.index)" data-event-dblclick="use(c.kind, c.index)">
+                        <img data-if="c.filled" data-attr-src="c.src" data-attr-rect="c.rect"/>
+                        <div class="gem" data-if="c.socket == 2"><img data-attr-src="c.gem_src" data-attr-rect="c.gem_rect"/></div>
+                        <img class="socket" data-if="c.socket == 1" src="3DData/Control/Res/SOKET.DDS"/>
+                        <span class="count" data-if="c.count > 0">{{c.count}}</span>
+                    </div>
+                </div>
+                <div class="total">
+                    <span class="ui-muted">Earn</span>
+                    <span class="tval earn"><span>{{sell_total}}</span></span>
+                </div>
+
+                <!-- What you have, and what is left once the basket goes through. -->
+                <div class="purse ui-well">
+                    <div class="prow">
+                        <span class="ui-muted" data-if="!union">Your zuly</span>
+                        <span class="ui-muted" data-if="union">Union points</span>
+                        <span class="pval"><span>{{money}}</span></span>
+                    </div>
+                    <div class="prow" data-class-short="short">
+                        <span class="ui-muted">After trade</span>
+                        <span class="pval after"><span>{{after}}</span></span>
+                    </div>
+                </div>
+
+                <div class="buttons">
+                    <span class="ui-btn act" data-event-click="clear()">Clear</span>
+                    <span class="ui-btn act confirm" data-class-off="buy_count + sell_count == 0" data-event-click="confirm()">Confirm</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</rml>

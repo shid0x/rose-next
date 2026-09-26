@@ -128,7 +128,7 @@
                          data-class-empty="!c.filled" data-class-dim="c.dim" data-class-worn="c.worn"
                          data-event-mousedown="press(c.kind, c.index)" data-event-dblclick="use(c.kind, c.index)">
                         <img data-if="c.filled" data-attr-src="c.src" data-attr-rect="c.rect"/>
-                        <div class="cd" data-if="c.cd > 0" data-style-height="c.cd + '%'"></div>
+                        <div class="cd" data-visible="c.cd > 0" data-style-transform="'scaleY(' + (c.cd + 0.1) / 100 + ')'"></div>
                         <div class="gem" data-if="c.socket == 2"><img data-attr-src="c.gem_src" data-attr-rect="c.gem_rect"/></div>
                         <img class="socket" data-if="c.socket == 1" src="3DData/Control/Res/SOKET.DDS"/>
                         <span class="count" data-if="c.count > 0">{{c.count}}</span>

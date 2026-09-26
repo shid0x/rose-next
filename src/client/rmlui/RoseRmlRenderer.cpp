@@ -76,6 +76,28 @@ SwizzleRGBAtoBGRA(unsigned char* p, size_t nPixels) {
     }
 }
 
+/// Per frame, for decoding queued textures. A game icon sheet ( 512x512 DXT )
+/// costs a few ms to decode, premultiply and upload; the shop opening the
+/// inventory asked for fifteen of them in one frame -- one ~70 ms frame. Spread
+/// over frames, the icons fill in over a few frames instead.
+const double kDecodeBudgetMs = 5.0;
+
+double
+ElapsedMs(const LARGE_INTEGER& start) {
+    LARGE_INTEGER now, freq;
+    QueryPerformanceCounter(&now);
+    QueryPerformanceFrequency(&freq);
+    return (double)(now.QuadPart - start.QuadPart) * 1000.0 / (double)freq.QuadPart;
+}
+
+/// Adds the time of a scope to a counter ( the slow-frame report ).
+struct ScopedMs {
+    double& fAcc;
+    LARGE_INTEGER start;
+    explicit ScopedMs(double& fAccumulator): fAcc(fAccumulator) { QueryPerformanceCounter(&start); }
+    ~ScopedMs() { fAcc += ElapsedMs(start); }
+};
+
 } // namespace
 
 RoseRmlRenderer::RoseRmlRenderer():
@@ -90,6 +112,7 @@ RoseRmlRenderer::RoseRmlRenderer():
     m_iDrawCalls(0),
     m_bDeviceObjectsValid(false),
     m_bTransform(false) {
+    m_Work = WorkStats();
     SetRect(&m_rcScissor, 0, 0, 0, 0);
     D3DXMatrixIdentity(&m_matTransform);
 }
@@ -177,21 +200,6 @@ RoseRmlRenderer::ReleaseDeviceObjects() {
         m_pSavedState = NULL;
     }
 
-    /// Buffers die with the device but the CPU-side copies stay, so the geometry
-    /// records survive and can be refilled in CreateDeviceObjects().
-    for (std::map<Rml::CompiledGeometryHandle, Geometry*>::iterator it = m_Geometries.begin();
-        it != m_Geometries.end(); ++it) {
-        Geometry* pGeom = it->second;
-        if (pGeom->pVB != NULL) {
-            pGeom->pVB->Release();
-            pGeom->pVB = NULL;
-        }
-        if (pGeom->pIB != NULL) {
-            pGeom->pIB->Release();
-            pGeom->pIB = NULL;
-        }
-    }
-
     for (std::map<Rml::TextureHandle, Texture*>::iterator it = m_Textures.begin();
         it != m_Textures.end(); ++it) {
         Texture* pTex = it->second;
@@ -220,44 +228,13 @@ RoseRmlRenderer::CreateDeviceObjects() {
     if (m_pDevice == NULL)
         return false;
 
-    /// Refill every compiled geometry from its retained CPU copy. RmlUi does not
-    /// re-issue CompileGeometry() after a reset, so skipping this leaves the UI
-    /// silently blank until every document happens to be rebuilt.
-    for (std::map<Rml::CompiledGeometryHandle, Geometry*>::iterator it = m_Geometries.begin();
-        it != m_Geometries.end(); ++it) {
-        Geometry* pGeom = it->second;
-        if (pGeom->Vertices.empty() || pGeom->Indices.empty())
-            continue;
-
-        const UINT nVBBytes = (UINT)(pGeom->Vertices.size() * sizeof(Vertex));
-        const UINT nIBBytes = (UINT)(pGeom->Indices.size() * sizeof(unsigned short));
-
-        /// Write-once geometry: DEFAULT pool, but *not* D3DUSAGE_DYNAMIC. Only
-        /// per-frame streaming buffers need DYNAMIC + DISCARD.
-        if (FAILED(m_pDevice->CreateVertexBuffer(nVBBytes, D3DUSAGE_WRITEONLY, kFVF,
-                D3DPOOL_DEFAULT, &pGeom->pVB, NULL)))
-            return false;
-        if (FAILED(m_pDevice->CreateIndexBuffer(nIBBytes, D3DUSAGE_WRITEONLY, D3DFMT_INDEX16,
-                D3DPOOL_DEFAULT, &pGeom->pIB, NULL)))
-            return false;
-
-        void* pDst = NULL;
-        if (SUCCEEDED(pGeom->pVB->Lock(0, nVBBytes, &pDst, 0))) {
-            memcpy(pDst, &pGeom->Vertices[0], nVBBytes);
-            pGeom->pVB->Unlock();
-        }
-        if (SUCCEEDED(pGeom->pIB->Lock(0, nIBBytes, &pDst, 0))) {
-            memcpy(pDst, &pGeom->Indices[0], nIBBytes);
-            pGeom->pIB->Unlock();
-        }
-    }
-
     /// Textures sourced from disk can be reloaded; generated ones ( font atlases )
     /// are rebuilt from their retained pixels. Rml::ReleaseTextures() is still the
     /// belt-and-braces path for anything we miss.
     for (std::map<Rml::TextureHandle, Texture*>::iterator it = m_Textures.begin();
         it != m_Textures.end(); ++it) {
-        ReloadTexture(*it->second);
+        if (!it->second->bPending) /// still queued: decoded in its turn
+            ReloadTexture(*it->second);
     }
 
     for (std::map<Rml::CompiledShaderHandle, Shader*>::iterator it = m_Shaders.begin();
@@ -279,9 +256,19 @@ RoseRmlRenderer::CompileGeometry(Rml::Span<const Rml::Vertex> vertices,
     if (m_pDevice == NULL || vertices.empty() || indices.empty())
         return 0;
 
+    ScopedMs timer(m_Work.fGeometryMs);
+    ++m_Work.iGeometries;
+
+    /// 16-bit indices: RmlUi geometry chunks are far below 65k verts. Guard
+    /// anyway rather than silently truncating.
+    if (vertices.size() > 65535) {
+        Rml::Log::Message(Rml::Log::LT_ERROR,
+            "RoseRmlRenderer: geometry exceeds 16-bit index range (%d verts).",
+            (int)vertices.size());
+        return 0;
+    }
+
     Geometry* pGeom = new Geometry();
-    pGeom->pVB = NULL;
-    pGeom->pIB = NULL;
     pGeom->iNumVerts = (int)vertices.size();
     pGeom->iNumIndices = (int)indices.size();
 
@@ -297,45 +284,12 @@ RoseRmlRenderer::CompileGeometry(Rml::Span<const Rml::Vertex> vertices,
         dst.v = src.tex_coord.y;
     }
 
-    /// 16-bit indices: RmlUi geometry chunks are far below 65k verts. Guard
-    /// anyway rather than silently truncating.
-    if (pGeom->iNumVerts > 65535) {
-        delete pGeom;
-        Rml::Log::Message(Rml::Log::LT_ERROR,
-            "RoseRmlRenderer: geometry exceeds 16-bit index range (%d verts).",
-            pGeom->iNumVerts);
-        return 0;
-    }
-
     pGeom->Indices.resize(indices.size());
     for (size_t i = 0; i < indices.size(); ++i)
         pGeom->Indices[i] = (unsigned short)indices[i];
 
     const Rml::CompiledGeometryHandle handle = m_NextGeometryHandle++;
     m_Geometries[handle] = pGeom;
-
-    /// Build the device buffers now by running the shared refill path for just
-    /// this record.
-    const UINT nVBBytes = (UINT)(pGeom->Vertices.size() * sizeof(Vertex));
-    const UINT nIBBytes = (UINT)(pGeom->Indices.size() * sizeof(unsigned short));
-
-    if (FAILED(m_pDevice->CreateVertexBuffer(nVBBytes, D3DUSAGE_WRITEONLY, kFVF, D3DPOOL_DEFAULT,
-            &pGeom->pVB, NULL))
-        || FAILED(m_pDevice->CreateIndexBuffer(nIBBytes, D3DUSAGE_WRITEONLY, D3DFMT_INDEX16,
-            D3DPOOL_DEFAULT, &pGeom->pIB, NULL))) {
-        return handle; /// record kept; buffers retried on the next rebuild
-    }
-
-    void* pDst = NULL;
-    if (SUCCEEDED(pGeom->pVB->Lock(0, nVBBytes, &pDst, 0))) {
-        memcpy(pDst, &pGeom->Vertices[0], nVBBytes);
-        pGeom->pVB->Unlock();
-    }
-    if (SUCCEEDED(pGeom->pIB->Lock(0, nIBBytes, &pDst, 0))) {
-        memcpy(pDst, &pGeom->Indices[0], nIBBytes);
-        pGeom->pIB->Unlock();
-    }
-
     return handle;
 }
 
@@ -351,7 +305,7 @@ RoseRmlRenderer::RenderGeometry(Rml::CompiledGeometryHandle geometry,
         return;
 
     Geometry* pGeom = it->second;
-    if (pGeom->pVB == NULL || pGeom->pIB == NULL)
+    if (pGeom->Vertices.empty() || pGeom->Indices.empty())
         return;
 
     /// RmlUi's per-geometry translation ( and CSS transform ) ride on the world
@@ -360,12 +314,16 @@ RoseRmlRenderer::RenderGeometry(Rml::CompiledGeometryHandle geometry,
 
     if (texture != 0) {
         std::map<Rml::TextureHandle, Texture*>::iterator itTex = m_Textures.find(texture);
-        m_pDevice->SetTexture(0,
-            (itTex != m_Textures.end()) ? itTex->second->pTexture : NULL);
+        /// Not decoded yet: draw nothing rather than an untextured quad.
+        if (itTex != m_Textures.end() && itTex->second->bPending)
+            return;
+        Texture* pTex = (itTex != m_Textures.end()) ? itTex->second : NULL;
+        m_pDevice->SetTexture(0, pTex ? pTex->pTexture : NULL);
         m_pDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
         m_pDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE);
         m_pDevice->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
         m_pDevice->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_MODULATE);
+        SetStraightAlphaStage((pTex && pTex->bStraightAlpha) ? pTex->pTexture : NULL);
     } else {
         /// Untextured geometry ( solid backgrounds, borders ): take colour from
         /// the vertex diffuse only, otherwise stage 0 samples a stale texture.
@@ -374,18 +332,38 @@ RoseRmlRenderer::RenderGeometry(Rml::CompiledGeometryHandle geometry,
         m_pDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
         m_pDevice->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
         m_pDevice->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+        SetStraightAlphaStage(NULL);
     }
 
     DrawGeometryRaw(*pGeom);
 }
 
 void
+RoseRmlRenderer::SetStraightAlphaStage(IDirect3DTexture9* pStraight) {
+    if (pStraight == NULL) {
+        m_pDevice->SetTexture(1, NULL);
+        m_pDevice->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+        m_pDevice->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+        return;
+    }
+    /// Stage 0 gave texture x vertex colour, the vertex colour premultiplied by
+    /// RmlUi; multiplying the colour by the texture's own alpha premultiplies
+    /// the texture half. Same texture, same coordinates.
+    m_pDevice->SetTexture(1, pStraight);
+    m_pDevice->SetTextureStageState(1, D3DTSS_TEXCOORDINDEX, 0);
+    m_pDevice->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_MODULATE);
+    m_pDevice->SetTextureStageState(1, D3DTSS_COLORARG1, D3DTA_CURRENT);
+    m_pDevice->SetTextureStageState(1, D3DTSS_COLORARG2, D3DTA_TEXTURE | D3DTA_ALPHAREPLICATE);
+    m_pDevice->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+    m_pDevice->SetTextureStageState(1, D3DTSS_ALPHAARG1, D3DTA_CURRENT);
+}
+
+void
 RoseRmlRenderer::DrawGeometryRaw(const Geometry& geom) {
-    m_pDevice->SetStreamSource(0, geom.pVB, 0, sizeof(Vertex));
-    m_pDevice->SetIndices(geom.pIB);
     m_pDevice->SetFVF(kFVF);
-    m_pDevice->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, geom.iNumVerts, 0,
-        geom.iNumIndices / 3);
+    m_pDevice->DrawIndexedPrimitiveUP(D3DPT_TRIANGLELIST, 0, geom.iNumVerts,
+        geom.iNumIndices / 3, &geom.Indices[0], D3DFMT_INDEX16, &geom.Vertices[0],
+        sizeof(Vertex));
 
     ++m_iDrawCalls;
 }
@@ -396,12 +374,7 @@ RoseRmlRenderer::ReleaseGeometry(Rml::CompiledGeometryHandle geometry) {
     if (it == m_Geometries.end())
         return;
 
-    Geometry* pGeom = it->second;
-    if (pGeom->pVB != NULL)
-        pGeom->pVB->Release();
-    if (pGeom->pIB != NULL)
-        pGeom->pIB->Release();
-    delete pGeom;
+    delete it->second;
 
     m_Geometries.erase(it);
 }
@@ -469,68 +442,58 @@ RoseRmlRenderer::ReloadTexture(Texture& tex) {
         return false;
 
     /// D3DX handles DDS / PNG / TGA / BMP, covering both loose authoring art and
-    /// the game's DDS atlases. SYSTEMMEM so the result can be locked and cached.
+    /// the game's DDS atlases.
     ///
     /// **Loose files win.** A player who drops an image next to the .rcss must be
     /// able to override whatever the skin shipped with -- that is the whole point
     /// of authoring UI from editable files rather than baked atlases. The VFS is
     /// only the fallback, for the occasional case where a skin deliberately
     /// reuses existing game art ( class icons and the like ).
-    IDirect3DTexture9* pSys = NULL;
+    ///
+    /// **In the file's own format**, straight into the DEFAULT pool: the game's
+    /// icon sheets are DXT5, and decompressing one to A8R8G8B8 on the CPU and
+    /// premultiplying it pixel by pixel cost ~7 ms a sheet ( 2 ms for an
+    /// uncompressed one ) -- the UI2 shop's first open stalled on fifteen of
+    /// them. Kept compressed it is a copy. The alpha stays straight, and stage 1
+    /// premultiplies at draw time. Nothing is retained: a device rebuild reads
+    /// the file again.
+    LARGE_INTEGER start;
+    QueryPerformanceCounter(&start);
+
+    IDirect3DTexture9* pLoaded = NULL;
     bool bFromVFS = false;
 
     if (FAILED(D3DXCreateTextureFromFileExA(m_pDevice, tex.strSource.c_str(),
-            D3DX_DEFAULT_NONPOW2, D3DX_DEFAULT_NONPOW2, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM,
-            D3DX_FILTER_NONE, D3DX_FILTER_NONE, 0, NULL, NULL, &pSys))) {
+            D3DX_DEFAULT_NONPOW2, D3DX_DEFAULT_NONPOW2, 1, 0, D3DFMT_UNKNOWN, D3DPOOL_DEFAULT,
+            D3DX_FILTER_NONE, D3DX_FILTER_NONE, 0, NULL, NULL, &pLoaded))) {
         std::vector<unsigned char> FileBytes;
         if (!ReadFromVFS(tex.strSource.c_str(), FileBytes))
             return false;
         if (FAILED(D3DXCreateTextureFromFileInMemoryEx(m_pDevice, &FileBytes[0],
                 (UINT)FileBytes.size(), D3DX_DEFAULT_NONPOW2, D3DX_DEFAULT_NONPOW2, 1, 0,
-                D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, D3DX_FILTER_NONE, D3DX_FILTER_NONE, 0, NULL,
-                NULL, &pSys)))
+                D3DFMT_UNKNOWN, D3DPOOL_DEFAULT, D3DX_FILTER_NONE, D3DX_FILTER_NONE, 0, NULL,
+                NULL, &pLoaded)))
             return false;
         bFromVFS = true;
     }
 
     D3DSURFACE_DESC desc;
-    pSys->GetLevelDesc(0, &desc);
+    pLoaded->GetLevelDesc(0, &desc);
 
-    D3DLOCKED_RECT lr;
-    if (FAILED(pSys->LockRect(0, &lr, NULL, 0))) {
-        pSys->Release();
-        return false;
-    }
-
-    const int w = (int)desc.Width;
-    const int h = (int)desc.Height;
-    tex.Pixels.resize((size_t)w * h * 4);
-    for (int y = 0; y < h; ++y) {
-        memcpy(&tex.Pixels[(size_t)y * w * 4], (unsigned char*)lr.pBits + y * lr.Pitch,
-            (size_t)w * 4);
-    }
-    pSys->UnlockRect(0);
-    pSys->Release();
-
-    /// RmlUi 6 composites in premultiplied alpha; D3DX gives us straight alpha,
-    /// so premultiply here or every texture edge renders too bright.
-    for (size_t i = 0; i < tex.Pixels.size(); i += 4) {
-        const unsigned int a = tex.Pixels[i + 3];
-        tex.Pixels[i + 0] = (unsigned char)((tex.Pixels[i + 0] * a) / 255);
-        tex.Pixels[i + 1] = (unsigned char)((tex.Pixels[i + 1] * a) / 255);
-        tex.Pixels[i + 2] = (unsigned char)((tex.Pixels[i + 2] * a) / 255);
-    }
-
-    tex.iWidth = w;
-    tex.iHeight = h;
+    if (tex.pTexture != NULL)
+        tex.pTexture->Release();
+    tex.pTexture = pLoaded;
+    tex.iWidth = (int)desc.Width;
+    tex.iHeight = (int)desc.Height;
+    tex.bStraightAlpha = true;
 
     /// Say which source won. Game art and loose authoring files look identical
     /// once loaded, so without this a silently-failing VFS path is impossible to
     /// tell from a working one.
-    Rml::Log::Message(Rml::Log::LT_INFO, "RoseRmlRenderer: loaded %s from %s (%dx%d)",
-        tex.strSource.c_str(), bFromVFS ? "VFS" : "disk", w, h);
-
-    return UploadTexture(tex, &tex.Pixels[0], w, h);
+    Rml::Log::Message(Rml::Log::LT_INFO, "RoseRmlRenderer: loaded %s from %s (%dx%d) in %.1f ms",
+        tex.strSource.c_str(), bFromVFS ? "VFS" : "disk", tex.iWidth, tex.iHeight,
+        ElapsedMs(start));
+    return true;
 }
 
 Rml::TextureHandle
@@ -538,31 +501,74 @@ RoseRmlRenderer::LoadTexture(Rml::Vector2i& texture_dimensions, const Rml::Strin
     if (m_pDevice == NULL)
         return 0;
 
+    /// Only the header now: RmlUi needs the size to lay out and map a sprite
+    /// rect, not the pixels. The decode is queued for ProcessPendingTextures,
+    /// so a window showing many new icon sheets at once does not stall a frame.
+    /// Same source order as ReloadTexture: loose file first, then the VFS.
+    D3DXIMAGE_INFO info;
+    if (FAILED(D3DXGetImageInfoFromFileA(source.c_str(), &info))) {
+        std::vector<unsigned char> FileBytes;
+        if (!ReadFromVFS(source.c_str(), FileBytes)
+            || FAILED(D3DXGetImageInfoFromFileInMemory(
+                &FileBytes[0], (UINT)FileBytes.size(), &info))) {
+            Rml::Log::Message(Rml::Log::LT_WARNING,
+                "RoseRmlRenderer: failed to load texture '%s'.", source.c_str());
+            return 0;
+        }
+    }
+
     Texture* pTex = new Texture();
     pTex->pTexture = NULL;
-    pTex->iWidth = 0;
-    pTex->iHeight = 0;
+    pTex->iWidth = (int)info.Width;
+    pTex->iHeight = (int)info.Height;
     pTex->strSource = source.c_str();
-
-    if (!ReloadTexture(*pTex)) {
-        Rml::Log::Message(Rml::Log::LT_WARNING, "RoseRmlRenderer: failed to load texture '%s'.",
-            source.c_str());
-        delete pTex;
-        return 0;
-    }
+    pTex->bPending = true;
+    pTex->bStraightAlpha = false;
 
     texture_dimensions.x = pTex->iWidth;
     texture_dimensions.y = pTex->iHeight;
 
     const Rml::TextureHandle handle = m_NextTextureHandle++;
     m_Textures[handle] = pTex;
+    m_PendingTextures.push_back(handle);
     return handle;
+}
+
+void
+RoseRmlRenderer::ProcessPendingTextures() {
+    if (m_pDevice == NULL || !m_bDeviceObjectsValid)
+        return;
+
+    LARGE_INTEGER start;
+    QueryPerformanceCounter(&start);
+    bool bFirst = true;
+    while (!m_PendingTextures.empty()) {
+        if (!bFirst && ElapsedMs(start) >= kDecodeBudgetMs)
+            break;
+
+        const Rml::TextureHandle handle = m_PendingTextures.front();
+        m_PendingTextures.pop_front();
+        std::map<Rml::TextureHandle, Texture*>::iterator it = m_Textures.find(handle);
+        if (it == m_Textures.end() || !it->second->bPending)
+            continue; /// released meanwhile
+
+        Texture& tex = *it->second;
+        bFirst = false;
+        if (!ReloadTexture(tex))
+            Rml::Log::Message(Rml::Log::LT_WARNING,
+                "RoseRmlRenderer: failed to decode texture '%s'.", tex.strSource.c_str());
+        /// Drawn from now on, or ( on a failure ) never retried: an empty
+        /// texture draws as it always did when a load failed late.
+        tex.bPending = false;
+    }
 }
 
 Rml::TextureHandle
 RoseRmlRenderer::GenerateTexture(Rml::Span<const Rml::byte> source, Rml::Vector2i source_dimensions) {
     if (m_pDevice == NULL || source.empty())
         return 0;
+    ScopedMs timer(m_Work.fGeneratedMs);
+    ++m_Work.iGenerated;
 
     const int w = source_dimensions.x;
     const int h = source_dimensions.y;
@@ -573,6 +579,8 @@ RoseRmlRenderer::GenerateTexture(Rml::Span<const Rml::byte> source, Rml::Vector2
     pTex->pTexture = NULL;
     pTex->iWidth = w;
     pTex->iHeight = h;
+    pTex->bPending = false;
+    pTex->bStraightAlpha = false;
 
     /// Already premultiplied by RmlUi; only the channel order needs fixing.
     pTex->Pixels.assign(source.begin(), source.end());
@@ -654,6 +662,8 @@ Rml::CompiledShaderHandle
 RoseRmlRenderer::CompileShader(const Rml::String& name, const Rml::Dictionary& parameters) {
     if (m_pDevice == NULL)
         return 0;
+    ScopedMs timer(m_Work.fShaderMs);
+    ++m_Work.iShaders;
 
     if (name != "linear-gradient") {
         /// Radial and conic gradients are a per-pixel function of distance or
@@ -748,7 +758,7 @@ RoseRmlRenderer::RenderShader(Rml::CompiledShaderHandle shader,
 
     Shader* pShader = itShader->second;
     Geometry* pGeom = itGeom->second;
-    if (pShader->pRamp == NULL || pGeom->pVB == NULL || pGeom->pIB == NULL)
+    if (pShader->pRamp == NULL || pGeom->Vertices.empty() || pGeom->Indices.empty())
         return;
 
     SetWorld(translation);
@@ -783,6 +793,7 @@ RoseRmlRenderer::RenderShader(Rml::CompiledShaderHandle shader,
     m_pDevice->SetSamplerState(0, D3DSAMP_ADDRESSU, dwAddress);
     m_pDevice->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
 
+    SetStraightAlphaStage(NULL);
     m_pDevice->SetTexture(0, pShader->pRamp);
     m_pDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
     m_pDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE);
@@ -892,6 +903,13 @@ RoseRmlRenderer::ApplyRenderState() {
     m_pDevice->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
 
     m_pDevice->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+    /// Stage 1 samples the same texture for a straight-alpha premultiply.
+    m_pDevice->SetSamplerState(1, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+    m_pDevice->SetSamplerState(1, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+    m_pDevice->SetSamplerState(1, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+    m_pDevice->SetSamplerState(1, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+    m_pDevice->SetSamplerState(1, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+    m_pDevice->SetTextureStageState(1, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
     m_pDevice->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
     m_pDevice->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
     m_pDevice->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
@@ -932,6 +950,10 @@ RoseRmlRenderer::BeginFrame() {
     m_pDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
 
     ApplyRenderState();
+
+    /// After the state capture: the uploads touch no render state, but keep
+    /// the engine's snapshot taken before anything of ours runs.
+    ProcessPendingTextures();
 }
 
 void
@@ -940,6 +962,7 @@ RoseRmlRenderer::EndFrame() {
         return;
 
     m_pDevice->SetTexture(0, NULL);
+    m_pDevice->SetTexture(1, NULL);
     m_pDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
 
     if (m_pSavedState != NULL)

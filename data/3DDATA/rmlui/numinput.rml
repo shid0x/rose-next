@@ -1,0 +1,64 @@
+<rml>
+<head>
+    <title>How many</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="numinput.rcss"/>
+</head>
+<body data-model="numinput">
+    <!--
+        UI2 quantity question ( RoseRmlNumberInput ), replacing the classic
+        number pad: how many of a stack to buy, sell, drop, bank or trade, or
+        how much money. Opens by the mouse.
+
+        Type the number or use the pad ( the keyboard works while it is up:
+        digits, the numeric keypad, Backspace, Enter, Escape ). The first
+        digit replaces the suggested 1; past the maximum snaps to it. Max
+        answers with the maximum at once.
+    -->
+    <div id="numinput" class="ui-window">
+        <handle move_target="numinput" class="ui-titlebar">
+            <span class="ui-title">{{title}}</span>
+            <span class="ui-close" data-event-click="cancel()">X</span>
+        </handle>
+
+        <!-- What is being counted. -->
+        <div class="what" data-if="has_item">
+            <div class="cell ui-icon"><img data-if="item_src != ''" data-attr-src="item_src" data-attr-rect="item_rect"/></div>
+            <div class="wtext">
+                <span class="wname">{{item_name}}</span>
+                <span class="wmax ui-muted" data-if="max != ''">Up to {{max}}</span>
+            </div>
+        </div>
+        <div class="what" data-if="!has_item">
+            <span class="coin"></span>
+            <div class="wtext">
+                <span class="wname">Zuly</span>
+                <span class="wmax ui-muted" data-if="max != ''">Up to {{max}}</span>
+            </div>
+        </div>
+
+        <div class="display ui-well" data-class-fresh="fresh"><span class="dval">{{value}}</span></div>
+
+        <div class="pad">
+            <span class="ui-btn key" data-event-click="digit(7)">7</span>
+            <span class="ui-btn key" data-event-click="digit(8)">8</span>
+            <span class="ui-btn key" data-event-click="digit(9)">9</span>
+            <span class="ui-btn key" data-event-click="digit(4)">4</span>
+            <span class="ui-btn key" data-event-click="digit(5)">5</span>
+            <span class="ui-btn key" data-event-click="digit(6)">6</span>
+            <span class="ui-btn key" data-event-click="digit(1)">1</span>
+            <span class="ui-btn key" data-event-click="digit(2)">2</span>
+            <span class="ui-btn key" data-event-click="digit(3)">3</span>
+            <span class="ui-btn key wide" data-event-click="max()">Max</span>
+            <span class="ui-btn key" data-event-click="digit(0)">0</span>
+            <span class="ui-btn key" data-event-click="erase()">&lt;</span>
+        </div>
+
+        <div class="buttons">
+            <span class="ui-btn act" data-event-click="cancel()">Cancel</span>
+            <span class="ui-btn on act" data-event-click="ok()">OK</span>
+        </div>
+    </div>
+</body>
+</rml>

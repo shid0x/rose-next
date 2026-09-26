@@ -3,6 +3,7 @@
 #include "it_mgr.h"
 #include "../rmlui/RoseUi2.h"
 #include "../rmlui/RoseRmlUi.h"
+#include "../rmlui/RoseRmlText.h"
 #include "..\\Object.h"
 #include "CDragNDropMgr.h"
 #include "CHelpMgr.h"
@@ -961,6 +962,13 @@ IT_MGR::GetItemInventoryTAB(tagITEM sItem) {
 
 void
 IT_MGR::Close_store() {
+    /// UI2: the shop window stands in for both dialogs; closing it clears the
+    /// basket ( CDealDLG::Hide's job ) and drops a pending quantity question.
+    if (RoseUi2::CloseWindow(DLG_TYPE_STORE)) {
+        RoseUi2::CloseWindow(DLG_TYPE_N_INPUT);
+        return;
+    }
+
     // ���� �ݱ�
     CStoreDLG* pStore = (CStoreDLG*)FindDlg(DLG_TYPE_STORE);
     if (pStore) {
@@ -1272,6 +1280,15 @@ IT_MGR::OpenMsgBox(const char* szMsg,
     CTCommand* pCmdOk,
     CTCommand* pCmdCancel,
     int iMsgType) {
+    /// UI2: a plain notice ( OK only, nothing to run, no type anything looks
+    /// it up by, no invoker ) is shown by the UI2 message box -- a classic
+    /// box draws under the UI2 windows, and the shop's "not enough money"
+    /// landed right behind the shop. Anything else stays classic.
+    if (RoseUi2::IsActive() && iButtonType == CMsgBox::BT_OK && pCmdOk == NULL
+        && pCmdCancel == NULL && iMsgType == 0 && iInvokerDlgID == 0 && szMsg != NULL
+        && RoseRmlUi::NoticeBox("Notice", RoseRmlText::FromGame(szMsg).c_str()))
+        return;
+
     CreateMsgBoxData Data;
     Data.bModal = bModal;
     Data.iButtonType = iButtonType;

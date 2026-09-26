@@ -19,6 +19,7 @@
 
 #include <d3d9.h>
 #include <d3dx9math.h>
+#include <deque>
 #include <map>
 #include <string>
 #include <vector>
@@ -101,6 +102,23 @@ public:
     int GetDrawCallCount() const {
         return m_iDrawCalls;
     }
+
+    /// Work done since the last call, for the slow-frame report: geometry
+    /// compiled, textures generated ( font glyph atlases and effects ) and
+    /// gradients compiled, with their times.
+    struct WorkStats {
+        int iGeometries;
+        double fGeometryMs;
+        int iGenerated;
+        double fGeneratedMs;
+        int iShaders;
+        double fShaderMs;
+    };
+    WorkStats TakeWorkStats() {
+        WorkStats stats = m_Work;
+        m_Work = WorkStats();
+        return stats;
+    }
     void ResetStats() {
         m_iDrawCalls = 0;
     }
@@ -115,12 +133,13 @@ private:
     };
     enum { kFVF = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1 };
 
+    /// CPU-side only, drawn with DrawIndexedPrimitiveUP ( the driver streams it
+    /// through its own ring buffer ). A D3D vertex + index buffer per piece of
+    /// geometry made a window's first draw create hundreds of them -- ~50 ms
+    /// for the shop and the inventory -- and anything redrawn with new content
+    /// every frame ( a cooldown curtain ) created and freed two buffers a
+    /// frame. Nothing here dies with the device either.
     struct Geometry {
-        IDirect3DVertexBuffer9* pVB;
-        IDirect3DIndexBuffer9* pIB;
-        /// CPU-side copies are retained on purpose: RmlUi will NOT re-request
-        /// compiled geometry after a device rebuild, so we have to be able to
-        /// refill the buffers ourselves.
         std::vector<Vertex> Vertices;
         std::vector<unsigned short> Indices;
         int iNumVerts;
@@ -135,6 +154,13 @@ private:
         std::string strSource;
         /// Retained pixels for GenerateTexture()-sourced textures ( font atlases ).
         std::vector<unsigned char> Pixels;
+        /// A LoadTexture() whose decode is queued ( ProcessPendingTextures ):
+        /// its size is known, its pixels are not, and it draws nothing yet.
+        bool bPending;
+        /// Loaded from a file in its own format ( DXT stays compressed ), so
+        /// its alpha is STRAIGHT: the premultiply RmlUi expects is done by
+        /// texture stage 1 at draw time ( SetStraightAlphaStage ).
+        bool bStraightAlpha;
     };
 
     /// A compiled linear gradient: the colour ramp baked into a 1-D texture,
@@ -152,6 +178,12 @@ private:
     bool ApplyRenderState();
     bool UploadTexture(Texture& tex, const unsigned char* pBGRA, int iWidth, int iHeight);
     bool ReloadTexture(Texture& tex);
+    /// Stage 1 multiplies the colour by the texture's alpha for a straight-
+    /// alpha texture, and is off for everything else.
+    void SetStraightAlphaStage(IDirect3DTexture9* pStraight);
+    /// Decodes queued LoadTexture()s for up to kDecodeBudgetMs ( at least one
+    /// per frame ). Called from BeginFrame, before anything draws.
+    void ProcessPendingTextures();
     bool UploadRamp(Shader& sh);
     void DrawGeometryRaw(const Geometry& geom);
 
@@ -160,6 +192,9 @@ private:
 
     std::map<Rml::CompiledGeometryHandle, Geometry*> m_Geometries;
     std::map<Rml::TextureHandle, Texture*> m_Textures;
+    /// LoadTexture()s waiting for their decode, oldest first. A handle released
+    /// meanwhile is skipped ( handles are never reused ).
+    std::deque<Rml::TextureHandle> m_PendingTextures;
     std::map<Rml::CompiledShaderHandle, Shader*> m_Shaders;
     Rml::CompiledGeometryHandle m_NextGeometryHandle;
     Rml::TextureHandle m_NextTextureHandle;
@@ -172,6 +207,7 @@ private:
     RECT m_rcScissor;
 
     int m_iDrawCalls;
+    WorkStats m_Work;
     bool m_bDeviceObjectsValid;
 
     /// The active CSS transform ( SetTransform ), applied after each draw's

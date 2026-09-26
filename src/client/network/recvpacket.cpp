@@ -29,6 +29,7 @@
 
 #include "../Interface/TypeResource.h"
 #include "../rmlui/RoseRmlUi.h"
+#include "../rmlui/RoseRmlText.h"
 #include "../Interface/CHelpMgr.h"
 #include "../Interface/CUIMediator.h"
 #include "../Interface/ExternalUI/CExternalUI.h"
@@ -167,7 +168,14 @@ CRecvPACKET::Recv_gsv_SET_GLOBAL_VAR() {
         CTCmdCloseStore* pCmd = new CTCmdCloseStore;
         char szTemp[256];
         sprintf(szTemp, "%s %s", STR_CHANGE_PRICES, STR_QUERY_STOP_TRADE);
-        g_itMGR.OpenMsgBox(szTemp, CMsgBox::BT_OK | CMsgBox::BT_CANCEL, true, 0, pCmd, NULL);
+        /// UI2: over the UI2 shop, where a classic box would draw underneath.
+        if (!RoseRmlUi::ConfirmBox("Prices changed",
+                RoseRmlText::FromGame(szTemp).c_str(),
+                "Close shop",
+                "Keep shopping",
+                pCmd,
+                NULL))
+            g_itMGR.OpenMsgBox(szTemp, CMsgBox::BT_OK | CMsgBox::BT_CANCEL, true, 0, pCmd, NULL);
     }
 }
 

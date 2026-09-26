@@ -54,6 +54,15 @@ public:
 
     void SetTab(short nInvType) { m_nInvType = nInvType; }
 
+    /// UI2 ( RoseRmlShop ) draws these slots and drags with this drag item
+    /// while this dialog stays hidden as the shop's model.
+    CSlot* GetSlot(int iTab, int iSlot) {
+        return (iTab >= 0 && iTab < MAX_INV_TYPE && iSlot >= 0 && iSlot < c_iSlotCountPerTab)
+            ? &m_Slots[iTab][iSlot]
+            : NULL;
+    }
+    CDragItem* GetDragItem() { return m_pDragItem; }
+
 protected:
     enum {
         IID_BTN_CLOSE = 20,

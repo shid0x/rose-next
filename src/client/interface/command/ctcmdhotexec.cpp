@@ -84,24 +84,8 @@ CTCmdHideDialog::Exec(CTObject* pObj) {
 /*--------------------------------------------------------------------------------------------------------------------------------------*/
 bool
 CTCmdCloseStore::Exec(CTObject* pObj) {
-    // 상점 닫기
-    CStoreDLG* pStore = (CStoreDLG*)g_itMGR.FindDlg(DLG_TYPE_STORE);
-    if (pStore) {
-        pStore->SetTab(0);
-        pStore->Hide();
-    }
-
-    // 거래창 닫기
-    CTDialog* pDlg = g_itMGR.FindDlg(DLG_TYPE_DEAL);
-
-    if (pDlg && pDlg->IsVision())
-        pDlg->Hide();
-
-    ///숫자입력기가 떠 있다면 닫는다.
-    pDlg = g_itMGR.FindDlg(DLG_TYPE_N_INPUT);
-    if (pDlg && pDlg->IsVision())
-        pDlg->Hide();
-
+    /// The store, the basket and a quantity question, classic or UI2.
+    g_itMGR.Close_store();
     return true;
 }
 /*--------------------------------------------------------------------------------------------------------------------------------------*/

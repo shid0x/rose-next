@@ -372,6 +372,40 @@ also read a shared variable can be evaluated past the end when the array shrinks
 frame that variable changes** ("Data array index out of bounds") -- keep such arrays grow-only
 and hide unused rows (the minimap's marks).
 
+**Shop** (2026-09-26, `RoseRmlShop`, `DLG_TYPE_STORE` + `DLG_TYPE_DEAL` in one window): a view
+over the hidden `CStoreDLG` / `CDealDLG`, whose slots, drag items and commands it uses; the shelf
+side is `drop-target` STORE (a bag item sells now), the basket side DEAL (onto the selling list).
+Closing empties the basket -- `CDealDLG::Hide`'s job, which a routed close skips -- and
+`IT_MGR::Close_store` hands the whole close to UI2. **The quantity popup had to ship with it**:
+classic windows draw under RmlUi, so any popup a UI2 window can raise must be UI2 too.
+`RoseRmlNumberInput` replaces `CNumberInputDlg` (`DLG_TYPE_N_INPUT`) everywhere; the hidden dialog
+keeps the command (`Submit` / `Cancel`), `RoseUi2::OpenWindow` never toggles it (a second question
+used to close the first), and it takes the keyboard through `RoseRmlUi::ProcessWndMsg` (digits,
+Backspace, Enter, Escape -- the Enter/Escape `WM_CHAR` is swallowed or it opens the chat). For
+the same reason `IT_MGR::OpenMsgBox` sends a plain notice (OK only, no command, no type, no
+invoker) to the UI2 message box while UI2 is on. The popup and the message box stay on top with
+`body { z-index }`: a click pulls its document to the front.
+
+**RmlUi performance rules** (measured 2026-09-26; the shop's first open went from a 93 ms frame
+to 12 ms, a tab switch from 12-25 ms to nothing measurable):
+
+- **No auto-sized flex nested in flex.** RmlUi formats an auto-sized flex item up to three times
+  (base size, hypothetical cross size, final), multiplied at every nesting level, and it
+  re-lays out the **whole document** on any change. The shelf's icons sat five flex levels deep.
+  Grids are fixed-size floats in a `display: flow-root` box, windows get a definite `width`, and
+  flex is kept to small rows (tabs, totals, buttons). Shop, inventory and skill bar follow this.
+- **Anything that changes every frame must not force layout.** `width` / `height` / text do;
+  `transform` and `visibility` do not (the forces-layout flag in `StyleSheetSpecification.cpp`).
+  Cooldown curtains are `scaleY` with `data-visible`, not a height with `data-if`.
+- The renderer keeps geometry CPU-side and draws with `DrawIndexedPrimitiveUP` (a D3D vertex +
+  index buffer per piece made a window's first draw ~50 ms), loads file textures in their own
+  format (DXT stays compressed; texture stage 1 premultiplies at draw time -- decompressing cost
+  ~7 ms a sheet), and decodes them in `BeginFrame` under a 5 ms budget, not all in one frame.
+- `rmlui.vcxproj`'s release build lacked `NDEBUG`, so `RMLUI_DEBUG` (asserts, debug checks) was
+  compiled in while the client's headers had it off. Fixed; it was not the layout cost.
+- `[rmlui] slow UI frame:` in `client-*.log` names the panels and phases whenever UI2 takes more
+  than 8 ms of a frame, plus what the renderer had to build. Measure with it before guessing.
+
 **UI2 sounds** come from the classic XML: a UI2 window plays its replaced dialog's `SHOWSID` /
 `HIDESID` (`RoseUi2::PlayWindowSound`), and a context-wide listener plays the classic `CLICKSID`
 (8) for any `.ui-btn` or `.ui-click` (`.ui-static` opts out). `CTDialog::Hide` always plays its

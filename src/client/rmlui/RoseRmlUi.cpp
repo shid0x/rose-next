@@ -20,6 +20,8 @@
 #include "RoseRmlQuestJournal.h"
 #include "RoseRmlMinimap.h"
 #include "RoseRmlConversation.h"
+#include "RoseRmlShop.h"
+#include "RoseRmlNumberInput.h"
 #include "RoseRmlSystem.h"
 
 #include <RmlUi/Core.h>
@@ -56,6 +58,8 @@ RoseRmlInventory g_Inventory; ///< UI2: replaces CItemDlg ( a window, a view ove
 RoseRmlQuestJournal g_QuestJournal; ///< UI2: replaces CQuestDlg ( a window )
 RoseRmlMinimap g_Minimap; ///< UI2: replaces CMinimapDLG ( a view over it )
 RoseRmlConversation g_Conversation; ///< UI2: replaces the three conversation dialogs
+RoseRmlShop g_Shop; ///< UI2: replaces CStoreDLG + CDealDLG ( a view over them )
+RoseRmlNumberInput g_NumberInput; ///< UI2: replaces CNumberInputDlg
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -74,8 +78,11 @@ public:
             if (pEl->IsClassSet("ui-static")) /// styled as a button, is not one
                 return;
             if (pEl->IsClassSet("ui-btn") || pEl->IsClassSet("ui-click")) {
-                if (g_pSoundLIST != NULL)
-                    g_pSoundLIST->IDX_PlaySound(kClickSound);
+                /// click-sid: the control's own classic sound, where it had
+                /// another ( the store's tabs are radio buttons, which play 1 ).
+                const int iSound = pEl->GetAttribute<int>("click-sid", kClickSound);
+                if (g_pSoundLIST != NULL && iSound > 0)
+                    g_pSoundLIST->IDX_PlaySound((short)iSound);
                 return;
             }
             if (pEl->GetOwnerDocument() == pEl)
@@ -84,6 +91,77 @@ public:
     }
 };
 ClickSoundListener g_ClickSound;
+
+/// --- slow-frame report ---------------------------------------------------------
+/// When the UI's share of one frame ( every panel's Update, RmlUi's own update
+/// -- data bindings, styles, layout -- and the render, which also decodes queued
+/// textures ) passes kSlowUiMs, one log line says where it went. First opens
+/// are the usual suspects: a document laid out and its data-for rows built for
+/// the first time. At most one line a second.
+const double kSlowUiMs = 8.0;
+
+struct UiSlice {
+    const char* pszName;
+    double fMs;
+};
+UiSlice g_UiSlices[32];
+int g_iUiSlices = 0;
+DWORD g_dwLastSlowLog = 0;
+
+double
+NowMs() {
+    LARGE_INTEGER now, freq;
+    QueryPerformanceCounter(&now);
+    QueryPerformanceFrequency(&freq);
+    return (double)now.QuadPart * 1000.0 / (double)freq.QuadPart;
+}
+
+void
+AddSlice(const char* pszName, double fMs) {
+    if (g_iUiSlices < (int)(sizeof(g_UiSlices) / sizeof(g_UiSlices[0]))) {
+        g_UiSlices[g_iUiSlices].pszName = pszName;
+        g_UiSlices[g_iUiSlices].fMs = fMs;
+        ++g_iUiSlices;
+    }
+}
+
+/// Times one statement into the report.
+#define UI_TIMED(name, stmt)                   \
+    do {                                       \
+        const double fStart_ = NowMs();        \
+        stmt;                                  \
+        AddSlice(name, NowMs() - fStart_);     \
+    } while (0)
+
+void
+ReportSlowUiFrame() {
+    double fTotal = 0.0;
+    for (int i = 0; i < g_iUiSlices; ++i)
+        fTotal += g_UiSlices[i].fMs;
+
+    if (fTotal >= kSlowUiMs && GetTickCount() - g_dwLastSlowLog >= 1000) {
+        g_dwLastSlowLog = GetTickCount();
+        std::string strParts;
+        for (int i = 0; i < g_iUiSlices; ++i) {
+            if (g_UiSlices[i].fMs < 0.5)
+                continue;
+            char szPart[64];
+            _snprintf(szPart, sizeof(szPart), " %s=%.1f", g_UiSlices[i].pszName, g_UiSlices[i].fMs);
+            szPart[sizeof(szPart) - 1] = '\0';
+            strParts += szPart;
+        }
+        /// The renderer's share of the render: what it had to build.
+        const RoseRmlRenderer::WorkStats work = g_pRenderer ? g_pRenderer->TakeWorkStats()
+                                                            : RoseRmlRenderer::WorkStats();
+        LOG_INFO("[rmlui] slow UI frame: {:.1f} ms:{} | built: {} geometry {:.1f} ms, {} textures "
+                 "{:.1f} ms, {} gradients {:.1f} ms",
+            fTotal, strParts.c_str(), work.iGeometries, work.fGeometryMs, work.iGenerated,
+            work.fGeneratedMs, work.iShaders, work.fShaderMs);
+    }
+    if (g_pRenderer)
+        g_pRenderer->TakeWorkStats(); /// per frame
+    g_iUiSlices = 0;
+}
 
 /// True between a left-press on a panel and its release. Needed because a panel
 /// drag continues after the cursor leaves the panel: without it, the move and
@@ -283,6 +361,9 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_QuestJournal.Initialise(g_pContext, kAssetDir);
     g_Minimap.Initialise(g_pContext, kAssetDir);
     g_Conversation.Initialise(g_pContext, kAssetDir);
+    g_Shop.Initialise(g_pContext, kAssetDir);
+    /// Late, so they stack over the windows that ask them.
+    g_NumberInput.Initialise(g_pContext, kAssetDir);
     g_MessageBox.Initialise(g_pContext, kAssetDir);
 
     /// After every document is loaded: the lock walks their <handle>s.
@@ -312,6 +393,8 @@ Shutdown() {
     g_QuestJournal.Shutdown();
     g_Minimap.Shutdown();
     g_Conversation.Shutdown();
+    g_Shop.Shutdown();
+    g_NumberInput.Shutdown();
     g_MessageBox.Shutdown();
     RoseRmlLayout::Shutdown();
     g_pContext = NULL;
@@ -380,23 +463,27 @@ Update() {
         return;
 
     SyncDeviceIfChanged();
-    g_DamageMeter.Update();
-    g_StatusPanel.Update();
-    g_BuffBar.Update();
-    g_TargetFrame.Update();
-    g_InterfacePanel.Update();
-    g_SkillBar.Update();
-    g_SkillWindow.Update();
-    g_CharacterWindow.Update();
-    g_PartyFrames.Update();
-    g_PartyOptions.Update();
-    g_PartyInvite.Update();
-    g_Inventory.Update();
-    g_QuestJournal.Update();
-    g_Minimap.Update();
-    g_Conversation.Update();
-    g_MessageBox.Update();
-    g_pContext->Update();
+    g_iUiSlices = 0;
+    UI_TIMED("meter", g_DamageMeter.Update());
+    UI_TIMED("status", g_StatusPanel.Update());
+    UI_TIMED("buffs", g_BuffBar.Update());
+    UI_TIMED("target", g_TargetFrame.Update());
+    UI_TIMED("iface", g_InterfacePanel.Update());
+    UI_TIMED("skillbar", g_SkillBar.Update());
+    UI_TIMED("skills", g_SkillWindow.Update());
+    UI_TIMED("char", g_CharacterWindow.Update());
+    UI_TIMED("party", g_PartyFrames.Update());
+    UI_TIMED("partyopt", g_PartyOptions.Update());
+    UI_TIMED("invite", g_PartyInvite.Update());
+    UI_TIMED("inventory", g_Inventory.Update());
+    UI_TIMED("quests", g_QuestJournal.Update());
+    UI_TIMED("minimap", g_Minimap.Update());
+    UI_TIMED("talk", g_Conversation.Update());
+    UI_TIMED("shop", g_Shop.Update());
+    UI_TIMED("numinput", g_NumberInput.Update());
+    UI_TIMED("msgbox", g_MessageBox.Update());
+    /// Data bindings, styles and layout of every document.
+    UI_TIMED("rml-update", g_pContext->Update());
 }
 
 short
@@ -436,6 +523,13 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_EVENTDIALOG:
             g_Conversation.SetOpen(RoseRmlConversation::MODE_EVENT, bOpen);
             break;
+        case DLG_TYPE_STORE:
+        case DLG_TYPE_DEAL:
+            g_Shop.SetOpen(bOpen);
+            break;
+        case DLG_TYPE_N_INPUT:
+            g_NumberInput.SetOpen(bOpen);
+            break;
         default:
             break;
     }
@@ -464,6 +558,11 @@ IsWindowOpen(int iDlgType) {
             return g_Conversation.IsOpen(RoseRmlConversation::MODE_SELECT);
         case DLG_TYPE_EVENTDIALOG:
             return g_Conversation.IsOpen(RoseRmlConversation::MODE_EVENT);
+        case DLG_TYPE_STORE:
+        case DLG_TYPE_DEAL:
+            return g_Shop.IsOpen();
+        case DLG_TYPE_N_INPUT:
+            return g_NumberInput.IsOpen();
         default:
             return false;
     }
@@ -608,9 +707,11 @@ Render() {
     if (!g_bInitialised || g_pContext == NULL || g_pRenderer == NULL)
         return;
 
-    g_pRenderer->BeginFrame();
-    g_pContext->Render();
+    /// BeginFrame also decodes queued textures ( within its own budget ).
+    UI_TIMED("rml-begin", g_pRenderer->BeginFrame());
+    UI_TIMED("rml-render", g_pContext->Render());
     g_pRenderer->EndFrame();
+    ReportSlowUiFrame();
 }
 
 void
@@ -750,6 +851,11 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
             g_pContext->ProcessMouseButtonUp(iButton, 0);
             return true;
         }
+        case WM_KEYDOWN:
+        case WM_CHAR:
+            /// Only the UI2 quantity question takes keys ( digits, Enter,
+            /// Escape ), and only while it is up; everything else is the game's.
+            return g_NumberInput.ProcessKey(uiMsg, wParam);
         case WM_MOUSEWHEEL: {
             /// Wheel coordinates are screen-space, unlike every other mouse
             /// message here, so convert before hit-testing -- otherwise camera

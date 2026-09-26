@@ -1,6 +1,10 @@
 /* UI2 message box -- LAYOUT ONLY ( colours and materials: rose-theme.rcss ).
    Reload in game with /uireload. */
 
+/* Over every window: a click on one pulls its document to the front, which
+   would otherwise bury the question ( the quantity popup sits at 40 ). */
+body { z-index: 50; }
+
 /* Default spot: upper middle of the screen, where an answer is expected. */
 #msgbox {
     left: 42%;

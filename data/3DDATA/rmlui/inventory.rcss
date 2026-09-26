@@ -1,38 +1,48 @@
 /* UI2 inventory -- LAYOUT ONLY ( colours and materials: rose-theme.rcss, plus
    the few colours that are this window's own states ).
-   Reload in game with /uireload. */
+   Reload in game with /uireload.
+
+   PERFORMANCE: fixed-size floats, not flexbox, and a definite width -- see
+   shop.rcss. RmlUi re-lays out the whole document on any change; nested flex
+   made that 7 ms here, and a reload curtain changing its height did it at
+   every percent of a potion's cooldown ( it moves by transform now ).
+
+   Widths: gear 177 + 4 + 2 = 183, then 6, then the bag 265 + 4 + 2 = 271.
+   Grids carry 1 dp of slack so rounding at odd UI scales cannot wrap a row. */
 
 #inventory {
     left: 560dp;
     top: 160dp;
+    display: block;
+    width: 460dp;
 }
 
-/* Equipment on the left, the bag on the right. */
-.columns {
-    display: flex;
-    flex-direction: row;
-}
+/* Equipment on the left, the bag on the right: two floats. */
+.columns { display: flow-root; }
 
 /* --- what you wear ------------------------------------------------------------ */
 .gearcol {
-    display: flex;
-    flex-direction: column;
+    float: left;
+    width: 183dp;
     margin-right: 6dp;
+}
+.bagcol {
+    float: left;
+    width: 271dp;
 }
 
 
-/* Four cells across: 4 x ( 42 + 2 ) = 176, the content width exactly. */
+/* Four cells across: 4 x ( 42 + 2 ) = 176, plus 1 of slack. */
 .doll {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    width: 176dp;
+    display: flow-root;
+    width: 177dp;
     padding: 3dp 1dp 1dp 3dp;
 }
 .cell.spacer { visibility: hidden; }
 
 /* An empty slot says what goes there. */
 .label {
+    display: block;
     width: 40dp;
     margin-top: 13dp;
     text-align: center;
@@ -41,15 +51,16 @@
 }
 
 .ammo {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    width: 176dp;
+    display: flow-root;
+    width: 177dp;
     margin-top: 4dp;
     padding: 3dp 1dp 1dp 3dp;
 }
 .ammohead {
+    float: left;
     width: 42dp;
+    height: 42dp;
+    line-height: 42dp;
     margin-right: 2dp;
     margin-bottom: 2dp;
     text-align: center;
@@ -58,15 +69,14 @@
 
 /* --- PAT: the parts ( four across, as the doll ) and the mounted stats ---- */
 .parts {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    width: 176dp;
+    display: flow-root;
+    width: 177dp;
     padding: 3dp 1dp 1dp 3dp;
 }
 
+/* 169 + 5 + 5 of padding + 2 of border = 181, inside the column's 183. */
 .tune {
-    width: 176dp;
+    width: 169dp;
     margin-top: 4dp;
     padding: 3dp 5dp;
 }
@@ -129,28 +139,27 @@
 .tab.on .n { color: #ffd2b8; }
 
 /* --- the 6x5 grid ----------------------------------------------------------- */
-/* Six cells of 42 + 2 margin = 264, the content width exactly ( one dp less
+/* Six cells of 42 + 2 margin = 264, plus 1 of slack ( one dp less than 264
    and the row wraps at five ). */
 .grid {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    width: 264dp;
+    display: flow-root;
+    width: 265dp;
     padding: 3dp 1dp 1dp 3dp;
 }
 
-/* .ui-icon ( theme ) is the dark backing square. Icons are drawn at their
-   NATIVE atlas size ( 40x40 ), pinned top-left, as on the skill bar -- no
-   width/height on the img, or it is stretched and blurred. */
+/* .ui-icon ( theme ) is the dark backing square, a flex box that centres;
+   here a plain block. Icons are drawn at their NATIVE atlas size ( 40x40 ),
+   pinned top-left, as on the skill bar -- no width/height on the img, or it
+   is stretched and blurred. */
 .cell {
+    float: left;
+    display: block;
     position: relative;
     box-sizing: border-box;
     width: 42dp;
     height: 42dp;
     margin-right: 2dp;
     margin-bottom: 2dp;
-    align-items: flex-start;
-    justify-content: flex-start;
     cursor: pointer;
 }
 .cell:hover { border-color: #d0501aff; }
@@ -162,12 +171,16 @@
 .cell.dim img { image-color: #707070; }
 .cell.worn img { image-color: #ff8080; }
 
-/* Reload curtain, drains from the top. */
+/* Reload curtain, drains from the top: full height, shrunk towards the
+   bottom by a transform ( the markup binds scaleY ) -- a changing height
+   re-laid out the whole window at every percent. */
 .cd {
     position: absolute;
     left: 1dp;
     right: 1dp;
+    top: 1dp;
     bottom: 1dp;
+    transform-origin: 50% 100%;
     border-radius: 3dp;
     background-color: #000000b0;
 }

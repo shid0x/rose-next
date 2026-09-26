@@ -84,7 +84,11 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalIncludeDirectories>$(ProjectDir)RmlUi-6.2\Include;$(ProjectDir)RmlUi-6.2\Source;$(ProjectDir)freetype-2.13.3\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>RMLUI_STATIC_LIB;RMLUI_CUSTOM_RTTI;RMLUI_FONT_ENGINE_FREETYPE;_MBCS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- NDEBUG matters: without it RmlUi's Platform.h defines RMLUI_DEBUG, which
+           compiles its 266 asserts and debug checks into the release client ( e.g.
+           GetOwnerDocument re-walks the parent chain on every call, and layout calls
+           it constantly ). The client defines NDEBUG, so the two also disagreed. -->
+      <PreprocessorDefinitions>NDEBUG;RMLUI_STATIC_LIB;RMLUI_CUSTOM_RTTI;RMLUI_FONT_ENGINE_FREETYPE;_MBCS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <!-- Core/Geometry.cpp and Debugger/Geometry.cpp (and others) share basenames;

@@ -38,6 +38,18 @@ public:
 
     virtual void Update(CObservable* pObservable, CTObject* pObj);
 
+    /// UI2 ( RoseRmlShop ) draws these slots and drags with these drag items
+    /// while this dialog stays hidden as the basket's model. iList: DEAL_*.
+    CSlot* GetSlot(int iList, int iSlot) {
+        return (iList >= 0 && iList < MAX_DEAL_SELLBUY && iSlot >= 0
+                   && iSlot < TOTAL_DEAL_INVENTORY)
+            ? &m_Slots[iList][iSlot]
+            : NULL;
+    }
+    CDragItem* GetDragItem(int iList) {
+        return (iList == DEAL_BUY) ? m_pBuyDragItem : m_pSellDragItem;
+    }
+
     enum dealDLG {
         DEAL_BTN_CLOSE = 10, // 1.창닫기
         DEAL_BTN_OK, // 2.거래확인

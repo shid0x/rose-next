@@ -34,7 +34,7 @@
                      data-class-empty="!s.filled" data-class-off="s.off"
                      data-event-mousedown="press(s.index)" data-event-dblclick="use(s.index)">
                     <img data-if="s.filled" data-attr-src="s.src" data-attr-rect="s.rect"/>
-                    <div class="cd" data-if="s.cd > 0" data-style-height="s.cd + '%'"></div>
+                    <div class="cd" data-visible="s.cd > 0" data-style-transform="'scaleY(' + (s.cd + 0.1) / 100 + ')'"></div>
                     <span class="cd-text" data-if="s.cd_text != ''">{{s.cd_text}}</span>
                     <span class="count" data-if="s.count > 0">{{s.count}}</span>
                     <span class="key">{{s.key}}</span>
@@ -53,7 +53,7 @@
                      data-class-empty="!s.filled" data-class-off="s.off"
                      data-event-mousedown="press(s.index)" data-event-dblclick="use(s.index)">
                     <img data-if="s.filled" data-attr-src="s.src" data-attr-rect="s.rect"/>
-                    <div class="cd" data-if="s.cd > 0" data-style-height="s.cd + '%'"></div>
+                    <div class="cd" data-visible="s.cd > 0" data-style-transform="'scaleY(' + (s.cd + 0.1) / 100 + ')'"></div>
                     <span class="cd-text" data-if="s.cd_text != ''">{{s.cd_text}}</span>
                     <span class="count" data-if="s.count > 0">{{s.count}}</span>
                     <span class="key">{{s.key}}</span>

@@ -1,17 +1,29 @@
 /* UI2 skill bar -- LAYOUT ONLY ( colours and materials: rose-theme.rcss ).
    Reload in game with /uireload. RoseRmlSkillBar centres it at the bottom of
-   the screen until it is dragged ( by the grip ) or restored. */
+   the screen until it is dragged ( by the grip ) or restored.
+
+   PERFORMANCE: fixed-size floats, not flexbox, and a definite width -- see
+   shop.rcss. RmlUi re-lays out the whole document on any change, and this one
+   changes constantly in a fight: the cooldown curtains therefore move by
+   `transform` ( no layout at all ) and show by visibility, not by height and
+   data-if.
+
+   Horizontal: the grip ( 9 wide with its border, then 3 ) and two rows of
+   pager ( 22 + 3 ) + 8 slots x ( 42 + 2 ) = 377 -- 389 in all. */
 
 #skillbar {
     left: 0dp;
     top: 0dp;
-    flex-direction: row;       /* grip | rows */
+    display: block;
+    width: 389dp;
     padding: 3dp;
 }
 
 /* --- grip: the only drag handle, so slots stay free for their own drags ---- */
 .grip {
+    float: left;
     width: 7dp;
+    height: 84dp;              /* two rows ( 42 + 2 + 42 ) less its border */
     margin-right: 3dp;
     border: 1dp #565656ff;
     border-radius: 2dp;
@@ -22,35 +34,33 @@
 body.locked .grip { cursor: default; }
 
 .rows {
-    display: flex;
-    flex-direction: column;
+    float: left;
+    width: 377dp;
 }
 
 .row {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
+    display: flow-root;
+    height: 42dp;
 }
 .row + .row { margin-top: 2dp; }
 
 /* --- page number and arrows ----------------------------------------------- */
 .pager {
+    float: left;
     width: 22dp;
+    height: 42dp;
     margin-right: 3dp;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    text-align: center;
 }
 .page {
+    display: block;
     font-size: 13dp;
     font-weight: bold;
     font-effect: shadow(1px 1px #000000c0);
 }
-.arrows {
-    display: flex;
-    flex-direction: row;
-}
+.arrows { display: block; }
 .arrow {
+    display: inline-block;
     width: 11dp;
     text-align: center;
     font-size: 13dp;
@@ -61,8 +71,9 @@ body.locked .grip { cursor: default; }
 .arrow:hover { color: #ff9a5a; }
 
 /* --- slots ------------------------------------------------------------------ */
-/* .ui-icon ( theme ) is the dark backing square; positioned here so the
-   cooldown curtain and the labels can sit on top of the icon.
+/* .ui-icon ( theme ) is the dark backing square, a flex box that centres; here
+   a plain block, positioned so the cooldown curtain and the labels can sit on
+   top of the icon.
    Icons are drawn at their NATIVE atlas size, exactly as the classic bar
    draws them: 40x40 for most items, 39x39 for every skill. So the img gets
    NO width/height -- RmlUi then sizes it from its rect, times the UI scale --
@@ -70,13 +81,13 @@ body.locked .grip { cursor: default; }
    40 px box lands on a half pixel and every texel is blurred across two.
    The slot is the 40 px cell plus its 1 dp rim, border included. */
 .slot {
+    float: left;
+    display: block;
     position: relative;
     box-sizing: border-box;
     width: 42dp;
     height: 42dp;
     margin-right: 2dp;
-    align-items: flex-start;
-    justify-content: flex-start;
     cursor: pointer;
 }
 .slot:hover { border-color: #d0501aff; }
@@ -86,14 +97,18 @@ body.locked .grip { cursor: default; }
 /* Present but unusable ( wrong weapon, not enough MP ... ). */
 .slot.off img { image-color: #707070; }
 
-/* Cooldown: a curtain that drains from the top as the reload runs down. */
+/* Cooldown: a curtain that drains from the top as the reload runs down. Full
+   height, shrunk towards the bottom by a transform ( the markup binds
+   scaleY ): a changing height would re-lay out the bar at every percent. */
 .cd {
     position: absolute;
     left: 1dp;
     right: 1dp;
+    top: 1dp;
     bottom: 1dp;
     border-radius: 3dp;
     background-color: #000000b0;
+    transform-origin: 50% 100%;
 }
 .cd-text {
     position: absolute;
@@ -128,19 +143,28 @@ body.locked .grip { cursor: default; }
 }
 
 /* --- vertical layout ( [VIDEO] UI_SKILLBAR_VERTICAL ) -------------------------
-   The same elements, turned: the grip on top, the two rows as two columns,
-   each column's pager above its slots. */
-#skillbar.vertical { flex-direction: column; }
+   The same elements, turned: the grip on top, the two rows as two columns
+   ( 42 + 2 + 42 = 86 wide ), each column's pager above its slots. */
+#skillbar.vertical { width: 86dp; }
 
 #skillbar.vertical .grip {
+    float: none;
     width: auto;
     height: 7dp;
     margin-right: 0dp;
     margin-bottom: 3dp;
 }
 
-#skillbar.vertical .rows { flex-direction: row; }
-#skillbar.vertical .row { flex-direction: column; }
+#skillbar.vertical .rows {
+    float: none;
+    display: flow-root;
+    width: 86dp;
+}
+#skillbar.vertical .row {
+    float: left;
+    width: 42dp;
+    height: auto;
+}
 #skillbar.vertical .row + .row {
     margin-top: 0dp;
     margin-left: 2dp;
@@ -148,14 +172,20 @@ body.locked .grip { cursor: default; }
 
 /* The pager lies flat above its column: page number, then the arrows. */
 #skillbar.vertical .pager {
+    float: none;
     width: 42dp;
+    height: auto;
     margin-right: 0dp;
     margin-bottom: 3dp;
-    flex-direction: row;
-    justify-content: center;
 }
-#skillbar.vertical .page { margin-left: 3dp; margin-right: 3dp; }
+#skillbar.vertical .page {
+    display: inline-block;
+    margin-left: 3dp;
+    margin-right: 3dp;
+}
+#skillbar.vertical .arrows { display: inline-block; }
 #skillbar.vertical .slot {
+    float: none;
     margin-right: 0dp;
     margin-bottom: 2dp;
 }

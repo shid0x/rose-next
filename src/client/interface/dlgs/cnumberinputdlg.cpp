@@ -222,6 +222,20 @@ CNumberInputDlg::SetCommand(CTCmdNumberInput* pCmd, CTObject* pObj) {
 }
 
 void
+CNumberInputDlg::Submit(__int64 iNumber) {
+    if (m_iMaxNumber >= 0 && iNumber > m_iMaxNumber)
+        iNumber = m_iMaxNumber;
+    m_iLastInputNumber = iNumber;
+    SendCommand();
+}
+
+void
+CNumberInputDlg::Cancel() {
+    m_iLastInputNumber = 0;
+    ClearCommand();
+}
+
+void
 CNumberInputDlg::Hide() {
     CTDialog::Hide();
     ClearCommand();

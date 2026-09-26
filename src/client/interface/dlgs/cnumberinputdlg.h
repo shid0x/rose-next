@@ -45,6 +45,17 @@ public:
     void SetMaxNumber(__int64 iMaxNumber) { m_iMaxNumber = iMaxNumber; }
     void SetCommand(CTCmdNumberInput* pCmd, CTObject* pObj);
 
+    /// UI2 ( RoseRmlNumberInput ) asks the question while this dialog stays
+    /// hidden holding the command: what it is for, and the answer.
+    __int64 GetMaxNumber() const { return m_iMaxNumber; }
+    bool HasCommand() const { return m_pCmd != NULL; }
+    CTObject* GetCommandParam() const { return m_pCommandParam; }
+    /// OK: runs the command with iNumber ( capped at the maximum; 0 runs
+    /// nothing ), as the OK button.
+    void Submit(__int64 iNumber);
+    /// Cancel: drops the command, as the close button.
+    void Cancel();
+
 protected:
     void OnLButtonUp(unsigned iProcID);
 
