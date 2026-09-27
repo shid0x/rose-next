@@ -46,11 +46,18 @@ Beyond the MSSQL → PostgreSQL port, the notable changes from the original code
   first — the ordering rules there are subtle and were expensive to get right.
 
 **UI**
-- **RmlUi 6.2 + FreeType** — new panels can be authored in HTML/CSS-like files
-  (`.rml` / `.rcss`) instead of C++ draw calls. Off by default; see *Client
-  settings* below. Scope is deliberately limited to new/custom panels: the retail
-  dialogs, chat input and IME stay on the original `tgamectrl` framework.
-  Details in [doc/rmlui-evaluation.md](doc/rmlui-evaluation.md).
+- **UI2** — a complete remake of the in-game interface, switchable with the
+  classic one at any time (`/ui2`, or the checkbox in Options). Every in-game window
+  is converted: HUD, bag, skills, generated skill tree, quests, shops, trade,
+  crafting, community, clan, options and chat. Windows are movable, the layout
+  is saved, and the UI scales from 75 to 200%. It costs no more frames than the
+  classic UI.
+- Built on **RmlUi 6.2 + FreeType**: every window is an HTML/CSS-like file
+  (`.rml` / `.rcss`) loaded loose from `3ddata/rmlui/`, so it can be restyled
+  without recompiling (`/uireload` applies stylesheet edits in game). The shared
+  look lives in `rose-theme.rcss`. The login and character screens stay classic.
+  Details in [doc/rmlui-evaluation.md](doc/rmlui-evaluation.md) and the RmlUi
+  section of [`CLAUDE.md`](CLAUDE.md).
 - Client-side additions: damage meter (`/dps`), monster inspector, item preview
   (alt+click), chat item links (shift+click), overhead NPC quest icons, summon
   control (ctrl+click).
@@ -82,7 +89,7 @@ Client (C++/D3D9Ex) ←→ LoginServer  ←→  WorldServer  ←→  GameServer
 | Shared Rust      | `src/common-lib/`       | logger, config, FlatBuffers   |
 | 3D engine        | `src/engine/`           | Direct3D 9Ex rendering        |
 | UI framework     | `src/tgamectrl/`        | custom GUI controls (retail dialogs) |
-| UI (new panels)  | `src/client/rmlui/`     | RmlUi — HTML/CSS-like authoring |
+| UI2              | `src/client/rmlui/`, `data/3DDATA/rmlui/` | RmlUi — HTML/CSS-like windows |
 | Asset pipeline   | `src/pipeline/`         | Rust asset baking tool        |
 | Dev tools        | `src/tools/`            | VFS browser, NPC shop editor, quest editor |
 
@@ -206,7 +213,7 @@ The client reads its game content from a packed **VFS** (`data.idx` +
 ROSE Next assets from:
 
 ```
-https://mega.nz/file/0V1BnaYZ#H6-NUSiRbvv3HR_UJvgz7WZkb4ypXhTZvMjeA0CzcM4
+https://mega.nz/file/xVll1YhY#pokxwmuxV6PqQPlIs85pIqTRogZJ9KQFqAFr1dSsawQ
 ```
 
 Place the raw game files into the [`data/`](data/) folder (see
@@ -262,7 +269,8 @@ hand and are useful when developing or diagnosing:
 | `[VIDEO] D3D9EX=0` | Force the legacy D3D9 path instead of 9Ex. For A/B testing. |
 | `[VIDEO] VSYNC=0` | Disable vsync. |
 | `[VIDEO] MAX_FPS` | Default `0` (no cap). Caps the framerate via the engine's own limiter, independently of vsync. Clamped to 20–1000. **Worth setting even on fast hardware** — see below. |
-| `[VIDEO] RMLUI=1` | Enable the RmlUi UI layer. `/dps` then opens the RmlUi damage meter instead of the legacy one. |
+| `[VIDEO] UI2=1` | Use the new interface (UI2). Also set by `/ui2` and the checkbox in Options. |
+| `[VIDEO] RMLUI=1` | Enable the RmlUi layer without UI2 (implied by `UI2=1`). `/dps` then opens the RmlUi damage meter instead of the legacy one. |
 | `[VIDEO] FULLSCREEN` | `1` = fullscreen, `0` = windowed. Written by the in-game options screen. Windowed is the only resizable mode. |
 | `[VIDEO] EXCLUSIVE_FULLSCREEN` | *Which kind* of fullscreen `FULLSCREEN=1` gives you: `0` (default) = **borderless**, `1` = legacy exclusive. See below. |
 | `[RESOLUTION] WIDTH` / `HEIGHT` | Client size. Ignored in borderless, which always renders at the monitor's native size. |
