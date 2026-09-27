@@ -5,6 +5,9 @@
 #include "interface/Dlgs/QuickToolBar.h"
 #include "Game.h"
 #include "rose/io/stb.h"
+#include "rose/common/log.h"
+
+#include <vector>
 
 CClientStorage g_ClientStorage;
 const char g_szIniFileName[] = "./rose-next.ini";
@@ -13,6 +16,46 @@ const long g_ListEffectVolume[MAX_EFFECT_VOLUME] =
     {-10000, -3000, -1000, -500, -100, -50, -10, -5, 0};
 // const   float	c_GammaValues[MAX_GAMMA_COUNT] = {0.5, 0.7, 1.0, 1.2, 1.5 };
 const int c_iPeformances[MAX_PERFORMANCE_COUNT] = {5, 4, 3, 2, 1};
+
+namespace {
+
+/// Every WritePrivateProfileString opens the ini, rewrites the whole file and
+/// closes it ( and an antivirus may scan each rewrite ). Save() writes ~60
+/// keys, so the options window's OK stuttered the game for most of a second
+/// even when one tick box had changed. A key is now written only when the
+/// file holds something else -- reading back is cheap, rewriting is not.
+BOOL
+WriteIniIfChanged(const char* pszSection, const char* pszKey, const char* pszValue, const char* pszFile) {
+    if (pszValue != NULL) {
+        char szCur[512];
+        /// \x01 cannot be a saved value: a missing key always differs.
+        GetPrivateProfileStringA(pszSection, pszKey, "\x01", szCur, sizeof(szCur), pszFile);
+        if (strcmp(szCur, pszValue) == 0)
+            return TRUE;
+    }
+    return WritePrivateProfileStringA(pszSection, pszKey, pszValue, pszFile);
+}
+
+BOOL
+WriteIniStructIfChanged(const char* pszSection,
+    const char* pszKey,
+    void* pData,
+    UINT uSize,
+    const char* pszFile) {
+    std::vector<unsigned char> Cur(uSize);
+    if (uSize > 0 && GetPrivateProfileStructA(pszSection, pszKey, &Cur[0], uSize, pszFile)
+        && memcmp(&Cur[0], pData, uSize) == 0)
+        return TRUE;
+    return WritePrivateProfileStructA(pszSection, pszKey, pData, uSize, pszFile);
+}
+
+} // namespace
+
+/// For the rest of this file ( Save() and the other writers ).
+#undef WritePrivateProfileString
+#define WritePrivateProfileString WriteIniIfChanged
+#undef WritePrivateProfileStruct
+#define WritePrivateProfileStruct WriteIniStructIfChanged
 
 CClientStorage::CClientStorage(void) {
     ZeroMemory(&m_VideoOption, sizeof(t_OptionVideo));
@@ -237,6 +280,18 @@ CClientStorage::SaveJapanRoute() {
 void
 CClientStorage::Save() {
     char szTemp[512] = {0};
+    /// How long the save held the game ( logged when it returns ).
+    struct SaveTimer {
+        LARGE_INTEGER liStart;
+        SaveTimer() { QueryPerformanceCounter(&liStart); }
+        ~SaveTimer() {
+            LARGE_INTEGER liNow, liHz;
+            QueryPerformanceCounter(&liNow);
+            QueryPerformanceFrequency(&liHz);
+            LOG_INFO("[options] saved rose-next.ini in {:.1f} ms",
+                (double)(liNow.QuadPart - liStart.QuadPart) * 1000.0 / (double)liHz.QuadPart);
+        }
+    } timer;
 
     SaveOptionLastConnectID();
     /// Japan Route

@@ -1,0 +1,165 @@
+<rml>
+<head>
+    <title>Options</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="options.rcss"/>
+</head>
+<body data-model="options">
+    <!--
+        UI2 options ( RoseRmlOptions ), replacing the classic options window
+        and the UI2 Interface window. Change what you like on any tab, then
+        OK applies and saves everything; Cancel ( or X ) drops it. Defaults
+        resets the tab you are on. Saved to rose-next.ini.
+    -->
+    <div id="options" class="ui-window">
+        <handle move_target="options" class="ui-titlebar">
+            <span class="ui-title">Options</span>
+            <span class="ui-close" data-event-click="cancel()">X</span>
+        </handle>
+
+        <div class="tabs">
+            <span class="ui-btn tab" data-class-on="tab == 0" data-event-click="set_tab(0)">Graphics</span>
+            <span class="ui-btn tab" data-class-on="tab == 1" data-event-click="set_tab(1)">Sound</span>
+            <span class="ui-btn tab" data-class-on="tab == 2" data-event-click="set_tab(2)">Gameplay</span>
+            <span class="ui-btn tab" data-class-on="tab == 3" data-event-click="set_tab(3)">Interface</span>
+        </div>
+
+        <!-- Graphics. -->
+        <div class="page ui-well" data-if="tab == 0">
+            <div class="row">
+                <span class="label">Display</span>
+                <div class="ctl">
+                    <span class="ui-btn opt" data-for="c : c_display" data-class-on="c.on" data-event-click="choose(0, c.value)">{{c.label}}</span>
+                </div>
+            </div>
+            <div class="row">
+                <span class="label">Window size</span>
+                <div class="ctl" data-if="windowed">
+                    <span class="ui-btn step" data-event-click="size_step(-1)">&lt;</span>
+                    <span class="sizetext">{{win_size}}</span>
+                    <span class="ui-btn step" data-event-click="size_step(1)">&gt;</span>
+                </div>
+                <div class="ctl" data-if="!windowed">
+                    <span class="note ui-muted">{{screen}}</span>
+                </div>
+            </div>
+            <div class="row">
+                <span class="label">View distance</span>
+                <div class="ctl">
+                    <span class="ui-btn opt" data-for="c : c_view" data-class-on="c.on" data-event-click="choose(1, c.value)">{{c.label}}</span>
+                </div>
+            </div>
+            <div class="row">
+                <span class="label">Detail</span>
+                <div class="ctl">
+                    <span class="ui-btn opt small" data-for="c : c_detail" data-class-on="c.on" data-event-click="choose(2, c.value)">{{c.label}}</span>
+                </div>
+            </div>
+            <div class="row">
+                <span class="label">Shadows</span>
+                <div class="ctl">
+                    <span class="ui-btn opt" data-for="c : c_shadow" data-class-on="c.on" data-event-click="choose(3, c.value)">{{c.label}}</span>
+                </div>
+            </div>
+            <div class="row">
+                <span class="label">Antialiasing</span>
+                <div class="ctl">
+                    <span class="ui-btn opt small" data-for="c : c_aa" data-class-on="c.on" data-event-click="choose(4, c.value)">{{c.label}}</span>
+                </div>
+                <div class="sub ui-accent" data-if="aa_restart">Applies after a restart.</div>
+            </div>
+        </div>
+
+        <!-- Sound. -->
+        <div class="page ui-well" data-if="tab == 1">
+            <div class="row">
+                <span class="label">Music</span>
+                <div class="ctl vol">
+                    <span class="block" data-for="b : music" data-class-on="b.on" data-event-click="volume(0, b.value)"></span>
+                </div>
+            </div>
+            <div class="row">
+                <span class="label">Effects</span>
+                <div class="ctl vol">
+                    <span class="block" data-for="b : effects" data-class-on="b.on" data-event-click="volume(1, b.value)"></span>
+                </div>
+            </div>
+            <div class="sub ui-muted">You hear the change as you make it; Cancel puts it back.</div>
+        </div>
+
+        <!-- Gameplay. -->
+        <div class="page ui-well" data-if="tab == 2">
+            <div class="row">
+                <span class="label">Mouse</span>
+                <div class="ctl">
+                    <span class="ui-btn opt wide" data-for="c : c_mouse" data-class-on="c.on" data-event-click="choose(5, c.value)">{{c.label}}</span>
+                </div>
+                <div class="sub ui-muted">"Select, then act": a first click only selects, and the arrow keys walk and turn.</div>
+            </div>
+            <div class="row">
+                <span class="label">Chat</span>
+                <div class="ctl">
+                    <span class="ui-btn opt wide" data-for="c : c_chat" data-class-on="c.on" data-event-click="choose(6, c.value)">{{c.label}}</span>
+                </div>
+            </div>
+
+            <div class="head">Show</div>
+            <div class="checks">
+                <div class="check" data-class-on="t_pc_names" data-event-click="flip(0)"><span class="box"></span>Player names</div>
+                <div class="check" data-class-on="t_npc_names" data-event-click="flip(1)"><span class="box"></span>NPC names</div>
+                <div class="check" data-class-on="t_mob_hp" data-event-click="flip(2)"><span class="box"></span>Monster HP numbers</div>
+                <div class="check" data-class-on="t_my_name" data-event-click="flip(3)"><span class="box"></span>My own name and HP bar</div>
+            </div>
+
+            <div class="head">Accept</div>
+            <div class="checks">
+                <div class="check" data-class-on="t_whisper" data-event-click="flip(4)"><span class="box"></span>Whispers</div>
+                <div class="check" data-class-on="t_messenger" data-event-click="flip(8)"><span class="box"></span>Friends' messages</div>
+                <div class="check" data-class-on="t_friend" data-event-click="flip(5)"><span class="box"></span>Friend requests</div>
+                <div class="check" data-class-on="t_party" data-event-click="flip(7)"><span class="box"></span>Party invites</div>
+                <div class="check" data-class-on="t_trade" data-event-click="flip(6)"><span class="box"></span>Trade requests</div>
+            </div>
+        </div>
+
+        <!-- Interface. -->
+        <div class="page ui-well" data-if="tab == 3">
+            <div class="checks one">
+                <div class="check" data-class-on="t_ui2" data-event-click="flip(9)"><span class="box"></span>Use the new interface (UI2)</div>
+            </div>
+            <div class="row">
+                <span class="label">Scale</span>
+                <div class="ctl">
+                    <span class="ui-btn opt small" data-for="c : c_scale" data-class-on="c.on" data-event-click="choose(7, c.value)">{{c.label}}</span>
+                </div>
+            </div>
+            <div class="row">
+                <span class="label">Panels</span>
+                <div class="ctl">
+                    <span class="ui-btn opt" data-for="c : c_lock" data-class-on="c.on" data-event-click="choose(8, c.value)">{{c.label}}</span>
+                </div>
+            </div>
+            <div class="row">
+                <span class="label">Skill bar</span>
+                <div class="ctl">
+                    <span class="ui-btn opt" data-for="c : c_bar" data-class-on="c.on" data-event-click="choose(9, c.value)">{{c.label}}</span>
+                </div>
+            </div>
+            <div class="row">
+                <span class="label">Positions</span>
+                <div class="ctl">
+                    <span class="ui-btn opt wide" data-event-click="reset_positions()">Reset now</span>
+                </div>
+                <div class="sub ui-muted">Puts every window back where it starts, straight away.</div>
+            </div>
+        </div>
+
+        <div class="foot">
+            <span class="ui-btn fbtn left" data-event-click="defaults()">Defaults</span>
+            <!-- Right floats: the first is rightmost, so Cancel sits at the end. -->
+            <span class="ui-btn fbtn" data-event-click="cancel()">Cancel</span>
+            <span class="ui-btn fbtn" data-event-click="ok()">OK</span>
+        </div>
+    </div>
+</body>
+</rml>

@@ -127,6 +127,9 @@ const int kReplacedDialogs[] = {
     /// LIST_SKILL; the classic dialog, its XML and its painted pages are not
     /// used under UI2.
     DLG_TYPE_SKILLTREE,
+    /// RoseRmlOptions ( also in kReplacedWindows ): reads and writes
+    /// CClientStorage itself; COptionDlg::ApplyResolution is shared.
+    DLG_TYPE_OPTION,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -163,6 +166,7 @@ const int kReplacedWindows[] = {
     DLG_TYPE_CLAN_NOTICE,
     DLG_TYPE_CLAN_ORGANIZE,
     DLG_TYPE_SKILLTREE,
+    DLG_TYPE_OPTION,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).

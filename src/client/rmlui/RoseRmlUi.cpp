@@ -4,7 +4,7 @@
 
 #include "RoseRmlBuffBar.h"
 #include "RoseRmlDamageMeter.h"
-#include "RoseRmlInterfacePanel.h"
+#include "RoseRmlOptions.h"
 #include "RoseRmlLayout.h"
 #include "RoseRmlStatusPanel.h"
 #include "RoseRmlTargetFrame.h"
@@ -79,7 +79,7 @@ RoseRmlDamageMeter g_DamageMeter;
 RoseRmlStatusPanel g_StatusPanel; ///< UI2: replaces CAvatarInfoDlg
 RoseRmlBuffBar g_BuffBar; ///< UI2: replaces CEndurancePack::Draw
 RoseRmlTargetFrame g_TargetFrame; ///< UI2: new, the selected target
-RoseRmlInterfacePanel g_InterfacePanel; ///< UI2: scale / lock / reset settings
+RoseRmlOptions g_Options; ///< UI2: replaces COptionDlg, and the old Interface window ( its tab )
 RoseRmlSkillBar g_SkillBar; ///< UI2: replaces the two CQuickBARs ( as their view )
 RoseRmlSkillWindow g_SkillWindow; ///< UI2: replaces CSkillDLG ( a window )
 RoseRmlCharacterWindow g_CharacterWindow; ///< UI2: replaces CCharacterDLG ( a window )
@@ -620,7 +620,7 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_BuffBar.Initialise(g_pContext, kAssetDir);
     g_BuffBar.SetAnchor(g_StatusPanel.GetPanel());
     g_TargetFrame.Initialise(g_pContext, kAssetDir);
-    g_InterfacePanel.Initialise(g_pContext, kAssetDir);
+    g_Options.Initialise(g_pContext, kAssetDir);
     g_SkillBar.Initialise(g_pContext, kAssetDir);
     g_SkillWindow.Initialise(g_pContext, kAssetDir);
     g_CharacterWindow.Initialise(g_pContext, kAssetDir);
@@ -670,7 +670,7 @@ Shutdown() {
     g_StatusPanel.Shutdown();
     g_BuffBar.Shutdown();
     g_TargetFrame.Shutdown();
-    g_InterfacePanel.Shutdown();
+    g_Options.Shutdown();
     g_SkillBar.Shutdown();
     g_SkillWindow.Shutdown();
     g_CharacterWindow.Shutdown();
@@ -773,7 +773,7 @@ Update() {
     UI_TIMED("status", g_StatusPanel.Update());
     UI_TIMED("buffs", g_BuffBar.Update());
     UI_TIMED("target", g_TargetFrame.Update());
-    UI_TIMED("iface", g_InterfacePanel.Update());
+    UI_TIMED("options", g_Options.Update());
     UI_TIMED("skillbar", g_SkillBar.Update());
     UI_TIMED("skills", g_SkillWindow.Update());
     UI_TIMED("char", g_CharacterWindow.Update());
@@ -911,6 +911,9 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_SKILLTREE:
             g_SkillTree.SetOpen(bOpen);
             break;
+        case DLG_TYPE_OPTION:
+            g_Options.SetOpen(bOpen);
+            break;
         case DLG_TYPE_RESTART:
             if (bOpen)
                 OpenRestart();
@@ -986,6 +989,8 @@ IsWindowOpen(int iDlgType) {
             return g_ClanOrganize.IsOpen();
         case DLG_TYPE_SKILLTREE:
             return g_SkillTree.IsOpen();
+        case DLG_TYPE_OPTION:
+            return g_Options.IsOpen();
         case DLG_TYPE_RESTART:
             return g_MessageBox.IsTypePending(kMsgTypeRestart);
         default:
@@ -1208,9 +1213,9 @@ IsSkillBarVertical() {
 }
 
 void
-ToggleInterfacePanel() {
+ToggleInterfaceOptions() {
     if (g_bInitialised)
-        g_InterfacePanel.Toggle();
+        g_Options.ToggleInterfaceTab();
 }
 
 bool

@@ -122,7 +122,7 @@ RoseRmlStatusPanel::Initialise(Rml::Context* pContext, const std::string& strAss
     constructor.BindEventCallback("open_ui",
         [](Rml::DataModelHandle, Rml::Event& ev, const Rml::VariantList&) {
             ev.StopPropagation();
-            RoseRmlUi::ToggleInterfacePanel();
+            RoseRmlUi::ToggleInterfaceOptions();
         });
 
     m_Model = constructor.GetModelHandle();

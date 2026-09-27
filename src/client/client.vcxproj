@@ -438,7 +438,7 @@
     <ClCompile Include="rmlui\RoseRmlBuffBar.cpp" />
     <ClCompile Include="rmlui\RoseRmlDamageMeter.cpp" />
     <ClCompile Include="rmlui\RoseRmlIcons.cpp" />
-    <ClCompile Include="rmlui\RoseRmlInterfacePanel.cpp" />
+    <ClCompile Include="rmlui\RoseRmlOptions.cpp" />
     <ClCompile Include="rmlui\RoseRmlLayout.cpp" />
     <ClCompile Include="rmlui\RoseRmlRenderer.cpp" />
     <ClCompile Include="rmlui\RoseRmlSkillBar.cpp" />

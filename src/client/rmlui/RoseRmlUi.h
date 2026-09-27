@@ -97,9 +97,9 @@ int ReloadStyleSheets();
 void ToggleDamageMeter();
 
 /// --- UI2 --------------------------------------------------------------------
-/// The interface settings window ( scale, lock, reset layout ): "/ui" and the
-/// status panel's UI button.
-void ToggleInterfacePanel();
+/// The options window on its Interface tab ( scale, lock, reset layout ), or
+/// closed if it is showing: "/ui" and the status panel's UI button.
+void ToggleInterfaceOptions();
 
 /// The UI2 skill bar's absolute hot-icon index under the point, in the row
 /// standing for iDlgType ( DLG_TYPE_QUICKBAR / _EXT ), or -1. What

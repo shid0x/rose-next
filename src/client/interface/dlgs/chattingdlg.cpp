@@ -613,7 +613,7 @@ CChatDLG::SendChatMsg(char* szMsg) {
             g_itMGR.AppendChatMsg("Interface settings are part of UI2 ( /ui2 ).",
                 IT_MGR::CHAT_TYPE_SYSTEM);
         else
-            RoseRmlUi::ToggleInterfacePanel();
+            RoseRmlUi::ToggleInterfaceOptions();
 
         CWinCtrl* pEditCtrl = Find(IID_EDITBOX);
         if (pEditCtrl != NULL && pEditCtrl->GetControlType() == CTRL_EDITBOX)

@@ -329,17 +329,37 @@ COptionDlg::ChangeResolution(t_OptionResolution Resolution) {
         && iFrequency == m_VideoOption.tResolution.iFrequency)
         return;
 
-    if (iWidth != m_VideoOption.tResolution.iWidth || iHeight != m_VideoOption.tResolution.iHeight
-        || iDepth != m_VideoOption.tResolution.iDepth) {
-        g_pCApp->ResizeWindowByClientSize(iWidth, iHeight, iDepth, true);
+    const bool bResize = iWidth != m_VideoOption.tResolution.iWidth
+        || iHeight != m_VideoOption.tResolution.iHeight || iDepth != m_VideoOption.tResolution.iDepth;
+    if (bResize) {
         m_VideoOption.tResolution.iWidth = iWidth;
         m_VideoOption.tResolution.iHeight = iHeight;
         m_VideoOption.tResolution.iDepth = iDepth;
-        g_ClientStorage.SetVideoOption(m_VideoOption);
     }
 
-    if (iFrequency != m_VideoOption.tResolution.iFrequency) {
-        setMonitorRefreshRate(iFrequency);
+    ApplyResolution(Resolution, bResize, iFrequency != m_VideoOption.tResolution.iFrequency);
+}
+
+/// The window size ( and refresh rate ) change, shared with UI2's options
+/// ( RoseRmlOptions ): resize, store, reset the device and everything that
+/// caches the screen size.
+void
+COptionDlg::ApplyResolution(t_OptionResolution Resolution, bool bResize, bool bFrequency) {
+    if (bResize) {
+        int iWidth = Resolution.iWidth;
+        int iHeight = Resolution.iHeight;
+        g_pCApp->ResizeWindowByClientSize(iWidth, iHeight, Resolution.iDepth, true);
+
+        t_OptionVideo Video;
+        g_ClientStorage.GetVideoOption(Video);
+        Video.tResolution.iWidth = iWidth; /// as the resize adjusted them
+        Video.tResolution.iHeight = iHeight;
+        Video.tResolution.iDepth = Resolution.iDepth;
+        g_ClientStorage.SetVideoOption(Video);
+    }
+
+    if (bFrequency) {
+        setMonitorRefreshRate(Resolution.iFrequency);
         // resetScreen();
     }
 

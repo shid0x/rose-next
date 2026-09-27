@@ -563,8 +563,24 @@ close sound, so `HideReplacedDialogs` hides silently. Skill bar slots use on **d
 the classic quickbar.
 
 Also UI2: the target frame (`RoseRmlTargetFrame`, new — retail showed the target only overhead),
-the Interface window (`/ui` or the status panel's UI button: scale, lock, reset layout, back to
-classic), and Options > Play > "Use new interface (UI2)" (checkbox ID 49, loose `DlgOption.xml`).
+and, in the classic options, Play > "Use new interface (UI2)" (checkbox ID 49, loose `DlgOption.xml`).
+
+**Options** (2026-09-27, `RoseRmlOptions`, `DLG_TYPE_OPTION`): four tabs -- Graphics, Sound,
+Gameplay (incl. the social "accept" toggles and the chat keyboard mode), Interface (UI2 on/off,
+scale, lock, skill bar, reset positions -- the old `/ui` Interface window, removed; `/ui` and the
+status panel's UI button open this tab). The classic edit model, by decision: OK applies **every**
+tab and saves (classic applied only the tab on screen and dropped the rest), Cancel drops the form,
+Defaults resets the tab on screen. Clearer names: LIST_CAMERA's three presets are Korean
+"low/mid/high" (printed as mojibake) and differ only by fog -- "View distance: Near/Normal/Far";
+the "Seven Hearts" input style is the *default* "Act on click", the other one "Select, then act"
+(first click selects, arrow keys walk and turn). Antialiasing is offered but applies on restart
+(the device is built with it; unsupported levels fall back to none). Left in the ini on purpose:
+VSync, the frame cap, exclusive fullscreen, background rendering, every diagnostic knob. The
+window-size change is shared with classic (`COptionDlg::ApplyResolution`). **`CClientStorage::Save`
+writes a key only when the file holds something else** (`WriteIniIfChanged`): each
+`WritePrivateProfileString` rewrites the whole ini, and ~60 of them stuttered the game for most of
+a second on every OK; the log line `[options] saved rose-next.ini in X ms` measures it. Also:
+`size` is a reserved data-binding name (the window size printed `{{size}}`).
 
 Linear gradients are implemented in the D3D9 backend without a shader, and `border-radius` needs no
 renderer support, so skins need no image files at all. Radial/conic gradients, blurred `box-shadow`,

@@ -1,0 +1,166 @@
+/* UI2 options -- LAYOUT ONLY ( colours and materials: rose-theme.rcss, plus
+   the few colours that are this window's own states ).
+   Reload in game with /uireload. The C++ centres it the first time, until
+   it is moved.
+
+   PERFORMANCE ( see shop.rcss ): definite width; a row is a positioned block
+   with its label pinned left and its choices as fixed-size floats in a
+   flow-root box; flex only for the tab row. */
+
+#options {
+    left: 400dp;
+    top: 140dp;
+    display: block;
+    width: 470dp;
+}
+
+.tabs {
+    display: flex;
+    flex-direction: row;
+    margin-bottom: 5dp;
+}
+.tab {
+    flex: 1;
+    font-size: 10dp;
+}
+.tab + .tab { margin-left: 3dp; }
+
+.page {
+    min-height: 300dp;
+    padding: 8dp 8dp 4dp 8dp;
+}
+
+/* A setting: its name on the left, its choices after it. */
+.row {
+    position: relative;
+    margin-bottom: 8dp;
+}
+.label {
+    position: absolute;
+    left: 2dp;
+    top: 0dp;
+    line-height: 20dp;
+    font-size: 11dp;
+    color: #d8d8d8;
+}
+.ctl {
+    display: flow-root;
+    margin-left: 110dp;
+    min-height: 20dp;
+}
+.sub {
+    margin-left: 110dp;
+    margin-top: 2dp;
+    font-size: 9dp;
+    line-height: 12dp;
+}
+.page > .sub { margin-left: 2dp; }
+
+/* One choice of a group: selected = .on ( the theme's ember ). */
+.opt {
+    float: left;
+    display: block;
+    box-sizing: border-box;
+    min-width: 60dp;
+    margin: 0dp 3dp 3dp 0dp;
+    padding-left: 8dp;
+    padding-right: 8dp;
+    font-size: 10dp;
+    white-space: nowrap;
+}
+.opt.small { min-width: 44dp; padding-left: 6dp; padding-right: 6dp; }
+.opt.wide { min-width: 120dp; }
+
+/* The window size: < 1280 x 720 >. */
+.step {
+    float: left;
+    display: block;
+    box-sizing: border-box;
+    width: 24dp;
+    padding-left: 0dp;
+    padding-right: 0dp;
+}
+.sizetext {
+    float: left;
+    display: block;
+    width: 110dp;
+    line-height: 20dp;
+    text-align: center;
+    color: #f0f0f0;
+}
+.note {
+    display: block;
+    line-height: 20dp;
+    font-size: 10dp;
+}
+
+/* Volume: nine blocks, lit up to the level. */
+.vol { padding-top: 3dp; }
+.block {
+    float: left;
+    display: block;
+    box-sizing: border-box;
+    width: 24dp;
+    height: 14dp;
+    margin-right: 3dp;
+    border: 1dp #565656ff;
+    border-radius: 2dp;
+    background-color: #00000080;
+    cursor: pointer;
+}
+.block:hover { border-color: #d0501aff; }
+.block.on { background-color: #b0360eff; border-color: #e0602aff; }
+
+/* Tick boxes, two to a row. */
+.head {
+    margin: 10dp 0dp 4dp 2dp;
+    font-size: 10dp;
+    font-weight: bold;
+    color: #ffe070;
+}
+.checks {
+    display: flow-root;
+}
+.check {
+    float: left;
+    position: relative;
+    display: block;
+    width: 210dp;
+    height: 20dp;
+    padding-left: 22dp;
+    line-height: 20dp;
+    font-size: 11dp;
+    color: #d8d8d8;
+    cursor: pointer;
+}
+.checks.one .check { width: 420dp; margin-bottom: 8dp; }
+.check:hover { color: #ffffff; }
+.box {
+    position: absolute;
+    left: 2dp;
+    top: 3dp;
+    width: 14dp;
+    height: 14dp;
+    box-sizing: border-box;
+    border: 1dp #565656ff;
+    border-radius: 2dp;
+    background-color: #00000080;
+}
+.check:hover .box { border-color: #d0501aff; }
+.check.on .box { background-color: #b0360eff; border-color: #e0602aff; }
+
+/* Defaults on the left, OK and Cancel on the right. */
+.foot {
+    display: flow-root;
+    margin-top: 6dp;
+}
+.fbtn {
+    float: right;
+    display: block;
+    box-sizing: border-box;
+    width: 76dp;
+    margin-left: 4dp;
+    padding-left: 0dp;
+    padding-right: 0dp;
+}
+.fbtn.left { float: left; margin-left: 0dp; }

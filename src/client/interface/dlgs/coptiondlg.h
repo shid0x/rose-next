@@ -54,6 +54,9 @@ public:
 
     void ChangeScreenModeByHotKey(); /// Window모드와 FullScreen모드 전환
 
+    /// The window size ( and refresh rate ) change, shared with UI2's options.
+    static void ApplyResolution(t_OptionResolution Resolution, bool bResize, bool bFrequency);
+
 protected:
     enum {
         IID_BTN_CLOSE = 10,
