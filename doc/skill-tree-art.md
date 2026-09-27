@@ -1,5 +1,9 @@
 # Adding a Skill to the Skill Tree
 
+> **Classic UI only.** UI2's skill tree (`RoseRmlSkillTree`, 2026-09-27) is generated from
+> `LIST_SKILL` -- class set and prerequisite columns -- so a new skill row appears there with
+> its connectors and nothing below applies. This recipe is only for the classic window.
+
 How to make a new skill appear in the skill-tree window *with its box and connector*,
 rather than as a bare floating icon or not at all.
 

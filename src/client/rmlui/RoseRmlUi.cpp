@@ -36,6 +36,7 @@
 #include "RoseRmlCommunity.h"
 #include "RoseRmlClan.h"
 #include "RoseRmlClanOrganize.h"
+#include "RoseRmlSkillTree.h"
 #include "RoseRmlMessages.h"
 #include "RoseRmlChatRoom.h"
 #include "RoseRmlSystem.h"
@@ -108,6 +109,7 @@ RoseRmlMessages g_Messages; ///< UI2: replaces the CPrivateChatDlg windows ( one
 RoseRmlChatRoom g_ChatRoom; ///< UI2: replaces CChatRoomDlg ( the room you are in )
 RoseRmlClan g_Clan; ///< UI2: replaces CClanDlg + CClanRegistNotice
 RoseRmlClanOrganize g_ClanOrganize; ///< UI2: replaces CClanOrganizeDlg ( found a clan )
+RoseRmlSkillTree g_SkillTree; ///< UI2: replaces CSkillTreeDlg ( generated from LIST_SKILL )
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -647,6 +649,7 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_ChatRoom.Initialise(g_pContext, kAssetDir);
     g_Clan.Initialise(g_pContext, kAssetDir);
     g_ClanOrganize.Initialise(g_pContext, kAssetDir);
+    g_SkillTree.Initialise(g_pContext, kAssetDir);
     /// Late, so they stack over the windows that ask them.
     g_NumberInput.Initialise(g_pContext, kAssetDir);
     g_MessageBox.Initialise(g_pContext, kAssetDir);
@@ -695,6 +698,7 @@ Shutdown() {
     g_ChatRoom.Shutdown();
     g_Clan.Shutdown();
     g_ClanOrganize.Shutdown();
+    g_SkillTree.Shutdown();
     g_NumberInput.Shutdown();
     g_MessageBox.Shutdown();
     RoseRmlLayout::Shutdown();
@@ -797,6 +801,7 @@ Update() {
     UI_TIMED("chatroom", g_ChatRoom.Update());
     UI_TIMED("clan", g_Clan.Update());
     UI_TIMED("clanorganize", g_ClanOrganize.Update());
+    UI_TIMED("skilltree", g_SkillTree.Update());
     UI_TIMED("numinput", g_NumberInput.Update());
     UI_TIMED("msgbox", g_MessageBox.Update());
     /// Data bindings, styles and layout of every document.
@@ -903,6 +908,9 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_CLAN_ORGANIZE:
             g_ClanOrganize.SetOpen(bOpen);
             break;
+        case DLG_TYPE_SKILLTREE:
+            g_SkillTree.SetOpen(bOpen);
+            break;
         case DLG_TYPE_RESTART:
             if (bOpen)
                 OpenRestart();
@@ -976,6 +984,8 @@ IsWindowOpen(int iDlgType) {
             return false;
         case DLG_TYPE_CLAN_ORGANIZE:
             return g_ClanOrganize.IsOpen();
+        case DLG_TYPE_SKILLTREE:
+            return g_SkillTree.IsOpen();
         case DLG_TYPE_RESTART:
             return g_MessageBox.IsTypePending(kMsgTypeRestart);
         default:

@@ -1,0 +1,86 @@
+<rml>
+<head>
+    <title>Skill Tree</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="skilltree.rcss"/>
+</head>
+<body data-model="skilltree">
+    <!--
+        UI2 skill tree ( RoseRmlSkillTree ), replacing the classic one. It is
+        built from the skill table: every skill of your class, each to the
+        right of what it needs, the lines lighting up as you meet them.
+
+        Click a skill for its details, hover for its tooltip. Double-click a
+        learned skill to use it, drag it onto your skill bar. Ranks are raised
+        in the skill window.
+    -->
+    <div id="skilltree" class="ui-window">
+        <handle move_target="skilltree" class="ui-titlebar">
+            <span class="ui-title">Skill Tree <span class="cls">{{title}}</span></span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <div class="nojob ui-well" data-if="!has_tree">
+            <span class="ui-muted">Choose your first job to see your skill tree.</span>
+        </div>
+
+        <div class="filters" data-if="has_tree">
+            <span class="flabel ui-muted">Show</span>
+            <span class="ui-btn fbtn" data-for="j : jobs" data-class-on="j.on" data-event-click="filter(j.job)">{{j.name}}</span>
+        </div>
+
+        <div class="body" data-if="has_tree">
+            <!-- The tree: lanes, then the lines, then the skills on top. -->
+            <div class="view ui-well">
+                <div class="canvas" data-style-width="width + 'dp'" data-style-height="height + 'dp'">
+                    <div class="lane" data-for="l : lanes" data-class-odd="l.odd"
+                         data-style-top="l.y + 'dp'" data-style-height="l.h + 'dp'"></div>
+                    <div class="seg" data-for="s : segs" data-class-lit="s.lit" data-class-dim="s.dim"
+                         data-style-left="s.x + 'dp'" data-style-top="s.y + 'dp'"
+                         data-style-width="s.w + 'dp'" data-style-height="s.h + 'dp'"></div>
+                    <div class="node" data-for="n : nodes" data-attr-tnode="n.index"
+                         data-class-learned="n.learned" data-class-ready="n.ready"
+                         data-class-locked="n.locked" data-class-dim="n.dim" data-class-on="n.on"
+                         data-style-left="n.x + 'dp'" data-style-top="n.y + 'dp'"
+                         data-event-click="select(n.index)" data-event-mousedown="press(n.index)"
+                         data-event-dblclick="use(n.index)">
+                        <div class="icon ui-icon">
+                            <img data-attr-src="n.src" data-attr-rect="n.rect"/>
+                            <span class="rank" data-if="n.learned">{{n.rank}}</span>
+                        </div>
+                        <div class="label">
+                            <span class="nname">{{n.name}}</span>
+                            <span class="ntag" data-if="n.tag != ''">{{n.tag}}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- The clicked skill. -->
+            <div class="details ui-well">
+                <div data-if="has_sel">
+                    <span class="dname">{{sel_name}}</span>
+                    <span class="drank ui-muted">{{sel_rank}}</span>
+                    <span class="dtag" data-if="sel_tag != ''">{{sel_tag}}</span>
+                    <div class="ddesc" data-rml="sel_desc"></div>
+                    <span class="dnote" data-if="sel_note != ''">{{sel_note}}</span>
+                    <span class="dhead ui-muted">{{req_head}}</span>
+                    <div class="req" data-for="r : reqs" data-class-ok="r.ok">
+                        <span class="rmark"></span><span class="rtext">{{r.text}}</span>
+                    </div>
+                </div>
+                <div data-if="!has_sel">
+                    <span class="dhint ui-muted">Click a skill to see what it needs.</span>
+                    <div class="legend">
+                        <div class="lrow"><span class="lbox learned"></span>Learned</div>
+                        <div class="lrow"><span class="lbox ready"></span>Ready to learn</div>
+                        <div class="lrow"><span class="lbox locked"></span>Needs more first</div>
+                    </div>
+                    <span class="dhint ui-muted">A line lights up once its requirement is met.</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</rml>

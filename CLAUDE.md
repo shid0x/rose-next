@@ -515,6 +515,18 @@ now falls back to disk when the VFS has no such file -- and released (`Rml::Rele
 the file's write time changes, or RmlUi keeps drawing the cached old mark. A `<textarea>` keeps
 the keyboard on Enter (a new line), like a `keep-focus` field.
 
+**Skill tree** (2026-09-27, `RoseRmlSkillTree`, `DLG_TYPE_SKILLTREE`): **generated from
+`LIST_SKILL`, nothing hand-placed** -- no XML coordinates, no painted DDS pages. Skills = rank-1
+rows whose class set (col 35 -> `LIST_CLASS`) names a job of your family (class-less ones stay
+out); connectors = the prerequisites (cols 39-44, skill + rank), which hold every line the classic
+art drew plus the second prerequisites it left out; lanes = skills with no prerequisite that
+others need (lone ones share a last lane); column = prerequisite depth; lane = the first
+prerequisite's. The classic art had never drawn 15 skills (every Cleric buff, Vanish, two Dealer
+crafts). **A new skill row shows up in its place with its lines on its own** -- the recipe in
+`doc/skill-tree-art.md` is classic-only now. Learned / ready (requirements met) / locked read at
+three brightness levels; a filter dims the other second job. Ranks are still raised in the skill
+window, by decision, and the tree does not say where books are sold (discovery).
+
 **Text fields** (2026-09-26): an RmlUi `<input type="text" class="ui-field">` with the focus owns
 the keyboard -- `RoseRmlUi::ProcessWndMsg` hands it every key and character (printable ASCII only:
 plain English by decision, no IME) and none reaches the game; `numeric="1"` takes digits only.

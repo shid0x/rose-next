@@ -123,6 +123,10 @@ const int kReplacedDialogs[] = {
     /// RoseRmlClanOrganize ( also in kReplacedWindows ): the checks and the
     /// request are CClanOrganizeDlg::RequestOrganize.
     DLG_TYPE_CLAN_ORGANIZE,
+    /// RoseRmlSkillTree ( also in kReplacedWindows ): generated from
+    /// LIST_SKILL; the classic dialog, its XML and its painted pages are not
+    /// used under UI2.
+    DLG_TYPE_SKILLTREE,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -158,6 +162,7 @@ const int kReplacedWindows[] = {
     DLG_TYPE_CLAN,
     DLG_TYPE_CLAN_NOTICE,
     DLG_TYPE_CLAN_ORGANIZE,
+    DLG_TYPE_SKILLTREE,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).

@@ -1,0 +1,264 @@
+/* UI2 skill tree -- LAYOUT ONLY ( colours and materials: rose-theme.rcss,
+   plus the few colours that are this window's own states ).
+   Reload in game with /uireload. The C++ centres it the first time, until
+   it is moved.
+
+   The tree is laid out by RoseRmlSkillTree from the skill table: every lane,
+   line and skill is absolutely placed ( in dp ) inside one canvas of known
+   size, so a change of state never moves anything. The canvas is an in-flow
+   block of that size, which is what the view scrolls.
+
+   The view is wide enough for five columns ( the Dealer's, the widest )
+   without a sideways scroll: 2 x 10 + 4 x 144 + 118 = 714 dp.
+
+   PERFORMANCE ( see shop.rcss ): definite sizes everywhere, no flex in the
+   tree; states change classes only. */
+
+#skilltree {
+    left: 200dp;
+    top: 100dp;
+    display: block;
+    width: 968dp;
+}
+
+.cls {
+    margin-left: 6dp;
+    color: #ffe070;
+}
+
+.nojob {
+    padding: 14dp 10dp;
+}
+
+/* --- filter ---------------------------------------------------------------- */
+.filters {
+    display: flow-root;
+    margin-bottom: 5dp;
+}
+.flabel {
+    float: left;
+    display: block;
+    width: 40dp;
+    line-height: 20dp;
+    padding-left: 3dp;
+    font-size: 10dp;
+}
+.fbtn {
+    float: left;
+    display: block;
+    min-width: 70dp;
+    margin-right: 3dp;
+    box-sizing: border-box;
+    padding-left: 10dp;
+    padding-right: 10dp;
+    font-size: 10dp;
+}
+
+/* --- the two halves: tree left, details right ------------------------------ */
+.body {
+    position: relative;
+    height: 470dp;
+}
+.view {
+    position: absolute;
+    left: 0dp;
+    top: 0dp;
+    width: 726dp;
+    height: 470dp;
+    overflow: auto;
+}
+.details {
+    position: absolute;
+    right: 0dp;
+    top: 0dp;
+    width: 226dp;
+    height: 470dp;
+    box-sizing: border-box;
+    padding: 8dp 10dp;
+    overflow-y: auto;
+}
+
+/* --- the tree -------------------------------------------------------------- */
+.canvas {
+    position: relative;
+    display: block;
+}
+
+/* One band per category, every other one faintly lit. */
+.lane {
+    position: absolute;
+    left: 0dp;
+    right: 0dp;
+    background-color: #ffffff05;
+}
+.lane.odd { background-color: #ffffff0c; }
+
+/* Connectors: thin boxes. Lit ones draw over unlit ones they share a
+   stretch with. */
+.seg {
+    position: absolute;
+    background-color: #4c5160;
+}
+.seg.lit {
+    z-index: 1;
+    background-color: #d08a30;
+}
+.seg.dim { opacity: 0.25; }
+
+.node {
+    position: absolute;
+    z-index: 2;
+    width: 118dp;
+    height: 42dp;
+    border-radius: 3dp;
+    cursor: pointer;
+}
+.node:hover { background-color: #ffffff10; }
+.node.on { background-color: #7a220670; }
+.node.dim { opacity: 0.3; }
+
+/* Native-size icon pinned top-left, as on the skill bar. */
+.icon {
+    position: absolute;
+    left: 0dp;
+    top: 0dp;
+    box-sizing: border-box;
+    width: 42dp;
+    height: 42dp;
+    align-items: flex-start;
+    justify-content: flex-start;
+}
+/* Three levels of brightness, so "have it" never reads like "could have it":
+   learned = full colour, gold edge, white name;
+   ready   = icon half lit, green edge and name ( the book is yours to find );
+   locked  = icon dark, grey name. */
+.node.learned .icon { border-color: #d0a040ff; }
+.node.ready .icon { border-color: #5aa83aff; background-color: #10240ac0; }
+.node.ready .icon img { image-color: #8a8a8a; }
+.node.locked .icon img { image-color: #4a4a4a; }
+
+/* Rank over the icon's bottom right. */
+.rank {
+    position: absolute;
+    right: 2dp;
+    bottom: 0dp;
+    font-size: 9dp;
+    font-weight: bold;
+    color: #ffffff;
+    font-effect: outline(1px #000000);
+}
+
+.label {
+    margin-left: 47dp;
+    padding-top: 2dp;
+    height: 40dp;
+    overflow: hidden;
+}
+.nname {
+    display: block;
+    max-height: 24dp;
+    overflow: hidden;
+    font-size: 10dp;
+    line-height: 12dp;
+    font-weight: bold;
+    color: #f0f0f0;
+}
+.node.ready .nname { color: #8ad060; }
+.node.locked .nname { color: #8a8a8a; font-weight: normal; }
+.ntag {
+    display: block;
+    font-size: 9dp;
+    line-height: 12dp;
+    color: #c0a0ff;
+}
+
+/* --- details --------------------------------------------------------------- */
+.dname {
+    display: block;
+    font-size: 13dp;
+    font-weight: bold;
+    color: #ffe070;
+    line-height: 17dp;
+}
+.drank {
+    display: block;
+    font-size: 10dp;
+    line-height: 14dp;
+}
+.dtag {
+    display: block;
+    font-size: 10dp;
+    line-height: 14dp;
+    color: #c0a0ff;
+}
+.ddesc {
+    margin-top: 6dp;
+    font-size: 10dp;
+    line-height: 14dp;
+    color: #e0e0e0;
+}
+.dnote {
+    display: block;
+    margin-top: 6dp;
+    font-size: 10dp;
+    line-height: 14dp;
+    color: #ff9a5a;
+}
+.dhead {
+    display: block;
+    margin-top: 10dp;
+    margin-bottom: 3dp;
+    font-size: 10dp;
+}
+.req {
+    position: relative;
+    min-height: 16dp;
+    font-size: 10dp;
+    line-height: 14dp;
+    color: #ff7a60;
+}
+.req.ok { color: #9ad870; }
+/* A small light: red, green once met. */
+.rmark {
+    position: absolute;
+    left: 1dp;
+    top: 4dp;
+    width: 6dp;
+    height: 6dp;
+    border-radius: 3dp;
+    background-color: #d04a30;
+}
+.req.ok .rmark { background-color: #6ad04a; }
+.rtext {
+    display: block;
+    margin-left: 12dp;
+}
+
+.dhint {
+    display: block;
+    font-size: 10dp;
+    line-height: 14dp;
+    margin-bottom: 8dp;
+}
+.legend { margin-bottom: 8dp; }
+.lrow {
+    position: relative;
+    height: 20dp;
+    line-height: 20dp;
+    padding-left: 24dp;
+    font-size: 10dp;
+}
+.lbox {
+    position: absolute;
+    left: 0dp;
+    top: 3dp;
+    width: 14dp;
+    height: 14dp;
+    box-sizing: border-box;
+    border: 2dp #000000c0;
+    border-radius: 3dp;
+    background-color: #000000a0;
+}
+.lbox.learned { border-color: #d0a040ff; background-color: #d0a04060; }
+.lbox.ready { border-color: #5aa83aff; background-color: #10240ac0; }
+.lbox.locked { border-color: #4a4a4aff; }
