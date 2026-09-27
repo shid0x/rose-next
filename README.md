@@ -46,18 +46,25 @@ Beyond the MSSQL → PostgreSQL port, the notable changes from the original code
   first — the ordering rules there are subtle and were expensive to get right.
 
 **UI**
-- **UI2** — a complete remake of the in-game interface, switchable with the
-  classic one at any time (`/ui2`, or the checkbox in Options). Every in-game window
-  is converted: HUD, bag, skills, generated skill tree, quests, shops, trade,
+- **UI2** — a complete remake of the in-game interface. Every in-game window is
+  converted: HUD, bag, skills, generated skill tree, quests, shops, trade,
   crafting, community, clan, options and chat. Windows are movable, the layout
   is saved, and the UI scales from 75 to 200%. It costs no more frames than the
-  classic UI.
-- Built on **RmlUi 6.2 + FreeType**: every window is an HTML/CSS-like file
-  (`.rml` / `.rcss`) loaded loose from `3ddata/rmlui/`, so it can be restyled
-  without recompiling (`/uireload` applies stylesheet edits in game). The shared
-  look lives in `rose-theme.rcss`. The login and character screens stay classic.
-  Details in [doc/rmlui-evaluation.md](doc/rmlui-evaluation.md) and the RmlUi
-  section of [`CLAUDE.md`](CLAUDE.md).
+  classic UI. The login and character screens stay classic.
+- **UI2 is the interface the client ships with** (`rose-next.ini` sets
+  `[VIDEO] RMLUI=1` and `UI2=1`). The original interface is still there, for
+  nostalgia: **type `/ui2` in the chat to switch to the classic interface**, and
+  `/ui2` again to come back. It switches live and the choice is saved; the
+  checkbox in Options does the same. In UI2, `/ui` opens the interface settings:
+  scale, panel lock, reset positions. (If both keys are `0` at startup the UI2
+  layer is not loaded at all, and switching to it takes effect after a restart.)
+- **Built to be restyled.** Every UI2 window is an HTML/CSS-like file (`.rml` for
+  the layout, `.rcss` for the style) loaded loose from `3ddata/rmlui/`, using
+  **RmlUi 6.2 + FreeType**. The shared look (colours, buttons, glass) lives in
+  `rose-theme.rcss`. After editing a `.rcss` file, **type `/uireload` in game** to
+  re-read every stylesheet without restarting; changes to a `.rml` file still
+  need a restart. Details in [doc/rmlui-evaluation.md](doc/rmlui-evaluation.md)
+  and the RmlUi section of [`CLAUDE.md`](CLAUDE.md).
 - Client-side additions: damage meter (`/dps`), monster inspector, item preview
   (alt+click), chat item links (shift+click), overhead NPC quest icons, summon
   control (ctrl+click).
@@ -269,8 +276,8 @@ hand and are useful when developing or diagnosing:
 | `[VIDEO] D3D9EX=0` | Force the legacy D3D9 path instead of 9Ex. For A/B testing. |
 | `[VIDEO] VSYNC=0` | Disable vsync. |
 | `[VIDEO] MAX_FPS` | Default `0` (no cap). Caps the framerate via the engine's own limiter, independently of vsync. Clamped to 20–1000. **Worth setting even on fast hardware** — see below. |
-| `[VIDEO] UI2=1` | Use the new interface (UI2). Also set by `/ui2` and the checkbox in Options. |
-| `[VIDEO] RMLUI=1` | Enable the RmlUi layer without UI2 (implied by `UI2=1`). `/dps` then opens the RmlUi damage meter instead of the legacy one. |
+| `[VIDEO] UI2` | `1` (as shipped) = the new interface, `0` = the classic one. Also set by `/ui2` and the checkbox in Options. |
+| `[VIDEO] RMLUI` | `1` (as shipped) = load the RmlUi layer UI2 is built on, so `/ui2` can switch live either way. `UI2=1` implies it. |
 | `[VIDEO] FULLSCREEN` | `1` = fullscreen, `0` = windowed. Written by the in-game options screen. Windowed is the only resizable mode. |
 | `[VIDEO] EXCLUSIVE_FULLSCREEN` | *Which kind* of fullscreen `FULLSCREEN=1` gives you: `0` (default) = **borderless**, `1` = legacy exclusive. See below. |
 | `[RESOLUTION] WIDTH` / `HEIGHT` | Client size. Ignored in borderless, which always renders at the monitor's native size. |
