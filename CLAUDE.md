@@ -582,6 +582,31 @@ writes a key only when the file holds something else** (`WriteIniIfChanged`): ea
 a second on every OK; the log line `[options] saved rose-next.ini in X ms` measures it. Also:
 `size` is a reserved data-binding name (the window size printed `{{size}}`).
 
+**Chat** (2026-09-27, `RoseRmlChat`, `DLG_TYPE_CHAT` + `CHATFILTER`): system strip, log, five tabs
+under it (All/Whisper/Trade/Party/Clan -- the alliance channel is dropped), input; moved by its top
+bar, resized from its top-right corner (grows up; `[UI_LAYOUT] chat_size`, `RoseRmlLayout::SavePosition`).
+Filters: the Filter button at the end of the tab row (the tab's own channel locked on, whispers
+always shown), saved to `[UI_CHAT] TAB<n>`. **Sending is `CChatDLG::SendLine`**, split out of the
+classic `SendChatMsg`, which is now a wrapper: every command, prefix (`! @ $ # &`), spam/shout
+limit, GM chat block and item-link token rule is shared; it reports what the input holds next
+(`@name ` after a whisper). `IT_MGR::AppendChatMsg` feeds UI2 every line (`RoseRmlUi::ChatAppend`)
+even while the classic chat shows; `CChatDLG::AddItemLinkToInput` inserts into UI2's input when it is
+live. **Log lines are DOM elements added by C++** (`SetInnerRML`, oldest removed past a cap), not a
+data binding -- a busy chat must not re-render the log per message. Keyboard: Enter with no field
+focused takes the chat input (`ProcessWndMsg`); "Always typing" mode sets `keep-focus` and
+`esc-to-game` on it and refocuses it whenever nothing else is typing; **F1-F12 pass through every
+UI2 text field** (the skill bar while typing). **The chat body has `z-index: 0`**: a document with an
+auto z-index is pulled to the front whenever something in it takes focus, and the auto-refocus
+would drag the chat over every window. **An RmlUi text input keeps its default width when pinned
+left/right** -- wrap it in a full-width box and give it `width: 100%`.
+
+**Tutorial tip buttons** (`RoseRmlNotifyButtons`, `RoseUi2::PIECE_NOTIFY_BUTTONS`): the blinking
+buttons the tutorial adds above the chat; `CNotifyButtonDlg` stays the model (`Activate` is the click
+for both UI2 and classic), drawn with the classic normal/blink/over sprites and no frame. The tip
+text itself was already UI2 (`SC_ShowNotifyMessage`). Not converted: the GM announcement banner
+(`SYSTEMMSG`) -- unused on this server; the logout countdown (`MSGBOX_SPECIAL`) was already UI2.
+`CTargetMenu` / `CTargetObjectDLG` are dead code (never constructed).
+
 Linear gradients are implemented in the D3D9 backend without a shader, and `border-radius` needs no
 renderer support, so skins need no image files at all. Radial/conic gradients, blurred `box-shadow`,
 `filter` and `transform` are **not** implemented and will warn or do nothing. Full design notes,

@@ -73,6 +73,17 @@ bool HasMessages();
 /// false when UI2 is off.
 bool ChatRoomMessage(WORD wUserId, const char* pszMsg);
 
+/// UI2 chat ( RoseRmlChat ). ChatAppend: every line IT_MGR::AppendChatMsg
+/// shows ( game code page, CChatDLG::FILTER_* or -1 for the system strip ),
+/// kept even while the classic chat shows. The input: whether UI2's chat is
+/// the one in use, its text and an append ( game code page; item links ).
+void ChatAppend(const char* pszMsg, DWORD dwColor, int iFilter);
+bool ChatIsActive();
+std::string ChatGetInput();
+bool ChatAppendInput(const char* pszText);
+/// A UI2 text field has the keyboard.
+bool HasFocusedTextField();
+
 /// SC_SetButtonBlink on a replaced dialog: the tutorial points at a button
 /// ( the menu's MENU_BTN_* ). False when UI2 has no such button.
 bool BlinkButton(int iDlgType, int iButtonId);

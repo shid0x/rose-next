@@ -1,0 +1,61 @@
+/* UI2 tutorial notify buttons -- LAYOUT ONLY ( the art is the classic
+   sprites; this panel's own states: the blink and the grip ).
+   Reload in game with /uireload. The C++ places it above the chat, bottom
+   left, the first time, until it is moved.
+
+   No window and no frame: the button draws as the classic one did.
+
+   PERFORMANCE ( see shop.rcss ): a strip of fixed-size floats; the blink
+   animates an opacity ( no layout ), and the whole document is hidden while
+   no tip is waiting. */
+
+#notify {
+    position: absolute;
+    left: 10dp;
+    top: 400dp;
+    display: flow-root;
+}
+
+/* The grip: the strip moves by it, so a click on a tip never drags. It only
+   shows while the mouse is over the strip. */
+.grip {
+    float: left;
+    display: block;
+    width: 8dp;
+    height: 36dp;
+    margin-right: 3dp;
+    border-radius: 2dp;
+    cursor: move;
+}
+#notify:hover .grip { background-color: #ffffff30; }
+body.locked .grip { cursor: default; }
+body.locked #notify:hover .grip { background-color: transparent; }
+
+/* A tip: the classic 36 px sprites stacked at their native size. */
+.nbtn {
+    float: left;
+    position: relative;
+    width: 36dp;
+    height: 36dp;
+    margin-right: 2dp;
+    cursor: pointer;
+}
+.nbtn.unused { display: none; }
+.nbtn img {
+    position: absolute;
+    left: 0dp;
+    top: 0dp;
+}
+
+/* The classic blink ( SetBlink( 1, 500 ) ): the blink sprite fading in and
+   out over the normal one. */
+@keyframes notify-blink {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+.nbtn .blink {
+    animation: 0.5s quadratic-in-out infinite alternate notify-blink;
+}
+.nbtn .over { visibility: hidden; }
+.nbtn:hover .over { visibility: visible; }
+.nbtn:hover .blink { visibility: hidden; }

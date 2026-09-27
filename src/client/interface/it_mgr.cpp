@@ -344,7 +344,9 @@ IT_MGR::Free() {
 
 UINT
 IT_MGR::MsgProc(UINT uiMsg, WPARAM wParam, LPARAM lParam) {
-    if (m_pNotifyButtonDlg->Process(uiMsg, wParam, lParam))
+    /// UI2 shows the tutorial's notify buttons itself ( RoseRmlNotifyButtons ).
+    if (!RoseUi2::IsPieceReplaced(RoseUi2::PIECE_NOTIFY_BUTTONS)
+        && m_pNotifyButtonDlg->Process(uiMsg, wParam, lParam))
         return uiMsg;
 
     return m_pCurrState->Process(uiMsg, wParam, lParam);
@@ -682,11 +684,13 @@ IT_MGR::DrawDLGs(POINT ptMouse) {
 
     for_each(m_Dlgs.rbegin(), m_Dlgs.rend(), [ptMouse](auto d) { d->Update(ptMouse); });
     for_each(m_Icons.rbegin(), m_Icons.rend(), [ptMouse](auto i) { i->Update(ptMouse); });
-    m_pNotifyButtonDlg->Update(ptMouse);
+    if (!RoseUi2::IsPieceReplaced(RoseUi2::PIECE_NOTIFY_BUTTONS))
+        m_pNotifyButtonDlg->Update(ptMouse);
 
     for_each(m_Icons.begin(), m_Icons.end(), [](auto i) { i->Draw(); });
     for_each(m_Dlgs.begin(), m_Dlgs.end(), [](auto d) { d->Draw(); });
-    m_pNotifyButtonDlg->Draw();
+    if (!RoseUi2::IsPieceReplaced(RoseUi2::PIECE_NOTIFY_BUTTONS))
+        m_pNotifyButtonDlg->Draw();
 
     if (!IsMouseOnInterface()) {
         CInfo& MouseInfo = CCursor::GetInstance().GetMouseInfo();
@@ -1133,6 +1137,7 @@ IT_MGR::AppendChatMsg(const char* pszMsg, int iType, DWORD forceapply_color) {
                 dwColor = c_dwChatColorNotice;
 
             pChatDlg->AppendMsg2System(pszMsg, dwColor);
+            RoseRmlUi::ChatAppend(pszMsg, dwColor, -1);
             return;
         case CHAT_TYPE_SYSTEM:
             if (forceapply_color)
@@ -1141,6 +1146,7 @@ IT_MGR::AppendChatMsg(const char* pszMsg, int iType, DWORD forceapply_color) {
                 dwColor = c_dwChatColorSystem;
 
             pChatDlg->AppendMsg2System(pszMsg, dwColor);
+            RoseRmlUi::ChatAppend(pszMsg, dwColor, -1);
             return;
         case CHAT_TYPE_QUEST:
             if (forceapply_color)
@@ -1149,6 +1155,7 @@ IT_MGR::AppendChatMsg(const char* pszMsg, int iType, DWORD forceapply_color) {
                 dwColor = c_dwChatColorQuest;
 
             pChatDlg->AppendMsg2System(pszMsg, dwColor);
+            RoseRmlUi::ChatAppend(pszMsg, dwColor, -1);
             return;
         case CHAT_TYPE_QUESTREWARD:
             if (forceapply_color)
@@ -1157,6 +1164,7 @@ IT_MGR::AppendChatMsg(const char* pszMsg, int iType, DWORD forceapply_color) {
                 dwColor = c_dwChatColorQuestReward;
 
             pChatDlg->AppendMsg2System(pszMsg, dwColor);
+            RoseRmlUi::ChatAppend(pszMsg, dwColor, -1);
             return;
         case CHAT_TYPE_TRADE:
             if (forceapply_color)
@@ -1198,6 +1206,9 @@ IT_MGR::AppendChatMsg(const char* pszMsg, int iType, DWORD forceapply_color) {
     }
 
     pChatDlg->AppendMsg(pszMsg, dwColor, iFilterType);
+    /// UI2's chat keeps its own log ( its tabs filter it themselves ), fed
+    /// even while the classic chat shows, so switching loses nothing.
+    RoseRmlUi::ChatAppend(pszMsg, dwColor, iFilterType);
 }
 
 // bool IT_MGR::PacketProc( t_PACKET * pRecvPacket )

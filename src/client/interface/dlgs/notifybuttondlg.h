@@ -24,6 +24,13 @@ public:
     void AddButton(CTButton* pBtn);
     void UpdatePosition();
 
+    /// UI2 ( RoseRmlNotifyButtons ) shows the pending buttons: each one's id
+    /// is its EventButton.STB row.
+    int GetCount() const { return (int)m_Children.size(); }
+    int GetEventAt(int iIndex) const;
+    /// A button's click, shared with UI2: runs its tutorial script, removes it.
+    bool Activate(int iEventID);
+
 protected:
     std::list<CTButton*> m_Children;
 };

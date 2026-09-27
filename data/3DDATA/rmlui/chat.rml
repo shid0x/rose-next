@@ -1,0 +1,51 @@
+<rml>
+<head>
+    <title>Chat</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="chat.rcss"/>
+</head>
+<body data-model="chat">
+    <!--
+        UI2 chat ( RoseRmlChat ), replacing the classic chat and its filter
+        window. Drag the bar at the top to move it, the corner at its top
+        right to resize it; both are saved.
+
+        Top: system messages. Tabs, under the log: click one to read it ( and
+        to talk in its channel: it puts the prefix in the line ); Filter, at
+        the end of the row, chooses what the tab you are on shows.
+        Prefixes: ! shout, @name whisper, $ trade, # party, & clan. Item links: hover for the item, Alt+click to preview it.
+
+        The log lines are added by the C++ ( one element per line ), not by a
+        data binding: the lists below start empty.
+    -->
+    <div id="chat" class="ui-window">
+        <handle move_target="chat" class="grip"></handle>
+        <div class="resize" data-event-mousedown="resize_press()"></div>
+
+        <div id="system" class="system ui-well"></div>
+
+        <div id="log" class="log ui-well" data-event-mousedown="log_press()"></div>
+
+        <div class="tabs">
+            <span class="ui-btn tab" chattab="1" data-for="t : tabs" data-class-on="t.on"
+                  data-event-click="tab(t.index)">{{t.label}}</span>
+            <span class="ui-btn filterbtn" filterbtn="1" data-class-on="menu"
+                  data-event-click="filter_menu()">Filter</span>
+        </div>
+
+        <div class="inrow">
+            <input id="chatin" type="text" class="ui-field chatin" maxlength="120"
+                   data-event-change="input_change()"/>
+        </div>
+
+        <!-- The filter of the tab on screen ( the Filter button ). -->
+        <div id="filtermenu" class="menu ui-window" data-if="menu">
+            <div class="mhead ui-muted">Show in {{menu_tab}}</div>
+            <div class="mrow" data-for="f : filters" data-class-on="f.on" data-class-locked="f.locked"
+                 data-event-click="toggle_filter(f.index)"><span class="box"></span>{{f.label}}</div>
+            <div class="mnote ui-muted">Whispers always show.</div>
+        </div>
+    </div>
+</body>
+</rml>

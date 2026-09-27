@@ -1,0 +1,173 @@
+/* UI2 chat -- LAYOUT ONLY ( colours and materials: rose-theme.rcss, plus the
+   few colours that are this window's own states ).
+   Reload in game with /uireload. The C++ sets the window's size ( dp, from
+   its resize grip ) and places it bottom left the first time.
+
+   Every part is placed absolutely inside the window, so a resize changes
+   two lengths and nothing is laid out twice. The two lists hold one plain
+   block per line, added by the C++.
+
+   z-index: the input takes the keyboard in "Always typing" mode, and a
+   document with an auto z-index is pulled to the front whenever something
+   in it takes the focus -- the chat would jump over every open window. 0 is
+   not auto ( no pull ), and it is the windows' layer, so they still stack
+   over it when they are opened or clicked. */
+
+body { z-index: 0; }
+
+#chat {
+    left: 4dp;
+    top: 500dp;
+    display: block;
+    width: 400dp;
+    height: 250dp;
+    padding: 0dp;
+}
+
+/* The move bar along the top, and the resize corner at its right. */
+.grip {
+    position: absolute;
+    left: 6dp;
+    right: 24dp;
+    top: 3dp;
+    height: 8dp;
+    border-radius: 2dp;
+    background-color: #ffffff14;
+    cursor: move;
+}
+.grip:hover { background-color: #ffffff24; }
+body.locked .grip { cursor: default; background-color: #ffffff08; }
+.resize {
+    position: absolute;
+    right: 4dp;
+    top: 2dp;
+    width: 14dp;
+    height: 10dp;
+    border-top: 2dp #ffffff40;
+    border-right: 2dp #ffffff40;
+    border-radius: 0dp 3dp 0dp 0dp;
+    cursor: pointer;
+}
+.resize:hover { border-color: #d0501aff; }
+body.locked .resize { visibility: hidden; }
+
+/* System messages. */
+.system {
+    position: absolute;
+    left: 4dp;
+    right: 4dp;
+    top: 15dp;
+    height: 54dp;
+    overflow-y: auto;
+    padding: 2dp 4dp;
+}
+
+/* The log. */
+.log {
+    position: absolute;
+    left: 4dp;
+    right: 4dp;
+    top: 73dp;
+    bottom: 52dp;
+    overflow-y: auto;
+    padding: 2dp 4dp;
+}
+
+.line {
+    display: block;
+    font-size: 11dp;
+    line-height: 14dp;
+    color: #ffffff;
+    font-effect: shadow(1px 1px #000000c0);
+}
+.ilink { cursor: pointer; }
+.ilink:hover { text-decoration: underline; }
+
+/* The tabs, under the log ( where the classic chat had them ), and the
+   filter button at the end of the row. */
+.tabs {
+    position: absolute;
+    left: 4dp;
+    right: 4dp;
+    bottom: 29dp;
+    height: 20dp;
+    display: flow-root;
+}
+.tab {
+    float: left;
+    display: block;
+    box-sizing: border-box;
+    min-width: 56dp;
+    margin-right: 2dp;
+    padding-left: 8dp;
+    padding-right: 8dp;
+    font-size: 10dp;
+}
+.filterbtn {
+    float: right;
+    display: block;
+    box-sizing: border-box;
+    min-width: 50dp;
+    padding-left: 8dp;
+    padding-right: 8dp;
+    font-size: 10dp;
+}
+
+/* The input line: a text input keeps its own default width even when pinned
+   left and right, so a box spans the window and the input fills it. */
+.inrow {
+    position: absolute;
+    left: 4dp;
+    right: 4dp;
+    bottom: 4dp;
+    height: 22dp;
+}
+.chatin {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    height: 22dp;
+}
+
+/* The filter menu, above the filter button. */
+.menu {
+    position: absolute;
+    right: 4dp;
+    bottom: 52dp;
+    display: block;
+    width: 170dp;
+    padding: 4dp 6dp;
+}
+.mhead {
+    margin-bottom: 3dp;
+    font-size: 9dp;
+}
+.mrow {
+    position: relative;
+    height: 18dp;
+    padding-left: 20dp;
+    line-height: 18dp;
+    font-size: 11dp;
+    color: #d8d8d8;
+    cursor: pointer;
+}
+.mrow:hover { color: #ffffff; }
+.mrow.locked { color: #8a8a8a; cursor: default; }
+.box {
+    position: absolute;
+    left: 1dp;
+    top: 3dp;
+    width: 12dp;
+    height: 12dp;
+    box-sizing: border-box;
+    border: 1dp #565656ff;
+    border-radius: 2dp;
+    background-color: #00000080;
+}
+.mrow:hover .box { border-color: #d0501aff; }
+.mrow.on .box { background-color: #b0360eff; border-color: #e0602aff; }
+.mrow.locked .box { background-color: #5a2a14ff; border-color: #6a4030ff; }
+.mnote {
+    margin-top: 3dp;
+    font-size: 9dp;
+}

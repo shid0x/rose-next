@@ -41,6 +41,7 @@ bool IsReplaced(int iDlgType);
 /// HUD elements drawn outside the dialog system.
 enum Piece {
     PIECE_BUFF_BAR, ///< CEndurancePack::Draw: buffs, summon/fuel gauges, worn gear
+    PIECE_NOTIFY_BUTTONS, ///< CNotifyButtonDlg: the tutorial's blinking notify buttons
 };
 
 /// True when this legacy HUD piece is currently replaced by a UI2 panel.

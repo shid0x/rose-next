@@ -130,6 +130,11 @@ const int kReplacedDialogs[] = {
     /// RoseRmlOptions ( also in kReplacedWindows ): reads and writes
     /// CClientStorage itself; COptionDlg::ApplyResolution is shared.
     DLG_TYPE_OPTION,
+    /// RoseRmlChat. Hidden, NOT gone: CChatDLG keeps the send path
+    /// ( SendLine: commands, prefixes, limits, item links ) and still gets
+    /// every line; its Hide() drops the classic edit box's focus.
+    DLG_TYPE_CHAT,
+    DLG_TYPE_CHATFILTER,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -172,6 +177,7 @@ const int kReplacedWindows[] = {
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).
 const RoseUi2::Piece kReplacedPieces[] = {
     RoseUi2::PIECE_BUFF_BAR, ///< RoseRmlBuffBar
+    RoseUi2::PIECE_NOTIFY_BUTTONS, ///< RoseRmlNotifyButtons
 };
 
 const char* kIniPath = ".\\rose-next.ini";

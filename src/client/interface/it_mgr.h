@@ -269,6 +269,8 @@ public:
     /*---------------------------------------------------------------------------*/
     void AddNotifybutton(int iEventIndex); /// 알림버튼을 추가한다.
     void ClearNotifyButtons(); /// 모든 알림버튼을 닫는다.
+    /// The pending notify buttons ( UI2 shows them, RoseRmlNotifyButtons ).
+    CNotifyButtonDlg* GetNotifyButtonDlg() { return m_pNotifyButtonDlg; }
 
     /*---------------------------------------------------------------------------*/
     CTEditBox* GetFocusEditBox(); /// 현재 입력 포커스를 가진 TEditBox의 포인터를 구한다.

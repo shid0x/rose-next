@@ -1,0 +1,28 @@
+<rml>
+<head>
+    <title>Tutorial Tips</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="notify.rcss"/>
+</head>
+<body data-model="notify">
+    <!--
+        UI2 tutorial notify buttons ( RoseRmlNotifyButtons ), replacing the
+        classic ones above the chat. The tutorial adds a blinking button when
+        it has a tip for you; click it to read the tip, and it goes away.
+        Shown only while a tip is waiting; drag it by the grip, the spot is
+        saved.
+    -->
+    <div id="notify">
+        <handle move_target="notify" class="grip"></handle>
+        <div class="nbtn" data-for="b : buttons" data-class-unused="!b.used"
+             data-attr-event="b.event" data-event-click="activate(b.event)">
+            <!-- The classic sprites as they are: normal, the blink fading in
+                 and out over it, and the hover one. -->
+            <img class="normal" data-attr-src="icon_src" data-attr-rect="icon_rect"/>
+            <img class="blink" data-if="blink_src != ''" data-attr-src="blink_src" data-attr-rect="blink_rect"/>
+            <img class="over" data-if="over_src != ''" data-attr-src="over_src" data-attr-rect="over_rect"/>
+        </div>
+    </div>
+</body>
+</rml>

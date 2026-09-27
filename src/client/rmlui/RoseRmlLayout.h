@@ -36,6 +36,10 @@ void Shutdown();
 /// direct child of <body> ).
 void Track(Rml::Element* pPanel, const char* pszKey);
 
+/// Save where a tracked panel is now ( what a drag's end does ), for a panel
+/// that moves another way: the chat's top edge follows its resize grip.
+void SavePosition(Rml::Element* pPanel, const char* pszKey);
+
 /// The element under the mouse, if it belongs to pDocument; NULL otherwise.
 /// Panels find their cells by walking up to an attribute ( slot-kind ... ), and
 /// two panels can use the same one: the inventory read an empty trade slot

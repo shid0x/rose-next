@@ -289,6 +289,24 @@ CChatDLG::AddItemLinkToInput(tagITEM& sItem) {
     if (strDisplay.empty())
         return false;
 
+    /// UI2: into its chat's input, with the same pending-link bookkeeping
+    /// ( SendLine swaps "[Name]" for the token whichever input sent it ).
+    if (RoseRmlUi::ChatIsActive()) {
+        PurgeStalePendingItemLinks(RoseRmlUi::ChatGetInput().c_str());
+        if ((int)m_PendingItemLinks.size() >= CHAT_ITEM_LINK_MAX_PER_MSG) {
+            g_itMGR.AppendChatMsg("You can only link 3 items per message.",
+                IT_MGR::CHAT_TYPE_SYSTEM);
+            return false;
+        }
+        if (!RoseRmlUi::ChatAppendInput((strDisplay + " ").c_str()))
+            return false;
+        PendingItemLink sLink;
+        sLink.strDisplay = strDisplay;
+        sLink.strToken = ChatItemLink_Encode(sItem);
+        m_PendingItemLinks.push_back(sLink);
+        return true;
+    }
+
     CWinCtrl* pCtrl = Find(IID_EDITBOX);
     if (pCtrl == NULL || pCtrl->GetControlType() != CTRL_EDITBOX)
         return false;
@@ -503,19 +521,38 @@ CChatDLG::Show() {
 
 void
 CChatDLG::SendChatMsg(char* szMsg) {
-    if (szMsg == NULL)
-        return;
-
-    if (strlen(szMsg) < 1)
-        return;
-
     ActiveListBoxMoveEnd();
+
+    std::string strNext;
+    if (!SendLine(szMsg, strNext))
+        return;
+
+    CWinCtrl* pCtrl = Find(IID_EDITBOX);
+    if (pCtrl == NULL || pCtrl->GetControlType() != CTRL_EDITBOX)
+        return;
+    CTEditBox* pEditBox = (CTEditBox*)pCtrl;
+    pEditBox->clear_text();
+    if (!strNext.empty())
+        pEditBox->AppendText((char*)strNext.c_str());
+}
+
+/// The send path, shared with UI2's chat ( RoseRmlChat ): local commands,
+/// item-link tokens, the length guard, spam and shout limits, the GM chat
+/// block, then the channel by prefix. It never touches an input box: false =
+/// the line stays where it was typed ( blocked, too long ), true = it was
+/// used, and strNext is what the input holds afterwards ( "@name " after a
+/// whisper, "# " after party chat -- the classic edit box's behaviour ).
+bool
+CChatDLG::SendLine(const char* szMsg, std::string& strNext) {
+    strNext.clear();
+    if (szMsg == NULL || strlen(szMsg) < 1)
+        return false;
 
     if (IsChatBlock()) {
         g_itMGR.AppendChatMsg(STR_STATE_BLOCK_CHAT, IT_MGR::CHAT_TYPE_SYSTEM);
-        return;
+        return false;
     }
-    string stMsg = szMsg;
+    string stMsg = szMsg; /// a copy: szMsg may be the input's own buffer
 
     /// Local client commands — handled here, never sent to the server.
     /// "/dps" toggles the damage meter panel, "/dps reset" clears its data.
@@ -531,10 +568,7 @@ CChatDLG::SendChatMsg(char* szMsg) {
             g_UIMed.ToggleDamageMeter();
         }
 
-        CWinCtrl* pEditCtrl = Find(IID_EDITBOX);
-        if (pEditCtrl != NULL && pEditCtrl->GetControlType() == CTRL_EDITBOX)
-            ((CTEditBox*)pEditCtrl)->clear_text();
-        return;
+        return true;
     }
 
     /// "/perfreset" re-zeroes the streaming peak counters (Flush: peak and
@@ -548,10 +582,7 @@ CChatDLG::SendChatMsg(char* szMsg) {
         CTERRAIN::s_MapIoStats.m_nLoadCount = 0;
         g_itMGR.AppendChatMsg("Streaming peak counters reset.", IT_MGR::CHAT_TYPE_SYSTEM);
 
-        CWinCtrl* pEditCtrl = Find(IID_EDITBOX);
-        if (pEditCtrl != NULL && pEditCtrl->GetControlType() == CTRL_EDITBOX)
-            ((CTEditBox*)pEditCtrl)->clear_text();
-        return;
+        return true;
     }
 
     /// "/uistats" logs what the RmlUi layer costs over the last seconds ( see
@@ -560,10 +591,7 @@ CChatDLG::SendChatMsg(char* szMsg) {
         if (!RoseRmlUi::LogUiStats())
             g_itMGR.AppendChatMsg("RmlUi is off ( [VIDEO] RMLUI=1 ).", IT_MGR::CHAT_TYPE_SYSTEM);
 
-        CWinCtrl* pEditCtrl = Find(IID_EDITBOX);
-        if (pEditCtrl != NULL && pEditCtrl->GetControlType() == CTRL_EDITBOX)
-            ((CTEditBox*)pEditCtrl)->clear_text();
-        return;
+        return true;
     }
 
     /// "/uireload" re-reads the RmlUi stylesheets ( rose-theme.rcss and each
@@ -580,10 +608,7 @@ CChatDLG::SendChatMsg(char* szMsg) {
             g_itMGR.AppendChatMsg("RmlUi is off ( [VIDEO] RMLUI=1 ).", IT_MGR::CHAT_TYPE_SYSTEM);
         }
 
-        CWinCtrl* pEditCtrl = Find(IID_EDITBOX);
-        if (pEditCtrl != NULL && pEditCtrl->GetControlType() == CTRL_EDITBOX)
-            ((CTEditBox*)pEditCtrl)->clear_text();
-        return;
+        return true;
     }
 
     /// "/ui2" switches between the classic interface and UI2 ( the RmlUi
@@ -600,10 +625,7 @@ CChatDLG::SendChatMsg(char* szMsg) {
                 IT_MGR::CHAT_TYPE_SYSTEM);
         }
 
-        CWinCtrl* pEditCtrl = Find(IID_EDITBOX);
-        if (pEditCtrl != NULL && pEditCtrl->GetControlType() == CTRL_EDITBOX)
-            ((CTEditBox*)pEditCtrl)->clear_text();
-        return;
+        return true;
     }
 
     /// "/ui" opens the UI2 interface settings ( scale, lock, reset layout ).
@@ -615,10 +637,7 @@ CChatDLG::SendChatMsg(char* szMsg) {
         else
             RoseRmlUi::ToggleInterfaceOptions();
 
-        CWinCtrl* pEditCtrl = Find(IID_EDITBOX);
-        if (pEditCtrl != NULL && pEditCtrl->GetControlType() == CTRL_EDITBOX)
-            ((CTEditBox*)pEditCtrl)->clear_text();
-        return;
+        return true;
     }
 
     ///아이템 링크: "[Name]" → wire token 치환 ( GM 명령어는 제외 )
@@ -629,7 +648,7 @@ CChatDLG::SendChatMsg(char* szMsg) {
     ///여기서 return하면 입력창/pending 링크가 유지되어 사용자가 줄여서 재전송할 수 있다.
     if ((int)stMsg.size() > CHAT_MSG_WIRE_MAX) {
         g_itMGR.AppendChatMsg("Message too long to send.", IT_MGR::CHAT_TYPE_SYSTEM);
-        return;
+        return false;
     }
 
     m_PendingItemLinks.clear();
@@ -639,16 +658,6 @@ CChatDLG::SendChatMsg(char* szMsg) {
     string stRealMsg;
 
     int iChatType = ChatParser(stMsg, stRealMsg, stTargetID);
-
-    ///위치에 주의할껏 szMsg의 포인터가 파괴될수 있다.
-    CWinCtrl* pCtrl = Find(IID_EDITBOX);
-    if (pCtrl == NULL)
-        return;
-    if (pCtrl->GetControlType() != CTRL_EDITBOX)
-        return;
-
-    CTEditBox* pEditBox = (CTEditBox*)pCtrl;
-    pEditBox->clear_text();
 
     DWORD dwCurrentTime = g_GameDATA.GetTime();
 
@@ -678,20 +687,12 @@ CChatDLG::SendChatMsg(char* szMsg) {
         case CHAT_CLAN: {
             g_pNet->Send_cli_CLAN_CHAT((char*)stRealMsg.c_str());
 
-            pEditBox = (CTEditBox*)pCtrl;
-            std::string stTemp = "&";
-            stTemp.append(stTargetID);
-            pEditBox->AppendText((char*)stTemp.c_str());
-            pEditBox->AppendText(" ");
+            strNext = "&" + stTargetID + " ";
         } break;
         case CHAT_PARTY: {
             g_pNet->Send_cli_PARTY_CHAT((char*)stRealMsg.c_str());
 
-            pEditBox = (CTEditBox*)pCtrl;
-            std::string stTemp = "#";
-            stTemp.append(stTargetID);
-            pEditBox->AppendText((char*)stTemp.c_str());
-            pEditBox->AppendText(" ");
+            strNext = "#" + stTargetID + " ";
         } break;
         case CHAT_NORMAL:
             g_pNet->Send_cli_CHAT((char*)stRealMsg.c_str());
@@ -717,11 +718,7 @@ CChatDLG::SendChatMsg(char* szMsg) {
             Temp.append(stMsg);
             g_itMGR.AppendChatMsg(Temp.c_str(), IT_MGR::CHAT_TYPE_WHISPER);
             ///에디트박스에 @ID를 추가한다.
-            pEditBox = (CTEditBox*)pCtrl;
-            std::string stTemp = "@";
-            stTemp.append(stTargetID);
-            pEditBox->AppendText((char*)stTemp.c_str());
-            pEditBox->AppendText(" ");
+            strNext = "@" + stTargetID + " ";
 
             break;
         }
@@ -742,6 +739,7 @@ CChatDLG::SendChatMsg(char* szMsg) {
             g_pNet->Send_cli_CHAT((char*)stRealMsg.c_str());
             break;
     }
+    return true;
 }
 
 int

@@ -5,6 +5,8 @@
 #include "RoseRmlBuffBar.h"
 #include "RoseRmlDamageMeter.h"
 #include "RoseRmlOptions.h"
+#include "RoseRmlNotifyButtons.h"
+#include "RoseRmlChat.h"
 #include "RoseRmlLayout.h"
 #include "RoseRmlStatusPanel.h"
 #include "RoseRmlTargetFrame.h"
@@ -110,6 +112,8 @@ RoseRmlChatRoom g_ChatRoom; ///< UI2: replaces CChatRoomDlg ( the room you are i
 RoseRmlClan g_Clan; ///< UI2: replaces CClanDlg + CClanRegistNotice
 RoseRmlClanOrganize g_ClanOrganize; ///< UI2: replaces CClanOrganizeDlg ( found a clan )
 RoseRmlSkillTree g_SkillTree; ///< UI2: replaces CSkillTreeDlg ( generated from LIST_SKILL )
+RoseRmlNotifyButtons g_NotifyButtons; ///< UI2: the tutorial's notify buttons ( CNotifyButtonDlg )
+RoseRmlChat g_Chat; ///< UI2: replaces CChatDLG + CChatFilterDlg
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -407,6 +411,18 @@ ProcessTextFieldKey(UINT uiMsg, WPARAM wParam) {
     if (pField == NULL)
         return false;
 
+    if (uiMsg == WM_KEYDOWN || uiMsg == WM_KEYUP) {
+        /// F-keys are the game's from any field: the skill bar's F1-F8 work
+        /// while typing ( the chat in "Always typing" mode has the keyboard
+        /// nearly all the time ).
+        if (wParam >= VK_F1 && wParam <= VK_F12)
+            return false;
+        /// The chat in "Always typing" mode: Escape is the game's ( it closes
+        /// windows ), and the field keeps the keyboard.
+        if (wParam == VK_ESCAPE && pField->HasAttribute("esc-to-game"))
+            return false;
+    }
+
     if (uiMsg == WM_CHAR) {
         const bool bNumeric = pField->HasAttribute("numeric");
         if (wParam >= 0x20 && wParam < 0x7F && !(GetKeyState(VK_CONTROL) < 0)
@@ -650,6 +666,8 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_Clan.Initialise(g_pContext, kAssetDir);
     g_ClanOrganize.Initialise(g_pContext, kAssetDir);
     g_SkillTree.Initialise(g_pContext, kAssetDir);
+    g_NotifyButtons.Initialise(g_pContext, kAssetDir);
+    g_Chat.Initialise(g_pContext, kAssetDir);
     /// Late, so they stack over the windows that ask them.
     g_NumberInput.Initialise(g_pContext, kAssetDir);
     g_MessageBox.Initialise(g_pContext, kAssetDir);
@@ -699,6 +717,8 @@ Shutdown() {
     g_Clan.Shutdown();
     g_ClanOrganize.Shutdown();
     g_SkillTree.Shutdown();
+    g_NotifyButtons.Shutdown();
+    g_Chat.Shutdown();
     g_NumberInput.Shutdown();
     g_MessageBox.Shutdown();
     RoseRmlLayout::Shutdown();
@@ -802,6 +822,8 @@ Update() {
     UI_TIMED("clan", g_Clan.Update());
     UI_TIMED("clanorganize", g_ClanOrganize.Update());
     UI_TIMED("skilltree", g_SkillTree.Update());
+    UI_TIMED("notify", g_NotifyButtons.Update());
+    UI_TIMED("chat", g_Chat.Update());
     UI_TIMED("numinput", g_NumberInput.Update());
     UI_TIMED("msgbox", g_MessageBox.Update());
     /// Data bindings, styles and layout of every document.
@@ -1447,6 +1469,13 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
             /// the game's.
             if (g_NumberInput.ProcessKey(uiMsg, wParam))
                 return true;
+            /// Enter with nobody typing: the chat's input takes the keyboard
+            /// ( what the classic chat's edit box did, in both chat modes ).
+            if (uiMsg == WM_KEYDOWN && wParam == VK_RETURN && FocusedTextField() == NULL
+                && CTEditBox::s_pFocusEdit == NULL && g_Chat.FocusInput()) {
+                g_TextSwallowChar = VK_RETURN;
+                return true;
+            }
             return ProcessTextFieldKey(uiMsg, wParam);
         case WM_KEYUP:
             return ProcessTextFieldKey(uiMsg, wParam);
@@ -1600,6 +1629,32 @@ ChatRoomMessage(WORD wUserId, const char* pszMsg) {
         return false;
     g_ChatRoom.Receive(wUserId, pszMsg);
     return true;
+}
+
+void
+ChatAppend(const char* pszMsg, DWORD dwColor, int iFilter) {
+    if (g_bInitialised)
+        g_Chat.Append(pszMsg, dwColor, iFilter);
+}
+
+bool
+ChatIsActive() {
+    return g_bInitialised && g_Chat.IsActive();
+}
+
+std::string
+ChatGetInput() {
+    return g_bInitialised ? g_Chat.GetInput() : std::string();
+}
+
+bool
+ChatAppendInput(const char* pszText) {
+    return g_bInitialised && g_Chat.AppendInput(pszText);
+}
+
+bool
+HasFocusedTextField() {
+    return g_bInitialised && FocusedTextField() != NULL;
 }
 
 bool

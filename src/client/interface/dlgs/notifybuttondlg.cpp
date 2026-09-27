@@ -30,15 +30,38 @@ CNotifyButtonDlg::Process(unsigned uiMsg, WPARAM wParam, LPARAM lParam) {
                 // pDlg->GetHeight() - 2 }; 	pDlg->MoveWindow( pt );
                 //}
 
-                CTutorialEventUtility::GetSingleton().ExecNotifyEvent((*iter)->GetControlID());
-                delete *iter;
-                m_Children.erase(iter);
-                UpdatePosition();
+                Activate((*iter)->GetControlID());
             }
             return uiMsg;
         }
     }
     return 0;
+}
+
+int
+CNotifyButtonDlg::GetEventAt(int iIndex) const {
+    int i = 0;
+    for (std::list<CTButton*>::const_iterator iter = m_Children.begin(); iter != m_Children.end();
+         ++iter, ++i) {
+        if (i == iIndex)
+            return (*iter)->GetControlID();
+    }
+    return 0;
+}
+
+bool
+CNotifyButtonDlg::Activate(int iEventID) {
+    for (std::list<CTButton*>::iterator iter = m_Children.begin(); iter != m_Children.end(); ++iter) {
+        if ((int)(*iter)->GetControlID() != iEventID)
+            continue;
+        /// Removed first: the script may add the next tutorial button.
+        delete *iter;
+        m_Children.erase(iter);
+        UpdatePosition();
+        CTutorialEventUtility::GetSingleton().ExecNotifyEvent(iEventID);
+        return true;
+    }
+    return false;
 }
 
 void

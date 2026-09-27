@@ -62,15 +62,7 @@ public:
     explicit SaveOnDragEnd(const char* pszKey): m_strKey(pszKey) {}
 
     void ProcessEvent(Rml::Event& ev) override {
-        Rml::Element* pPanel = ev.GetCurrentElement();
-        if (pPanel == NULL)
-            return;
-
-        const Rml::Vector2f pos = pPanel->GetAbsoluteOffset(Rml::BoxArea::Border);
-        char szBuf[32];
-        _snprintf(szBuf, sizeof(szBuf), "%d,%d", (int)pos.x, (int)pos.y);
-        szBuf[sizeof(szBuf) - 1] = '\0';
-        WritePrivateProfileStringA(kSection, m_strKey.c_str(), szBuf, kIniPath);
+        RoseRmlLayout::SavePosition(ev.GetCurrentElement(), m_strKey.c_str());
     }
 
     void OnDetach(Rml::Element*) override { delete this; }
@@ -121,6 +113,17 @@ Initialise(Rml::Context* pContext) {
     ApplyLock();
 
     LOG_INFO("[rmlui] ui scale {}%, panels {}", g_iScale, g_bLocked ? "locked" : "movable");
+}
+
+void
+SavePosition(Rml::Element* pPanel, const char* pszKey) {
+    if (pPanel == NULL || pszKey == NULL)
+        return;
+    const Rml::Vector2f pos = pPanel->GetAbsoluteOffset(Rml::BoxArea::Border);
+    char szBuf[32];
+    _snprintf(szBuf, sizeof(szBuf), "%d,%d", (int)pos.x, (int)pos.y);
+    szBuf[sizeof(szBuf) - 1] = '\0';
+    WritePrivateProfileStringA(kSection, pszKey, szBuf, kIniPath);
 }
 
 void

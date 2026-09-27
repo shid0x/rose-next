@@ -468,6 +468,8 @@
     <ClCompile Include="rmlui\RoseRmlClan.cpp" />
     <ClCompile Include="rmlui\RoseRmlClanOrganize.cpp" />
     <ClCompile Include="rmlui\RoseRmlSkillTree.cpp" />
+    <ClCompile Include="rmlui\RoseRmlNotifyButtons.cpp" />
+    <ClCompile Include="rmlui\RoseRmlChat.cpp" />
     <ClCompile Include="rmlui\RoseRmlMessages.cpp" />
     <ClCompile Include="rmlui\RoseRmlChatRoom.cpp" />
     <ClCompile Include="rmlui\RoseRmlNumberInput.cpp" />

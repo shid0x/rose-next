@@ -92,6 +92,10 @@ public:
 
     void SetChatUnBlock();
 
+    /// The send path, shared with UI2 ( RoseRmlChat ): false = keep the line
+    /// in the input, true = used, and strNext is what the input holds next.
+    bool SendLine(const char* szMsg, std::string& strNext);
+
     void AppendMsg(const char* pszMsg, DWORD color, int iType);
     void AppendMsg2(const char* pszMsg, DWORD color, int iType);
     void AppendMsg2System(const char* pszMsg, DWORD color);
