@@ -1,0 +1,154 @@
+<rml>
+<head>
+    <title>Clan</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="clan.rcss"/>
+</head>
+<body data-model="clan">
+    <!--
+        UI2 clan window ( RoseRmlClan ), replacing the classic clan window and
+        its notice box. Drag the title bar to move it, the spot is saved.
+
+        Info: the clan at a glance, and the custom mark ( Mark.bmp, 20x20, in
+        the game folder ). Members: click one to select, the buttons act on
+        them ( what you may do depends on your rank ). Skills: double-click to
+        use, drag onto your skill bar. Notice: the master can edit it.
+    -->
+    <div id="clan" class="ui-window">
+        <handle move_target="clan" class="ui-titlebar">
+            <span class="ui-title">Clan</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <!-- Not in a clan. -->
+        <div class="noclan ui-well" data-if="!in_clan">
+            <span class="nctitle">You are not in a clan.</span>
+            <span class="nctext ui-muted">To found one, talk to a clan manager in town: you need level 30 and 1,000,000 zuly. To join one, ask a clan's master or sub-master to invite you.</span>
+        </div>
+
+        <div class="tabs" data-if="in_clan">
+            <span class="ui-btn tab" data-class-on="tab == 0" data-event-click="set_tab(0)">Info</span>
+            <span class="ui-btn tab" data-class-on="tab == 1" data-event-click="set_tab(1)">Members</span>
+            <span class="ui-btn tab" data-class-on="tab == 2" data-event-click="set_tab(2)">Skills</span>
+            <span class="ui-btn tab" data-class-on="tab == 3" data-event-click="set_tab(3)">Notice</span>
+        </div>
+
+        <!-- Info. -->
+        <div class="page" data-class-hide="shown != 0">
+            <div class="head ui-well">
+                <div class="emblem">
+                    <img data-if="mark_kind == 1" data-attr-src="back_src" data-attr-rect="back_rect"/>
+                    <img data-if="mark_kind == 1" data-attr-src="center_src" data-attr-rect="center_rect"/>
+                    <img data-if="mark_kind == 2" data-attr-src="custom_src"/>
+                </div>
+                <div class="htext">
+                    <span class="cname">{{name}}</span>
+                    <span class="slogan ui-muted">{{slogan}}</span>
+                </div>
+            </div>
+
+            <div class="facts ui-well">
+                <div class="kv"><span class="k ui-muted">Level</span><span class="v">{{level}}</span></div>
+                <div class="kv"><span class="k ui-muted">Clan points</span><span class="v">{{points}}</span></div>
+                <div class="kv"><span class="k ui-muted">Members</span><span class="v">{{member_count}}</span></div>
+                <div class="kv"><span class="k ui-muted">Clan zuly</span><span class="v">{{money}}</span></div>
+                <div class="kv"><span class="k ui-muted">Allied clan</span><span class="v">{{ally}}</span></div>
+            </div>
+
+            <div class="me ui-well">
+                <div class="badge"><img data-if="badge_src != ''" data-attr-src="badge_src" data-attr-rect="badge_rect"/></div>
+                <div class="metext">
+                    <span class="myrank" data-class-penalty="my_penalty">{{my_rank}}</span>
+                    <span class="ui-muted">Your contribution: {{my_contrib}}</span>
+                </div>
+            </div>
+
+            <div class="markhead ui-muted">Custom clan mark</div>
+            <div class="markbox ui-well">
+                <div class="mpreview">
+                    <img data-if="has_preview" data-attr-src="preview_src"/>
+                </div>
+                <div class="mtext">
+                    <span class="ui-muted">Save a 20x20 picture as Mark.bmp in the game folder, then preview it here.</span>
+                    <div class="mbuttons">
+                        <span class="ui-btn mbtn" data-event-click="preview_mark()">Preview</span>
+                        <span class="ui-btn mbtn" data-if="master" data-event-click="act(6)">Register</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Members. -->
+        <div class="page" data-class-hide="shown != 1">
+            <div class="cols ui-muted">
+                <span class="c-name">Name</span>
+                <span class="c-rank">Rank</span>
+                <span class="c-lv">Lv</span>
+                <span class="c-job">Job</span>
+                <span class="c-pts">Contribution</span>
+            </div>
+            <div class="list ui-well">
+                <div class="member ui-click" data-for="m : members" data-class-unused="!m.used"
+                     data-class-on="m.on" data-class-offline="!m.online" data-class-me="m.me"
+                     data-class-penalty="m.penalty" data-event-click="select(m.index)">
+                    <span class="dot"></span>
+                    <span class="c-name">{{m.name}}</span>
+                    <span class="c-rank">{{m.rank}}</span>
+                    <span class="c-lv">{{m.level}}</span>
+                    <span class="c-job">{{m.job}}</span>
+                    <span class="c-pts">{{m.contrib}}</span>
+                </div>
+            </div>
+            <div class="foot">
+                <span class="count ui-muted">{{online}} online / {{total}}</span>
+            </div>
+            <div class="actions">
+                <span class="ui-btn abtn" data-if="master" data-class-off="!can_up" data-event-click="act(0)">Promote</span>
+                <span class="ui-btn abtn" data-if="master" data-class-off="!can_down" data-event-click="act(1)">Demote</span>
+                <span class="ui-btn abtn" data-if="master" data-class-off="!can_kick" data-event-click="act(2)">Kick</span>
+                <span class="ui-btn abtn" data-if="master" data-class-off="!can_entrust" data-event-click="act(3)">Hand over</span>
+                <span class="ui-btn abtn" data-if="can_invite" data-event-click="act(4)">Invite target</span>
+                <span class="ui-btn abtn" data-if="!master" data-event-click="act(5)">Leave clan</span>
+            </div>
+        </div>
+
+        <!-- Skills. -->
+        <div class="page" data-class-hide="shown != 2">
+            <div class="slist ui-well">
+                <div class="empty ui-muted" data-if="skill_count == 0">Your clan has no skills yet.</div>
+                <div class="card" data-for="k : skills" data-class-unused="!k.used"
+                     data-attr-clanskill="k.slot" data-class-passive="k.passive">
+                    <div class="icon ui-icon" data-event-mousedown="press(k.slot)"
+                         data-event-dblclick="use(k.slot)">
+                        <img data-attr-src="k.src" data-attr-rect="k.rect"/>
+                        <div class="cd" data-visible="k.cd > 0" data-style-transform="'scaleY(' + (k.cd + 0.1) / 100 + ')'"></div>
+                    </div>
+                    <div class="sinfo">
+                        <span class="sname">{{k.name}}</span>
+                        <span class="ui-muted">Lv {{k.level}}{{ k.passive ? '  -  Passive' : '' }}</span>
+                        <span class="sexp ui-muted">{{k.expires}}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="hint ui-muted">Drag a skill onto your bar, double-click to use.</div>
+        </div>
+
+        <!-- Notice. -->
+        <div class="page" data-class-hide="shown != 3">
+            <div class="nview ui-well" data-class-hide="editing">
+                <div class="ntext" data-if="has_notice" data-rml="notice_rml"></div>
+                <div class="empty ui-muted" data-if="!has_notice">No notice.</div>
+            </div>
+            <div class="nedit" data-class-hide="!editing">
+                <textarea id="noticeedit" class="ui-field noticeedit" maxlength="250"></textarea>
+            </div>
+            <div class="nbuttons">
+                <span class="ui-btn nbtn" data-if="can_edit" data-event-click="edit_notice()">Edit</span>
+                <span class="ui-btn nbtn" data-if="editing" data-event-click="save_notice()">Save</span>
+                <span class="ui-btn nbtn" data-if="editing" data-event-click="cancel_notice()">Cancel</span>
+            </div>
+        </div>
+    </div>
+</body>
+</rml>

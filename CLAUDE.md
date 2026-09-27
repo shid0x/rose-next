@@ -502,6 +502,19 @@ Room messages are named from the hidden `CChatRoomDlg`'s members (`GetMemberName
 never requested the room list (`Send_cli_CHAT_ROOM_LIST` had no caller): the Rooms tab asks, and
 `Recv_wsv_CHATROOM` asks for the next 15 on a non-final page.
 
+**Clan** (2026-09-27): `RoseRmlClan` (`DLG_TYPE_CLAN` + `CLAN_NOTICE`, the notice box is the
+Notice tab editing in place) and `RoseRmlClanOrganize` (`DLG_TYPE_CLAN_ORGANIZE`). **The member
+list is the hidden `CClanDlg`'s**: `CClan` keeps only names and ranks, while contribution,
+channel, level and job live on the classic list items (`GetMemberAt` / `FindMember`); an offline
+member's level and job are never set, so show them only while online. The buttons are shared
+statics (`CClanDlg::Request*`, `CClanOrganizeDlg::RequestOrganize`), so classic and UI2 run the
+same checks; Leave now asks first in both (`CTCmdQuitClan`). Clan skills drag to either bar row
+(`CTCmdDragClanSkill2QuickBar` takes the bar type). The custom mark (`Mark.bmp`, and the
+downloaded `clanmark\<server>_<clan>.bmp`) is loaded by **full path from disk** -- the renderer
+now falls back to disk when the VFS has no such file -- and released (`Rml::ReleaseTexture`) when
+the file's write time changes, or RmlUi keeps drawing the cached old mark. A `<textarea>` keeps
+the keyboard on Enter (a new line), like a `keep-focus` field.
+
 **Text fields** (2026-09-26): an RmlUi `<input type="text" class="ui-field">` with the focus owns
 the keyboard -- `RoseRmlUi::ProcessWndMsg` hands it every key and character (printable ASCII only:
 plain English by decision, no IME) and none reaches the game; `numeric="1"` takes digits only.

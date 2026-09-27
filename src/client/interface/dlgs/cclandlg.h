@@ -30,6 +30,24 @@ public:
 
     void SetSelectedMember(int iClanPoint);
 
+    /// UI2 ( RoseRmlClan ) reads the member list from here: its items hold
+    /// each member's contribution, channel, level and job, which CClan does
+    /// not keep. The clan events update it whether the dialog shows or not.
+    int GetMemberCount();
+    CClanMemberItem* GetMemberAt(int iIndex);
+    CClanMemberItem* FindMember(const char* pszName);
+
+    /// The buttons' actions, shared with UI2: the classic checks, questions
+    /// and messages.
+    static void RequestEntrust(CClanMemberItem* pMember);
+    static void RequestBan(CClanMemberItem* pMember);
+    static void RequestPromote(CClanMemberItem* pMember);
+    static void RequestDemote(CClanMemberItem* pMember);
+    static void RequestInviteTarget();
+    /// Asks first ( the classic button left at once ).
+    static void RequestLeave();
+    static void RequestRegisterMark();
+
 private:
     enum {
         IID_BTN_CLOSE = 10,

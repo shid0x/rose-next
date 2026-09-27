@@ -308,6 +308,15 @@ protected:
     std::string m_filename;
 };
 
+/// Leaves the clan ( the OK of CClanDlg::RequestLeave's question ): the
+/// classic button's three steps.
+class CTCmdQuitClan: public CTCommand {
+public:
+    CTCmdQuitClan() {}
+    virtual ~CTCmdQuitClan() {}
+    virtual bool Exec(CTObject* pObj);
+};
+
 /// IT_MGR의 STATE를 변경한다.
 class CTCmdChangeStateInterface: public CTCommand {
 public:

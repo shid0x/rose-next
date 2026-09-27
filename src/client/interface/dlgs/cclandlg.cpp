@@ -140,22 +140,7 @@ CClanDlg::OnLButtonUp(unsigned uiProcID, WPARAM wParam, LPARAM lParam) {
             m_ClanMarkPreView.SetNode(hNode);
         } break;
         case IID_BTN_REGIST_CLANMARK:
-            if (CClan::GetInstance().GetClanNo()) {
-                if (CClan::GetInstance().GetClass() >= CClan::CLAN_MASTER) {
-                    // CClanMarkTransfer::GetSingleton().RegisterMarkToServer(
-                    // g_pAVATAR->GetClanID(), CClanMarkUserDefined::NewClanMarkFileName.c_str() );
-                    CTCommand* pCmdOk = new CTCmdRegisterClanMark(g_pAVATAR->GetClanID(),
-                        CClanMarkUserDefined::NewClanMarkFileName.c_str());
-                    g_itMGR.OpenMsgBox(
-                        STR_QUERY_CHANGE_CLANMARK,
-                        CMsgBox::BT_OK | CMsgBox::BT_CANCEL,
-                        true,
-                        0,
-                        pCmdOk,
-                        0);
-                } else
-                    g_itMGR.OpenMsgBox(STR_CLAN_NO_RIGHT);
-            }
+            RequestRegisterMark();
             break;
         case IID_BTN_CLOSE:
             Hide();
@@ -176,137 +161,175 @@ CClanDlg::OnLButtonUp(unsigned uiProcID, WPARAM wParam, LPARAM lParam) {
         case IID_BTN_DELETE_NOTICE:
             ///클랜 마스터일경우에만
             break;
-        case IID_BTN_WITHDRAWAL: {
-            if (g_pTerrain->is_clan_zone()) {
-                g_itMGR.OpenMsgBox(STR_CANT_SKILL_IN_AGIT);
-                break;
-            }
-
-            CClan& Clan = CClan::GetInstance();
-            if (Clan.GetClanNo() && !g_pTerrain->is_pvp_zone()) {
-                if (CClan::GetInstance().GetClass() < CClan::CLAN_MASTER) {
-                    ///클랜 마스터가 아닐경우에만
-                    g_pNet->Send_cli_CLAN_COMMAND(GCMD_QUIT, NULL);
-                    CClan::GetInstance().Clear();
-                    g_pAVATAR->ResetClan();
-                } else {
-                    g_itMGR.OpenMsgBox(STR_CLAN_CANT_QUIT_CLANMASTER);
-                }
-            }
-        } break;
-        case IID_BTN_ENTRUST: {
-            CClan& Clan = CClan::GetInstance();
-            if (Clan.GetClanNo() && !g_pTerrain->is_pvp_zone()) {
-                if (CClan::GetInstance().GetClass() >= CClan::CLAN_MASTER) {
-                    CClanMemberItem* pMember = GetSelectedMember();
-                    if (pMember != NULL && strcmpi(pMember->GetName(), g_pAVATAR->Get_NAME())) {
-                        if (pMember->GetClass() >= CClan::CLAN_COMMANDER) {
-                            CTCmdClanCommand* pCmd =
-                                new CTCmdClanCommand(GCMD_LEADER, pMember->GetName());
-
-                            g_itMGR.OpenMsgBox(
-                                CStr::Printf(STR_CLAN_QUERY_ENTRUST, pMember->GetName()),
-                                CMsgBox::BT_OK | CMsgBox::BT_CANCEL,
-                                true,
-                                0,
-                                pCmd);
-
-                        } else {
-                            g_itMGR.OpenMsgBox(STR_CLAN_CANT_ENTRUST_TO_LOW_CLASS);
-                        }
-                    }
-                } else {
-                    g_itMGR.OpenMsgBox(STR_CLAN_NO_RIGHT);
-                }
-            }
-        } break;
-        case IID_BTN_BAN: {
-            if (g_pTerrain->is_clan_zone()) {
-                g_itMGR.OpenMsgBox(STR_CANT_SKILL_IN_AGIT);
-                break;
-            }
-            CClan& Clan = CClan::GetInstance();
-            if (Clan.GetClanNo() && !g_pTerrain->is_pvp_zone()) {
-                if (CClan::GetInstance().GetClass() >= CClan::CLAN_MASTER) {
-                    CClanMemberItem* pMember = GetSelectedMember();
-                    if (pMember != NULL && strcmpi(pMember->GetName(), g_pAVATAR->Get_NAME())) {
-                        CTCmdClanCommand* pCmd =
-                            new CTCmdClanCommand(GCMD_REMOVE, pMember->GetName());
-                        g_itMGR.OpenMsgBox(CStr::Printf(STR_CLAN_QUERY_BAN, pMember->GetName()),
-                            CMsgBox::BT_OK | CMsgBox::BT_CANCEL,
-                            true,
-                            0,
-                            pCmd);
-                    }
-                } else {
-                    g_itMGR.OpenMsgBox(STR_CLAN_NO_RIGHT);
-                }
-            }
-        } break;
-        case IID_BTN_CLASS_UP: {
-            CClanMemberItem* pMember = GetSelectedMember();
-            if (pMember != NULL && strcmpi(pMember->GetName(), g_pAVATAR->Get_NAME())
-                && !g_pTerrain->is_pvp_zone()) {
-                if (CClan::GetInstance().GetClass() >= CClan::CLAN_MASTER) {
-                    if (CClan::GetInstance().IsValidClassUp(pMember->GetClass())) {
-                        CTCmdClanCommand* pCmd =
-                            new CTCmdClanCommand(GCMD_PROMOTE, pMember->GetName());
-                        g_itMGR.OpenMsgBox(CStr::Printf(STR_CLAN_QUERY_PROMOTE, pMember->GetName()),
-                            CMsgBox::BT_OK | CMsgBox::BT_CANCEL,
-                            true,
-                            0,
-                            pCmd);
-                    } else {
-                        g_itMGR.OpenMsgBox(CStr::Printf(STR_CLAN_CANT_PROMOTE,
-                            CStringManager::GetSingleton().GetClanClass(pMember->GetClass() + 1)));
-                    }
-                } else {
-                    g_itMGR.OpenMsgBox(STR_CLAN_NO_RIGHT);
-                }
-            }
-        } break;
-        case IID_BTN_CLASS_DOWN: {
-            CClanMemberItem* pMember = GetSelectedMember();
-            if (pMember && strcmpi(pMember->GetName(), g_pAVATAR->Get_NAME())
-                && !g_pTerrain->is_pvp_zone()) {
-                if (CClan::GetInstance().GetClass() >= CClan::CLAN_MASTER) {
-                    if (pMember->GetClass() >= 0) {
-                        CTCmdClanCommand* pCmd =
-                            new CTCmdClanCommand(GCMD_DEMOTE, pMember->GetName());
-                        g_itMGR.OpenMsgBox(CStr::Printf(STR_CLAN_QUERY_DEMOTE, pMember->GetName()),
-                            CMsgBox::BT_OK | CMsgBox::BT_CANCEL,
-                            true,
-                            0,
-                            pCmd);
-                    }
-                } else {
-                    g_itMGR.OpenMsgBox(STR_CLAN_NO_RIGHT);
-                }
-            }
-        } break;
-        case IID_BTN_REQJOIN: {
-
-            CClan& Clan = CClan::GetInstance();
-
-            if (Clan.GetClanNo() && !g_pTerrain->is_pvp_zone()) {
-                if (Clan.GetClass() >= CClan::CLAN_SUB_MASTER) {
-                    CObjAVT* pAvt = g_pObjMGR->Get_ClientCharAVT(
-                        g_pObjMGR->Get_ServerObjectIndex(g_UserInputSystem.GetCurrentTarget()),
-                        false);
-
-                    if (pAvt) {
-                        if (Clan.IsValidJoinMember())
-                            g_pNet->Send_cli_CLAN_COMMAND(GCMD_INVITE, pAvt->Get_NAME());
-                        else
-                            g_itMGR.OpenMsgBox(STR_CLAN_CANT_MORE_JOINMEMBER);
-                    }
-                } else {
-                    g_itMGR.OpenMsgBox(STR_CLAN_RESULT_CLAN_JOIN_NO_RIGHT);
-                }
-            }
-        } break;
+        case IID_BTN_WITHDRAWAL:
+            RequestLeave();
+            break;
+        case IID_BTN_ENTRUST:
+            RequestEntrust(GetSelectedMember());
+            break;
+        case IID_BTN_BAN:
+            RequestBan(GetSelectedMember());
+            break;
+        case IID_BTN_CLASS_UP:
+            RequestPromote(GetSelectedMember());
+            break;
+        case IID_BTN_CLASS_DOWN:
+            RequestDemote(GetSelectedMember());
+            break;
+        case IID_BTN_REQJOIN:
+            RequestInviteTarget();
+            break;
         default:
             break;
+    }
+}
+
+void
+CClanDlg::RequestRegisterMark() {
+    if (CClan::GetInstance().GetClanNo() == 0 || g_pAVATAR == NULL)
+        return;
+    if (CClan::GetInstance().GetClass() < CClan::CLAN_MASTER) {
+        g_itMGR.OpenMsgBox(STR_CLAN_NO_RIGHT);
+        return;
+    }
+    CTCommand* pCmdOk = new CTCmdRegisterClanMark(g_pAVATAR->GetClanID(),
+        CClanMarkUserDefined::NewClanMarkFileName.c_str());
+    g_itMGR.OpenMsgBox(
+        STR_QUERY_CHANGE_CLANMARK, CMsgBox::BT_OK | CMsgBox::BT_CANCEL, true, 0, pCmdOk, 0);
+}
+
+void
+CClanDlg::RequestLeave() {
+    if (g_pTerrain->is_clan_zone()) {
+        g_itMGR.OpenMsgBox(STR_CANT_SKILL_IN_AGIT);
+        return;
+    }
+
+    CClan& Clan = CClan::GetInstance();
+    if (Clan.GetClanNo() && !g_pTerrain->is_pvp_zone()) {
+        if (Clan.GetClass() < CClan::CLAN_MASTER) {
+            ///클랜 마스터가 아닐경우에만
+            g_itMGR.OpenMsgBox(CStr::Printf("Leave the clan %s?", Clan.GetName()),
+                CMsgBox::BT_OK | CMsgBox::BT_CANCEL,
+                true,
+                0,
+                new CTCmdQuitClan);
+        } else {
+            g_itMGR.OpenMsgBox(STR_CLAN_CANT_QUIT_CLANMASTER);
+        }
+    }
+}
+
+void
+CClanDlg::RequestEntrust(CClanMemberItem* pMember) {
+    CClan& Clan = CClan::GetInstance();
+    if (Clan.GetClanNo() && !g_pTerrain->is_pvp_zone()) {
+        if (Clan.GetClass() >= CClan::CLAN_MASTER) {
+            if (pMember != NULL && strcmpi(pMember->GetName(), g_pAVATAR->Get_NAME())) {
+                if (pMember->GetClass() >= CClan::CLAN_COMMANDER) {
+                    CTCmdClanCommand* pCmd = new CTCmdClanCommand(GCMD_LEADER, pMember->GetName());
+
+                    g_itMGR.OpenMsgBox(CStr::Printf(STR_CLAN_QUERY_ENTRUST, pMember->GetName()),
+                        CMsgBox::BT_OK | CMsgBox::BT_CANCEL,
+                        true,
+                        0,
+                        pCmd);
+
+                } else {
+                    g_itMGR.OpenMsgBox(STR_CLAN_CANT_ENTRUST_TO_LOW_CLASS);
+                }
+            }
+        } else {
+            g_itMGR.OpenMsgBox(STR_CLAN_NO_RIGHT);
+        }
+    }
+}
+
+void
+CClanDlg::RequestBan(CClanMemberItem* pMember) {
+    if (g_pTerrain->is_clan_zone()) {
+        g_itMGR.OpenMsgBox(STR_CANT_SKILL_IN_AGIT);
+        return;
+    }
+    CClan& Clan = CClan::GetInstance();
+    if (Clan.GetClanNo() && !g_pTerrain->is_pvp_zone()) {
+        if (Clan.GetClass() >= CClan::CLAN_MASTER) {
+            if (pMember != NULL && strcmpi(pMember->GetName(), g_pAVATAR->Get_NAME())) {
+                CTCmdClanCommand* pCmd = new CTCmdClanCommand(GCMD_REMOVE, pMember->GetName());
+                g_itMGR.OpenMsgBox(CStr::Printf(STR_CLAN_QUERY_BAN, pMember->GetName()),
+                    CMsgBox::BT_OK | CMsgBox::BT_CANCEL,
+                    true,
+                    0,
+                    pCmd);
+            }
+        } else {
+            g_itMGR.OpenMsgBox(STR_CLAN_NO_RIGHT);
+        }
+    }
+}
+
+void
+CClanDlg::RequestPromote(CClanMemberItem* pMember) {
+    if (pMember != NULL && strcmpi(pMember->GetName(), g_pAVATAR->Get_NAME())
+        && !g_pTerrain->is_pvp_zone()) {
+        if (CClan::GetInstance().GetClass() >= CClan::CLAN_MASTER) {
+            if (CClan::GetInstance().IsValidClassUp(pMember->GetClass())) {
+                CTCmdClanCommand* pCmd = new CTCmdClanCommand(GCMD_PROMOTE, pMember->GetName());
+                g_itMGR.OpenMsgBox(CStr::Printf(STR_CLAN_QUERY_PROMOTE, pMember->GetName()),
+                    CMsgBox::BT_OK | CMsgBox::BT_CANCEL,
+                    true,
+                    0,
+                    pCmd);
+            } else {
+                g_itMGR.OpenMsgBox(CStr::Printf(STR_CLAN_CANT_PROMOTE,
+                    CStringManager::GetSingleton().GetClanClass(pMember->GetClass() + 1)));
+            }
+        } else {
+            g_itMGR.OpenMsgBox(STR_CLAN_NO_RIGHT);
+        }
+    }
+}
+
+void
+CClanDlg::RequestDemote(CClanMemberItem* pMember) {
+    if (pMember && strcmpi(pMember->GetName(), g_pAVATAR->Get_NAME())
+        && !g_pTerrain->is_pvp_zone()) {
+        if (CClan::GetInstance().GetClass() >= CClan::CLAN_MASTER) {
+            if (pMember->GetClass() >= 0) {
+                CTCmdClanCommand* pCmd = new CTCmdClanCommand(GCMD_DEMOTE, pMember->GetName());
+                g_itMGR.OpenMsgBox(CStr::Printf(STR_CLAN_QUERY_DEMOTE, pMember->GetName()),
+                    CMsgBox::BT_OK | CMsgBox::BT_CANCEL,
+                    true,
+                    0,
+                    pCmd);
+            }
+        } else {
+            g_itMGR.OpenMsgBox(STR_CLAN_NO_RIGHT);
+        }
+    }
+}
+
+void
+CClanDlg::RequestInviteTarget() {
+    CClan& Clan = CClan::GetInstance();
+
+    if (Clan.GetClanNo() && !g_pTerrain->is_pvp_zone()) {
+        if (Clan.GetClass() >= CClan::CLAN_SUB_MASTER) {
+            CObjAVT* pAvt = g_pObjMGR->Get_ClientCharAVT(
+                g_pObjMGR->Get_ServerObjectIndex(g_UserInputSystem.GetCurrentTarget()), false);
+
+            if (pAvt) {
+                if (Clan.IsValidJoinMember())
+                    g_pNet->Send_cli_CLAN_COMMAND(GCMD_INVITE, pAvt->Get_NAME());
+                else
+                    g_itMGR.OpenMsgBox(STR_CLAN_CANT_MORE_JOINMEMBER);
+            } else {
+                /// The classic button did nothing without a player targeted.
+                g_itMGR.OpenMsgBox("Target the player you want to invite first.");
+            }
+        } else {
+            g_itMGR.OpenMsgBox(STR_CLAN_RESULT_CLAN_JOIN_NO_RIGHT);
+        }
     }
 }
 
@@ -691,6 +714,44 @@ CClanDlg::GetSelectedMember() {
                 }
             }
         }
+    }
+    return NULL;
+}
+
+int
+CClanDlg::GetMemberCount() {
+    CWinCtrl* pCtrl = Find(IID_TABBEDPANE);
+    if (pCtrl && pCtrl->GetControlType() == CTRL_TABBEDPANE) {
+        pCtrl = FindCtrlInTabbedPane((CTabbedPane*)pCtrl, TAB_MEMBER, IID_ZLIST_MEMBER);
+        if (pCtrl && pCtrl->GetControlType() == CTRL_ZLISTBOX)
+            return ((CZListBox*)pCtrl)->GetSize();
+    }
+    return 0;
+}
+
+CClanMemberItem*
+CClanDlg::GetMemberAt(int iIndex) {
+    CWinCtrl* pCtrl = Find(IID_TABBEDPANE);
+    if (pCtrl && pCtrl->GetControlType() == CTRL_TABBEDPANE) {
+        pCtrl = FindCtrlInTabbedPane((CTabbedPane*)pCtrl, TAB_MEMBER, IID_ZLIST_MEMBER);
+        if (pCtrl && pCtrl->GetControlType() == CTRL_ZLISTBOX) {
+            CZListBox* pList = (CZListBox*)pCtrl;
+            if (iIndex >= 0 && iIndex < pList->GetSize())
+                return (CClanMemberItem*)pList->GetItem(iIndex);
+        }
+    }
+    return NULL;
+}
+
+CClanMemberItem*
+CClanDlg::FindMember(const char* pszName) {
+    if (pszName == NULL)
+        return NULL;
+    const int iCount = GetMemberCount();
+    for (int i = 0; i < iCount; ++i) {
+        CClanMemberItem* pItem = GetMemberAt(i);
+        if (pItem && strcmpi(pItem->GetName(), pszName) == 0)
+            return pItem;
     }
     return NULL;
 }

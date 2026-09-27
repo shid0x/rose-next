@@ -23,6 +23,7 @@
 #include "../../Network/CNetwork.h"
 #include "../Dlgs/CCommDlg.h"
 #include "../ClanMarkTransfer.h"
+#include "../../GameData/CClan.h"
 
 bool
 CTCmdTakeInItem2MakeDlg::Exec(CTObject* pObj) {
@@ -643,6 +644,16 @@ CTCmdRegisterClanMark::Exec(CTObject* pObj) {
         return true;
 
     CClanMarkTransfer::GetSingleton().RegisterMarkToServer(m_clan_id, m_filename.c_str());
+    return true;
+}
+
+bool
+CTCmdQuitClan::Exec(CTObject* pObj) {
+    if (CClan::GetInstance().GetClanNo() == 0 || g_pAVATAR == NULL)
+        return true;
+    g_pNet->Send_cli_CLAN_COMMAND(GCMD_QUIT, NULL);
+    CClan::GetInstance().Clear();
+    g_pAVATAR->ResetClan();
     return true;
 }
 

@@ -114,6 +114,15 @@ const int kReplacedDialogs[] = {
     /// leaves the room -- it must never be shown ( under UI2 its "room
     /// joined" event opens through IT_MGR instead of Show() ).
     DLG_TYPE_CHATROOM,
+    /// RoseRmlClan ( also in kReplacedWindows ). Hidden, NOT gone: CClanDlg
+    /// observes CClan, and its member list holds each member's contribution,
+    /// channel, level and job ( and writes their log-in chat lines ). The
+    /// notice box is the window's Notice tab.
+    DLG_TYPE_CLAN,
+    DLG_TYPE_CLAN_NOTICE,
+    /// RoseRmlClanOrganize ( also in kReplacedWindows ): the checks and the
+    /// request are CClanOrganizeDlg::RequestOrganize.
+    DLG_TYPE_CLAN_ORGANIZE,
 };
 
 /// The replaced dialogs that are windows ( opened / closed by the player )
@@ -146,6 +155,9 @@ const int kReplacedWindows[] = {
     DLG_TYPE_ADDFRIEND,
     DLG_TYPE_PRIVATECHAT,
     DLG_TYPE_CHATROOM,
+    DLG_TYPE_CLAN,
+    DLG_TYPE_CLAN_NOTICE,
+    DLG_TYPE_CLAN_ORGANIZE,
 };
 
 /// Non-dialog HUD pieces with a UI2 replacement ( see RoseUi2::Piece ).

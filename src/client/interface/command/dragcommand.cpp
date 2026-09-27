@@ -112,7 +112,7 @@ CTCmdDragClanSkill2QuickBar::Exec(CTObject* pObj) {
     POINT ptMouse;
     CGame::GetInstance().Get_MousePos(ptMouse);
 
-    CTDialog* pDlg = g_itMGR.FindDlg(DLG_TYPE_QUICKBAR);
+    CTDialog* pDlg = g_itMGR.FindDlg(m_nType);
     if (pDlg == NULL) {
         assert(0 && "Not Found QuickBar Dialog @CTCmdDragInven2QuickBar::Exec");
         return true;

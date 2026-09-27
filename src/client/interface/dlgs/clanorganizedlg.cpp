@@ -145,49 +145,43 @@ CClanOrganizeDlg::OrganizeClan() {
     // 1. 내가 다른 클랜에 가입하지 않았다.
     // 2. 돈이나..레벨등의 조건에 만족한다.
 
+    CWinCtrl* pCtrl = Find(IID_EDIT_TITLE);
+    if (pCtrl == NULL || pCtrl->GetControlType() != CTRL_EDITBOX)
+        return;
+    char* pszTitle = ((CTEditBox*)pCtrl)->get_text();
+
+    pCtrl = Find(IID_EDIT_SLOGAN);
+    if (pCtrl == NULL || pCtrl->GetControlType() != CTRL_EDITBOX)
+        return;
+    char* pszSlogan = ((CTEditBox*)pCtrl)->get_text();
+
+    RequestOrganize(m_iSelectedClanBack, m_iSelectedClanCenter, pszTitle, pszSlogan);
+}
+
+bool
+CClanOrganizeDlg::RequestOrganize(int iBack,
+    int iCenter,
+    const char* pszTitle,
+    const char* pszSlogan) {
+    if (g_pAVATAR == NULL)
+        return false;
+
     if (g_pAVATAR->Get_LEVEL() >= 30 && g_pAVATAR->Get_MONEY() >= 1000000) {
-        CWinCtrl* pCtrl = Find(IID_EDIT_TITLE);
-        assert(pCtrl && pCtrl->GetControlType() == CTRL_EDITBOX);
-        if (pCtrl == NULL)
-            return;
-        if (pCtrl->GetControlType() != CTRL_EDITBOX)
-            return;
+        if (pszTitle == NULL || !pszTitle[0])
+            return false;
 
-        CTEditBox* pEditBox = (CTEditBox*)pCtrl;
-        char* pszTitle = pEditBox->get_text();
-        if (pszTitle == NULL)
-            return;
-        if (!pszTitle[0])
-            return;
-
-        pCtrl = Find(IID_EDIT_SLOGAN);
-        if (pCtrl == NULL)
-            return;
-        if (pCtrl->GetControlType() != CTRL_EDITBOX)
-            return;
-
-        pEditBox = (CTEditBox*)pCtrl;
-        char* pszSlogan = pEditBox->get_text();
-
-        if (pszSlogan == NULL) {
+        if (pszSlogan == NULL || !pszSlogan[0]) {
             g_itMGR.OpenMsgBox(STR_CLAN_INPUT_SLOGAN);
-            return;
+            return false;
         }
 
-        if (!pszSlogan[0]) {
-            g_itMGR.OpenMsgBox(STR_CLAN_INPUT_SLOGAN);
-            return;
-        }
-
-        g_pNet->Send_cli_CLAN_CREATE((WORD)m_iSelectedClanBack,
-            (WORD)m_iSelectedClanCenter,
-            pszTitle,
-            pszSlogan);
-
-    } else {
-        std::string strMsg = STR_CLAN_RESULT_CLAN_CREATE_NO_CONDITION;
-        strMsg.append(", ");
-        strMsg.append(STR_CLAN_CREATE_CONDITION);
-        g_itMGR.OpenMsgBox(strMsg.c_str());
+        g_pNet->Send_cli_CLAN_CREATE((WORD)iBack, (WORD)iCenter, (char*)pszTitle, (char*)pszSlogan);
+        return true;
     }
+
+    std::string strMsg = STR_CLAN_RESULT_CLAN_CREATE_NO_CONDITION;
+    strMsg.append(", ");
+    strMsg.append(STR_CLAN_CREATE_CONDITION);
+    g_itMGR.OpenMsgBox(strMsg.c_str());
+    return false;
 }

@@ -18,6 +18,10 @@ public:
     virtual void Draw();
     virtual unsigned Process(unsigned uiMsg, WPARAM wParam, LPARAM lParam);
 
+    /// The Confirm button's checks and request, shared with UI2 ( RoseRmlClanOrganize ).
+    /// False when a check stopped it ( its message is shown ).
+    static bool RequestOrganize(int iBack, int iCenter, const char* pszTitle, const char* pszSlogan);
+
 private:
     void OnLButtonDown(unsigned uiMsg, WPARAM wParam, LPARAM lParam);
     void OrganizeClan();

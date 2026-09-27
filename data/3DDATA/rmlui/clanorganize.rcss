@@ -1,0 +1,123 @@
+/* UI2 found-a-clan window -- LAYOUT ONLY ( colours and materials:
+   rose-theme.rcss, plus the few colours that are this window's own states ).
+   Reload in game with /uireload. The C++ centres it the first time, until it
+   is moved.
+
+   PERFORMANCE ( see shop.rcss ): definite width, the emblem grids are
+   fixed-size floats in a flow-root box, the preview pinned absolutely. */
+
+#clanorganize {
+    left: 400dp;
+    top: 160dp;
+    display: block;
+    width: 262dp;
+}
+
+/* The emblem preview beside the name and slogan. */
+.top {
+    position: relative;
+    height: 84dp;
+    margin-bottom: 6dp;
+}
+.preview {
+    position: absolute;
+    left: 8dp;
+    top: 20dp;
+    width: 40dp;
+    height: 40dp;
+    border-radius: 3dp;
+    background-color: #00000060;
+}
+/* The background, then the symbol on it. */
+.preview img {
+    position: absolute;
+    left: 0dp;
+    top: 0dp;
+    width: 40dp;
+    height: 40dp;
+}
+.fields {
+    margin-left: 58dp;
+    padding-top: 4dp;
+    padding-right: 6dp;
+}
+.label {
+    display: block;
+    font-size: 9dp;
+    line-height: 13dp;
+}
+.fname, .fslogan {
+    display: block;
+    width: 100%;
+    margin-bottom: 4dp;
+}
+
+.head {
+    padding: 0dp 2dp;
+    margin-bottom: 2dp;
+    font-size: 9dp;
+}
+
+/* Nine to a row: 20 px sprites at native size in 26 dp cells. */
+.grid {
+    display: flow-root;
+    padding: 3dp;
+    margin-bottom: 6dp;
+}
+.cell {
+    float: left;
+    position: relative;
+    box-sizing: border-box;
+    width: 26dp;
+    height: 26dp;
+    margin: 1dp;
+    border: 1dp #00000000;
+    border-radius: 3dp;
+    cursor: pointer;
+}
+.cell img {
+    position: absolute;
+    left: 2dp;
+    top: 2dp;
+}
+.cell:hover { border-color: #d0501a80; background-color: #ffffff14; }
+.cell.on { border-color: #d0501aff; background-color: #7a220660; }
+
+/* The two conditions, and whether you meet them. */
+.needs {
+    padding: 4dp 6dp;
+    margin-bottom: 6dp;
+}
+.need {
+    position: relative;
+    height: 18dp;
+    line-height: 18dp;
+    font-size: 10dp;
+    color: #f0f0f0;
+}
+.mark {
+    display: inline-block;
+    width: 26dp;
+    font-weight: bold;
+    color: #ff6a50;
+}
+.need.ok .mark { color: #6ad04a; }
+.have {
+    position: absolute;
+    right: 0dp;
+    top: 0dp;
+    font-size: 9dp;
+}
+
+.buttons {
+    display: flow-root;
+}
+.btn {
+    float: right;
+    display: block;
+    width: 70dp;
+    margin-left: 4dp;
+    box-sizing: border-box;
+    padding-left: 0dp;
+    padding-right: 0dp;
+}

@@ -124,7 +124,12 @@ ReadTextureSource(const std::string& strPath, std::vector<unsigned char>& Out, b
         return ReadFromVFS(strPath.c_str(), Out);
     }
     bFromVFS = true;
-    return ReadFromVFS(strPath.c_str(), Out);
+    if (ReadFromVFS(strPath.c_str(), Out))
+        return true;
+    /// Files the game writes at run time and never packs: the custom clan
+    /// marks ( clanmark\<server>_<clan>.bmp, Mark.bmp ), by full path.
+    bFromVFS = false;
+    return ReadFromDisk(strPath.c_str(), Out);
 }
 
 /// In-place RGBA -> BGRA channel swap for a raw pixel buffer.

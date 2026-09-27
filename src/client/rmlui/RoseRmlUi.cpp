@@ -34,6 +34,8 @@
 #include "RoseRmlMenuBar.h"
 #include "RoseRmlSystemMenu.h"
 #include "RoseRmlCommunity.h"
+#include "RoseRmlClan.h"
+#include "RoseRmlClanOrganize.h"
 #include "RoseRmlMessages.h"
 #include "RoseRmlChatRoom.h"
 #include "RoseRmlSystem.h"
@@ -104,6 +106,8 @@ RoseRmlSystemMenu g_SystemMenu; ///< UI2: replaces CSystemDLG ( exit / character
 RoseRmlCommunity g_Community; ///< UI2: replaces CCommDlg + CAddFriendDlg ( friends )
 RoseRmlMessages g_Messages; ///< UI2: replaces the CPrivateChatDlg windows ( one, tabbed )
 RoseRmlChatRoom g_ChatRoom; ///< UI2: replaces CChatRoomDlg ( the room you are in )
+RoseRmlClan g_Clan; ///< UI2: replaces CClanDlg + CClanRegistNotice
+RoseRmlClanOrganize g_ClanOrganize; ///< UI2: replaces CClanOrganizeDlg ( found a clan )
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
 
@@ -421,9 +425,12 @@ ProcessTextFieldKey(UINT uiMsg, WPARAM wParam) {
         /// The panel may have closed on it, taking the field with it. A
         /// conversation's field ( keep-focus ) keeps the keyboard on Enter:
         /// the next line is typed straight away, as in the classic chat
-        /// windows -- only Escape or a click elsewhere lets go.
+        /// windows -- only Escape or a click elsewhere lets go. A textarea
+        /// ( the clan notice ) takes Enter as a new line and keeps it too.
         if (Rml::Element* pStill = FocusedTextField()) {
-            if (wParam == VK_ESCAPE || !pStill->HasAttribute("keep-focus"))
+            const bool bKeep =
+                pStill->HasAttribute("keep-focus") || pStill->GetTagName() == "textarea";
+            if (wParam == VK_ESCAPE || !bKeep)
                 pStill->Blur();
         }
     }
@@ -638,6 +645,8 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_Community.Initialise(g_pContext, kAssetDir);
     g_Messages.Initialise(g_pContext, kAssetDir);
     g_ChatRoom.Initialise(g_pContext, kAssetDir);
+    g_Clan.Initialise(g_pContext, kAssetDir);
+    g_ClanOrganize.Initialise(g_pContext, kAssetDir);
     /// Late, so they stack over the windows that ask them.
     g_NumberInput.Initialise(g_pContext, kAssetDir);
     g_MessageBox.Initialise(g_pContext, kAssetDir);
@@ -684,6 +693,8 @@ Shutdown() {
     g_Community.Shutdown();
     g_Messages.Shutdown();
     g_ChatRoom.Shutdown();
+    g_Clan.Shutdown();
+    g_ClanOrganize.Shutdown();
     g_NumberInput.Shutdown();
     g_MessageBox.Shutdown();
     RoseRmlLayout::Shutdown();
@@ -784,6 +795,8 @@ Update() {
     UI_TIMED("community", g_Community.Update());
     UI_TIMED("messages", g_Messages.Update());
     UI_TIMED("chatroom", g_ChatRoom.Update());
+    UI_TIMED("clan", g_Clan.Update());
+    UI_TIMED("clanorganize", g_ClanOrganize.Update());
     UI_TIMED("numinput", g_NumberInput.Update());
     UI_TIMED("msgbox", g_MessageBox.Update());
     /// Data bindings, styles and layout of every document.
@@ -879,6 +892,17 @@ SetWindowOpen(int iDlgType, bool bOpen) {
         case DLG_TYPE_CHATROOM:
             g_ChatRoom.SetOpen(bOpen);
             break;
+        case DLG_TYPE_CLAN:
+            g_Clan.SetOpen(bOpen);
+            break;
+        case DLG_TYPE_CLAN_NOTICE:
+            /// The notice box is the clan window's Notice tab, editing.
+            if (bOpen)
+                g_Clan.EditNotice();
+            break;
+        case DLG_TYPE_CLAN_ORGANIZE:
+            g_ClanOrganize.SetOpen(bOpen);
+            break;
         case DLG_TYPE_RESTART:
             if (bOpen)
                 OpenRestart();
@@ -946,6 +970,12 @@ IsWindowOpen(int iDlgType) {
             return g_Messages.IsOpen();
         case DLG_TYPE_CHATROOM:
             return g_ChatRoom.IsOpen();
+        case DLG_TYPE_CLAN:
+            return g_Clan.IsOpen();
+        case DLG_TYPE_CLAN_NOTICE:
+            return false;
+        case DLG_TYPE_CLAN_ORGANIZE:
+            return g_ClanOrganize.IsOpen();
         case DLG_TYPE_RESTART:
             return g_MessageBox.IsTypePending(kMsgTypeRestart);
         default:

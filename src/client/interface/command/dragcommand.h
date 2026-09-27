@@ -36,9 +36,12 @@ public:
 /// 클랜 스킬을  퀵바에 스킬 등록
 class CTCmdDragClanSkill2QuickBar: public CTCommand {
 public:
-    CTCmdDragClanSkill2QuickBar(void){};
+    CTCmdDragClanSkill2QuickBar(void) { m_nType = DLG_TYPE_QUICKBAR; }
+    /// UI2's clan window drops on either skill bar row, as its skill window.
+    CTCmdDragClanSkill2QuickBar(short nType) { m_nType = nType; }
     virtual ~CTCmdDragClanSkill2QuickBar(void) {}
     virtual bool Exec(CTObject* pObj);
+    short m_nType;
 };
 
 /// 퀵바에서 아이템(스킬등 포함)을 뺀다.

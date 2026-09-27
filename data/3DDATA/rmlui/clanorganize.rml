@@ -1,0 +1,59 @@
+<rml>
+<head>
+    <title>Found a Clan</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="clanorganize.rcss"/>
+</head>
+<body data-model="clanorganize">
+    <!--
+        UI2 found-a-clan window ( RoseRmlClanOrganize ), replacing the classic
+        one the clan manager opens. Name the clan, write its slogan, pick a
+        background and a symbol for its emblem, then Found.
+    -->
+    <div id="clanorganize" class="ui-window">
+        <handle move_target="clanorganize" class="ui-titlebar">
+            <span class="ui-title">Found a Clan</span>
+            <span class="ui-close" data-event-click="close()">X</span>
+        </handle>
+
+        <!-- The emblem as it will look, and the two fields. -->
+        <div class="top ui-well">
+            <div class="preview">
+                <img data-attr-src="back_src" data-attr-rect="back_rect"/>
+                <img data-attr-src="center_src" data-attr-rect="center_rect"/>
+            </div>
+            <div class="fields">
+                <span class="label ui-muted">Clan name</span>
+                <input id="cname" type="text" class="ui-field fname" maxlength="16" data-event-change="edited()"/>
+                <span class="label ui-muted">Slogan</span>
+                <input id="cslogan" type="text" class="ui-field fslogan" maxlength="64" data-event-change="edited()"/>
+            </div>
+        </div>
+
+        <div class="head ui-muted">Background</div>
+        <div class="grid ui-well">
+            <div class="cell" data-for="b : backs" data-class-on="b.on" data-event-click="pick_back(b.index)">
+                <img data-attr-src="b.src" data-attr-rect="b.rect"/>
+            </div>
+        </div>
+
+        <div class="head ui-muted">Symbol</div>
+        <div class="grid ui-well">
+            <div class="cell" data-for="c : centers" data-class-on="c.on" data-event-click="pick_center(c.index)">
+                <img data-attr-src="c.src" data-attr-rect="c.rect"/>
+            </div>
+        </div>
+
+        <div class="needs ui-well">
+            <div class="need" data-class-ok="level_ok"><span class="mark">{{ level_ok ? 'OK' : 'NO' }}</span>Level 30<span class="have ui-muted">you are {{my_level}}</span></div>
+            <div class="need" data-class-ok="money_ok"><span class="mark">{{ money_ok ? 'OK' : 'NO' }}</span>1,000,000 zuly<span class="have ui-muted">you have {{my_money}}</span></div>
+        </div>
+
+        <div class="buttons">
+            <span class="ui-btn btn" data-event-click="close()">Cancel</span>
+            <span class="ui-btn btn" data-event-click="found()">Found</span>
+        </div>
+    </div>
+</body>
+</rml>
