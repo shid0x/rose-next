@@ -1553,7 +1553,8 @@ bool
 IT_MGR::IsMouseOnInterface() {
     if (CTDialog::GetProcessMouseOverDialog() || CDragNDropMgr::GetInstance().IsDraging())
         return true;
-    return false;
+    /// UI2 panels are interface too ( RoseRmlUi ).
+    return RoseRmlUi::IsMouseOverUi();
 }
 
 void

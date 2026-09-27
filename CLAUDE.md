@@ -554,7 +554,13 @@ world until it comes back up (`g_uWorldButtons` in `RoseRmlUi::ProcessWndMsg`) -
 release go to the world wherever the cursor is, and RmlUi is not told. Before, a right-drag camera
 crossing a panel had its moves eaten there: the camera froze, then jumped when the cursor came out.
 A legacy icon drag is checked first: it can start in a classic window (a world press) and still end
-on a UI2 panel.
+on a UI2 panel. **The right button is always the world's** (2026-09-27), even pressed over a panel:
+the camera anchors its drag on `WM_RBUTTONDOWN` (`m_PosRButtonClick`), so a panel that ate the press
+left the camera frozen, then jumping the whole distance once the cursor left the panel. No UI2 panel
+uses right-click; one that ever does must take this back. **`IT_MGR::IsMouseOnInterface` counts
+UI2 panels** (`RoseRmlUi::IsMouseOverUi`, false during a world press): the per-frame cursor choice
+(`CGameStateMain::UpdateCheckFrame`) forces the arrow only over "interface", so an NPC's talk bubble
+stayed on over UI2 windows and world hover labels showed through them.
 
 **UI2 sounds** come from the classic XML: a UI2 window plays its replaced dialog's `SHOWSID` /
 `HIDESID` (`RoseUi2::PlayWindowSound`), and a context-wide listener plays the classic `CLICKSID`

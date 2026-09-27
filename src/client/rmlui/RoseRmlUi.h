@@ -84,6 +84,12 @@ bool ChatAppendInput(const char* pszText);
 /// A UI2 text field has the keyboard.
 bool HasFocusedTextField();
 
+/// The mouse is over a UI2 panel ( not during a press that began in the
+/// world ): IT_MGR::IsMouseOnInterface counts it, so the world under a panel
+/// neither sets the cursor ( an NPC's talk bubble stuck on over the menu )
+/// nor shows its hover labels.
+bool IsMouseOverUi();
+
 /// SC_SetButtonBlink on a replaced dialog: the tutorial points at a button
 /// ( the menu's MENU_BTN_* ). False when UI2 has no such button.
 bool BlinkButton(int iDlgType, int iButtonId);

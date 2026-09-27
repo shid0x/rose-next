@@ -1419,11 +1419,21 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
             /// Pressed in the world, or while another button already drags
             /// there: the world's, until it comes back up.
             ForgetReleasedWorldButtons();
-            if (g_uWorldButtons != 0 || !IsPointOverPanel(x, y)) {
+            const bool bOverPanel = IsPointOverPanel(x, y);
+            /// The right button is the camera's wherever it is pressed: no UI2
+            /// panel uses it, and the game has to see the press to anchor the
+            /// drag. Before, a right-drag started over a panel did nothing
+            /// while the panel ate the moves, then the camera jumped the whole
+            /// distance once the cursor left it. ( A panel that ever wants a
+            /// right click has to take this back. )
+            if (g_uWorldButtons != 0 || !bOverPanel || iButton == 1) {
                 g_uWorldButtons |= 1u << iButton;
-                /// A click in the world ends typing in a UI2 field.
-                if (Rml::Element* pField = FocusedTextField())
-                    pField->Blur();
+                /// A click in the world ends typing in a UI2 field ( a camera
+                /// drag started on a panel does not ).
+                if (!bOverPanel) {
+                    if (Rml::Element* pField = FocusedTextField())
+                        pField->Blur();
+                }
                 return false; /// let the world have it; RmlUi gets no phantom press
             }
             if (iButton == 0)
@@ -1655,6 +1665,17 @@ ChatAppendInput(const char* pszText) {
 bool
 HasFocusedTextField() {
     return g_bInitialised && FocusedTextField() != NULL;
+}
+
+bool
+IsMouseOverUi() {
+    /// A press that started in the world keeps it ( a right-drag camera
+    /// crossing a panel keeps its cursor ).
+    if (!g_bInitialised || g_uWorldButtons != 0)
+        return false;
+    POINT ptMouse;
+    CGame::GetInstance().Get_MousePos(ptMouse);
+    return IsPointOverPanel(ptMouse.x, ptMouse.y);
 }
 
 bool
