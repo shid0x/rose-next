@@ -1017,6 +1017,10 @@ CIconSkill::AddSkillStatus(int iSkillNo, CInfo& ToolTip) {
             else if (GetSkillIncreaseAbility(iSkillNo, i, strOut, false))
                 strTemp.append(" (" + strOut + ")");
             ToolTip.AddString(strTemp.c_str(), g_dwBlueToolTip);
+        } else if (i == 0 && SKILL_TYPE(iSkillNo) == SKILL_ACTION_SELF_AND_TARGET) {
+            /// A drain skill's slot 0 is what it drains, already printed by AddSkillSuction
+            /// ("Drains: HP 500"); printing it here too read as a second, separate heal.
+            continue;
         } else if (GetSkillIncreaseAbility(iSkillNo, i, strOut, true)) {
             strTemp.append(strOut);
             ToolTip.AddString(strTemp.c_str(), g_dwBlueToolTip);
