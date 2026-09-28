@@ -56,6 +56,11 @@ Usage
     python scripts/fix-coplanar-object-overlaps.py --verify         # expect none left
     python scripts/fix-coplanar-object-overlaps.py --restore        # undo from manifest
     --zone 2 --zone 22   limit to zone ids (LIST_ZONE rows)
+    --only D48           fix only this object's fights (repeatable); every other
+                         placement is pinned, and the zone is refused if the plan
+                         would move one. Check the direction by hand: the planner
+                         separates faces but cannot tell a wall's room side, and
+                         the wrong way hides the object behind the wall.
     --min-area CM2       ignore overlaps smaller than this (default 400 = 20x20 cm)
     --min-sep CM         planes closer than this count as fighting (default 1.0)
     --step CM            nudge unit (default 0.5)
@@ -465,9 +470,10 @@ def label(o):
 PLAN_MARGIN = 0.2
 
 
-def plan_nudges(placements, pairs, min_sep, step):
+def plan_nudges(placements, pairs, min_sep, step, only=()):
     """{idx: (direction, level)} so that every fighting pair ends >= min_sep apart
-    and no constraint pair is pushed under it."""
+    and no constraint pair is pushed under it. With `only`, every other
+    placement is pinned: levelled first, at zero, so the named ones move."""
     adj = collections.defaultdict(dict)           # v -> u -> planes
     for (i, j), e in pairs.items():
         adj[i][j] = e["planes"]
@@ -485,8 +491,11 @@ def plan_nudges(placements, pairs, min_sep, step):
         return (mv - mu) if v < u else (mu - mv)
 
     plan = {}                                     # processed fighting nodes
-    order = sorted(nodes, key=lambda i: -len(adj[i]))
+    order = sorted(nodes, key=lambda i: (selected(placements[i], only), -len(adj[i])))
     for v in order:
+        if not selected(placements[v], only):
+            plan[v] = ((0.0, 0.0, 0.0), 0)
+            continue
         normals, others = set(), set()
         for u in adj[v]:
             if (min(u, v), max(u, v)) in fight:
@@ -579,17 +588,34 @@ def sink_duplicates(placements, sink, verbose=True):
     return sunk
 
 
+def selected(o, only):
+    """--only: a placement is in scope if its object label (D48, C12) is named."""
+    return not only or label(o).split(" ")[0] in only
+
+
+def scoped(placements, pairs, min_sep, only):
+    """Drop the fighting pairs --only leaves alone. Nearby non-fighting pairs
+    stay: they are the constraints any move must still respect."""
+    if not only:
+        return pairs
+    return {k: v for k, v in pairs.items()
+            if v["sep"] >= min_sep
+            or selected(placements[k[0]], only) or selected(placements[k[1]], only)}
+
+
 def solve_zone(placements, args, verbose=True):
     """Iterate detect -> plan -> move until nothing fights. Returns leftover pairs."""
     sep_limit = args.min_sep + MAX_LEVEL * args.step * 2
     left = {}
-    sink_duplicates(placements, args.sink, verbose)
+    if not args.only:
+        sink_duplicates(placements, args.sink, verbose)
     for rnd in range(4):
-        pairs = find_overlaps(placements, sep_limit, args.min_area)
+        pairs = scoped(placements, find_overlaps(placements, sep_limit, args.min_area),
+                       args.min_sep, args.only)
         left = fighting(pairs, args.min_sep)
         if not left:
             break
-        plan = plan_nudges(placements, pairs, args.min_sep, args.step)
+        plan = plan_nudges(placements, pairs, args.min_sep, args.step, args.only)
         if not plan:
             break
         if verbose:
@@ -599,7 +625,8 @@ def solve_zone(placements, args, verbose=True):
                     "" if rnd == 0 else "  (round %d)" % (rnd + 1)))
         apply_plan(placements, plan, args.step)
     else:
-        pairs = find_overlaps(placements, sep_limit, args.min_area)
+        pairs = scoped(placements, find_overlaps(placements, sep_limit, args.min_area),
+                       args.min_sep, args.only)
         left = fighting(pairs, args.min_sep)
     return left
 
@@ -626,6 +653,9 @@ def main():
     ap.add_argument("--min-sep", type=float, default=1.0, help="cm")
     ap.add_argument("--step", type=float, default=0.5, help="cm")
     ap.add_argument("--sink", type=float, default=10000.0, help="cm to sink an exact duplicate record")
+    ap.add_argument("--only", action="append", default=[],
+                    help="object label to fix, e.g. D48 (repeatable): other fights are left "
+                         "alone, and a zone is refused if the plan would move anything else")
     args = ap.parse_args()
 
     manifest = {"entries": []}
@@ -648,7 +678,8 @@ def main():
         placements = load_zone(zone)
         if not placements:
             continue
-        pairs = fighting(find_overlaps(placements, args.min_sep, args.min_area), args.min_sep)
+        pairs = fighting(scoped(placements, find_overlaps(placements, args.min_sep, args.min_area),
+                                args.min_sep, args.only), args.min_sep)
         print("zone %3d %-30s placements=%5d fighting-pairs=%4d  [%.0fs]" % (
             zone["id"], zone["name"][:30], len(placements), len(pairs), time.time() - t0))
         if not pairs:
@@ -659,6 +690,12 @@ def main():
             continue
         left = solve_zone(placements, args)
         moved = [o for o in placements if o["raw_pos"] != o["orig_raw"]]
+        stray = [o for o in moved if not selected(o, args.only)]
+        if stray:
+            unresolved += 1
+            print("   !! --only: the plan would also move %s -- zone left untouched"
+                  % ", ".join(label(o) for o in stray))
+            continue
         for o in moved:
             dist = math.sqrt(sum((o["raw_pos"][k] - o["orig_raw"][k]) ** 2 for k in range(3)))
             if dist >= args.sink * 0.99:
