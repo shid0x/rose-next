@@ -329,7 +329,9 @@ public:
     bool Skill_IsPassFilter(CObjCHAR* pTarget, short nSkillIDX);
     // BYTE		Skill_IncAbilityValue( short nSkillIDX );
     void Skill_ChangeIngSTATUS(CObjCHAR* pTarget);
-    BYTE Skill_ApplyIngSTATUS(short nSkillIDX, CObjCHAR* pSpeller);
+    /// iAdjustINT: the INT that scales the applied value; -1 = the speller's. Only the drain
+    /// skills pass it -- they apply to the attacker with the *target* as speller.
+    BYTE Skill_ApplyIngSTATUS(short nSkillIDX, CObjCHAR* pSpeller, int iAdjustINT = -1);
     bool Skill_DamageToAROUND(tPOINTF& PosCENTER);
 
     tPOINTF Get_GotoPOSITION() { return m_PosGOTO; }

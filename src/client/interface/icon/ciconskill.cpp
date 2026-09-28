@@ -908,7 +908,9 @@ void
 CIconSkill::AddSkillSuction(int iSkillNo, CInfo& ToolTip) {
     if (SKILL_INCREASE_ABILITY(iSkillNo, 0)) {
         int iAbility = SKILL_INCREASE_ABILITY(iSkillNo, 0);
-        int iValue = SKILL_INCREASE_ABILITY_VALUE(iSkillNo, 0);
+        /// What a hit gives you: the server scales it by the attacker's INT (Skill_START_19)
+        int iValue =
+            SKILL_INCREASE_ABILITY_VALUE(iSkillNo, 0) * (g_pAVATAR->Get_INT() + 300) / 315;
 
         ToolTip.AddString(CStr::Printf("%s: %s %d",
                               STR_ABSORPTION,

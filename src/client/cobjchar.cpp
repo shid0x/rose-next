@@ -2386,12 +2386,15 @@ CObjCHAR::ProcEffectOfSkillInDamageOfSkill(int iSkillIDX,
                 for (int i = 0; i < SKILL_INCREASE_ABILITY_CNT; i++) {
                     if ((0x01 << i) & pEffectOfSkill->EffectOfSkill.m_btSuccessBITS) {
                         int iAbilityType = SKILL_INCREASE_ABILITY(iSkillIDX, i);
+                        /// Same amount the server gives (Skill_START_19): scaled by our own INT
                         switch (iAbilityType) {
                             case AT_HP:
-                                g_pAVATAR->Add_HP(SKILL_INCREASE_ABILITY_VALUE(iSkillIDX, i));
+                                g_pAVATAR->Add_HP(CCal::Get_SkillAdjustVALUE(
+                                    g_pAVATAR, iSkillIDX, i, g_pAVATAR->Get_INT()));
                                 break;
                             case AT_MP:
-                                g_pAVATAR->Add_MP(SKILL_INCREASE_ABILITY_VALUE(iSkillIDX, i));
+                                g_pAVATAR->Add_MP(CCal::Get_SkillAdjustVALUE(
+                                    g_pAVATAR, iSkillIDX, i, g_pAVATAR->Get_INT()));
                                 break;
 
                             case AT_STAMINA:

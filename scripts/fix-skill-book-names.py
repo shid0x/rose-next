@@ -63,7 +63,10 @@ corrected on 2026-09-28.) It also carries books that keep their name:
     books said "a Knuckle or a Melee Weapon"; Economy Research gives far more
     than "Charm by 2" past rank 1; Power Gun Shot read as a passive;
   * two that left out a later bonus: Craft Mastery (gun Attack Speed from rank
-    6) and Weapon Research (Critical from rank 11).
+    6) and Weapon Research (Critical from rank 11);
+  * Blood Attack, which promised HP "calculated by the amount of damage
+    inflicted on a nearby enemy": it is one target and a flat amount on a hit,
+    scaled by the attacker's INT since Skill_START_19 was fixed to use it.
 
 Only the English language block is touched
 ------------------------------------------
@@ -228,6 +231,9 @@ BOOK_DESCRIPTIONS = {
     811: "Learn the essentials of crafting. Increase Maximum MP, and from "
          "rank 6 Attack Speed with Guns.",
     816: "Fire a powerful shot at a target with a Gun or Launcher.",
+    690: "Strike a target and regain HP when the blow lands. The amount grows "
+         "with Intelligence. Only Champions can upgrade this skill above "
+         "Level 6.",
 }
 
 # LIST_USEITEM row -> the name it ends up with. The reviewed outcome of the rule

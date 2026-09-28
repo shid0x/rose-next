@@ -1393,9 +1393,11 @@ BYTE CObjCHAR::Skill_IncAbilityValue( short nSkillIDX )
 // 상태 지속형(셀프)	중독, 벙어리, 기절, 투명, 방패데미지, 추가 데미지
 // 상태 지속형(타겟)	중독, 벙어리, 기절, 투명, 방패데미지, 추가 데미지
 BYTE
-CObjCHAR::Skill_ApplyIngSTATUS(short nSkillIDX, CObjCHAR* pSpeller) {
+CObjCHAR::Skill_ApplyIngSTATUS(short nSkillIDX, CObjCHAR* pSpeller, int iAdjustINT) {
     if (this->Get_HP() <= 0)
         return 0;
+
+    const int iSpellerINT = iAdjustINT >= 0 ? iAdjustINT : pSpeller->Get_INT();
 
     if (SKILL_HARM(nSkillIDX)) {
         // 적대유발...
@@ -1424,8 +1426,7 @@ CObjCHAR::Skill_ApplyIngSTATUS(short nSkillIDX, CObjCHAR* pSpeller) {
                     this->Add_MONEY(SKILL_INCREASE_ABILITY_VALUE(nSkillIDX, nI));
                     break;
                 case AT_HP: {
-                    nAdjValue =
-                        CCal::Get_SkillAdjustVALUE(this, nSkillIDX, nI, pSpeller->Get_INT());
+                    nAdjValue = CCal::Get_SkillAdjustVALUE(this, nSkillIDX, nI, iSpellerINT);
                     this->Add_HP(nAdjValue);
                     break;
                 }
@@ -1440,8 +1441,7 @@ CObjCHAR::Skill_ApplyIngSTATUS(short nSkillIDX, CObjCHAR* pSpeller) {
                     // +flat * INT factor) and the next authoritative MP packet
                     // snapped the client back down — the visible "MP jumping
                     // down after a few pulses".
-                    nAdjValue =
-                        CCal::Get_SkillAdjustVALUE(this, nSkillIDX, nI, pSpeller->Get_INT());
+                    nAdjValue = CCal::Get_SkillAdjustVALUE(this, nSkillIDX, nI, iSpellerINT);
                     this->Add_MP(nAdjValue);
                     break;
                 }
@@ -1469,7 +1469,7 @@ CObjCHAR::Skill_ApplyIngSTATUS(short nSkillIDX, CObjCHAR* pSpeller) {
             }
         }
 
-        nAdjValue = CCal::Get_SkillAdjustVALUE(this, nSkillIDX, nI, pSpeller->Get_INT());
+        nAdjValue = CCal::Get_SkillAdjustVALUE(this, nSkillIDX, nI, iSpellerINT);
         // 적용 가능 한가 ???
         if (!this->m_IngSTATUS.IsEnableApplay(nIngSTB, nAdjValue)) {
             LogString(LOG_DEBUG_,
@@ -1693,7 +1693,11 @@ CObjCHAR::Skill_START_19(CObjCHAR* pTarget) {
         CObjITEM* pOutITEM = NULL;
         this->Apply_DAMAGE(pTarget, sDamage, &pOutITEM, true);
         if (sDamage.m_wVALUE > 0) {
-            BYTE btResult = this->Skill_ApplyIngSTATUS(Get_ActiveSKILL(), pTarget);
+            // The drain lands on the attacker, so the target stands in as "speller" (aggro,
+            // Taunt, the status roll keep that meaning) -- but the amount scales with the
+            // attacker's own INT. It used to take the victim's.
+            BYTE btResult =
+                this->Skill_ApplyIngSTATUS(Get_ActiveSKILL(), pTarget, this->Get_INT());
             pTarget->Send_gsv_DAMAGE_OF_SKILL(this->Get_INDEX(),
                 Get_ActiveSKILL(),
                 sDamage.m_wDamage,
