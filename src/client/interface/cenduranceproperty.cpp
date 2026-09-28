@@ -498,19 +498,19 @@ CEndurancePack::Draw() {
                         Tooltip.AddString("");
 
                         if (goddess_move > 0) {
-                            Tooltip.AddString(CStr::Printf("Move Speed: +%i", goddess_move));
+                            Tooltip.AddString(CStr::Printf("Movement Speed: +%i", goddess_move));
                         }
                         if (goddess_attack > 0) {
-                            Tooltip.AddString(CStr::Printf("Attack Damage: +%i", goddess_attack));
+                            Tooltip.AddString(CStr::Printf("Attack Power: +%i", goddess_attack));
                         }
                         if (goddess_hit > 0) {
-                            Tooltip.AddString(CStr::Printf("Hit Rate: +%i", goddess_hit));
+                            Tooltip.AddString(CStr::Printf("Accuracy: +%i", goddess_hit));
                         }
                         if (goddess_aspd > 0) {
                             Tooltip.AddString(CStr::Printf("Attack Speed: +%i", goddess_aspd));
                         }
                         if (goddess_crit > 0) {
-                            Tooltip.AddString(CStr::Printf("Crit: +%i", goddess_crit));
+                            Tooltip.AddString(CStr::Printf("Critical: +%i", goddess_crit));
                         }
                     } else {
                         Tooltip.AddString(cTimeRemaining);

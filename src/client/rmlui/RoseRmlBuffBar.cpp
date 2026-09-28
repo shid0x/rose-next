@@ -80,11 +80,11 @@ GoddessDetail(CEndurancePack& pack, CEnduranceProperty* pEntity) {
         const char* pszLabel;
         int iValue;
     } lines[] = {
-        {"Move Speed", fx.move_speed - pack.GetStateValue(ING_INC_MOV_SPD)},
-        {"Attack Damage", fx.attack_power - pack.GetStateValue(ING_INC_APOWER)},
-        {"Hit Rate", fx.hit - pack.GetStateValue(ING_INC_HIT)},
+        {"Movement Speed", fx.move_speed - pack.GetStateValue(ING_INC_MOV_SPD)},
+        {"Attack Power", fx.attack_power - pack.GetStateValue(ING_INC_APOWER)},
+        {"Accuracy", fx.hit - pack.GetStateValue(ING_INC_HIT)},
         {"Attack Speed", fx.attack_speed - pack.GetStateValue(ING_INC_ATK_SPD)},
-        {"Crit", fx.crit - pack.GetStateValue(ING_INC_CRITICAL)},
+        {"Critical", fx.crit - pack.GetStateValue(ING_INC_CRITICAL)},
     };
 
     Rml::String str;

@@ -229,6 +229,23 @@ class Stl:
     def english(self):
         return self.blocks[self.lang_off[ENGLISH]]
 
+    def append(self, key, idx, fields):
+        """A new key, with the same text in every language block (the client only
+        reads one; the others would otherwise be misaligned)."""
+        if key in self.index():
+            raise ValueError("%s: key %s already present" % (self.path, key))
+        if len(fields) != self.nf:
+            raise ValueError("%s: %d fields, table has %d" % (self.path, len(fields), self.nf))
+        self.keys.append((key.encode("latin-1"), idx))
+        for start in self.block_starts:
+            self.blocks[start].append([f.encode("utf-8") for f in fields])
+
+    def remove(self, key):
+        i = self.index()[key]
+        del self.keys[i]
+        for start in self.block_starts:
+            del self.blocks[start][i]
+
     def to_bytes(self):
         count = len(self.keys)
         head = varint(len(self.tag)) + self.tag + struct.pack("<I", count)
