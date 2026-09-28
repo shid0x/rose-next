@@ -220,7 +220,7 @@ The client reads its game content from a packed **VFS** (`data.idx` +
 ROSE Next assets from:
 
 ```
-https://mega.nz/file/xVll1YhY#pokxwmuxV6PqQPlIs85pIqTRogZJ9KQFqAFr1dSsawQ
+https://mega.nz/file/VdNk2JTD#G3Be190ChHT1f8GngRs_mrC31jNX02ep4sjDyXTkZh0
 ```
 
 Place the raw game files into the [`data/`](data/) folder (see
