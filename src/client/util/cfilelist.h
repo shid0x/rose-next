@@ -199,6 +199,17 @@ CFileLIST<dType>::Add_FILE(char* szFileName,
     dType DATA,
     bool bCheckFileExist,
     bool bImmediateLoad) {
+    /// An empty name is "no file", and 0 is the "no file" key every consumer
+    /// tests. It used to be registered like any other: StrToHashKey("") is
+    /// non-zero, and CStrVAR::Set("") leaves the stored name NULL, so the
+    /// *second* empty name hashed onto that entry and handed NULL to
+    /// _strcmpi below -- an invalid-parameter fail-fast that no crash handler
+    /// sees (no dump, nothing in error.txt). Jrose's SW_Light.eft (the
+    /// Live House SEVEN stage lights) has three static meshes with an empty
+    /// animation path.
+    if (szFileName == NULL || szFileName[0] == '\0')
+        return 0;
+
 #ifndef __SERVER
     if (bCheckFileExist && ((CVFSManager::GetSingleton()).IsExistFile(szFileName) == false)) {
         char* szMSG =
@@ -232,17 +243,20 @@ CFileLIST<dType>::Add_FILE(char* szFileName,
 
     /// 이미들어간거라면..
     if (pData) {
-        if (!_strcmpi(szFileName, pData->m_FileName.Get()))
+        const char* szStored = pData->m_FileName.Get();
+        if (szStored && !_strcmpi(szFileName, szStored))
             return uiHashKey;
 
+        if (szStored == NULL)
+            szStored = "";
         t_HASHKEY uiHashKey2;
-        uiHashKey2 = StrToHashKey(pData->m_FileName.Get());
+        uiHashKey2 = StrToHashKey(szStored);
 
         LOG_DEBUG("HashKey Collision ({}:{},  {}:{})",
             uiHashKey,
             szFileName,
             uiHashKey2,
-            pData->m_FileName.Get());
+            szStored);
 
         _ASSERT(!pData);
         return 0;
