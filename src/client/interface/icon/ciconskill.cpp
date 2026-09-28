@@ -9,6 +9,34 @@
 #include "../IO_ImageRes.h"
 #include "../../GameProc/SkillCommandDelay.h"
 
+namespace {
+
+/// LIST_STATUS col 3: 1 = harmful to the one it lands on (stun, slow, Taunt), 2 = a buff's
+/// own drawback (Berserk's Defense loss, Endure's slow), 0 = helpful.
+bool
+IsHarmfulStatus(int iStateNo) {
+    return iStateNo && STATE_PRIFITS_LOSSES(iStateNo) == 1;
+}
+
+/// The tooltip's "Type". Types 9, 12 and 13 are "a lasting status on someone" whether it helps
+/// or hurts (Support and Freezing are both type 9), so they are named by their status instead.
+const char*
+SkillCategory(int iSkillNo) {
+    switch (SKILL_TYPE(iSkillNo)) {
+        case SKILL_ACTION_TARGET_BOUND_DURATION: /// 9
+        case SKILL_ACTION_SELF_STATE_DURATION: /// 12
+        case SKILL_ACTION_TARGET_STATE_DURATION: /// 13
+            if (IsHarmfulStatus(SKILL_STATE_STB1(iSkillNo))
+                || IsHarmfulStatus(SKILL_STATE_STB2(iSkillNo)))
+                return "Debuff";
+            return "Buff";
+        default:
+            return CStringManager::GetSingleton().GetSkillType(SKILL_TYPE(iSkillNo));
+    }
+}
+
+} // namespace
+
 //----------------------------------------------------------------------------------------------------
 /// Class CIconSkill
 /// @brief	Skill 객체에 대한 View Class
@@ -152,8 +180,7 @@ CIconSkill::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                     int iNextLevelNo = 0;
                     if (iNextLevelNo = GetSkillNextLevelNo(iSkillNo)) {
                         AddSkillNextLevelTitle(iNextLevelNo, ToolTip);
-                        AddSkillTypeTarget(iSkillNo, ToolTip, false);
-                        AddSkillUseProperty(iSkillNo, ToolTip);
+                        AddSkillUseProperty(iNextLevelNo, ToolTip);
 
                         AddSkillRequireJob(iNextLevelNo, ToolTip);
                         AddSkillRequireAbility(iNextLevelNo, ToolTip);
@@ -186,8 +213,6 @@ CIconSkill::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                     int iNextLevelNo = 0;
                     if (iNextLevelNo = GetSkillNextLevelNo(iSkillNo)) {
                         AddSkillNextLevelTitle(iNextLevelNo, ToolTip);
-
-                        AddSkillTypeTarget(iNextLevelNo, ToolTip);
                         AddSkillUseProperty(iNextLevelNo, ToolTip);
                         AddSkillPower(iNextLevelNo, ToolTip);
                         AddSkillStatus(iNextLevelNo, ToolTip);
@@ -221,8 +246,6 @@ CIconSkill::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                     int iNextLevelNo = 0;
                     if (iNextLevelNo = GetSkillNextLevelNo(iSkillNo)) {
                         AddSkillNextLevelTitle(iNextLevelNo, ToolTip);
-
-                        AddSkillTypeTarget(iNextLevelNo, ToolTip);
                         AddSkillUseProperty(iNextLevelNo, ToolTip);
                         AddSkillPower(iNextLevelNo, ToolTip);
                         AddSkillDistanceScope(iNextLevelNo, ToolTip, false);
@@ -255,8 +278,6 @@ CIconSkill::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                     int iNextLevelNo = 0;
                     if (iNextLevelNo = GetSkillNextLevelNo(iSkillNo)) {
                         AddSkillNextLevelTitle(iNextLevelNo, ToolTip);
-
-                        AddSkillTypeTarget(iNextLevelNo, ToolTip);
                         AddSkillUseProperty(iNextLevelNo, ToolTip);
                         AddSkillPower(iNextLevelNo, ToolTip);
                         AddSkillDistanceScope(iNextLevelNo, ToolTip, true);
@@ -292,8 +313,6 @@ CIconSkill::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                     int iNextLevelNo = 0;
                     if (iNextLevelNo = GetSkillNextLevelNo(iSkillNo)) {
                         AddSkillNextLevelTitle(iNextLevelNo, ToolTip);
-
-                        AddSkillTypeTarget(iNextLevelNo, ToolTip);
                         AddSkillUseProperty(iNextLevelNo, ToolTip);
                         AddSkillScope(iNextLevelNo, ToolTip);
                         AddSkillStatus(iNextLevelNo, ToolTip);
@@ -327,8 +346,6 @@ CIconSkill::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                     int iNextLevelNo = 0;
                     if (iNextLevelNo = GetSkillNextLevelNo(iSkillNo)) {
                         AddSkillNextLevelTitle(iNextLevelNo, ToolTip);
-
-                        AddSkillTypeTarget(iNextLevelNo, ToolTip);
                         AddSkillUseProperty(iNextLevelNo, ToolTip);
                         AddSkillDistanceScope(iNextLevelNo, ToolTip, true);
                         AddSkillStatus(iNextLevelNo, ToolTip);
@@ -361,8 +378,6 @@ CIconSkill::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                     int iNextLevelNo = 0;
                     if (iNextLevelNo = GetSkillNextLevelNo(iSkillNo)) {
                         AddSkillNextLevelTitle(iNextLevelNo, ToolTip);
-
-                        AddSkillTypeTarget(iNextLevelNo, ToolTip);
                         AddSkillUseProperty(iNextLevelNo, ToolTip);
                         AddSkillScope(iNextLevelNo, ToolTip);
                         AddSkillStatus(iNextLevelNo, ToolTip);
@@ -395,8 +410,6 @@ CIconSkill::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                     int iNextLevelNo = 0;
                     if (iNextLevelNo = GetSkillNextLevelNo(iSkillNo)) {
                         AddSkillNextLevelTitle(iNextLevelNo, ToolTip);
-
-                        AddSkillTypeTarget(iNextLevelNo, ToolTip);
                         AddSkillUseProperty(iNextLevelNo, ToolTip);
                         AddSkillDistanceScope(iNextLevelNo, ToolTip, true);
                         AddSkillStatus(iNextLevelNo, ToolTip);
@@ -416,7 +429,7 @@ CIconSkill::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                 AddSkillUseProperty(iSkillNo, ToolTip);
                 ///필요 소환량
                 if (int iNpcNo = SKILL_SUMMON_PET(iSkillNo))
-                    ToolTip.AddString(CStr::Printf("%s : %d",
+                    ToolTip.AddString(CStr::Printf("%s: %d",
                         STR_REQUIRE_SUMMONQUANTITY,
                         NPC_NEED_SUMMON_CNT(iNpcNo)));
 
@@ -429,12 +442,10 @@ CIconSkill::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                     AddSkillDesc(iSkillNo, ToolTip);
                     int iNextLevelNo = 0;
                     if (iNextLevelNo = GetSkillNextLevelNo(iSkillNo)) {
-                        AddSkillNextLevelTitle(iNextLevelNo, ToolTip);
-                        AddSkillTypeTarget(iNextLevelNo, ToolTip, false);
-                        AddSkillUseProperty(iNextLevelNo, ToolTip);
+                        AddSkillNextLevelTitle(iNextLevelNo, ToolTip);                        AddSkillUseProperty(iNextLevelNo, ToolTip);
 
                         if (int iNpcNo = SKILL_SUMMON_PET(iNextLevelNo))
-                            ToolTip.AddString(CStr::Printf("%s : %d",
+                            ToolTip.AddString(CStr::Printf("%s: %d",
                                 STR_REQUIRE_SUMMONQUANTITY,
                                 NPC_NEED_SUMMON_CNT(iNpcNo)));
 
@@ -462,8 +473,6 @@ CIconSkill::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                     int iNextLevelNo = 0;
                     if (iNextLevelNo = GetSkillNextLevelNo(iSkillNo)) {
                         AddSkillNextLevelTitle(iNextLevelNo, ToolTip);
-
-                        AddSkillTypeTarget(iNextLevelNo, ToolTip, false);
                         AddSkillStatus(iNextLevelNo, ToolTip);
 
                         AddSkillRequireJob(iNextLevelNo, ToolTip);
@@ -502,8 +511,6 @@ CIconSkill::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                     int iNextLevelNo = 0;
                     if (iNextLevelNo = GetSkillNextLevelNo(iSkillNo)) {
                         AddSkillNextLevelTitle(iNextLevelNo, ToolTip);
-
-                        AddSkillTypeTarget(iNextLevelNo, ToolTip);
                         AddSkillUseProperty(iNextLevelNo, ToolTip);
                         AddSkillPower(iNextLevelNo, ToolTip);
                         AddSkillScope(iNextLevelNo, ToolTip);
@@ -537,8 +544,6 @@ CIconSkill::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                     int iNextLevelNo = 0;
                     if (iNextLevelNo = GetSkillNextLevelNo(iSkillNo)) {
                         AddSkillNextLevelTitle(iNextLevelNo, ToolTip);
-
-                        AddSkillTypeTarget(iNextLevelNo, ToolTip);
                         AddSkillUseProperty(iNextLevelNo, ToolTip);
                         AddSkillPower(iNextLevelNo, ToolTip);
                         AddSkillSuction(iNextLevelNo, ToolTip);
@@ -558,7 +563,7 @@ CIconSkill::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                 AddSkillUseProperty(iSkillNo, ToolTip);
                 AddSkillDistanceScope(iSkillNo, ToolTip, true);
                 ToolTip.AddString(
-                    CStr::Printf("%s : %d%%", STR_RECOVERY_EXP, SKILL_POWER(iSkillNo)));
+                    CStr::Printf("%s: %d%%", STR_RECOVERY_EXP, SKILL_POWER(iSkillNo)));
                 // AddSkillStatus( iSkillNo, ToolTip );
 
                 AddSkillRequireJob(iSkillNo, ToolTip);
@@ -571,12 +576,10 @@ CIconSkill::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
                     int iNextLevelNo = 0;
                     if (iNextLevelNo = GetSkillNextLevelNo(iSkillNo)) {
                         AddSkillNextLevelTitle(iNextLevelNo, ToolTip);
-
-                        AddSkillTypeTarget(iNextLevelNo, ToolTip);
                         AddSkillUseProperty(iNextLevelNo, ToolTip);
                         AddSkillDistanceScope(iNextLevelNo, ToolTip, true);
                         ToolTip.AddString(
-                            CStr::Printf("%s : %d%%", STR_RECOVERY_EXP, SKILL_POWER(iNextLevelNo)));
+                            CStr::Printf("%s: %d%%", STR_RECOVERY_EXP, SKILL_POWER(iNextLevelNo)));
                         // AddSkillStatus( iNextLevelNo, ToolTip );
 
                         AddSkillRequireJob(iNextLevelNo, ToolTip);
@@ -601,15 +604,13 @@ void
 CIconSkill::AddSkillTypeTarget(int iSkillNo, CInfo& ToolTip, bool bAddTarget) {
     char* pszBuf = NULL;
     if (bAddTarget)
-        pszBuf = CStr::Printf("%s:%s    %s:%s",
+        pszBuf = CStr::Printf("%s: %s    %s: %s",
             STR_ITEM_TYPE,
-            CStringManager::GetSingleton().GetSkillType(SKILL_TYPE(iSkillNo)),
+            SkillCategory(iSkillNo),
             STR_TARGET,
             CStringManager::GetSingleton().GetSkillTarget(SKILL_CLASS_FILTER(iSkillNo)));
     else
-        pszBuf = CStr::Printf("%s:%s",
-            STR_ITEM_TYPE,
-            CStringManager::GetSingleton().GetSkillType(SKILL_TYPE(iSkillNo)));
+        pszBuf = CStr::Printf("%s: %s", STR_ITEM_TYPE, SkillCategory(iSkillNo));
 
     ToolTip.AddString(pszBuf);
 }
@@ -631,22 +632,22 @@ CIconSkill::AddSkillDistanceScope(int iSkillNo, CInfo& ToolTip, bool bAddScope) 
 
     if (bAddScope) {
         if (iDistance && iScope) {
-            pszBuf = CStr::Printf("%s : %dm %s : %dm",
+            pszBuf = CStr::Printf("%s: %d m    %s: %d m",
                 STR_SHOOT_RANGE,
                 iDistance,
                 STR_APPLY_RANGE,
                 iScope);
             ToolTip.AddString(pszBuf);
         } else if (iDistance) {
-            pszBuf = CStr::Printf("%s : %dm", STR_SHOOT_RANGE, iDistance);
+            pszBuf = CStr::Printf("%s: %d m", STR_SHOOT_RANGE, iDistance);
             ToolTip.AddString(pszBuf);
         } else if (iScope) {
-            pszBuf = CStr::Printf("%s : %dm", STR_APPLY_RANGE, iScope);
+            pszBuf = CStr::Printf("%s: %d m", STR_APPLY_RANGE, iScope);
             ToolTip.AddString(pszBuf);
         }
     } else {
         if (iDistance) {
-            pszBuf = CStr::Printf("%s : %dm", STR_SHOOT_RANGE, iDistance);
+            pszBuf = CStr::Printf("%s: %d m", STR_SHOOT_RANGE, iDistance);
             ToolTip.AddString(pszBuf);
         }
     }
@@ -654,7 +655,7 @@ CIconSkill::AddSkillDistanceScope(int iSkillNo, CInfo& ToolTip, bool bAddScope) 
 void
 CIconSkill::AddSkillScope(int iSkillNo, CInfo& ToolTip) {
     if (SKILL_SCOPE(iSkillNo)) {
-        char* pszBuf = CStr::Printf("%s : %dm", STR_APPLY_RANGE, SKILL_SCOPE(iSkillNo) / 100);
+        char* pszBuf = CStr::Printf("%s: %d m", STR_APPLY_RANGE, SKILL_SCOPE(iSkillNo) / 100);
         ToolTip.AddString(pszBuf);
     }
 }
@@ -679,7 +680,7 @@ void
 CIconSkill::AddSkillName(int iSkillNo, CInfo& ToolTip, bool bAddLevel) {
     if (bAddLevel) {
         char* pszBuf =
-            CStr::Printf("%s[%s:%d]", SKILL_NAME(iSkillNo), STR_LEVEL, SKILL_LEVEL(iSkillNo));
+            CStr::Printf("%s (%s %d)", SKILL_NAME(iSkillNo), STR_LEVEL, SKILL_LEVEL(iSkillNo));
         ToolTip.AddString(pszBuf, g_dwYELLOW, g_GameDATA.m_hFONT[FONT_NORMAL_BOLD]);
     } else {
         ToolTip.AddString(SKILL_NAME(iSkillNo), g_dwYELLOW, g_GameDATA.m_hFONT[FONT_NORMAL_BOLD]);
@@ -708,34 +709,36 @@ CIconSkill::GetSkillNextLevelNo(int iSkillNo) {
 void
 CIconSkill::AddSkillNextLevelTitle(int iSkillNo, CInfo& ToolTip) {
     ToolTip.AddString(" ");
-    char* pszBuf = CStr::Printf("[%s:%d]", STR_NEXT_LEVEL, SKILL_LEVEL(iSkillNo));
+    char* pszBuf = CStr::Printf("%s (%s %d)", STR_NEXT_LEVEL, STR_LEVEL, SKILL_LEVEL(iSkillNo));
     ToolTip.AddString(pszBuf, g_dwYELLOW, g_GameDATA.m_hFONT[FONT_NORMAL_BOLD]);
 }
 
 void
 CIconSkill::AddSkillPower(int iSkillNo, CInfo& ToolTip) {
-    std::string strMsg = STR_SKILL_POWER;
-    strMsg.append(" : ");
-
+    /// "Power: 560 (Weapon Attack)" -- the damage formula CCal::Get_SkillDAMAGE uses
+    const char* pszFormula = NULL;
     switch (SKILL_DAMAGE_TYPE(iSkillNo)) {
         case 0:
-            strMsg.append(STR_SKILLPOWER_EFFECT_0);
+            pszFormula = STR_SKILLPOWER_EFFECT_0;
             break;
         case 1:
-            strMsg.append(STR_SKILLPOWER_EFFECT_1);
+            pszFormula = STR_SKILLPOWER_EFFECT_1;
             break;
         case 2:
-            strMsg.append(STR_SKILLPOWER_EFFECT_2);
+            pszFormula = STR_SKILLPOWER_EFFECT_2;
             break;
         case 3:
-            strMsg.append(STR_SKILLPOWER_EFFECT_3);
+            pszFormula = STR_SKILLPOWER_EFFECT_3;
             break;
         default:
             break;
     }
 
-    strMsg.append(CStr::Printf("(%d)", SKILL_POWER(iSkillNo)));
-    ToolTip.AddString(strMsg.c_str());
+    if (pszFormula)
+        ToolTip.AddString(
+            CStr::Printf("%s: %d (%s)", STR_SKILL_POWER, SKILL_POWER(iSkillNo), pszFormula));
+    else
+        ToolTip.AddString(CStr::Printf("%s: %d", STR_SKILL_POWER, SKILL_POWER(iSkillNo)));
 }
 
 void
@@ -757,7 +760,7 @@ CIconSkill::AddSkillUseProperty(int iSkillNo, CInfo& ToolTip) {
         if (SKILL_USE_PROPERTY(iSkillNo, i)) {
             iUseValue = g_pAVATAR->Skill_ToUseAbilityVALUE(iSkillNo, i);
 
-            pszBuf = CStr::Printf("[%s:%s %d]",
+            pszBuf = CStr::Printf("[%s: %s %d]",
                 STR_CONSUME_ABILITY,
                 CStringManager::GetSingleton().GetAbility(SKILL_USE_PROPERTY(iSkillNo, i)),
                 iUseValue);
@@ -775,7 +778,7 @@ void
 CIconSkill::AddSkillRequireEquip(int iSkillNo, CInfo& ToolTip) {
     std::string strTemp("[");
     strTemp.append(STR_REQUIRE_EQUIP);
-    strTemp.append(":");
+    strTemp.append(": ");
 
     int iCount = 0;
     DWORD dwColor = g_dwRED;
@@ -799,8 +802,9 @@ CIconSkill::AddSkillRequireEquip(int iSkillNo, CInfo& ToolTip) {
             pszChar = CStringManager::GetSingleton().GetItemType(SKILL_NEED_WEAPON(iSkillNo, i));
 
             if (pszChar) {
+                if (iCount)
+                    strTemp.append(", ");
                 strTemp.append(pszChar);
-                strTemp.append(" ");
                 ++iCount;
             }
         }
@@ -851,7 +855,7 @@ CIconSkill::AddSkillRequireJob(int iSkillNo, CInfo& ToolTip) {
         return;
     ///->
     if (iClass) {
-        const char* pszTemp = CStr::Printf("[%s %s]", STR_REQUIRE_JOB, CLASS_NAME(iClass));
+        const char* pszTemp = CStr::Printf("[%s: %s]", STR_REQUIRE_JOB, CLASS_NAME(iClass));
         DWORD color = g_dwRED;
 
         int iJob = g_pAVATAR->Get_JOB();
@@ -873,20 +877,20 @@ CIconSkill::AddSkillRequireSkill(int iSkillNo, CInfo& ToolTip) {
     std::string strTemp("[");
 
     strTemp.append(STR_REQUIRE_SKILL);
-    strTemp.append(":");
+    strTemp.append(": ");
     DWORD dwColor = g_dwGREEN;
 
     int iCount = 0;
     int iLearnSkillLv = 0;
     for (int i = 0; i < SKILL_NEED_SKILL_CNT; ++i) {
         if (SKILL_NEED_SKILL_INDEX(iSkillNo, i)) {
+            if (iCount)
+                strTemp.append(", ");
             strTemp.append(SKILL_NAME(
                 SKILL_NEED_SKILL_INDEX(iSkillNo, i) + SKILL_NEDD_SKILL_LEVEL(iSkillNo, i) - 1));
-            strTemp.append(CStr::Printf("(%s:%d)",
+            strTemp.append(CStr::Printf(" (%s %d)",
                 CStringManager::GetSingleton().GetAbility(AT_LEVEL),
                 SKILL_NEDD_SKILL_LEVEL(iSkillNo, i)));
-
-            strTemp.append(" ");
             ++iCount;
 
             iLearnSkillLv = g_pAVATAR->Skill_FindLearnedLevel(SKILL_NEED_SKILL_INDEX(iSkillNo, i));
@@ -906,7 +910,7 @@ CIconSkill::AddSkillSuction(int iSkillNo, CInfo& ToolTip) {
         int iAbility = SKILL_INCREASE_ABILITY(iSkillNo, 0);
         int iValue = SKILL_INCREASE_ABILITY_VALUE(iSkillNo, 0);
 
-        ToolTip.AddString(CStr::Printf("%s:%s %d ",
+        ToolTip.AddString(CStr::Printf("%s: %s %d",
                               STR_ABSORPTION,
                               CStringManager::GetSingleton().GetAbility(iAbility),
                               iValue),
@@ -918,7 +922,7 @@ void
 CIconSkill::AddSkillRequireAbility(int iSkillNo, CInfo& ToolTip) {
     std::string strTemp("[");
     strTemp.append(STR_REQUIRE_ABILITY);
-    strTemp.append(":");
+    strTemp.append(": ");
 
     char* pszBuf;
 
@@ -926,7 +930,9 @@ CIconSkill::AddSkillRequireAbility(int iSkillNo, CInfo& ToolTip) {
     DWORD dwColor = g_dwRED;
     for (int i = 0; i < SKILL_NEED_ABILITY_TYPE_CNT; ++i) {
         if (SKILL_NEED_ABILITY_TYPE(iSkillNo, i)) {
-            pszBuf = CStr::Printf("%s%d ",
+            if (iCount)
+                strTemp.append(", ");
+            pszBuf = CStr::Printf("%s %d",
                 CStringManager::GetSingleton().GetAbility(SKILL_NEED_ABILITY_TYPE(iSkillNo, i)),
                 SKILL_NEED_ABILITY_VALUE(iSkillNo, i));
             strTemp.append(pszBuf);
@@ -953,8 +959,6 @@ CIconSkill::GetSkillIncreaseAbility(int iSkillNo,
         return false;
 
     strOut.erase(strOut.begin(), strOut.end());
-
-    strOut.append("[");
 
     if (bAddTypeName) {
         strOut.append(
@@ -989,162 +993,78 @@ CIconSkill::GetSkillIncreaseAbility(int iSkillNo,
     if (SKILL_CHANGE_ABILITY_RATE(iSkillNo, iColumn))
         strOut.append(CStr::Printf("%d%%", SKILL_CHANGE_ABILITY_RATE(iSkillNo, iColumn)));
 
-    strOut.append("]");
     return true;
 }
 void
 CIconSkill::AddSkillStatus(int iSkillNo, CInfo& ToolTip) {
-    std::string strPassiveHeader(STR_CHANGE_ABILITY);
-    strPassiveHeader.append(" : ");
+    /// One line per status slot, each paired with the ability slot of the same index:
+    /// "Effect: Slow Run (53%)", "Effect: Fainted", and with no status the bare stat --
+    /// "Bonus: Max HP 59%" on a passive, "Effect: HP 700" on a heal.
+    std::string strHeader(
+        SKILL_TYPE(iSkillNo) == SKILL_ACTION_PASSIVE ? STR_CHANGE_ABILITY : STR_STATE);
+    strHeader.append(": ");
 
-    std::string strOtherHeader(STR_STATE);
-    strOtherHeader.append(" : ");
-
-    const char* pszHeader = strOtherHeader.c_str();
-    if (SKILL_TYPE(iSkillNo) == SKILL_ACTION_PASSIVE)
-        pszHeader = strPassiveHeader.c_str();
-
-    char* pszBuf = NULL;
-    bool bAddString = false;
     std::string strTemp;
     std::string strOut;
 
-    int iStateNo0 = SKILL_STATE_STB(iSkillNo, 0);
-    int iStateNo1 = SKILL_STATE_STB(iSkillNo, 1);
-
-    if (iStateNo0) {
-
-        if (STATE_TYPE(iStateNo0) == ING_DUMMY_DAMAGE) {
-            // strTemp.append( STATE_NAME( iStateNo0 ) );
-            // strTemp.append( CStr::Printf(" : %d%%",SKILL_POWER( iSkillNo ) ) );
-            // ToolTip.AddString( strTemp.c_str() ,g_dwBlueToolTip );
-        } else {
-            strTemp = pszHeader;
-            strTemp.append(STATE_NAME(iStateNo0));
-            if (GetSkillIncreaseAbility(iSkillNo, 0, strOut, false))
-                strTemp.append(strOut.c_str());
+    for (int i = 0; i < 2; ++i) { /// SKILL_STATE_STB has two slots, cols 11-12
+        int iStateNo = SKILL_STATE_STB(iSkillNo, i);
+        strTemp = strHeader;
+        if (iStateNo) {
+            strTemp.append(STATE_NAME(iStateNo));
+            if (STATE_TYPE(iStateNo) == ING_DUMMY_DAMAGE)
+                strTemp.append(CStr::Printf(" (%d%%)", SKILL_POWER(iSkillNo)));
+            else if (GetSkillIncreaseAbility(iSkillNo, i, strOut, false))
+                strTemp.append(" (" + strOut + ")");
             ToolTip.AddString(strTemp.c_str(), g_dwBlueToolTip);
-        }
-    } else {
-        strTemp = pszHeader;
-        if (GetSkillIncreaseAbility(iSkillNo, 0, strOut, true)) {
-            strTemp.append(strOut.c_str());
+        } else if (GetSkillIncreaseAbility(iSkillNo, i, strOut, true)) {
+            strTemp.append(strOut);
             ToolTip.AddString(strTemp.c_str(), g_dwBlueToolTip);
         }
     }
 
-    if (iStateNo1) {
-        if (STATE_TYPE(iStateNo1) == ING_DUMMY_DAMAGE) {
-            strTemp.append(STATE_NAME(iStateNo1));
-            strTemp.append(CStr::Printf(" : %d%%", SKILL_POWER(iSkillNo)));
-        } else {
-            strTemp = pszHeader;
-            strTemp.append(STATE_NAME(iStateNo1));
-            if (GetSkillIncreaseAbility(iSkillNo, 1, strOut, false))
-                strTemp.append(strOut.c_str());
-        }
-        ToolTip.AddString(strTemp.c_str(), g_dwBlueToolTip);
-    } else {
-        strTemp = pszHeader;
-        if (GetSkillIncreaseAbility(iSkillNo, 1, strOut, true)) {
-            strTemp.append(strOut.c_str());
-            ToolTip.AddString(strTemp.c_str(), g_dwBlueToolTip);
-        }
-    }
-
-    // if( iStateNo0 && iStateNo1 )
-    //{
-    //	strTemp = pszHeader;
-    //	strTemp.append( STATE_NAME( iStateNo0 ) );
-    //	if( GetSkillIncreaseAbility( iSkillNo, 0, strOut , false ) )
-    //		strTemp.append( strOut.c_str() );
-    //	ToolTip.AddString( strTemp.c_str() ,g_dwBlueToolTip );
-
-    //	strTemp = pszHeader;
-    //	strTemp.append( STATE_NAME( iStateNo1 ) );
-    //	if( GetSkillIncreaseAbility( iSkillNo, 1, strOut , false ) )
-    //		strTemp.append( strOut.c_str() );
-
-    //	ToolTip.AddString( strTemp.c_str() ,g_dwBlueToolTip );
-
-    //}
-    // else if( iStateNo0 )
-    //{
-    //	strTemp = pszHeader;
-    //	strTemp.append( STATE_NAME( iStateNo0 ) );
-    //	for( int i = 0; i < SKILL_INCREASE_ABILITY_CNT; ++i )
-    //	{
-    //		if( GetSkillIncreaseAbility( iSkillNo, i, strOut , false ) )
-    //			strTemp.append( strOut.c_str() );
-    //	}
-
-    //	ToolTip.AddString( strTemp.c_str() , g_dwBlueToolTip );
-
-    //}
-    // else if( iStateNo1 )
-    //{
-    //	strTemp = pszHeader;
-    //	strTemp.append( STATE_NAME( iStateNo1 ) );
-    //	for( int i = 0; i < SKILL_INCREASE_ABILITY_CNT; ++i )
-    //	{
-    //		if( GetSkillIncreaseAbility( iSkillNo, i, strOut , false) )
-    //			strTemp.append( strOut.c_str() );
-    //	}
-    //	ToolTip.AddString( strTemp.c_str() ,g_dwBlueToolTip );
-
-    //}
-    // else
-    //{
-    //	strTemp = pszHeader;
-    //	bAddString = false;
-    //	for( int i = 0; i < SKILL_INCREASE_ABILITY_CNT; ++i )
-    //	{
-    //		if( GetSkillIncreaseAbility( iSkillNo, i, strOut , true) )
-    //		{
-    //			bAddString = true;
-    //			strTemp.append( strOut.c_str() );
-    //		}
-    //	}
-
-    //	if( bAddString )
-    //		ToolTip.AddString( strTemp.c_str() , g_dwBlueToolTip );
-    //}
-
-    if (iStateNo0 || iStateNo1)
+    if (SKILL_STATE_STB(iSkillNo, 0) || SKILL_STATE_STB(iSkillNo, 1))
         AddSkillSuccessRateDuration(iSkillNo, ToolTip);
 }
 
 void
 CIconSkill::AddSkillSuccessRateDuration(int iSkillNo, CInfo& ToolTip) {
-    char* pszBuf;
+    if (SKILL_DURATION(iSkillNo) > 0)
+        ToolTip.AddString(
+            CStr::Printf("%s: %d %s", STR_CONTINUE_TIME, SKILL_DURATION(iSkillNo), STR_SECOND));
 
-    /// 80% ~ 100%
-    if (SKILL_SUCCESS_RATIO(iSkillNo)) {
-        pszBuf = CStr::Printf("%s:%d-%d%%  %s:%d%s",
-            STR_SUCCESS_RATE,
-            (int)(SKILL_SUCCESS_RATIO(iSkillNo) * 0.8),
-            (int)(SKILL_SUCCESS_RATIO(iSkillNo)),
-            STR_CONTINUE_TIME,
-            SKILL_DURATION(iSkillNo),
-            STR_SECOND);
-    } else ///성공률이 0일경우 100%로 처리
-    {
-        pszBuf = CStr::Printf("%s:%d%%  %s:%d%s",
-            STR_SUCCESS_RATE,
-            100,
-            STR_CONTINUE_TIME,
-            SKILL_DURATION(iSkillNo),
-            STR_SECOND);
+    /// The server's roll (CObjCHAR::Skill_ApplyIngSTATUS). A column of 0 always lands. A harmful
+    /// status (LIST_STATUS col 3 non-zero) lands when
+    ///     ratio * (2 * caster level + INT + 20) / (target RES * 0.6 + AVOID + 5) > 1..100,
+    /// so the column is a base that the caster's level and INT raise and the target resists; a
+    /// helpful one when ratio >= target level - caster level + 1..100, i.e. about ratio %.
+    /// This line used to print 80-100% of the column, which matched neither.
+    int iRatio = SKILL_SUCCESS_RATIO(iSkillNo);
+    if (iRatio <= 0)
+        return;
+
+    bool bHarmful = false;
+    for (int i = 0; i < 2; ++i) {
+        int iStateNo = SKILL_STATE_STB(iSkillNo, i);
+        if (iStateNo && STATE_PRIFITS_LOSSES(iStateNo))
+            bHarmful = true;
     }
 
-    ToolTip.AddString(pszBuf);
+    if (bHarmful)
+        ToolTip.AddString(CStr::Printf("%s: %d base (vs. %s, %s)",
+            STR_SUCCESS_RATE,
+            iRatio,
+            CStringManager::GetSingleton().GetAbility(AT_RES),
+            CStringManager::GetSingleton().GetAbility(AT_AVOID)));
+    else if (iRatio < 100)
+        ToolTip.AddString(CStr::Printf("%s: about %d%%", STR_SUCCESS_RATE, iRatio));
 }
 
 void
 CIconSkill::AddSkillRequireSkillPoint(int iSkillNo, CInfo& ToolTip) {
     int iNeedPoint = GetNeedPoint4LevelUp(iSkillNo);
 
-    char* pszBuf = CStr::Printf("[%s : %d]", STR_REQUIRE_SKILLPOINT, iNeedPoint);
+    char* pszBuf = CStr::Printf("[%s: %d]", STR_REQUIRE_SKILLPOINT, iNeedPoint);
 
     if (g_pAVATAR->GetCur_SkillPOINT() >= iNeedPoint)
         ToolTip.AddString(pszBuf, g_dwGREEN);
@@ -1203,7 +1123,7 @@ CIconSkill::AddSkillRequireSkillPoint2Learn(int iSkillNo, CInfo& ToolTip) {
     if (iNeedPoint && SKILL_TAB_TYPE(iSkillNo) != 3) ///필요포인트가 있고, 클랜스킬이 아닐경우에만(
                                                      ///클랜스킬일경우 다른 데이타가 들어간다 )
     {
-        char* pszBuf = CStr::Printf("[%s : %d]", STR_REQUIRE_SKILLPOINT, iNeedPoint);
+        char* pszBuf = CStr::Printf("[%s: %d]", STR_REQUIRE_SKILLPOINT, iNeedPoint);
 
         if (g_pAVATAR->GetCur_SkillPOINT() >= iNeedPoint)
             ToolTip.AddString(pszBuf, g_dwGREEN);

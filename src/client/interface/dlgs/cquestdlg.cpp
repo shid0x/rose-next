@@ -372,7 +372,7 @@ CQuestDlg::DrawItems() {
                 &rc,
                 g_dwWHITE,
                 DT_LEFT,
-                CStr::Printf("%d%s %d%s",
+                CStr::Printf("%d %s %d %s",
                     g_pAVATAR->m_Quests.m_QUEST[iSelectQuestIdx].GetRemainTIME() / 6,
                     STR_MINUTE,
                     g_pAVATAR->m_Quests.m_QUEST[iSelectQuestIdx].GetRemainTIME() % 6 * 10,

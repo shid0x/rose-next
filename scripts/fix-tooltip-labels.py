@@ -27,9 +27,16 @@ were misleading rather than just awkward:
     power and INT, no weapon). Now Physical / Weapon / Magic / Unarmed.
 
 Shared strings, checked before renaming: "Classification" (106) is also the
-item tooltip's type label -- "Type" reads right for both; "Seconds" (315) is
-also the quest timer's ("5Minutes 30Seconds") and is left for part B, which
-owns the spacing.
+item tooltip's type label -- "Type" reads right for both; "Seconds" (315) and
+"Minute" (15) are the quest timer's too.
+
+Part B (same day) moved the punctuation into the code -- ciconskill.cpp now
+prints "Label: value", commas in lists, "5 sec", a Buff/Debuff type computed
+from the status, and a chance line that mirrors the server's roll -- and with
+it these labels: 15/315 "min"/"sec" (the quest timer became "%d %s %d %s"),
+318 "Chance", and 321 "Class" (part A's "Class:" fitted the old "[%s %s]").
+A deployed client older than part B shows "[Class Soldier Class]" and
+"Duration:5sec" against these strings; ship the two together.
 
 LIST_STRING_S.STL was corrupt: entry 514 (key 653, the maintenance notice)
 carries a length prefix of 159 over 158 bytes of text. The client reads each
@@ -69,6 +76,9 @@ FIELDS = {b"NRST01": 1, b"ITST01": 2, b"QEST01": 4}
 
 LABELS = {
     "LIST_STRING_S.STL": {           # GetString(n); typeresource.h
+        "15": ("Minute", "min"),                                 # STR_MINUTE (quest timer)
+        "315": ("Seconds", "sec"),                               # STR_SECOND (tooltip, quest timer)
+        "318": ("Success Rate", "Chance"),                       # STR_SUCCESS_RATE
         "34": ("Required Summon Amount", "Summon Gauge Cost"),   # STR_REQUIRE_SUMMONQUANTITY
         "80": ("Continuing Attack", "Physical Attack"),          # STR_SKILLPOWER_EFFECT_0
         "83": ("Natural Magic", "Unarmed Attack"),               # STR_SKILLPOWER_EFFECT_3
@@ -79,7 +89,8 @@ LABELS = {
         "317": ("Skill Power", "Power"),                         # STR_SKILL_POWER
         "319": ("Required Mana", "Cost"),                        # STR_CONSUME_ABILITY (items too)
         "320": ("Required Equipment", "Equipment"),              # STR_REQUIRE_EQUIP
-        "321": ("Job Name", "Class:"),                           # STR_REQUIRE_JOB, "[%s %s]"
+        "321": ("Job Name", "Class", "Class:"),                  # STR_REQUIRE_JOB; part A's
+                                                                 # "Class:" fitted "[%s %s]"
         "322": ("Required Skills", "Requires"),                  # STR_REQUIRE_SKILL
         "323": ("Required Ability", "Requires"),                 # STR_REQUIRE_ABILITY
         "506": ("Required Skill Points", "Skill Points"),        # STR_REQUIRE_SKILLPOINT
@@ -272,14 +283,14 @@ def plan(files, side):
     for name, table in LABELS.items():
         stl = files[name]
         idx, eng = stl.index(), stl.english()
-        for key, (old, new) in table.items():
+        for key, (old, new, *earlier) in table.items():
             if key not in idx:
                 sys.exit("%s: key %s missing" % (name, key))
             cur = eng[idx[key]][0].decode("utf-8", "replace")
             if cur == new:
                 continue
             prev = side.get(name, {}).get(key, old)
-            if cur not in (old, prev):
+            if cur not in (old, prev, *earlier):     # earlier = what this script wrote before
                 foreign.append("%s %s is %r, expected %r" % (name, key, cur, old))
             changes.append((name, key, cur, new))
     return changes, foreign
