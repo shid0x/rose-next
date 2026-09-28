@@ -314,6 +314,17 @@ void useFog ( int bUse );
 ZZ_SCRIPT
 int setFullSceneAntiAliasing ( int Type ); // None = 0, TwoSample = 2, FourSample = 4
 
+/// Antialiased alpha-tested edges (NVIDIA D3D9 extension, needs MSAA): 0 = off,
+/// 1 = transparency supersampling, 2 = alpha-to-coverage. On/off applies at once;
+/// the mode (1 vs 2) at the next device creation. error.txt logs the result.
+ZZ_SCRIPT
+int setTransparencyAntiAliasing ( int iMode );
+
+/// 1 = available on this device, 0 = the driver does not support it,
+/// -1 = the device has no MSAA (antialiasing off).
+ZZ_SCRIPT
+int getTransparencyAntiAliasingStatus ( );
+
 // whether use octree cull or not
 // returns old value (true : 1, false : 0)
 ZZ_SCRIPT

@@ -41,7 +41,17 @@ const int kDefaultChat = 0;
 const char* kGroupVars[] = {"c_display", "c_view", "c_detail", "c_shadow", "c_aa", "c_mouse",
     "c_chat", "c_scale", "c_lock", "c_bar"};
 const char* kToggleVars[] = {"t_pc_names", "t_npc_names", "t_mob_hp", "t_my_name", "t_whisper",
-    "t_friend", "t_trade", "t_party", "t_messenger", "t_ui2"};
+    "t_friend", "t_trade", "t_party", "t_messenger", "t_ui2", "t_taa"};
+
+/// Transparency antialiasing lives in its own [VIDEO] key, read and written
+/// directly as winmain.cpp does ( no options-struct field ): 0 off, 1 on,
+/// 2 the alpha-to-coverage comparison mode, which the checkbox leaves alone.
+const char* kIniFile = "./rose-next.ini";
+
+int
+ReadTransparencyAA() {
+    return (int)::GetPrivateProfileIntA("VIDEO", "TRANSPARENCY_AA", 1, kIniFile);
+}
 
 } // namespace
 
@@ -148,6 +158,7 @@ RoseRmlOptions::Initialise(Rml::Context* pContext, const std::string& strAssetDi
     constructor.Bind("windowed", &m_bWindowed);
     constructor.Bind("screen", &m_strScreen);
     constructor.Bind("aa_restart", &m_bAARestart);
+    constructor.Bind("taa_note", &m_strTaaNote);
 
     constructor.BindEventCallback("set_tab",
         [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
@@ -335,6 +346,7 @@ RoseRmlOptions::Load() {
     m_bToggle[T_PARTY] = Community.iParty != 0;
     m_bToggle[T_MESSENGER] = Community.iMessanger != 0;
     m_bToggle[T_UI2] = RoseUi2::IsChosen();
+    m_bToggle[T_TAA] = ReadTransparencyAA() != 0;
 
     RefreshView();
 }
@@ -350,6 +362,7 @@ RoseRmlOptions::Defaults() {
             m_iGroup[G_DETAIL] = g_iDefaultPerfromance;
             m_iGroup[G_SHADOW] = g_iDefaultShadowQuality;
             m_iGroup[G_AA] = g_iDefaultAntiAlising;
+            m_bToggle[T_TAA] = true;
             break;
         case TAB_SOUND:
             SetVolume(true, DEFAULT_BGM_VOLUME);
@@ -476,6 +489,21 @@ RoseRmlOptions::RefreshView() {
         m_bAARestart = bRestart;
         m_Model.DirtyVariable("aa_restart");
     }
+    /// Only says something when the checkbox cannot do anything: the device's
+    /// answer ( engine ) and the antialiasing chosen in the form. The restart
+    /// case is already said by the antialiasing row.
+    Rml::String strTaa;
+    if (m_bToggle[T_TAA]) {
+        const int iStatus = getTransparencyAntiAliasingStatus();
+        if (m_iGroup[G_AA] == 0)
+            strTaa = "Needs antialiasing on.";
+        else if (iStatus == 0)
+            strTaa = "Not supported by your graphics card.";
+    }
+    if (strTaa != m_strTaaNote) {
+        m_strTaaNote = strTaa;
+        m_Model.DirtyVariable("taa_note");
+    }
 }
 
 /// Every close but OK: the sounds go back to the saved volumes.
@@ -517,6 +545,14 @@ RoseRmlOptions::Apply() {
         setDisplayQualityLevel(c_iPeformances[Video.iPerformance]);
     Video.iAntiAlising = m_iGroup[G_AA]; /// the device is built with it: on restart
     g_ClientStorage.SetVideoOption(Video);
+    /// Transparency AA switches live ( the device already knows whether it can ).
+    /// Written only when it changed, so an ini's comparison mode 2 survives OK.
+    const int iTaa = ReadTransparencyAA();
+    if ((iTaa != 0) != m_bToggle[T_TAA]) {
+        const int iNew = m_bToggle[T_TAA] ? 1 : 0;
+        ::WritePrivateProfileStringA("VIDEO", "TRANSPARENCY_AA", iNew ? "1" : "0", kIniFile);
+        setTransparencyAntiAliasing(iNew);
+    }
 
     /// The display: the shape first ( Alt+Enter's toggle sizes a window from
     /// the stored size, so that is stored before ), then a new window size.

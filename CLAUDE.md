@@ -804,6 +804,44 @@ drifting out of agreement, never bands and never a sharp onset; it is also
 self-limiting, since the mip level tracks screen size and a cell only falls under a
 texel once the part is a couple of pixels across.
 
+### Transparency Antialiasing (Engine, 2026-09-29)
+
+MSAA only smooths polygon edges; an alpha-tested cut-out (fences, leaves, railings)
+is decided once per pixel and shimmers at any MSAA level. The client now uses
+NVIDIA's D3D9 **transparency supersampling**: `D3DRS_ADAPTIVETESS_Y = 'SSAA'`
+while alpha test is on, detected with `CheckDeviceFormat(..., (D3DFORMAT)'SSAA')`.
+The alpha test then runs per MSAA sample at the same threshold, so edges get the
+MSAA level's smoothing (4x = 5 steps, 8x = 9) and nothing solid changes. The hook
+is in `zz_renderer_d3d::enable_alpha_test`, which every alpha-test toggle goes
+through. Options > Graphics > "See-through edges" switches it live (no restart);
+ini `[VIDEO] TRANSPARENCY_AA` (1 on, the default; 0 off; 2 = NVIDIA alpha-to-coverage,
+ini-only, for comparison). `error.txt` logs `r_d3d: transparency AA ...` with the
+driver's answer.
+
+Things that will bite:
+
+- **Not alpha-to-coverage, on purpose.** ROSE's ZSC alpha flags are unreliable
+  (other ROSE devs hit it adding A2C): 96% of materials are alpha-tested, some
+  textures carry a specular mask in alpha, some are blended for no reason. A2C
+  turns every alpha value into partial coverage and dithers those; supersampling
+  keeps the alpha test's own keep/drop decision, so it needs no exception list.
+- **Never inside a sprite batch.** `init_sprite_state` enables alpha test for every
+  2D batch, and supersampling reads glyph/icon textures at sub-pixel offsets:
+  every piece of classic text blurred. The hook skips it while `_sprite_began`
+  (which also covers the inspector/preview panes' mid-batch 3D) and
+  `draw_sprite_ex` clears it. UI2 is unaffected: `RoseRmlRenderer::ApplyRenderState`
+  disables alpha test for every pass.
+- **NVIDIA only, needs MSAA.** AMD/Intel drivers answer no and nothing runs (AMD's
+  own D3D9 hack is A2C only); DXVK/Proton do not implement the render state. The
+  support probe runs whenever MSAA is on, even with the feature off, so the
+  checkbox can switch it live; the mode (1 vs 2) applies on the next device.
+- Cost is per-sample shading of alpha-tested 3D pixels only (fixed-function, cheap);
+  not measured on low-end NVIDIA yet -- the alpha is the benchmark.
+- A full-mip-chain experiment for the same shimmer was reverted: it changed nothing
+  visible (8x anisotropic already covered texture minification). Its patch and the
+  one useful part -- pinning object lightmaps at 3 mip levels, which quality presets
+  3/4 currently break -- are in `build/full-mips/`.
+
 ### Missing Assets Must Degrade, Not Kill (Engine/VFS)
 
 An asset referenced by the data but absent from the baked `.vfs` used to be **fatal anywhere in the game** — four independent defects sat on that one path, each masking the next. All are fixed; the contract now is *a missing file logs once and the object renders without that part*. Keep it that way:

@@ -100,6 +100,40 @@ std::vector<zz_texture *> s_textures;
 
 ZZ_IMPLEMENT_DYNCREATE(zz_renderer_d3d, zz_renderer)
 
+// Transparency antialiasing (experiment, 2026-09-29): antialiased cut-out edges
+// (fences, lattices, foliage) through NVIDIA's D3D9 driver extension, switched on
+// with D3DRS_ADAPTIVETESS_Y while alpha test is enabled. MSAA only smooths polygon
+// edges; an alpha-tested edge is decided once per pixel.
+//   1 = 'SSAA' transparency supersampling: the alpha test runs per MSAA sample at
+//       the same threshold, so nothing solid turns see-through -- safe with ROSE's
+//       unreliable ZSC alpha flags (96% of materials are alpha-tested, some with
+//       a specular mask in the alpha channel).
+//   2 = 'ATOC' alpha-to-coverage: alpha becomes partial coverage, which dithers
+//       those mis-flagged textures. Kept only for comparison.
+// Needs MSAA. Support is probed per device in initialize() whenever MSAA is on --
+// even while switched off, so the Options checkbox can switch it live. The mode
+// (which FOURCC) takes effect on the next device; on/off takes effect at once.
+// File-scope so no class layout changes.
+static int s_transparency_aa_request = 0;
+static bool s_transparency_aa_enabled = false;
+static DWORD s_transparency_aa_fourcc = 0; // probed and supported; 0 = unavailable
+static int s_transparency_aa_status = -1;  // 1 supported, 0 driver says no, -1 no MSAA
+
+void zz_set_transparency_aa_request (int mode)
+{
+	const bool enabled = (mode != 0);
+	if (s_transparency_aa_fourcc && enabled != s_transparency_aa_enabled) {
+		ZZ_LOG("r_d3d: transparency AA switched %s\n", enabled ? "on" : "off");
+	}
+	s_transparency_aa_request = mode;
+	s_transparency_aa_enabled = enabled;
+}
+
+int zz_get_transparency_aa_status ()
+{
+	return s_transparency_aa_status;
+}
+
 zz_renderer_d3d::zz_renderer_d3d () : zz_renderer()
 {
 	view = NULL;
@@ -1077,6 +1111,32 @@ bool zz_renderer_d3d::initialize ()
 	// shadowmap_pixels (CPU-side blur_map buffer) is intentionally not
 	// allocated: shadowmap blur runs on the GPU (blur_shadowmap), and at
 	// 2048px the buffer would cost 48MB of 32-bit address space.
+
+	// Transparency antialiasing: the driver advertises the extension as a fake
+	// surface format. Logged either way -- a toggle that silently does nothing
+	// reads exactly like "it made no difference".
+	s_transparency_aa_fourcc = 0;
+	{
+		const bool ssaa = (s_transparency_aa_request != 2);
+		const DWORD fourcc = ssaa ? MAKEFOURCC('S', 'S', 'A', 'A') : MAKEFOURCC('A', 'T', 'O', 'C');
+		const char * name = ssaa ? "supersampling (SSAA)" : "alpha-to-coverage (ATOC)";
+		const char * onoff = s_transparency_aa_enabled ? "on" : "off (switchable)";
+		if (state.fsaa_type == zz_render_state::ZZ_FSAA_NONE) {
+			s_transparency_aa_status = -1;
+			ZZ_LOG("r_d3d: transparency AA unavailable: needs MSAA (antialiasing is off)\n");
+		}
+		else if (SUCCEEDED(d3d->CheckDeviceFormat(adapter_ordinal, d3d_dev_type, D3DFMT_X8R8G8B8,
+			0, D3DRTYPE_SURFACE, (D3DFORMAT)fourcc)))
+		{
+			s_transparency_aa_fourcc = fourcc;
+			s_transparency_aa_status = 1;
+			ZZ_LOG("r_d3d: transparency AA = %s, %s, MSAA %d\n", name, onoff, (int)state.fsaa_type);
+		}
+		else {
+			s_transparency_aa_status = 0;
+			ZZ_LOG("r_d3d: transparency AA %s unavailable: not supported by this driver\n", name);
+		}
+	}
 
 	init_device_objects();
 	znzin->init_device_objects();
@@ -4759,6 +4819,19 @@ bool zz_renderer_d3d::enable_alpha_test (bool true_or_false, ulong alpha_ref, ZZ
 	d3d_device->SetRenderState(D3DRS_ALPHAREF, alpha_ref);
 	d3d_device->SetRenderState(D3DRS_ALPHAFUNC, cmp_func);
 
+	// Every alpha-test toggle in the engine comes through here, so this one line
+	// covers every draw. Written unconditionally rather than cached: a device
+	// rebuild resets render states and a stale cache would leave it off.
+	// Never inside a sprite batch: supersampling samples glyph and icon textures at
+	// sub-pixel offsets and blurs all classic text (init_sprite_state enables alpha
+	// test for every batch), and the inspector/preview panes draw 3D mid-batch.
+	// Switched off live (Options) = written off here from the next draw on.
+	if (s_transparency_aa_fourcc) {
+		d3d_device->SetRenderState(D3DRS_ADAPTIVETESS_Y,
+			(s_transparency_aa_enabled && true_or_false && !_sprite_began)
+				? s_transparency_aa_fourcc : (DWORD)D3DFMT_UNKNOWN);
+	}
+
 	ret_value = old_value;
 	old_value = true_or_false;
 	return ret_value;
@@ -5722,8 +5795,8 @@ void zz_renderer_d3d::init_sprite_state ()
 	// documents in zz_renderer_d3d::set_blend_type()
 	set_blend_type(ZZ_BLEND_ONE, ZZ_BLEND_ZERO, ZZ_BLENDOP_ADD);
 	enable_alpha_blend(true, ZZ_BT_NORMAL);
-	enable_alpha_test(true, 0, ZZ_CMP_GREATER);
-	
+	enable_alpha_test(true, 0, ZZ_CMP_GREATER); // no transparency AA: _sprite_began
+
 	enable_fog(false);
 
 	set_vertex_shader( ZZ_HANDLE_NULL );
@@ -6269,6 +6342,11 @@ bool zz_renderer_d3d::draw_sprite_ex ( zz_texture * tex, const zz_rect * src_rec
 
     HRESULT hr;
 
+	// Uses whatever render state is current, so it may inherit transparency AA
+	// from the last alpha-tested 3D draw; 2D never wants it (see init_sprite_state).
+	if (s_transparency_aa_fourcc) {
+		d3d_device->SetRenderState(D3DRS_ADAPTIVETESS_Y, (DWORD)D3DFMT_UNKNOWN);
+	}
 	d3d_sprite->Begin(ZZ_SPRITE_ALPHABLEND | D3DXSPRITE_DONOTSAVESTATE | D3DXSPRITE_DONOTMODIFY_RENDERSTATE);
     d3d_sprite->SetTransform(&buffer_m);
        

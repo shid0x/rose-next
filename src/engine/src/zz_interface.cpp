@@ -482,6 +482,24 @@ int setFullSceneAntiAliasing ( int Type )
 	return old;
 }
 
+void zz_set_transparency_aa_request (int mode); // zz_renderer_d3d.cpp
+int zz_get_transparency_aa_status ();
+
+ZZ_SCRIPT
+int setTransparencyAntiAliasing ( int iMode )
+{
+	CHECK_INTERFACE(setTransparencyAntiAliasing);
+	zz_set_transparency_aa_request(iMode);
+	return 1;
+}
+
+ZZ_SCRIPT
+int getTransparencyAntiAliasingStatus ( )
+{
+	CHECK_INTERFACE(getTransparencyAntiAliasingStatus);
+	return zz_get_transparency_aa_status();
+}
+
 //==========================
 // object loading & setting
 //==========================

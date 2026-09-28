@@ -101,6 +101,7 @@ private:
         T_PARTY,
         T_MESSENGER,
         T_UI2,
+        T_TAA, ///< transparency antialiasing ( [VIDEO] TRANSPARENCY_AA, live )
         T_COUNT
     };
 
@@ -145,6 +146,7 @@ private:
     bool m_bWindowed; ///< the form's choice ( the size applies )
     Rml::String m_strScreen; ///< the monitor, for fullscreen
     bool m_bAARestart;
+    Rml::String m_strTaaNote; ///< why transparency AA cannot work here, or ""
 };
 
 #endif /// _ROSE_RML_OPTIONS_H_

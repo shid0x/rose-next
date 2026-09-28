@@ -69,6 +69,14 @@
                 </div>
                 <div class="sub ui-accent" data-if="aa_restart">Applies after a restart.</div>
             </div>
+            <div class="row">
+                <span class="label">See-through edges</span>
+                <div class="ctl">
+                    <div class="check" data-class-on="t_taa" data-event-click="flip(10)"><span class="box"></span>Smooth</div>
+                </div>
+                <div class="sub ui-muted">Antialiasing for fences, leaves and railings too, at the level above. NVIDIA graphics cards only.</div>
+                <div class="sub ui-accent" data-if="taa_note != ''">{{taa_note}}</div>
+            </div>
         </div>
 
         <!-- Sound. -->

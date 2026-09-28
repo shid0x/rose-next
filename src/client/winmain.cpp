@@ -116,6 +116,16 @@ Init_DEVICE(void) {
     g_ClientStorage.GetVideoOption(Video);
     setFullSceneAntiAliasing(Video.iAntiAlising);
 
+    // Transparency antialiasing ([VIDEO] TRANSPARENCY_AA, experiment): 1 = supersample
+    // alpha-tested edges (fences, foliage), 2 = alpha-to-coverage for comparison, 0 = off.
+    // Needs antialiasing on; error.txt says which mode the driver actually granted.
+    // Read directly, like VSYNC above: a hand-edited key with no options control.
+    const int transparency_aa =
+        (int)::GetPrivateProfileIntA("VIDEO", "TRANSPARENCY_AA", 1, "./rose-next.ini");
+    ::setTransparencyAntiAliasing(transparency_aa);
+    LOG_INFO("Transparency AA requested: {} ([VIDEO] TRANSPARENCY_AA; error.txt has the result)",
+        transparency_aa == 1 ? "supersampling" : (transparency_aa == 2 ? "alpha-to-coverage" : "off"));
+
     // Borderless takes this branch too, and correctly: it is a windowed device, and
     // CreateWND already snapped the window to the monitor, so the client rect *is* the
     // monitor size. Do not "fix" this to use Resolution.iWidth/iHeight -- a backbuffer that
