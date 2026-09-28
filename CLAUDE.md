@@ -994,6 +994,11 @@ of MISS). Both in client `CLAUDE.md`.
 The client has **no unhandled-exception filter and no minidump writer**, so a crash leaves `error.txt` ending with a clean `log: end.` and nothing else. Use `scripts/debug-client-crash.ps1` (servers up first): it hash-verifies `bin/<config>` PDBs against the deployed binaries, forces windowed mode, restores `rose-next.ini` afterwards, and writes `!analyze -v` + all thread stacks + a full `.dmp` on the access violation.
 
 - cdb has **no working-directory switch** and the debuggee inherits the caller's, so it must launch from the game dir — otherwise the client can't find `rose.vfs` and exits early, looking exactly like "it didn't crash".
+- **No crash dump despite `CrashHandler` means a fail-fast**: a CRT invalid
+  parameter (`_stricmp(NULL)`, a bad `printf` argument...) or a `/GS` cookie ends
+  in `int 29h`, which runs no exception filter and no VEH. `client.log` just stops.
+  The debug script still catches it (`c0000409`, look for `_invalid_parameter` on
+  the stack) -- reach for it straight away rather than reading code.
 - For a **freeze, don't kill the process**: `cdb -pv -p <pid>` attaches non-invasively and works even with cdb already attached.
 - The deployed `triggervfs.dll` does not match `bin/release`, so frames through it resolve to nonsense (`VGetVfsNames+0x…`) — disassemble the caller rather than trusting the symbol.
 - **`client.log` survives a crash; `error.txt` does not.** The engine log is buffered, so a hard crash loses the whole session and the file still ends at the *previous* run's `log: end.` — which reads as "it never launched". The Rust-side `client.log` flushes per record, so read it first to see how far startup actually got.
@@ -1131,6 +1136,35 @@ key LZON100. Things that will bite:
   (nameless, no CHR entry, placement names `EM79-012.con` while the file is
   `EM79-12.CON`) and is dropped. Our `LIST_NPC.CHR` holds orphan "noname" entries at
   1753-1759 that `import_characters` would keep; the importer clears them first.
+
+### SHIBUYA Is Jrose's SECONDWALL Collab (imported 2026-09-28, not yet validated in game)
+
+Jrose zones 126 (SHIBUYA, a Tokyo street walk) and 127 (Live House SEVEN, the
+survivors' shelter) from a 2017 band collab, at their **native** numbers. Walk-only:
+no monsters, no quests; the band and the survivors tell their story, Shimasaburo
+and Juri run shops (our Junon Polis tabs), Sarasa the storage. In via Jones (Junon
+Polis), out via the SECONDWALL mascot. `scripts/import-shibuya.py` (`--stage 1-3`,
+`--dry-run`, `--verify`, `--selftest`). Things that will bite:
+
+- **Every Jrose check is rewritten, not trusted.** Each node with a check function
+  becomes `TA_Hidden` except the one branch per NPC in `SHOW`, and every `AT_*`
+  click the Lua names is redefined in the QEX1 appendix (services get our bodies,
+  the rest do nothing). Same reason as Skaaj: some Jrose checks are inverted.
+- **A MOB placement's `.CON` name has no extension in the source** (`EM02-089`);
+  the gameserver compares it to the LIST_EVENT basename exactly, so it is
+  rewritten to `EM02-089.con` or the NPC loads with no dialog.
+- **Jrose warp rows 176/177 are Oro gates here**: the pair is 182/183 and the gate
+  objects are re-pointed. Shibuya's 108 regen points were editor templates
+  (all Mini-Jelly Bean) and are emptied.
+- **Shibuya ships no lightmaps**: objects load unlit, the terrain uses
+  `3DDATA\TERRAIN\default_light.dds`. Expect flat lighting; it is the source.
+- Zone 128 (the "782" dungeon) is instanced and zone 36 (outdoor stage) separate;
+  neither is imported.
+- **Entering the live house crashed the client with no dump** (fixed 2026-09-28):
+  its stage-light effect `SW_Light.eft` has three static meshes with an *empty*
+  animation path, and `CFileLIST::Add_FILE("")` registered the first under a
+  non-zero key with a NULL name, so the second handed NULL to `_strcmpi` -- a CRT
+  invalid-parameter fail-fast. `Add_FILE` now returns 0 for an empty name.
 
 ### Data Repair Tooling
 
