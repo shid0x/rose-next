@@ -46,8 +46,24 @@ books carry good-English one-liners, the skills the original "You can damage
 your tartet" text), and most of the renamed books' descriptions already
 describe the right skill under the wrong name. The eight that do not are in
 `BOOK_DESCRIPTIONS`: Shield Protect's shield text on the Berserk book, the
-four Scout shots, Ice Pole's area-effect text on Ice Bang (single target), and
-the two emote books with no description at all.
+four Scout shots, Ice Pole's text on Ice Bang, and the two emote books with no
+description at all. (Ice Bang was first rewritten here as single target; it is
+not -- LIST_SKILL type 7 is an area around the target -- and the entry was
+corrected on 2026-09-28.) It also carries books that keep their name:
+
+  * three that shipped a literal `???` where an apostrophe was lost (Shield
+    Barrier, Impact Wave, Champion Hit: "skill???s duration");
+  * eight whose text contradicts the skill, found while rewriting the skill
+    descriptions (`fix-skill-descriptions.py --dump`): Lightning puts the
+    target to sleep (status 31), not a stun; the Butterfly lowers Accuracy and
+    confuses nothing; the Bonfire heals every player near it, not the party
+    only; the Phantom Sword is melee (reach 2.5 m), not ranged; Battle Mastery
+    raises Attack Speed only; Vanish is a Sleep, nothing runs away; Power
+    Attack needs a katar or dual swords and Power Burst a katar, where both
+    books said "a Knuckle or a Melee Weapon"; Economy Research gives far more
+    than "Charm by 2" past rank 1; Power Gun Shot read as a passive;
+  * two that left out a later bonus: Craft Mastery (gun Attack Speed from rank
+    6) and Weapon Research (Critical from rank 11).
 
 Only the English language block is touched
 ------------------------------------------
@@ -136,6 +152,20 @@ SKILL_FIXES = {
     "LSkill2401": "Natural Item Craft",  # Natura lItem Craft
     "LSkill2411": "Sub Weapon Craft",    # " Sub Weapon Craft"
     "LSkill2631": "Refine Item",         # Refine item
+    # B, found 2026-09-28 by `fix-skill-descriptions.py --dump`: rank 6+ keys
+    # (no book of their own, so the book survey never saw them) and two more
+    # stray spaces
+    "LSkill0396": "Divine Lightning",    # Divine Lightening (Divine Force ranks 6-10)
+    "LSkill0956": "Lightning Shock",     # Lightening Shock (Lightning ranks 6-10)
+    "LSkill2431": "Sword Craft",         # " Sword Craft"
+    "LSkill2471": "Bow Craft",           # " Bow Craft"
+    # also 2026-09-28: a name that disagreed with the table, and three emote
+    # names left in the original translation's broken English
+    "LSkill0033": "Toss 10 Zuly",        # Throwing 10 Zuly
+    "LSkill0034": "Toss 50 Zuly",        # Throwing 100 Zuly -- costs and gives 50
+    "LSkill0046": "Cheer",               # Fighting (its text was "Cheer Up")
+    "LSkill0048": "Anger",               # Get Anger
+    "LSkill0049": "Anger",               # Get Anger
     # C: the book's better English wins
     "LSkill0012": "Pick Up",             # Gather
     "LSkill0014": "Levitation",          # Floating Air
@@ -171,14 +201,40 @@ BOOK_DESCRIPTIONS = {
     673: "Gather strength before firing to hit a target with great force.",
     674: "Inflict damage on a target while decreasing its Movement Speed.",
     675: "Fire a powerful shot at a target from a long distance.",
-    727: "Inflict ice damage on a target while decreasing its Movement Speed.",
+    727: "Inflict ice damage on a target and enemies near it, with a chance to "
+         "decrease their Movement Speed.",
+    # not renamed -- the apostrophe was lost to a lossy conversion and three
+    # literal '?' bytes shipped in its place (found 2026-09-28)
+    664: "Increase Magic Resistance of the caster and party members for "
+         "skill's duration. Requires a Shield.",
+    676: "Thrust a sword into the ground and crack the ground's surface to do "
+         "splash damage to many foes.",
+    692: "Enables its caster to leap high into the air and strike the top of "
+         "the enemy's skull.",
+    # not renamed -- the text contradicted the skill (2026-09-28)
+    712: "Cast Lightning on a target, with a chance to put it to sleep.",
+    732: "Summon a magic butterfly that fights beside the caster and lowers "
+         "its targets' Accuracy.",
+    733: "Cast a magic campfire that restores the HP and MP of everyone nearby.",
+    734: "Summon a magic sword to attack a target at close range.",
+    755: "Increase Attack Speed of Katar, Dual Wield and Bow weapons.",
+    757: "Hit a target with mighty force while using a Katar or Dual Swords.",
+    767: "Advanced Power Attack skill. Hit a target with awesome might while "
+         "using a Katar.",
+    777: "Put a monster to sleep, and from rank 6 the monsters around it too.",
+    801: "Study economy. Increase Charm with every rank of this skill.",
+    808: "Allows its user to learn weapon crafting skills. Increase "
+         "Concentration, and from rank 11 Critical.",
+    811: "Learn the essentials of crafting. Increase Maximum MP, and from "
+         "rank 6 Attack Speed with Guns.",
+    816: "Fire a powerful shot at a target with a Gun or Launcher.",
 }
 
 # LIST_USEITEM row -> the name it ends up with. The reviewed outcome of the rule
 # on 2026-09-22; a rename the rule produces outside this set refuses to write.
 EXPECTED = {
-    634: "Hand Clapping", 635: "Chuckle", 636: "Fighting", 637: "Begging",
-    638: "Get Anger", 641: "Hi!", 642: "Bye",
+    634: "Hand Clapping", 635: "Chuckle", 636: "Cheer", 637: "Begging",
+    638: "Anger", 639: "Anger", 641: "Hi!", 642: "Bye",
     663: "Berserk",
     672: "Taunt Shot", 673: "Heavy Bow Shot", 674: "Slow Shot",
     675: "Range Bow Shot",
@@ -363,11 +419,11 @@ def apply(rd, fix, oro, recs, dry):
     bidx = key_index(bstl)
     bentries = bstl.langs[LANG_USA]
     for r in recs:
-        if r["kind"] != "rename":
+        if r["kind"] != "rename" and r["row"] not in BOOK_DESCRIPTIONS:
             continue
         i = bidx[r["key"]]
         old_name, old_desc = bentries[i]
-        new_name = bytes_of(r["skill"])
+        new_name = bytes_of(r["skill"]) if r["kind"] == "rename" else old_name
         new_desc = old_desc
         if r["row"] in BOOK_DESCRIPTIONS:
             new_desc = bytes_of(BOOK_DESCRIPTIONS[r["row"]])
@@ -512,7 +568,7 @@ def main():
         for b in bad:
             print("  " + b)
         return 1
-    print("\nwrote %d book name(s), %d skill name(s) and %d STB col-0 cell(s); "
+    print("\nwrote %d book entry(ies), %d skill name(s) and %d STB col-0 cell(s); "
           "verified. Re-bake the VFS and restart the game server."
           % (n_book, n_skill, n_stb))
     return 0
