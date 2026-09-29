@@ -305,6 +305,90 @@ CObjCHAR::StartConfirmedCombatSwing(int iServerTarget,
     this->SetCMD_ATTACK(iServerTarget, wSrvDIST, PosGOTO);
 }
 
+// The local player's own hits can fall a cast cycle behind the server: with a skill
+// every few seconds, the server swings through its casts while this client animates
+// each owed swing and then the full cast, so the swings the server ran during one
+// cast are still owed at the next -- a standing 1-3 s lag (Scout vs Rot Tracker,
+// 2026-09-29: range and position were in sync, the server ran 14 swings to the
+// client's 5 in twenty seconds, kills shown 4 s late). Catch up at the hit that
+// lands: this client's older hits on the same target that have waited
+// kOwnHitFoldAgeMs are folded into it -- one digit (the sum), one bar drop, the
+// newest checkpoint, death if any of them was the killing blow. Only the surplus
+// over this attacker's bullets still in flight is folded, so no arrow lands blank;
+// oldest first, so the order is kept. The player preferred one number to several
+// here (the crowd catch-up on hits taken shows several). The damage meter is
+// untouched: it records hits when they arrive.
+static const DWORD kOwnHitFoldAgeMs = 1500;
+static const int kOwnHitFoldMax = 4;
+
+bool
+CObjCHAR::FoldLaggingOwnHits(CObjCHAR* pFromOBJ, Rose::Combat::DamageEvent& event) {
+    const DWORD dwNow = g_GameDATA.GetGameTime();
+    int iRemaining = static_cast<int>(
+        m_CombatDamageQueue.count_frame_presented_for_attacker(pFromOBJ->Get_INDEX()));
+    const int iInFlight = g_pBltMGR->CountLiveBullets(pFromOBJ->Get_INDEX(), this->Get_INDEX());
+
+    int iFolded = 0;
+    int iFoldedDamage = 0;
+    DWORD dwOldestAge = 0;
+    uniDAMAGE merged;
+    merged.m_wDamage = event.raw_damage;
+    unsigned int uFlags = merged.m_wACTION;
+    int iTotal = max(0, event.damage_value);
+
+    while (iFolded < kOwnHitFoldMax && iRemaining - iInFlight > 0) {
+        Rose::Combat::DamageEvent older;
+        if (!m_CombatDamageQueue.pop_aged_frame_presented(
+                pFromOBJ->Get_INDEX(), dwNow, kOwnHitFoldAgeMs, older)) {
+            break;
+        }
+        --iRemaining;
+        ++iFolded;
+        if (dwNow - older.queued_at_ms > dwOldestAge) {
+            dwOldestAge = dwNow - older.queued_at_ms;
+        }
+        pFromOBJ->ClearPendingCombatSwingPresentation(older.event_id);
+
+        uniDAMAGE olderRaw;
+        olderRaw.m_wDamage = older.raw_damage;
+        uFlags |= olderRaw.m_wACTION;
+        iFoldedDamage += max(0, older.damage_value);
+        iTotal += max(0, older.damage_value);
+        event.lethal = event.lethal || older.lethal;
+        // The newer checkpoint is the later server truth.
+        if (older.arrival_seq > event.arrival_seq) {
+            event.hp_after = older.hp_after;
+            event.arrival_seq = older.arrival_seq;
+            event.defender_seq = older.defender_seq;
+        }
+        if (older.hp_after <= DEAD_HP) {
+            event.hp_after = older.hp_after;
+        }
+    }
+
+    if (iFolded == 0) {
+        return false;
+    }
+
+    event.damage_value = iTotal;
+    merged.m_wVALUE = static_cast<unsigned int>(iTotal) & 0x3FFFFF;
+    merged.m_wACTION = uFlags;
+    event.raw_damage = merged.m_wDamage;
+
+    LogString(LOG_DEBUG_,
+        "CombatTrace own hits folded: attacker %d target %d event %u folded %d folded_damage %d total %d oldest_age %u in_flight %d lethal %d\n",
+        pFromOBJ->Get_INDEX(),
+        this->Get_INDEX(),
+        event.event_id,
+        iFolded,
+        iFoldedDamage,
+        iTotal,
+        (unsigned int)dwOldestAge,
+        iInFlight,
+        event.lethal ? 1 : 0);
+    return true;
+}
+
 bool
 CObjCHAR::IsCombatTraceSubject() {
     if (!g_pAVATAR || this == (CObjCHAR*)g_pAVATAR || !this->IsA(OBJ_MOB)) {
@@ -4453,6 +4537,12 @@ CObjCHAR::Hitted(CObjCHAR* pFromOBJ,
                 pos.z + m_fStature,
                 this->IsA(OBJ_USER));
             return true;
+        }
+
+        // The local player's own hits that fell behind are folded into this one:
+        // one digit, one bar drop (see FoldLaggingOwnHits).
+        if (pFromOBJ->IsLocalAvatarAttacker() && FoldLaggingOwnHits(pFromOBJ, damageEvent)) {
+            presentation = Rose::Combat::CombatPresentationQueue::result_for(damageEvent);
         }
 
         if (bIsSkillEffect) {

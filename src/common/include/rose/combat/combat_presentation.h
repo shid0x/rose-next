@@ -515,6 +515,29 @@ public:
         return count;
     }
 
+    // Pops this attacker's oldest hit-frame / projectile-impact event if it has been
+    // queued at least min_age_ms (queued_at_ms). Oldest first only: a younger event
+    // never jumps an older one, so a caller folding a backlog keeps its order.
+    bool pop_aged_frame_presented(uint32_t attacker_id,
+        uint32_t now_ms,
+        uint32_t min_age_ms,
+        DamageEvent& out) {
+        for (auto it = m_events.begin(); it != m_events.end(); ++it) {
+            if (it->attacker_id != attacker_id
+                || (it->presentation_kind != DamagePresentationKind::MeleeHitFrame
+                    && it->presentation_kind != DamagePresentationKind::ProjectileImpact)) {
+                continue;
+            }
+            if (now_ms - it->queued_at_ms < min_age_ms) {
+                return false;
+            }
+            out = *it;
+            m_events.erase(it);
+            return true;
+        }
+        return false;
+    }
+
     bool has_pending_damage() const {
         for (const auto& event: m_events) {
             if (event.damage_value > 0 || event.lethal) {

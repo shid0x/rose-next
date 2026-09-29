@@ -2495,6 +2495,32 @@ main() {
     }
 
     {
+        // Own-hit catch-up (FoldLaggingOwnHits): only this attacker's aged
+        // hit-frame / impact events, oldest first, and a young head blocks the rest.
+        CombatPresentationQueue queue;
+        DamageEvent a = event(20, 374, 100, 900);
+        a.presentation_kind = DamagePresentationKind::ProjectileImpact;
+        a.queued_at_ms = 1000;
+        queue.push(a);
+        DamageEvent other = event(21, 966, 30, 870);
+        other.queued_at_ms = 500;
+        queue.push(other);
+        DamageEvent b = event(22, 374, 110, 760);
+        b.presentation_kind = DamagePresentationKind::ProjectileImpact;
+        b.queued_at_ms = 2600;
+        queue.push(b);
+
+        DamageEvent out;
+        expect(queue.pop_aged_frame_presented(374, 3000, 1500, out) && out.event_id == 20,
+            "the oldest aged own hit is folded");
+        expect(!queue.pop_aged_frame_presented(374, 3000, 1500, out),
+            "a hit younger than the age is left for its own arrow");
+        expect(queue.pop_aged_frame_presented(374, 4200, 1500, out) && out.event_id == 22,
+            "once aged it folds too");
+        expect(queue.size() == 1, "another attacker's hit is never folded");
+    }
+
+    {
         // The cast's own damage event arrives while the owed swings play; only what
         // had arrived when the skill command applied counts as owed.
         CombatPresentationQueue queue;
