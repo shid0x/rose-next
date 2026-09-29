@@ -764,6 +764,13 @@ that follows:
 - `CombatTrace position jumped: obj N jump J dist_avatar A -> B dist_goto command state move_speed
   cur_speed frame_ms` -- a move of 3 m or more between two frames, whatever caused it (packet,
   snap, engine node read-back, collision), from the top of `CObjCHAR::Proc`.
+- The local avatar is traced too (same Debug switch): `CombatTrace avatar command: ...` for its own
+  command changes (the remote line's fields plus `dist_target`) and its queue drops;
+  `avatar swing sync: event self_drift client_dist server_dist range` per confirmed swing
+  (`PosGOTO` of a `CombatSwing` is the server's own position for the attacker, so `self_drift` is
+  client-vs-server avatar position); `avatar attack walks (between swings | closing in): dist range`
+  when the attack loop walks instead of swinging. They ruled out range and position as the cause of
+  the avatar's hit lag (it was the cast cycle, see the own-hit fold above).
 - `CombatTrace queued command dropped, never validated / superseded by <type> / cleared by
   skill start: obj N type <type>` -- `CObjCommandManager` silently deletes orders: only skill
   commands are ever validated, so a queued move/attack/stop is discarded at the pop, and a push

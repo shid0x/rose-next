@@ -1630,6 +1630,28 @@ CObjAI::ProcCMD_PICK_ITEM() {
 ///
 /// The local avatar and its mount keep the old behaviour: their attack command is
 /// player-driven through g_CommandFilter and starts before any round-trip.
+// Avatar attack trace (Debug): the attack command walks instead of swinging
+// because this client has the target out of range. Logged once per walk start.
+// The server decides range from its own positions and keeps swinging, so each
+// of these can cost the avatar a swing the server ran -- the suspect for the
+// avatar animating fewer swings than the server (2026-09-29).
+static void
+TraceAvatarAttackWalk(CObjAI* pAI, CObjCHAR* pTarget, const char* szWhere) {
+    CObjCHAR* pOBJ = static_cast<CObjCHAR*>(pAI);
+    if (pOBJ != (CObjCHAR*)g_pAVATAR || !Log::level_enabled(Rose::Common::LogLevel::Debug)) {
+        return;
+    }
+    const D3DXVECTOR3 vSelf = pOBJ->Get_CurPOS();
+    const D3DXVECTOR3 vTarget = pTarget->Get_CurPOS();
+    LogString(LOG_DEBUG_,
+        "CombatTrace avatar attack walks (%s): dist %d range %d target %d state 0x%x\n",
+        szWhere,
+        CD3DUtil::distance((int)vSelf.x, (int)vSelf.y, (int)vTarget.x, (int)vTarget.y),
+        pOBJ->Get_AttackRange(),
+        pTarget->Get_INDEX(),
+        (unsigned int)pOBJ->Get_STATE());
+}
+
 static bool
 CanStartConfirmedSwing(CObjAI* pAI) {
     CObjCHAR* pOBJ = static_cast<CObjCHAR*>(pAI);
@@ -1658,6 +1680,7 @@ CObjAI::ProcCMD_ATTACK() {
             if (!(Get_STATE() & CS_BIT_INT)) {
                 // TODO :: ���� ���� �ٸ� ��ġ�� ���� �ߴٸ�...
                 if (!IsInRANGE(pTarget, this->Get_AttackRange())) {
+                    TraceAvatarAttackWalk(this, pTarget, "between swings");
                     // ������ ���� ������ �̵�...
                     m_wState = CS_STOP;
                     m_PosGOTO = pTarget->m_PosCUR;
@@ -1707,6 +1730,7 @@ CObjAI::ProcCMD_ATTACK() {
             }
         } else {
             if (!(Get_STATE() & CS_BIT_MOV)) {
+                TraceAvatarAttackWalk(this, pTarget, "closing in");
                 this->Start_MOVE(this->adjusted_move_speed);
             } else
                 this->Do_AttackMoveAI(pTarget); /// MOB ���� �̵��� �ΰ����� ó��..

@@ -271,6 +271,25 @@ CObjCHAR::StartConfirmedCombatSwing(int iServerTarget,
     const D3DVECTOR& PosGOTO,
     const Rose::Combat::DamageEvent& event) {
     CObjCHAR* pTarget = g_pObjMGR->Get_ClientCharOBJ(iServerTarget, true);
+
+    // Avatar swing sync (Debug): PosGOTO is the server's own position for this
+    // attacker at the swing (Goto_TARGET sets m_PosGOTO = m_PosCUR before
+    // Start_ATTACK), so this line shows how far the client's avatar sits from the
+    // server's, and whether this client thinks the target is in range while the
+    // server is already shooting -- the suspect when the avatar animates fewer
+    // swings than the server runs (2026-09-29: 3 against 8 in ten seconds).
+    if (this == (CObjCHAR*)g_pAVATAR && pTarget && Log::level_enabled(Rose::Common::LogLevel::Debug)) {
+        LogString(LOG_DEBUG_,
+            "CombatTrace avatar swing sync: event %u self_drift %d client_dist %d server_dist %d range %d command %d state 0x%x\n",
+            event.event_id,
+            CD3DUtil::distance((int)m_PosCUR.x, (int)m_PosCUR.y, (int)PosGOTO.x, (int)PosGOTO.y),
+            CD3DUtil::distance((int)m_PosCUR.x, (int)m_PosCUR.y, (int)pTarget->m_PosCUR.x, (int)pTarget->m_PosCUR.y),
+            CD3DUtil::distance((int)PosGOTO.x, (int)PosGOTO.y, (int)pTarget->m_PosCUR.x, (int)pTarget->m_PosCUR.y),
+            this->Get_AttackRange(),
+            (int)Get_COMMAND(),
+            (unsigned int)Get_STATE());
+    }
+
     if (pTarget) {
         pTarget->PushCombatDamageEvent(event);
         m_dwPendingCombatSwingEventId = event.event_id;
@@ -5447,7 +5466,10 @@ CObjCHAR::Proc(void) {
     // it lost on the way.
     if (Log::level_enabled(Rose::Common::LogLevel::Debug)) {
         static const WORD kUntracedCommand = 0xFFFF;
-        const bool bTraceSubject = IsCombatTraceSubject();
+        // The avatar is traced too (its own hit lag, 2026-09-29): its command
+        // changes and queue drops, with the distance to its target.
+        const bool bTraceAvatar = this == (CObjCHAR*)g_pAVATAR;
+        const bool bTraceSubject = IsCombatTraceSubject() || bTraceAvatar;
         m_CommandQueue.SetTraceOwner(bTraceSubject ? this->Get_INDEX() : 0);
         if (Get_COMMAND() != m_wTracedCommand
             && (bTraceSubject || m_wTracedCommand != kUntracedCommand)) {
@@ -5455,8 +5477,16 @@ CObjCHAR::Proc(void) {
             // run reads as a steady change across lines; a jump as a big change
             // with no "position snapped forward" line to explain it.
             const D3DXVECTOR3 vAvatarPos = g_pAVATAR ? g_pAVATAR->Get_CurPOS() : m_PosCUR;
+            CObjCHAR* pTraceTarget = (CObjCHAR*)this->Get_TARGET();
+            const int iDistTarget = pTraceTarget
+                ? CD3DUtil::distance((int)m_PosCUR.x,
+                      (int)m_PosCUR.y,
+                      (int)pTraceTarget->m_PosCUR.x,
+                      (int)pTraceTarget->m_PosCUR.y)
+                : -1;
             LogString(LOG_DEBUG_,
-                "CombatTrace remote command: obj %d %s -> %s state 0x%x target %d todo %d active %d casting %d result %d queue %d dist_avatar %d dist_goto %d%s\n",
+                "CombatTrace %s command: obj %d %s -> %s state 0x%x target %d todo %d active %d casting %d result %d queue %d dist_avatar %d dist_goto %d dist_target %d%s\n",
+                bTraceAvatar ? "avatar" : "remote",
                 this->Get_INDEX(),
                 m_wTracedCommand == kUntracedCommand ? "untraced" : CommandName(m_wTracedCommand),
                 CommandName(Get_COMMAND()),
@@ -5469,6 +5499,7 @@ CObjCHAR::Proc(void) {
                 m_CommandQueue.GetCommandCount(),
                 CD3DUtil::distance((int)m_PosCUR.x, (int)m_PosCUR.y, (int)vAvatarPos.x, (int)vAvatarPos.y),
                 CD3DUtil::distance((int)m_PosCUR.x, (int)m_PosCUR.y, (int)m_PosGOTO.x, (int)m_PosGOTO.y),
+                iDistTarget,
                 bTraceSubject ? "" : " (leaves trace)");
         }
         m_wTracedCommand = bTraceSubject ? Get_COMMAND() : kUntracedCommand;
