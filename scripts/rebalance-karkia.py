@@ -72,6 +72,11 @@ import statistics
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+_te_spec = importlib.util.spec_from_file_location(
+    "balance_trend_exclude", os.path.join(HERE, "balance-trend-exclude.py"))
+trend_exclude = importlib.util.module_from_spec(_te_spec)
+_te_spec.loader.exec_module(trend_exclude)   # rows no level trend may include
 ROOT = os.path.dirname(HERE)
 STB_DIR = os.path.join(ROOT, "data", "3DDATA", "STB")
 NPC_STB = os.path.join(STB_DIR, "LIST_NPC.STB")
@@ -202,7 +207,8 @@ def fit(stb, col, karkia, value=None):
         # 3001-3003 are the Lucky Pig / Leprechaun event summons the same import
         # brought in for its AI closure: level 100 with HP 50 / ATK 10, i.e.
         # placeholder stats that would drag the 100-band median down.
-        if not stb.get(r, 0).strip() or r in karkia or 2100 <= r < 2400 or 3001 <= r <= 3003:
+        if (not stb.get(r, 0).strip() or r in karkia or 2100 <= r < 2400
+                or 3001 <= r <= 3003 or trend_exclude.excluded(r)):
             continue
         lv = gi(stb, r, COL_LEVEL)
         if not (60 <= lv < FIT_BELOW):

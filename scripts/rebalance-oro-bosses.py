@@ -53,6 +53,11 @@ import statistics
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+_te_spec = importlib.util.spec_from_file_location(
+    "balance_trend_exclude", os.path.join(HERE, "balance-trend-exclude.py"))
+trend_exclude = importlib.util.module_from_spec(_te_spec)
+_te_spec.loader.exec_module(trend_exclude)   # rows no level trend may include
 ROOT = os.path.dirname(HERE)
 NPC_STB = os.path.join(ROOT, "data", "3DDATA", "STB", "LIST_NPC.STB")
 SIDECAR = os.path.join(ROOT, "data", "3DDATA", "STB", "LIST_NPC.oro-bosses.json")
@@ -93,7 +98,8 @@ def fit_hp_trend(stb, bosses):
     for lo in range(60, FIT_BELOW, 10):
         vals = [gi(stb, i, COL_LEVEL) * gi(stb, i, COL_HP) for i in range(1, stb.rows)
                 if stb.get(i, 0).strip() and lo <= gi(stb, i, COL_LEVEL) < lo + 10
-                and gi(stb, i, COL_HP) > 0 and i not in bosses]
+                and gi(stb, i, COL_HP) > 0 and i not in bosses
+                and not trend_exclude.excluded(i)]
         if len(vals) >= 4:
             pts.append((lo + 5, statistics.median(vals)))
     if len(pts) < 6:

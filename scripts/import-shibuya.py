@@ -31,8 +31,11 @@ round-trips byte-identically before anything is touched:
                 stats (DEADERS), their models, their AI rebuilt from the Jrose
                 files with our edits (DEADER_AI), the police zombies' guns
                 (import-item.py) and the skill kit (import-monster-skills.py,
-                whose SHIBUYA notes explain every power and status). No spawn
-                points yet: those are the tribute's Phase 2.
+                whose SHIBUYA notes explain every power and status).
+    --stage 5   where they live and what they drop: 72 camps and Deader Rex's
+                plaza written into zone 126's REGEN lumps (rebuilt from the
+                Jrose template positions each run), the legacy table on drop
+                row 126 moved to 960, and the Shibuya tables 961-966 + 126.
 
 The Deaders (stage 4)
 ---------------------
@@ -55,9 +58,34 @@ The Deaders (stage 4)
     blank, which lands a hit with no visible impact. Jrose's quest triggers in
     the death-event column are blanked -- the quest-editor would read one as a
     quest to chain onto.
-  * **Drops are blank until Phase 2**, which also has to move the legacy tables
-    squatting on drop-table ids 126/127 (a drop table and a zone share ids).
-  * EXP is provisional; re-run rebalance-exp-rewards.py once the monsters spawn.
+  * EXP is only seeded here: rebalance-exp-rewards.py prices every spawning
+    monster and owns the column (the Rot Tracker via its EXTRA_SCOPE), so a
+    re-run of stage 4 keeps whatever the pass wrote on an existing row.
+  * **The Deaders are kept out of every balance pass's level trend**
+    (balance-trend-exclude.py): landing twelve monsters in levels 60-100 moved the
+    trends five passes fit and verify against, although none of their rows
+    changed.
+
+Spawns and drops (stage 5)
+--------------------------
+  * **Camps sit on Jrose's template positions**, 108 points its map editor put
+    on the streets (all Mini-Jelly Bean placeholders), merged on Karkia's 60 m
+    grid into 72 camps of 5 (~360 bodies, ~9 per 100 m cell, camps ~48 m apart).
+    The level band grows with the distance from the one walk every player makes,
+    arrival (south-east) -> the live-house door (north-west): the quest zombies
+    on the way, the level 77-78 Deaders at the edges. 60 m around the arrival and
+    the door stay empty. Karkia's camp values (cap 5, 20 s, 12 m, tacticPoint
+    100, count 1 per slot, a species weighted by repeating its slot).
+  * **Deader Rex has one point** on the north-east plaza, the furthest from the
+    walk: one body, respawning in ten minutes (the band's finale needs him).
+  * **Drop row 126 was a level-10 insect table** of monsters 63 and 1283 (a drop
+    table and a zone share ids): it moves to 960 and they follow, the pristine
+    row saved in build/shibuya/. Row 127 stays -- nothing dies in the live house.
+  * **Tables 961-966 are add-karkia-drops' shapes** with items our own level
+    58-90 monsters already drop (no new economy): materials and potions in the
+    common slots, gear in redirect buckets, bosses eight gear slots. Rate 80,
+    15% zuly on the field, none on the bosses; the zone row mirrors the middle
+    band. The Slave Puppet (a summon) pays nothing.
 
 Why this is a port and not a copy
 ---------------------------------
@@ -132,7 +160,10 @@ Usage:
     python scripts/import-shibuya.py --verify
 """
 import argparse
+import collections
 import importlib.util
+import json
+import math
 import os
 import re
 import shutil
@@ -392,7 +423,8 @@ LTB_KEY = "SHIBUYA-{}"
 # puppet is a summon worth 30% EXP, the Rot Tracker 5x HP/EXP and x1.3 ATK, Deader
 # Rex 10x HP/EXP and x1.35 ATK, x1.2 DEF/RES (the house boss factor). Max HP is
 # level x the HP column (cobjnpc.cpp). EXP is provisional: rebalance-exp-rewards.py
-# prices monsters that spawn, so it is re-run once the Phase 2 spawns exist.
+# prices monsters that spawn and owns the column once they do (stage 5 placed
+# them; the Rot Tracker is in its EXTRA_SCOPE): these are only the seed values.
 DEADERS = {
     4060: ("Business Zombie",     60,  29, 241, 154, 171, 122,  89,   67),
     4061: ("Honey Zombie",        63,  29, 267, 174, 184, 129,  93,   70),
@@ -409,12 +441,21 @@ DEADERS = {
 }
 DEADER_STAT_COLS = (7, 8, 9, 10, 11, 12, 13, 17)   # level, HP .. AVOID, EXP
 DEADER_STRID_PREFIX = "LSBMOB"
+# Drop wiring (LIST_NPC cols 18/19/20: table, money %, drop rate), written by
+# stage 4 with the rest of the row; stage 5 authors the tables. add-karkia-drops'
+# calibration: rate 80 everywhere, 15% zuly on the field, none on a boss (money
+# replaces the item roll). The Slave Puppet is a summon and pays nothing -- rate 0
+# sends its rare roll to the zone table, and drop_var at 0 is mostly negative.
+DEADER_DROPS = {4060: 961, 4061: 961, 4062: 962, 4063: 963, 1947: 963, 4064: 963,
+                1948: 963, 4065: 964, 4066: 964, 4069: 965, 4068: 966, 1833: None}
+DEADER_BOSSES = {4068, 4069}
+DROP_RATE, MONEY_FIELD, MONEY_BOSS = 80, 15, 0
 # Bare-handed rows Jrose left without a hit effect, which lands a hit with no
 # visible impact (the 667 Scarab lesson): our prisoners' 403 on the same
 # skeletons, our wolves' 453 on the dog. The police hit with their guns' bullet.
 DEADER_HAND_HIT = {4062: 453}
 DEADER_HAND_HIT_DEFAULT = 403
-NPC_HAND_HIT_COL, NPC_DEAD_EVENT_COL = 33, 41
+NPC_HAND_HIT_COL, NPC_DEAD_EVENT_COL, NPC_EXP_COL = 33, 41, 17
 NPC_DROP_COLS = (18, 19, 20)       # table, money, rate: Phase 2 authors the drops
 
 AI_STB_REL = r"3DDATA\STB\FILE_AI.STB"
@@ -450,11 +491,93 @@ IMPORT_SKILLS = os.path.join(HERE, "import-monster-skills.py")
 POLICE_GUNS = {1947: (1924, "Police Revolver"), 1948: (1300, "Police Derringer")}
 POLICE_GUN_TEMPLATE = 231
 
+# ---- stage 5: where the Deaders live, and what they drop
+DROP_STB_REL = r"3DDATA\STB\ITEM_DROP.STB"
+SBY_ZONE = 126
+# A drop-table id and a zone id are one namespace (Get_DropITEM falls back to the
+# row numbered after the zone). Row 126 is a level-10 insect table of monsters
+# 63 and 1283; it moves to a free row and they follow it, so 126 can be ours.
+# Row 127 stays: nothing dies in the live house. The pristine row is saved in
+# build/shibuya/ on the first run.
+LEGACY_DROP_MOVE = (126, 960, (63, 1283))
+LEGACY_DROP_SAVE = os.path.join(BUILD_DIR, "item-drop-126.json")
+# Rows 960-966 are free: no content, no LIST_NPC referrer, no zone.
+#
+# Every table is add-karkia-drops' `field`/`boss` shape: materials and potions in
+# the common slots (12 filled is ~62% a kill at level parity), then redirects to
+# 5-item buckets of gear. Every item is one our own level 58-90 monsters already
+# drop, so the zone adds no new economy. Hearts and crystals are the graveyard
+# reading (Karkia's precedent), Plasma and steam the city; the dog pays bone and
+# fur like every other beast. Types: 2 cap, 3 body, 4 arms, 5 foot, 8 weapon,
+# 9 sub-weapon, 10 use, 12 material.
+def _field(mats, uses, *buckets):
+    common = [(12, m) for m in mats] + [(10, u) for u in uses]
+    common += [("redirect", g + 1) for g in range(len(buckets))]
+    return common, {g + 1: list(b) for g, b in enumerate(buckets)}
+
+
+def _boss(gear, mats, use):
+    return [*gear, *((12, m) for m in mats), (10, use)], {}
+
+
+SBY_TABLES = {
+    961: ("SHIBUYA zombies (lv60-63)", _field(
+        [151, 152, 162, 161, 281, 153, 205, 201], [154, 164],
+        [(2, 416), (3, 519), (4, 419), (5, 618), (3, 416)],            # armour 56-60
+        [(8, 434), (8, 37), (8, 167), (8, 63), (8, 236)])),            # weapons 56-59
+    962: ("SHIBUYA Undead Dog (lv66)", _field(
+        [191, 192, 187, 188, 189, 151, 193, 186], [154, 164],
+        [(2, 620), (3, 620), (4, 320), (5, 320), (2, 419)],            # armour 61-64
+        [(8, 9), (8, 64), (8, 168), (8, 107), (8, 435)])),             # weapons 64-68
+    963: ("SHIBUYA ghouls and police (lv70-75)", _field(
+        [151, 152, 153, 163, 164, 281, 202, 203], [155, 165],
+        [(2, 94), (3, 124), (4, 64), (5, 124), (2, 424)],              # armour 70-72
+        [(8, 10), (8, 615), (8, 238), (8, 338), (8, 436)])),           # weapons 68-73
+    964: ("SHIBUYA Cool/Cutie Dead (lv77-78)", _field(
+        [151, 153, 154, 155, 164, 281, 203, 65], [155, 165],
+        [(3, 424), (4, 624), (5, 524), (2, 724), (5, 625)],            # armour 72-76
+        [(8, 39), (8, 137), (8, 169), (8, 506), (8, 65)],              # weapons 73-77
+        [(9, 5), (9, 67), (9, 68)])),                                  # shield/books
+    # A boss: eight gear slots (~36% a kill), two materials, a potion.
+    965: ("BOSS Rot Tracker (lv100)", _boss(
+        [(8, 11), (8, 109), (8, 210), (8, 239), (8, 309), (8, 267), (3, 426), (2, 426)],
+        [155, 65], 155)),                                              # gear 75-82
+    966: ("BOSS Deader Rex (lv100)", _boss(
+        [(8, 40), (8, 138), (8, 339), (8, 170), (8, 437), (8, 827), (4, 327), (3, 627)],
+        [155, 65], 155)),                                              # gear 81-83
+}
+SBY_ZONE_MIRROR = 963        # the 20% zone roll pays the middle band's table
+
+# Camps. The Jrose template points (108, all Mini-Jelly Bean) are where its map
+# editor put spawns on the streets, so they are the authored positions to choose
+# from; the rosters, caps and timers are ours. Bands grow with the distance from
+# the one walk every player makes, arrival (south-east) -> the live-house door
+# (north-west), so the quest monsters sit on the way and the level 77-78 Deaders
+# at the edges. Binned on Karkia's 60 m grid (consolidate_camps, same rule: keep
+# the authored point nearest the bin centroid): 72 camps of 5, ~9 bodies per
+# 100 m cell (Karkia 8.8-12.4), camps ~48 m apart, well beyond the 10 m aggro.
+SBY_ARRIVAL, SBY_DOOR = (38500, -12500), (-11083, 15335)    # local cm
+SBY_CAMP_CELL = 6000
+SBY_CLEAR = ((SBY_ARRIVAL, 60), (SBY_DOOR, 60))             # metres kept empty
+# (max metres from the walk, basic slots, tactics slots). Count 1 per slot, a
+# species weighted by repeating its slot (the regen escalation rules).
+SBY_BANDS = (
+    (70,   (4060, 4060, 4061, 4060, 4061), (4061, 4060)),      # 60-63
+    (150,  (4063, 4062, 4063, 4062, 4063), (4062, 4063)),      # 66-70
+    (240,  (4064, 4064, 1947, 4064, 1948), (1947, 1948)),      # 72-75
+    (9999, (4065, 4066, 4065, 4066, 4064), (4065, 4066)),      # 77-78
+)
+SBY_CAMP = dict(cap=5, interval=20, range=12, tactic=100)   # Karkia's camp values
+# Deader Rex on the north-east plaza, the point furthest from the walk (~400 m
+# off it, ~570 m from arrival). A lone point: one body, ten minutes -- shorter
+# than Oro's 30-minute kings, because every band member's finale needs him.
+SBY_REX = dict(pos=(44000, 31100), npc=4068, clear=45, interval=600)
+
 # Every file this importer saves through a writer that leaves `<file>.bak`
 # beside it; the .baks are moved to build/ at the end (pack.rs would bake them).
 BAK_TRACKED = [ZONE_STB_REL, ZONE_STL_REL, WARP_STB_REL, NPC_STB_REL, NPC_STL_REL,
                EVENT_STB_REL, NPC_CHR_REL, r"3DDATA\NPC\PART_NPC.ZSC", QSD_REL,
-               AI_STB_REL]
+               AI_STB_REL, DROP_STB_REL]
 
 
 # -------------------------------------------------------------------- helpers
@@ -1113,20 +1236,32 @@ def stage4(ours, src, src_index, dry):
     guns = import_police_guns(ours, src, dry)
 
     # 4a. LIST_NPC rows at their native ids, our numbers on the source's shape
-    written, kept = [], []
+    written, kept, fresh = [], [], []
     for i in ids:
         name, *stats = DEADERS[i]
         cur = our_npc.get(i, 0).decode("latin-1").strip()
         if cur and cur != name:
             raise SystemExit(f"our LIST_NPC row {i} is occupied by {cur!r}")
+        if not cur:
+            fresh.append(i)          # a row created now: any CHR slot there is an orphan
         before = list(our_npc.d[i])
         for c in range(oro.NPC_COPY_COLS):
             our_npc.set(i, c, src_npc.get(i, c))
         our_npc.set(i, 0, name)
         for c, v in zip(DEADER_STAT_COLS, stats):
             our_npc.set(i, c, str(v))
-        for c in NPC_DROP_COLS + oro.NPC_SELL_TAB_COLS:
+        # EXP is only seeded on a new row: rebalance-exp-rewards.py owns the
+        # column afterwards (it prices every spawning monster), and a re-run of
+        # this stage must not put the provisional number back.
+        if i not in fresh:
+            our_npc.set(i, NPC_EXP_COL, before[NPC_EXP_COL])
+        for c in oro.NPC_SELL_TAB_COLS:
             our_npc.set(i, c, b"")
+        table = DEADER_DROPS[i]
+        drops = (("", "", "0") if table is None else
+                 (table, MONEY_BOSS if i in DEADER_BOSSES else MONEY_FIELD, DROP_RATE))
+        for c, v in zip(NPC_DROP_COLS, drops):
+            our_npc.set(i, c, str(v))
         our_npc.set(i, NPC_DEAD_EVENT_COL, b"")      # Jrose quest triggers we do not ship
         our_npc.set(i, oro.NPC_STRID_COL, f"{DEADER_STRID_PREFIX}{i}")
         our_npc.set(i, oro.NPC_PVP_COL, oro.DEFAULT_PVP_STATE)
@@ -1177,9 +1312,11 @@ def stage4(ours, src, src_index, dry):
     if nnames:
         our_stl.save(dry)
 
-    # 4c. models (clearing orphan CHR slots first, as stage 2 does) + bone effects
+    # 4c. models (clearing orphan CHR slots first, as stage 2 does) + bone effects.
+    # Only rows created in this run: a row that exists already owns its CHR entry,
+    # and clearing it would re-import the model and append a duplicate.
     chr_ = oro.Chr(P(ours, NPC_CHR_REL))
-    cleared = [i for i in written if i < len(chr_.chars) and chr_.chars[i] is not None]
+    cleared = [i for i in fresh if i < len(chr_.chars) and chr_.chars[i] is not None]
     for i in cleared:
         chr_.chars[i] = None
     if cleared:
@@ -1204,6 +1341,137 @@ def stage4(ours, src, src_index, dry):
     wrote = [l for l in r.stdout.splitlines() if l.startswith("   LIST_SKILL ") and " type " in l]
     print(f"    {'skill kit':26s} {len(SHIBUYA_SKILLS)} skills, "
           f"{len(wrote)} to write" + (" (dry run)" if dry else ""))
+
+
+# ------------------------------------------------------------------- stage 5
+dropkit = load("add_karkia_drops", "add-karkia-drops.py")   # build_row / encode
+
+
+def regen_extra(point_name, basic, tactics, interval, cap, rng, tactic):
+    """A REGEN record's per-object bytes (CRegenPOINT::Load): point name, the
+    basic and tactics lists of (mob name, npc, count), then interval (s),
+    limitCNT, range (m) and tacticPoint. Mob names are empty, as in every file."""
+    out = oro.put_bstr(point_name.encode("latin-1"))
+    for lst in (basic, tactics):
+        out += struct.pack("<i", len(lst))
+        for npc in lst:
+            out += oro.put_bstr(b"") + struct.pack("<ii", npc, 1)
+    return out + struct.pack("<4i", interval, cap, rng, tactic)
+
+
+def walk_distance(x, y):
+    """Metres from the arrival -> live-house door segment (local cm in)."""
+    (ax, ay), (bx, by) = SBY_ARRIVAL, SBY_DOOR
+    t = ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / ((bx - ax) ** 2 + (by - ay) ** 2)
+    t = max(0.0, min(1.0, t))
+    return math.hypot(x - (ax + t * (bx - ax)), y - (ay + t * (by - ay))) / 100
+
+
+def plan_spawns(src):
+    """{ifo name: (objs, trailing)} for every zone-126 file: the camps and Rex's
+    point, each on a Jrose template position. Deterministic."""
+    s_map = P(src, ZONES[SBY_ZONE]["maps"])
+    per, pts = {}, []
+    for name in ifo_files(s_map):
+        buf, bounds = oro.read_ifo(os.path.join(s_map, name))
+        objs, trailing = oro.read_lump(buf, bounds, oro.LUMP_REGEN)
+        if objs is None:
+            continue                      # no REGEN lump in this chunk at all
+        per[name] = ([], trailing)
+        for o in objs:
+            x, y, _z = struct.unpack_from("<3f", o["fixed"], kk.REGEN_POS_OFF)
+            pts.append((name, x, y, o))
+    near = lambda x, y, pos, m: math.hypot(x - pos[0], y - pos[1]) < m * 100
+
+    rex = min(pts, key=lambda p: (math.hypot(p[1] - SBY_REX["pos"][0], p[2] - SBY_REX["pos"][1]), p[0]))
+    obj = dict(rex[3])
+    obj["extra"] = regen_extra("SBY-REX", [SBY_REX["npc"]], [], SBY_REX["interval"], 1, 1,
+                               SBY_CAMP["tactic"])
+    per[rex[0]][0].append(obj)
+
+    cand = [p for p in pts if p is not rex
+            and not any(near(p[1], p[2], pos, m) for pos, m in SBY_CLEAR)
+            and not near(p[1], p[2], SBY_REX["pos"], SBY_REX["clear"])]
+    bins = collections.defaultdict(list)
+    for p in cand:
+        bins[(int(p[1] // SBY_CAMP_CELL), int(p[2] // SBY_CAMP_CELL))].append(p)
+    counts = collections.Counter()
+    for _cell, members in sorted(bins.items()):
+        cx = sum(p[1] for p in members) / len(members)
+        cy = sum(p[2] for p in members) / len(members)
+        name, x, y, tmpl = min(members, key=lambda p: ((p[1] - cx) ** 2 + (p[2] - cy) ** 2, p[0]))
+        band = next(i for i, b in enumerate(SBY_BANDS) if walk_distance(x, y) < b[0])
+        _lim, basic, tactics = SBY_BANDS[band]
+        counts[band] += 1
+        obj = dict(tmpl)
+        obj["extra"] = regen_extra(f"SBY-{'ABCD'[band]}{counts[band]:02d}", list(basic),
+                                   list(tactics), SBY_CAMP["interval"], SBY_CAMP["cap"],
+                                   SBY_CAMP["range"], SBY_CAMP["tactic"])
+        per[name][0].append(obj)
+    return per, counts, rex[0]
+
+
+def plan_drops():
+    """{ITEM_DROP row: (label, {slot: packed})} -- the Shibuya tables + zone row."""
+    rows = {r: (label, dropkit.build_row(common, groups))
+            for r, (label, (common, groups)) in SBY_TABLES.items()}
+    rows[SBY_ZONE] = (f"SHIBUYA zone roll (mirrors {SBY_ZONE_MIRROR})",
+                      dict(rows[SBY_ZONE_MIRROR][1]))
+    return rows
+
+
+def drop_row_cells(d, label, cells):
+    row = [b""] * d.cols
+    row[0] = label.encode("latin-1")
+    for slot, v in cells.items():
+        row[1 + slot] = str(v).encode("latin-1")
+    return row
+
+
+def stage5(ours, src, src_index, dry):
+    print("stage 5 -- spawns and drops")
+
+    # 5a. the camps and Deader Rex, rebuilt from the template positions each run
+    per, counts, rex_file = plan_spawns(src)
+    total = sum(counts.values())
+    print(f"    {'camps':26s} {total} camps of {SBY_CAMP['cap']}: "
+          + ", ".join(f"{'ABCD'[b]}={counts[b]}" for b in sorted(counts))
+          + f"; Deader Rex in {rex_file}")
+    fill_lump(ours, SBY_ZONE, per, oro.LUMP_REGEN, dry, "IFO regen lumps (126)")
+
+    # 5b. the legacy table on row 126 moves out, its users follow
+    d, npc = O(ours, DROP_STB_REL), O(ours, NPC_STB_REL)
+    src_row, dst_row, users = LEGACY_DROP_MOVE
+    rows = plan_drops()
+    if d.get(src_row, 0) != rows[src_row][0].encode("latin-1"):
+        legacy = list(d.d[src_row])
+        if any(x.strip() for x in d.d[dst_row]) and d.d[dst_row] != legacy:
+            raise SystemExit(f"ITEM_DROP row {dst_row} is not free")
+        if not dry and not os.path.isfile(LEGACY_DROP_SAVE):
+            os.makedirs(BUILD_DIR, exist_ok=True)
+            with open(LEGACY_DROP_SAVE, "w") as fh:
+                json.dump([c.decode("latin-1") for c in legacy], fh)
+        d.d[dst_row] = legacy
+        print(f"    {'ITEM_DROP.STB':26s} legacy row {src_row} -> {dst_row}")
+    moved = [u for u in users if npc.get(u, 18).strip() == str(src_row).encode()]
+    for u in moved:
+        npc.set(u, 18, str(dst_row))
+    if moved:
+        print(f"    {'LIST_NPC.STB':26s} npc {moved} drop table {src_row} -> {dst_row}")
+
+    # 5c. our tables, onto rows that are free or already ours
+    wrote = []
+    for r, (label, cells) in sorted(rows.items()):
+        want = drop_row_cells(d, label, cells)
+        if d.d[r] == want:
+            continue
+        if r != src_row and any(x.strip() for x in d.d[r]) and d.get(r, 0) != label.encode():
+            raise SystemExit(f"ITEM_DROP row {r} holds a table we did not author")
+        d.d[r] = want
+        wrote.append(r)
+    print(f"    {'ITEM_DROP.STB':26s} {len(wrote)} of {len(rows)} tables written {wrote}")
+    d.save(dry)
+    npc.save(dry)
 
 
 # -------------------------------------------------------------------- verify
@@ -1248,7 +1516,8 @@ def verify(ours, src):
             for o in oro.read_lump(buf, bounds, oro.LUMP_WARP)[0] or []:
                 warps += 1
                 warp_ids.add(o["warp_id"])
-        check(regen == 0, f"zone {zone}: {regen} regen points (want 0)")
+        want_regen = 0 if zone != SBY_ZONE else 1 + sum(plan_spawns(src)[1].values())
+        check(regen == want_regen, f"zone {zone}: {regen} regen points (want {want_regen})")
         want_ids = {row for row, _ in WARPS.values()}
         check(warps == 1 and warp_ids <= want_ids, f"zone {zone}: warp gate -> {sorted(warp_ids)}")
 
@@ -1325,7 +1594,7 @@ def verify(ours, src):
     chr_ = oro.Chr(P(ours, NPC_CHR_REL))
     stats_ok = [i for i, (name, *st) in DEADERS.items()
                 if npc.get(i, 0).decode("latin-1") == name
-                and [int(npc.get(i, c) or 0) for c in DEADER_STAT_COLS] == st
+                and [int(npc.get(i, c) or 0) for c in DEADER_STAT_COLS[:-1]] == st[:-1]
                 and not npc.get(i, NPC_DEAD_EVENT_COL).strip()
                 and int(npc.get(i, oro.NPC_AI_COL) or 0) in DEADER_AI]
     check(len(stats_ok) == len(DEADERS), f"{len(stats_ok)}/{len(DEADERS)} Deader rows (name, stats, AI, no Jrose trigger)")
@@ -1346,6 +1615,35 @@ def verify(ours, src):
                         "--skills", ",".join(map(str, SHIBUYA_SKILLS))],
                        cwd=ROOT, capture_output=True, text=True)
     check(r.returncode == 0, f"skill kit ({len(SHIBUYA_SKILLS)} rows) verifies")
+
+    # stage 5
+    per, _counts, _rex = plan_spawns(src)
+    d_map = P(ours, ZONES[SBY_ZONE]["maps"])
+    lumps_ok = 0
+    for name, (objs, trailing) in per.items():
+        buf, bounds = oro.read_ifo(os.path.join(d_map, name))
+        off, end = oro.lump_block(bounds, oro.LUMP_REGEN)
+        lumps_ok += buf[off:end] == oro.build_object_lump(objs, trailing)
+    check(lumps_ok == len(per), f"{lumps_ok}/{len(per)} zone-126 regen lumps match the camp plan")
+    d = O(ours, DROP_STB_REL)
+    rows = plan_drops()
+    tables_ok = [r for r, (label, cells) in rows.items() if d.d[r] == drop_row_cells(d, label, cells)]
+    check(len(tables_ok) == len(rows), f"{len(tables_ok)}/{len(rows)} drop tables as planned")
+    src_row, dst_row, users = LEGACY_DROP_MOVE
+    legacy_ok = (os.path.isfile(LEGACY_DROP_SAVE)
+                 and [c.decode("latin-1") for c in d.d[dst_row]] == json.load(open(LEGACY_DROP_SAVE))
+                 and all(npc.get(u, 18).strip() == str(dst_row).encode() for u in users))
+    check(legacy_ok, f"legacy table {src_row} lives on at {dst_row}, npc {list(users)} follow it")
+    names = {t: O(ours, rf"3DDATA\STB\{f}.STB") for t, f in
+             ((2, "LIST_CAP"), (3, "LIST_BODY"), (4, "LIST_ARMS"), (5, "LIST_FOOT"),
+              (8, "LIST_WEAPON"), (9, "LIST_SUBWPN"), (10, "LIST_USEITEM"), (12, "LIST_NATURAL"))}
+    blank = [f"{t}:{n}" for _l, (common, groups) in SBY_TABLES.values()
+             for t, n in [e for e in common if e[0] != "redirect"] + [e for g in groups.values() for e in g]
+             if not names[t].get(n, 0).strip()]
+    check(not blank, f"every drop-table item exists {blank[:4]}")
+    wired = [i for i, t in DEADER_DROPS.items()
+             if npc.get(i, 18).decode() == ("" if t is None else str(t))]
+    check(len(wired) == len(DEADER_DROPS), f"{len(wired)}/{len(DEADER_DROPS)} Deaders point at their table")
     print("    " + ("ALL OK" if not bad else f"{len(bad)} problem(s)"))
     return 0 if not bad else 1
 
@@ -1416,7 +1714,7 @@ def selftest(ours, src):
 # ---------------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--stage", type=int, choices=(1, 2, 3, 4), action="append")
+    ap.add_argument("--stage", type=int, choices=(1, 2, 3, 4, 5), action="append")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--selftest", action="store_true")
@@ -1433,10 +1731,10 @@ def main():
     if args.verify:
         return verify(ours, src)
     if not args.stage:
-        ap.error("give --stage N (1-4), --verify or --selftest")
+        ap.error("give --stage N (1-5), --verify or --selftest")
     src_index = kk.index_tree(src)
     for st in sorted(set(args.stage)):
-        {1: stage1, 2: stage2, 3: stage3, 4: stage4}[st](ours, src, src_index, args.dry_run)
+        {1: stage1, 2: stage2, 3: stage3, 4: stage4, 5: stage5}[st](ours, src, src_index, args.dry_run)
         print()
     if args.dry_run:
         print("dry run: nothing written")

@@ -145,6 +145,11 @@ import struct
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+_te_spec = importlib.util.spec_from_file_location(
+    "balance_trend_exclude", os.path.join(HERE, "balance-trend-exclude.py"))
+trend_exclude = importlib.util.module_from_spec(_te_spec)
+_te_spec.loader.exec_module(trend_exclude)   # rows no level trend may include
 ROOT = os.path.dirname(HERE)
 NPC_STB = os.path.join(ROOT, "data", "3DDATA", "STB", "LIST_NPC.STB")
 SIDECAR = os.path.join(ROOT, "data", "3DDATA", "STB", "LIST_NPC.exp-rewards.json")
@@ -180,6 +185,18 @@ MIN_SPAWNS_REFERENCE = 4
 MIN_SPAWNS_SCOPE = 1
 
 SENTINEL_EXP = 1                # "worth nothing", never lifted
+
+# Priced, but kept out of the tier reference. An import that lands a new roster
+# in a level band moves that band's medians, and so the EXP of every monster
+# already priced there: SHIBUYA's Deaders (import-shibuya.py, lv60-100) shifted
+# 47 unrelated lv55-78 rows. The same rule the Karkia/Eldeon passes apply to
+# Oro's id band: an import is measured against the trend, it does not move it.
+REFERENCE_EXCLUDE = trend_exclude.EXCLUDED     # balance-trend-exclude.py
+# Monsters that exist in the world without a regen point, so the map scan cannot
+# see them, and are still worth pricing like a spawn. row -> reason.
+EXTRA_SCOPE = {
+    4069: "SHIBUYA Rot Tracker, a 5% AI summon off any Deader kill",
+}
 
 
 def load_oro():
@@ -288,7 +305,7 @@ def tier_reference(stb, spawns):
     by_level = collections.defaultdict(list)
     for row, total in spawns.items():
         if (row >= stb.rows or total < MIN_SPAWNS_REFERENCE
-                or not stb.get(row, 0).strip()):
+                or not stb.get(row, 0).strip() or row in REFERENCE_EXCLUDE):
             continue
         lv, hpc, exp = gi(stb, row, COL_LEVEL), gi(stb, row, COL_HP), gi(stb, row, COL_EXP)
         if lv <= 0 or hpc <= 0 or exp <= SENTINEL_EXP:
@@ -374,6 +391,8 @@ def main():
         return
 
     spawns = spawning_monsters(oro)
+    for row in EXTRA_SCOPE:
+        spawns[row] = max(spawns[row], MIN_SPAWNS_SCOPE)
     if len(spawns) < 100:
         sys.exit(f"only {len(spawns)} spawning monsters found in {MAPS} -- "
                  "the map scan failed, refusing to fit tiers on that")

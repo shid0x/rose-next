@@ -65,6 +65,11 @@ import statistics
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+_te_spec = importlib.util.spec_from_file_location(
+    "balance_trend_exclude", os.path.join(HERE, "balance-trend-exclude.py"))
+trend_exclude = importlib.util.module_from_spec(_te_spec)
+_te_spec.loader.exec_module(trend_exclude)   # rows no level trend may include
 ROOT = os.path.dirname(HERE)
 STB_DIR = os.path.join(ROOT, "data", "3DDATA", "STB")
 NPC_STB = os.path.join(STB_DIR, "LIST_NPC.STB")
@@ -155,7 +160,7 @@ def fit(stb, col, exclude, value=None):
     """Least squares on per-band medians below FIT_BELOW, Oro excluded."""
     band = collections.defaultdict(list)
     for r in range(1, stb.rows):
-        if not stb.get(r, 0).strip() or r in exclude:
+        if not stb.get(r, 0).strip() or r in exclude or trend_exclude.excluded(r):
             continue
         lv = gi(stb, r, COL_LEVEL)
         if not (60 <= lv < FIT_BELOW):
