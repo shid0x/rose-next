@@ -351,6 +351,16 @@ CObjAI::ProcSkillAction(CObjCHAR* pTarget) {
             m_nDoingSkillIDX = m_nActiveSkillIDX;
 
             SetEffectedSkillFlag(false);
+            // Normally this consumes the start of the cast now playing. A start armed
+            // for a cast still queued behind it would be eaten here too, so remote
+            // casters log it as a timeline marker for "remote cast abandoned".
+            if (bCanStartSkill() && !static_cast<CObjCHAR*>(this)->IsLocalAvatarAttacker()) {
+                LogString(LOG_DEBUG_,
+                    "CombatTrace skill start consumed by action: caster %d skill %d todo %d\n",
+                    this->Get_INDEX(),
+                    m_nActiveSkillIDX,
+                    m_nToDoSkillIDX);
+            }
             SetStartSkill(false);
 
             return 2;
@@ -1858,6 +1868,12 @@ CObjAI::ProcCMD_Skill2OBJECT() {
                         m_dwRemoteCastWaitSince = 0;
                         pTarget->DiscardQueuedProjectileDamageFromAttacker(
                             static_cast<CObjCHAR*>(this), "remote cast abandoned");
+                        // The cast will not play, but the server applied its status
+                        // (Deader Rex's Hex, 2026-09-29): retire what it parked now,
+                        // status included, instead of leaving it to the timeouts --
+                        // a projectile payload there was dropped status and all.
+                        static_cast<CObjCHAR*>(this)->ResolveAbandonedCastPayloads(
+                            m_nToDoSkillIDX, "remote cast abandoned");
                         Casting_END();
                         m_wCommand = CMD_STOP;
                         return 1;

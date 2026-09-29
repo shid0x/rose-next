@@ -2308,6 +2308,68 @@ CObjCHAR::ResolveEffectedSkillSilently(stEFFECT_OF_SKILL* pEffectOfSkill, const 
 }
 
 void
+CObjCHAR::ResolveAbandonedPayload(stEFFECT_OF_SKILL* pEffectOfSkill, const char* reason) {
+    const int iSkillIDX = pEffectOfSkill->iSkillIDX;
+    const int iObjIDX = pEffectOfSkill->EffectOfSkill.m_wObjectIDX;
+
+    if (pEffectOfSkill->bWaitForProjectileImpact) {
+        ClearPendingProjectileSkill(iObjIDX, iSkillIDX);
+    }
+
+    if (pEffectOfSkill->bDamageOfSkill && pEffectOfSkill->bDamageEventAlreadyQueued) {
+        // The damage half is a DamageEvent already queued on the defender, which the
+        // caller's discard resolves (and presents if lethal). Only the status half
+        // is still owed.
+        CObjCHAR* pDefender = g_pObjMGR->Get_ClientCharOBJ(iObjIDX, true);
+        if (pDefender) {
+            ProcEffectOfSkillInDamageOfSkill(iSkillIDX, iObjIDX, pDefender, pEffectOfSkill);
+        }
+        LogString(LOG_DEBUG_,
+            "SkillStatusTrace abandoned cast status applied: caster %d target %d skill %d success_bits %d reason %s\n",
+            this->Get_INDEX(),
+            iObjIDX,
+            iSkillIDX,
+            (int)pEffectOfSkill->EffectOfSkill.m_btSuccessBITS,
+            reason ? reason : "");
+        return;
+    }
+
+    // Fold the HP checkpoint and apply the status, no digit (a lethal payload is
+    // presented in full so the defender still dies).
+    ResolveEffectedSkillSilently(pEffectOfSkill, reason);
+}
+
+int
+CObjCHAR::ResolveAbandonedCastPayloads(int iSkillIDX, const char* reason) {
+    // Take every matching payload out first and resolve afterwards: a lethal one is
+    // presented, and Dead() -> ClearAllEntityList() -> ProcEffectedSkill() erases
+    // from this list, which would invalidate an iterator held across the resolve.
+    std::vector<stEFFECT_OF_SKILL> abandoned;
+    for (std::vector<stEFFECT_OF_SKILL>::iterator it = m_EffectedSkillList.begin();
+         it != m_EffectedSkillList.end();) {
+        if (it->iSkillIDX == iSkillIDX) {
+            abandoned.push_back(*it);
+            it = m_EffectedSkillList.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    if (m_EffectedSkillList.empty()) {
+        SetEffectedSkillFlag(false);
+    }
+    for (size_t i = 0; i < abandoned.size(); ++i) {
+        ResolveAbandonedPayload(&abandoned[i], reason);
+    }
+    LogString(LOG_DEBUG_,
+        "SkillStatusTrace abandoned cast payloads resolved: caster %d skill %d count %d reason %s\n",
+        this->Get_INDEX(),
+        iSkillIDX,
+        (int)abandoned.size(),
+        reason ? reason : "");
+    return (int)abandoned.size();
+}
+
+void
 CObjCHAR::ProcTimeOutEffectedSkill() {
     stEFFECT_OF_SKILL* pEffectOfSkill = NULL;
     DWORD dwElapsedTime = 0;
@@ -2334,7 +2396,6 @@ CObjCHAR::ProcTimeOutEffectedSkill() {
                 if (pChar) {
                     pChar->DiscardQueuedCombatDamageFromAttacker(this);
                 }
-                ClearPendingProjectileSkill(iObjIDX, pEffectOfSkill->iSkillIDX);
                 LogString(LOG_DEBUG_,
                     "CombatTrace projectile timeout discard: caster %d target %d skill %d damage_queued %d damage %d\n",
                     this->Get_INDEX(),
@@ -2342,7 +2403,12 @@ CObjCHAR::ProcTimeOutEffectedSkill() {
                     pEffectOfSkill->iSkillIDX,
                     pEffectOfSkill->bDamageEventAlreadyQueued ? 1 : 0,
                     pEffectOfSkill->EffectOfSkill.m_wDamage);
+                // The bullet never landed, but the server applied the status: the
+                // hit is dropped (discarded above), the status half still lands.
+                // Copy and erase before resolving, as the branch below does.
+                stEFFECT_OF_SKILL EffectOfSkill = *pEffectOfSkill;
                 begin = m_EffectedSkillList.erase(begin);
+                ResolveAbandonedPayload(&EffectOfSkill, "projectile timeout");
             } else {
                 // Never ProcOneEffectedSkill() here. Whether we got here by the 3 s
                 // abandon test or by the 10 s timeout, the caster's action frame is
@@ -2423,6 +2489,18 @@ CObjCHAR::ApplyEffectOfSkill(int iSkillIDX,
     int iObjIDX,
     CObjCHAR* pEffectedChar,
     stEFFECT_OF_SKILL* pEffectOfSkill) {
+    // Pairs with the server's "SkillStatusTrace applied": a status the server put
+    // on a character but the client never shows (a DoT ticking with no icon) is a
+    // server line with no client line for the same skill and target.
+    LogString(LOG_DEBUG_,
+        "SkillStatusTrace client effect: caster %d target %d skill %d type %d success_bits %d avatar %d\n",
+        this->Get_INDEX(),
+        pEffectedChar ? pEffectedChar->Get_INDEX() : -1,
+        iSkillIDX,
+        SKILL_TYPE(iSkillIDX),
+        (int)pEffectOfSkill->EffectOfSkill.m_btSuccessBITS,
+        pEffectedChar == g_pAVATAR ? 1 : 0);
+
     if (pEffectOfSkill->EffectOfSkill.m_btSuccessBITS
         == 0) /// 적용 효과후 바로 삭제..즉 스킬 적용 실패다
     {
@@ -2465,6 +2543,14 @@ CObjCHAR::ApplyEffectOfSkill(int iSkillIDX,
                         iStateIndex,
                         SKILL_DURATION(iSkillIDX),
                         ENDURANCE_TYPE_SKILL);
+                    LogString(LOG_DEBUG_,
+                        "SkillStatusTrace client applied: target %d skill %d slot %d state %d state_type %d duration %d\n",
+                        pEffectedChar->Get_INDEX(),
+                        iSkillIDX,
+                        i,
+                        iStateIndex,
+                        STATE_TYPE(iStateIndex),
+                        SKILL_DURATION(iSkillIDX));
 
                     /// 상태 타입..
                     int iStateType = STATE_TYPE(iStateIndex);
@@ -5512,6 +5598,17 @@ CObjCHAR::ProcQueuedCommand() {
     if (pCommand && bSkillCommand && this != (CObjCHAR*)g_pAVATAR && m_iQueuedSkillStarts > 0) {
         --m_iQueuedSkillStarts;
         SetStartSkill(true);
+        LogString(LOG_DEBUG_,
+            "CombatTrace queued skill start granted: caster %d todo %d remaining %d\n",
+            this->Get_INDEX(),
+            m_nToDoSkillIDX,
+            m_iQueuedSkillStarts);
+    } else if (pCommand && bSkillCommand && this != (CObjCHAR*)g_pAVATAR) {
+        LogString(LOG_DEBUG_,
+            "CombatTrace queued skill command popped without a start: caster %d todo %d start_flag %d\n",
+            this->Get_INDEX(),
+            m_nToDoSkillIDX,
+            bCanStartSkill() ? 1 : 0);
     }
 }
 }

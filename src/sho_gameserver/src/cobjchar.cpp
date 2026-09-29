@@ -1285,6 +1285,9 @@ CObjCHAR::Give_STATUS_DAMAGE(short nDamage, short nSkillIDX, int iSourceObjIDX) 
     }
 
     this->Sub_HP(iDamage);
+    LogString(LOG_DEBUG_,
+        "SkillStatusTrace tick: target %d skill %d source %d damage %d hp_after %d\n",
+        this->Get_INDEX(), nSkillIDX, iSourceObjIDX, iDamage, this->Get_HP());
 
     uniDAMAGE sDamage;
     sDamage.m_wDamage = 0;

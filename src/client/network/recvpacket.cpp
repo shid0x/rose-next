@@ -2936,16 +2936,33 @@ CRecvPACKET::Recv_gsv_SKILL_START() {
         // Count it for the queued command rather than setting the shared flag:
         // the cast currently playing clears that flag when its action begins,
         // which used to eat the queued cast's start.
+        // Which of the three branches took the start, and for what: a remote cast
+        // that later logs "remote cast abandoned, no skill start" is either missing
+        // this line (the start never came) or shows where it went.
+        const char* branch;
         if (pCHAR != (CObjCHAR*)g_pAVATAR && !pCHAR->m_CommandQueue.IsEmpty()) {
             pCHAR->m_CommandQueue.SetValidFlag();
             pCHAR->OnRemoteSkillStartWhileQueued();
+            branch = "counted for queued command";
         } else if (pCHAR->bCanStartSkill()) {
             /// assert( 0 && "Recv_gsv_SKILL_START" );
             /// 그렇다면 명령큐를 뒤져라..
             pCHAR->m_CommandQueue.SetValidFlag();
+            branch = "flag already armed (no-op)";
 
-        } else
+        } else {
             pCHAR->SetStartSkill(true);
+            branch = "armed";
+        }
+        if (pCHAR != (CObjCHAR*)g_pAVATAR) {
+            LogString(LOG_DEBUG_,
+                "CombatTrace GSV_SKILL_START: caster %d todo %d active %d casting %d branch %s\n",
+                pCHAR->Get_INDEX(),
+                pCHAR->m_nToDoSkillIDX,
+                pCHAR->m_nActiveSkillIDX,
+                pCHAR->m_bCastingSTART ? 1 : 0,
+                branch);
+        }
     } else {
         assert(0 && "SKILL_START[ Not exist owner ]");
     }
@@ -3023,6 +3040,13 @@ CRecvPACKET::Recv_gsv_EFFECT_OF_SKILL() {
         pChar->PushEffectedSkillToList(m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_nSkillIDX,
             damageOfSkill,
             m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_nINT);
+        LogString(LOG_DEBUG_,
+            "SkillStatusTrace effect parked on caster: caster %d target %d skill %d success_bits %d doing %d\n",
+            pChar->Get_INDEX(),
+            m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_wObjectIDX,
+            static_cast<int>(m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_nSkillIDX),
+            static_cast<int>(m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_btSuccessBITS),
+            iDoingSkillIDX);
     } else {
         /// 소유주가 없을때는 바로 적용...
         /// CObjCHAR *pEffectedChar = g_pObjMGR->Get_ClientCharOBJ(
@@ -3037,6 +3061,16 @@ CRecvPACKET::Recv_gsv_EFFECT_OF_SKILL() {
         }
 
         int iSkillIDX = m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_nSkillIDX;
+
+        // The caster is not casting (no owner, or its cast is still held in the
+        // queue): the status lands now, not at an action frame.
+        LogString(LOG_DEBUG_,
+            "SkillStatusTrace client effect at receive: caster %d target %d skill %d success_bits %d avatar %d\n",
+            pChar ? pChar->Get_INDEX() : -1,
+            pEffectedChar->Get_INDEX(),
+            iSkillIDX,
+            static_cast<int>(m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_btSuccessBITS),
+            pEffectedChar == (CObjCHAR*)g_pAVATAR ? 1 : 0);
 
         if (m_pRecvPacket->m_gsv_EFFECT_OF_SKILL.m_btSuccessBITS
             == 0) /// 적용 효과후 바로 삭제..즉 스킬 적용 실패다

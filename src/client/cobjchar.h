@@ -569,6 +569,13 @@ public:
     /// the status half, but present no damage digit, hit effect or hit sound. A
     /// lethal payload is presented in full instead, so the defender still dies.
     void ResolveEffectedSkillSilently(stEFFECT_OF_SKILL* pEffectOfSkill, const char* reason);
+    /// A cast that will never play on this client (its GSV_SKILL_START never came,
+    /// or its projectile never launched): retire what it parked for iSkillIDX with
+    /// no hit presented, but still apply the status half -- the server applied the
+    /// debuff whether or not we saw the cast, and a status with no icon is a DoT
+    /// ticking out of nowhere. Returns how many payloads were retired.
+    int ResolveAbandonedCastPayloads(int iSkillIDX, const char* reason);
+    void ResolveAbandonedPayload(stEFFECT_OF_SKILL* pEffectOfSkill, const char* reason);
     void RegisterPendingProjectileSkill(int iServerTarget, int iSkillIDX);
     bool ConsumePendingProjectileSkill(int iServerTarget, int iSkillIDX);
     void ClearPendingProjectileSkill(int iServerTarget, int iSkillIDX);
