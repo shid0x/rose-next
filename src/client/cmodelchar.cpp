@@ -187,7 +187,7 @@ CCharMODEL::Load_MOBorNPC(CFileSystem* pFileSystem,
         m_pBodyPART[nI] = g_DATA.m_ModelMOBnNPC.GetMODEL(nIndex);
     }
 
-    LogString(LOG_DEBUG_, "SKEL:: %s \n", g_DATA.m_SKELETON.Get_FileNAME(m_HashSkelFILE));
+    LogStringTrace(LOG_DEBUG_, "SKEL:: %s \n", g_DATA.m_SKELETON.Get_FileNAME(m_HashSkelFILE));
 
     // read ani index counter
     short nCnt, nAniIDX;
@@ -203,7 +203,7 @@ CCharMODEL::Load_MOBorNPC(CFileSystem* pFileSystem,
         }
 
         m_BoneAniFILE[nAniIDX] = pAniKEY[nIndex];
-        LogString(LOG_DEBUG_,
+        LogStringTrace(LOG_DEBUG_,
             "		HashMotionFILE::%d: %s %d / %d \n",
             nIndex,
             g_MotionFILE.Get_FileNAME(m_BoneAniFILE[nAniIDX]),

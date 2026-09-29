@@ -48,6 +48,26 @@ extern CCamera* g_pCamera;
 extern CAI_OBJ* AI_FindFirstOBJ(CAI_OBJ* pBaseOBJ, int iDistance);
 extern CAI_OBJ* AI_FindNextOBJ();
 
+namespace {
+/// For the remote command trace (see IsCombatTraceSubject).
+const char*
+CommandName(WORD wCommand) {
+    switch (wCommand) {
+        case CMD_STOP: return "stop";
+        case CMD_MOVE: return "move";
+        case CMD_ATTACK: return "attack";
+        case CMD_DIE: return "die";
+        case CMD_PICK_ITEM: return "pick";
+        case CMD_SKILL2SELF: return "skill2self";
+        case CMD_SKILL2OBJ: return "skill2obj";
+        case CMD_SKILL2POS: return "skill2pos";
+        case CMD_RUNAWAY: return "runaway";
+        case CMD_SIT: return "sit";
+    }
+    return "?";
+}
+} // namespace
+
 //--------------------------------------------------------------------------------
 /// class : CObjCHAR
 /// @param int iDistance 거리
@@ -123,6 +143,18 @@ CObjCHAR::Adj_MoveSPEED(WORD wSrvDIST, const D3DVECTOR& PosGOTO) {
 
                 D3DXVECTOR3 vPosCur = m_PosCUR + (vDir * fRatio);
                 vPosCur.z = m_PosCUR.z;
+
+                // The visible "teleport": this copy was more than a second of
+                // walking behind the server's, so it jumps the difference.
+                if (Log::level_enabled(Rose::Common::LogLevel::Debug) && IsCombatTraceSubject()) {
+                    LogString(LOG_DEBUG_,
+                        "CombatTrace position snapped forward: obj %d jump %d client_dist %d server_dist %d command %s\n",
+                        this->Get_INDEX(),
+                        iDiffDistance,
+                        iClientDIST,
+                        (int)wSrvDIST,
+                        CommandName(Get_COMMAND()));
+                }
 
                 this->ResetCUR_POS(vPosCur);
             }
@@ -252,6 +284,17 @@ CObjCHAR::StartConfirmedCombatSwing(int iServerTarget,
     }
 
     this->SetCMD_ATTACK(iServerTarget, wSrvDIST, PosGOTO);
+}
+
+bool
+CObjCHAR::IsCombatTraceSubject() {
+    if (!g_pAVATAR || this == (CObjCHAR*)g_pAVATAR || !this->IsA(OBJ_MOB)) {
+        return false;
+    }
+    const int iAvatarServer = g_pObjMGR->Get_ServerObjectIndex(g_pAVATAR->Get_INDEX());
+    const int iOwnServer = g_pObjMGR->Get_ServerObjectIndex(this->Get_INDEX());
+    return (iAvatarServer && this->Get_TargetIDX() == iAvatarServer)
+        || (iOwnServer && g_pAVATAR->Get_TargetIDX() == iOwnServer);
 }
 
 bool
@@ -582,7 +625,14 @@ CObjCHAR::PlayOwedSwingBeforeCast(int iSkillIDX) {
         return false;
     }
 
-    const int iQueued = pDefender->CountFramePresentedDamageFrom(this->Get_INDEX());
+    // Only what had arrived when the skill command applied: the server finished its
+    // swing before casting, so every owed swing is older than the command. The
+    // cast's own damage event arrives while the owed swings are still playing;
+    // counting it played one swing too many, which then took that event and pushed
+    // every later hit back a swing (a Rot Tracker fight, 2026-09-29: "owed 2" after
+    // a swing had just popped one, the cap reached three times, lag back to 4 s).
+    const int iQueued =
+        pDefender->CountFramePresentedDamageFrom(this->Get_INDEX(), m_dwOwedSwingArrivedBy);
     const int iInFlight = g_pBltMGR->CountLiveBullets(this->Get_INDEX(), pDefender->Get_INDEX());
     const int iOwed = iQueued - iInFlight;
 
@@ -754,7 +804,12 @@ CObjCHAR::CObjCHAR(): m_EndurancePack(this), m_ChangeActionMode(this), m_ObjVibr
     m_iOwedSwingsBeforeCast = 0;
     m_dwOwedSwingBeforeCastSince = 0;
     m_bOwedSwingBeforeCastClosed = false;
+    m_dwOwedSwingArrivedBy = 0;
     m_bOwedSwingMotionPlaying = false;
+    m_wTracedCommand = 0xFFFF;
+    m_vTracedPos = D3DXVECTOR3(0.0f, 0.0f, 0.0f);
+    m_bTracedPosValid = false;
+    m_bQueueGateBypass = false;
     m_iPendingMountedAttackTarget = 0;
     m_dwPendingMountedAttackTime = 0;
 
@@ -2966,6 +3021,11 @@ CObjCHAR::NextHPAuthoritySeq() {
     return ++s_dwHPAuthoritySeq;
 }
 
+uint32_t
+CObjCHAR::CurrentHPAuthoritySeq() {
+    return s_dwHPAuthoritySeq;
+}
+
 void
 CObjCHAR::PushCombatDamageEvent(const Rose::Combat::DamageEvent& event) {
     Rose::Combat::DamageEvent queuedEvent = event;
@@ -3337,6 +3397,16 @@ CObjCHAR::ApplyPresentedCombatDamage(CObjCHAR* pAtkOBJ, Rose::Combat::DamageEven
         && event.arrival_seq != 0
         && m_dwLastAuthoritativeSyncSeq > event.arrival_seq
         && m_iAuthoritativeHP > event.hp_after;
+    // Any later authoritative checkpoint (sync or status tick) was taken after the
+    // server applied this hit, so it already includes it -- whichever way it moved.
+    // The heal case above is one instance; the other is a DoT tick landing while a
+    // deferred skill hit waits for its caster's action frame: the tick pins the bar
+    // to the lower truth, and the hit then took its digit off again (Rot Tracker,
+    // 2026-09-29: 459 - 541 = -82 while the server had the player alive).
+    const bool bSupersededCheckpoint =
+        m_bHasAuthoritativeHP
+        && event.arrival_seq != 0
+        && m_dwLastAuthoritativeSyncSeq > event.arrival_seq;
 
     // StatusTick is the one checkpoint that may raise the shadow HP. It is produced
     // only by Give_STATUS_DAMAGE and presented synchronously in recv_damage_event,
@@ -3404,7 +3474,10 @@ CObjCHAR::ApplyPresentedCombatDamage(CObjCHAR* pAtkOBJ, Rose::Combat::DamageEven
         hpDelta = max(hpDelta, visibleBefore - DEAD_HP);
         m_iPendingCombatHPCorrection = 0;
     } else if (hpDelta > 0) {
-        hpAfterDelta = max(DEAD_HP + 1, visibleBefore - hpDelta);
+        // A hit the server did not call lethal leaves at least 1 HP on the bar.
+        // DEAD_HP is -30000, so the old DEAD_HP + 1 floor let a double-counted digit
+        // show a living player at a negative bar.
+        hpAfterDelta = max(1, visibleBefore - hpDelta);
     }
 
     if (!m_CombatDamageQueue.has_pending_damage()) {
@@ -3471,8 +3544,22 @@ CObjCHAR::ApplyPresentedCombatDamage(CObjCHAR* pAtkOBJ, Rose::Combat::DamageEven
     // the visible bar at the fresher authoritative HP now. Bounded by visibleBefore so
     // a damage presentation never visibly heals; digit is unchanged; lethal already
     // forced death above.
-    if (bStaleHealedCheckpoint && !lethal && m_bHasAuthoritativeHP) {
-        hpAfterDelta = max(hpAfterDelta, min(visibleBefore, m_iAuthoritativeHP));
+    // Same floor for any superseded checkpoint (see bSupersededCheckpoint): the later
+    // checkpoint already counts this hit, so the bar may not go below it.
+    if (bSupersededCheckpoint && !lethal && m_bHasAuthoritativeHP) {
+        const int floorHP = min(visibleBefore, m_iAuthoritativeHP);
+        if (hpAfterDelta < floorHP) {
+            LogString(LOG_DEBUG_,
+                "Combat HP superseded-checkpoint floor: target %d event %u arrival %u last sync %u visible hp %d post delta hp %d floor %d\n",
+                this->Get_INDEX(),
+                event.event_id,
+                event.arrival_seq,
+                m_dwLastAuthoritativeSyncSeq,
+                visibleBefore,
+                hpAfterDelta,
+                floorHP);
+            hpAfterDelta = floorHP;
+        }
     }
 
     uniDAMAGE displayedDamage;
@@ -4859,6 +4946,41 @@ CObjCHAR::Proc(void) {
 //--------------------------------------------------------------------------------
 #endif
 
+    // Jump detector -- Debug only, monsters in the local fight only. Compares this
+    // frame's position with the last one, whatever moved it since (a packet handler,
+    // Adj_MoveSPEED's snap, the engine node read back, collision), and names any
+    // move no walk or run could make in one frame (8 m/s is 13 cm a frame at 60 fps).
+    // Written for a Rot Tracker that covered 15 m in under a second with no snap
+    // line to explain it (2026-09-29).
+    if (Log::level_enabled(Rose::Common::LogLevel::Debug) && IsCombatTraceSubject()) {
+        static const int kJumpLogCm = 300;
+        if (m_bTracedPosValid) {
+            const int iJump = CD3DUtil::distance((int)m_vTracedPos.x,
+                (int)m_vTracedPos.y,
+                (int)m_PosCUR.x,
+                (int)m_PosCUR.y);
+            if (iJump >= kJumpLogCm) {
+                const D3DXVECTOR3 vAvatarPos = g_pAVATAR->Get_CurPOS();
+                LogString(LOG_DEBUG_,
+                    "CombatTrace position jumped: obj %d jump %d dist_avatar %d -> %d dist_goto %d command %s state 0x%x move_speed %d cur_speed %.0f frame_ms %u\n",
+                    this->Get_INDEX(),
+                    iJump,
+                    CD3DUtil::distance((int)m_vTracedPos.x, (int)m_vTracedPos.y, (int)vAvatarPos.x, (int)vAvatarPos.y),
+                    CD3DUtil::distance((int)m_PosCUR.x, (int)m_PosCUR.y, (int)vAvatarPos.x, (int)vAvatarPos.y),
+                    CD3DUtil::distance((int)m_PosCUR.x, (int)m_PosCUR.y, (int)m_PosGOTO.x, (int)m_PosGOTO.y),
+                    CommandName(Get_COMMAND()),
+                    (unsigned int)Get_STATE(),
+                    (int)this->stats.move_speed,
+                    m_fCurMoveSpeed,
+                    (unsigned int)g_GameDATA.GetElapsedFrameTime());
+            }
+        }
+        m_vTracedPos = m_PosCUR;
+        m_bTracedPosValid = true;
+    } else {
+        m_bTracedPosValid = false;
+    }
+
     //--------------------------------------------------------------------------------
     /// 오브젝트 바이브레이션 업데이트.~~ 흔들자~~
     //--------------------------------------------------------------------------------
@@ -5316,6 +5438,42 @@ CObjCHAR::Proc(void) {
         this->SetCMD_DIE();
     }
 
+    // Remote command trace -- Debug only, monsters in the local fight only
+    // (IsCombatTraceSubject): each change of command with what the monster is
+    // doing, and its queue drops named after it (CObjCommandManager). A monster
+    // that stands still here while the server has it swinging (Rot Tracker,
+    // 2026-09-29: attack orders arriving mid-cast, the cast released, then five
+    // swings and no animation) reads as the command it fell into and the orders
+    // it lost on the way.
+    if (Log::level_enabled(Rose::Common::LogLevel::Debug)) {
+        static const WORD kUntracedCommand = 0xFFFF;
+        const bool bTraceSubject = IsCombatTraceSubject();
+        m_CommandQueue.SetTraceOwner(bTraceSubject ? this->Get_INDEX() : 0);
+        if (Get_COMMAND() != m_wTracedCommand
+            && (bTraceSubject || m_wTracedCommand != kUntracedCommand)) {
+            // Distances in cm: to the avatar, and left to the move destination. A
+            // run reads as a steady change across lines; a jump as a big change
+            // with no "position snapped forward" line to explain it.
+            const D3DXVECTOR3 vAvatarPos = g_pAVATAR ? g_pAVATAR->Get_CurPOS() : m_PosCUR;
+            LogString(LOG_DEBUG_,
+                "CombatTrace remote command: obj %d %s -> %s state 0x%x target %d todo %d active %d casting %d result %d queue %d dist_avatar %d dist_goto %d%s\n",
+                this->Get_INDEX(),
+                m_wTracedCommand == kUntracedCommand ? "untraced" : CommandName(m_wTracedCommand),
+                CommandName(Get_COMMAND()),
+                (unsigned int)Get_STATE(),
+                Get_TargetIDX(),
+                m_nToDoSkillIDX,
+                m_nActiveSkillIDX,
+                m_bCastingSTART ? 1 : 0,
+                bCanActionActiveSkill() ? 1 : 0,
+                m_CommandQueue.GetCommandCount(),
+                CD3DUtil::distance((int)m_PosCUR.x, (int)m_PosCUR.y, (int)vAvatarPos.x, (int)vAvatarPos.y),
+                CD3DUtil::distance((int)m_PosCUR.x, (int)m_PosCUR.y, (int)m_PosGOTO.x, (int)m_PosGOTO.y),
+                bTraceSubject ? "" : " (leaves trace)");
+        }
+        m_wTracedCommand = bTraceSubject ? Get_COMMAND() : kUntracedCommand;
+    }
+
     switch (Get_COMMAND()) {
         case CMD_DIE:
             return this->IsUSER();
@@ -5712,7 +5870,10 @@ CObjCHAR::CanApplyCommand() {
     }
 
     /// 현재 수행되어야할 명령큐가 비어있지 않다면 먼저 큐의 명령을 수행해야하므로..
-    if (this->m_CommandQueue.IsEmpty() == false) {
+    // Except for a command the queue itself is running (m_bQueueGateBypass, remote
+    // objects only): with more still queued behind it, it used to re-queue itself
+    // instead of applying.
+    if (!m_bQueueGateBypass && this->m_CommandQueue.IsEmpty() == false) {
         return false;
     }
 
@@ -5737,8 +5898,11 @@ CObjCHAR::ProcQueuedCommand() {
 
     // A remote caster's held skill command waits for the swing it would have cut
     // (see OwesConfirmedSwingHitFrame). Not for the avatar: its queue is driven by
-    // its own click-time flow.
-    if (this != (CObjCHAR*)g_pAVATAR && OwesConfirmedSwingHitFrame(g_GameDATA.GetGameTime())) {
+    // its own click-time flow. Only while a cast is actually queued: a move or an
+    // attack the server sent does not wait behind an owed swing (it replaced the
+    // held cast, or arrived after it had run).
+    if (this != (CObjCHAR*)g_pAVATAR && m_CommandQueue.HasAnySkillCommand()
+        && OwesConfirmedSwingHitFrame(g_GameDATA.GetGameTime())) {
         return;
     }
 
@@ -5747,7 +5911,21 @@ CObjCHAR::ProcQueuedCommand() {
     CObjCommand* pCommand = m_CommandQueue.PopLastCommand(bSkillCommand);
 
     if (pCommand) {
+        if (!bSkillCommand && Log::level_enabled(Rose::Common::LogLevel::Debug)
+            && IsCombatTraceSubject()) {
+            LogString(LOG_DEBUG_,
+                "CombatTrace queued command executed: obj %d type %s queue %d\n",
+                this->Get_INDEX(),
+                CObjCommandManager::TypeName(pCommand->GetType()),
+                m_CommandQueue.GetCommandCount());
+        }
+
+        // A remote object's queue runs in order: the popped command applies even
+        // with more queued behind it (a cast, then the move the server sent after
+        // it), instead of re-queuing itself. The avatar keeps the old gate.
+        m_bQueueGateBypass = this != (CObjCHAR*)g_pAVATAR;
         pCommand->Execute(this);
+        m_bQueueGateBypass = false;
 
         /// Skill 명령이고 이미 Result 를 받은 명령이라면..
         if (bSkillCommand) {
@@ -5785,6 +5963,25 @@ CObjCHAR::ProcQueuedCommand() {
 /// @brief  :
 //--------------------------------------------------------------------------------
 
+// A command that could not apply (a cast is running with its result in, or the queue
+// is not empty) waits here. PopCommand only ever executes *validated* commands and
+// deletes the rest, and only skill commands were ever validated (GSV_SKILL_START) --
+// a rule written for the avatar's own click flow. For a remote object that meant
+// every move / attack / stop the server sent while its queue was busy was thrown
+// away: the Rot Tracker's run home (its leash) arrived mid-cast, was dropped, and
+// the monster stood by the player while the server's copy ran 23 m away -- until
+// the next move found it more than a second behind and Adj_MoveSPEED jumped it
+// there (2026-09-29, twice in one fight). Remote objects now validate their
+// queued commands too, so the newest one (PushCommand keeps only one non-skill
+// command) runs as soon as the queue drains. The avatar keeps the old rule.
+void
+CObjCHAR::QueueNonSkillCommand(CObjCommand* pCommand) {
+    if (this != (CObjCHAR*)g_pAVATAR) {
+        pCommand->SetValid(true);
+    }
+    m_CommandQueue.PushCommand(pCommand);
+}
+
 /*override*/ void
 CObjCHAR::PushCommandSit() {
     CObjCommand* pCommand = m_CommandQueue.GetObjCommand(OBJECT_COMMAND_SIT);
@@ -5792,7 +5989,7 @@ CObjCHAR::PushCommandSit() {
     if (pCommand) {
         ((CObjSitCommand*)pCommand)->SetCMD_SIT();
 
-        m_CommandQueue.PushCommand(pCommand);
+        QueueNonSkillCommand(pCommand);
     } else
         assert(0 && " GetObjCommand failed ");
 }
@@ -5809,7 +6006,7 @@ CObjCHAR::PushCommandStand() {
     if (pCommand) {
         ((CObjStandCommand*)pCommand)->SetCMD_STAND();
 
-        m_CommandQueue.PushCommand(pCommand);
+        QueueNonSkillCommand(pCommand);
     } else
         assert(0 && " GetObjCommand failed ");
 }
@@ -5821,12 +6018,27 @@ CObjCHAR::PushCommandStand() {
 
 /*override*/ void
 CObjCHAR::PushCommandStop() {
+    // A remote caster whose cast is held in the queue (behind an owed swing, see
+    // OwesConfirmedSwingHitFrame) and is not casting yet: stop now, and leave the
+    // queue alone. Queued, the stop would erase the held cast (PushCommand drops
+    // result-less skill commands) -- and it is usually this client's own stop, a
+    // chase arriving in range, re-issued every frame while the hold lasted (~90 in
+    // two seconds on the Rot Tracker, the cast lost). The cast still runs when the
+    // hold ends and replaces the stop motion.
+    if (this != (CObjCHAR*)g_pAVATAR && !m_bCastingSTART && m_CommandQueue.HasAnySkillCommand()
+        && !m_bQueueGateBypass) {
+        m_bQueueGateBypass = true;
+        this->SetCMD_STOP();
+        m_bQueueGateBypass = false;
+        return;
+    }
+
     CObjCommand* pCommand = m_CommandQueue.GetObjCommand(OBJECT_COMMAND_STOP);
 
     if (pCommand) {
         ((CObjStopCommand*)pCommand)->SetCMD_STOP();
 
-        m_CommandQueue.PushCommand(pCommand);
+        QueueNonSkillCommand(pCommand);
     } else
         assert(0 && " GetObjCommand failed ");
 }
@@ -5843,7 +6055,7 @@ CObjCHAR::PushCommandMove(const D3DVECTOR& PosTO, BYTE btRunMODE) {
     if (pCommand) {
         ((CObjMoveCommand*)pCommand)->SetCMD_MOVE(PosTO, btRunMODE);
 
-        m_CommandQueue.PushCommand(pCommand);
+        QueueNonSkillCommand(pCommand);
     } else
         assert(0 && " GetObjCommand failed ");
 }
@@ -5860,7 +6072,7 @@ CObjCHAR::PushCommandMove(WORD wSrvDIST, const D3DVECTOR& PosTO, int iServerTarg
     if (pCommand) {
         ((CObjMoveCommand*)pCommand)->SetCMD_MOVE(wSrvDIST, PosTO, iServerTarget);
 
-        m_CommandQueue.PushCommand(pCommand);
+        QueueNonSkillCommand(pCommand);
     } else
         assert(0 && " GetObjCommand failed ");
 }
@@ -5877,7 +6089,7 @@ CObjCHAR::PushCommandAttack(int iServerTarget, WORD wSrvDIST, const D3DVECTOR& P
     if (pCommand) {
         ((CObjAttackCommand*)pCommand)->SetCMD_ATTACK(iServerTarget, wSrvDIST, PosTO);
 
-        m_CommandQueue.PushCommand(pCommand);
+        QueueNonSkillCommand(pCommand);
     } else
         assert(0 && " GetObjCommand failed ");
 }
@@ -5894,7 +6106,7 @@ CObjCHAR::PushCommandDie() {
     if (pCommand) {
         ((CObjDieCommand*)pCommand)->SetCMD_DIE();
 
-        m_CommandQueue.PushCommand(pCommand);
+        QueueNonSkillCommand(pCommand);
     } else
         assert(0 && " GetObjCommand failed ");
 }
@@ -5911,7 +6123,7 @@ CObjCHAR::PushCommandToggle(BYTE btTYPE) {
     if (pCommand) {
         ((CObjToggleCommand*)pCommand)->SetCMD_TOGGLE(btTYPE);
 
-        m_CommandQueue.PushCommand(pCommand);
+        QueueNonSkillCommand(pCommand);
     } else
         assert(0 && " GetObjCommand failed ");
 }

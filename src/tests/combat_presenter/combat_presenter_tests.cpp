@@ -577,10 +577,13 @@ private:
                 }
             }
 
-            // Heal-in-flight visible floor independent of queue state (mirrors
-            // ApplyPresentedCombatDamage): a stale-healed checkpoint must not dip the
-            // bar below the fresher authoritative HP even while another hit is queued.
-            if (stale_healed_checkpoint && has_authoritative_hp) {
+            // Superseded-checkpoint visible floor independent of queue state (mirrors
+            // ApplyPresentedCombatDamage): any later sync or tick already counts this
+            // hit -- heal or not -- so the bar must not dip below it even while
+            // another hit is queued.
+            const bool superseded_checkpoint =
+                has_authoritative_hp && e.arrival_seq != 0 && last_sync_seq > e.arrival_seq;
+            if (superseded_checkpoint) {
                 hp_after_delta = std::max(hp_after_delta, std::min(visible_hp, authoritative_hp));
             }
 
@@ -1087,6 +1090,43 @@ main() {
         expect(h.visible_hp == 380,
             "with no healing between checkpoints the swing must still fold to server HP");
         expect(h.authoritative_hp == 380, "an older checkpoint must not raise authoritative HP");
+    }
+
+    {
+        // A DoT tick lands between a deferred skill hit's receive and its caster's
+        // action frame, with a melee swing queued behind (Rot Tracker, 2026-09-29):
+        // Rot Inferno 541 -> 489, then the Burning tick reports 459 (it already counts
+        // the 541), then a swing 179 -> 280. The tick pins the bar to 459; the skill's
+        // digit must not come off again (it read -82 on a living player). The queued
+        // swing keeps the overshoot clamp out, so only the superseded floor holds it.
+        HpHarness h;
+        h.visible_hp = 1030;
+        h.authoritative_hp = 1030;
+
+        // The skill hit is parked on its caster at receive (arrival stamped then)
+        // and only queued, as an Immediate event, at the caster's action frame.
+        DamageEvent skill = event(1, 10, 541, 489);
+        skill.presentation_kind = DamagePresentationKind::Immediate;
+        skill.arrival_seq = next_hp_authority_seq();
+
+        DamageEvent tick = event(2, 100, 30, 459);
+        tick.presentation_kind = DamagePresentationKind::StatusTick;
+        tick.arrival_seq = next_hp_authority_seq();
+        h.queue.push(tick);
+        expect(h.present_immediate() == PresentationResult::PresentedDamage, "the tick presents at receive");
+        expect(h.visible_hp == 459, "the tick pins the bar to server truth");
+
+        DamageEvent swing = event(3, 10, 179, 280);
+        swing.arrival_seq = next_hp_authority_seq();
+        h.queue.push(swing);
+
+        h.queue.push(skill);
+        expect(h.present_immediate() == PresentationResult::PresentedDamage, "the skill hit presents");
+        expect(h.displayed_damage == 541, "its digit is the full hit");
+        expect(h.visible_hp == 459, "the tick already counted it: the bar does not drop again");
+
+        expect(h.hit(10) == PresentationResult::PresentedDamage, "the queued swing presents");
+        expect(h.visible_hp == 280, "and lands on its own checkpoint");
     }
 
     {
@@ -2452,6 +2492,24 @@ main() {
         DamageEvent popped;
         expect(queue.pop_for_attacker(374, popped) && popped.event_id == 1, "an arrow pops the oldest");
         expect(queue.count_frame_presented_for_attacker(374) == 2, "one owed swing fewer after a pop");
+    }
+
+    {
+        // The cast's own damage event arrives while the owed swings play; only what
+        // had arrived when the skill command applied counts as owed.
+        CombatPresentationQueue queue;
+        DamageEvent owed = event(10, 374, 150, 5000);
+        owed.presentation_kind = DamagePresentationKind::ProjectileImpact;
+        owed.arrival_seq = 40;
+        queue.push(owed);
+        DamageEvent castHit = event(11, 374, 800, 4200);
+        castHit.presentation_kind = DamagePresentationKind::ProjectileImpact;
+        castHit.arrival_seq = 45;
+        queue.push(castHit);
+
+        expect(queue.count_frame_presented_for_attacker(374, 42) == 1,
+            "the cast's own event, arrived after the command, is not an owed swing");
+        expect(queue.count_frame_presented_for_attacker(374) == 2, "no cutoff counts both");
     }
 
     std::cout << "combat_presenter_tests passed\n";

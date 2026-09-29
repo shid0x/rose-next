@@ -365,7 +365,7 @@ CFileLIST<dType>::Delete_DATA(tagFileDATA<dType>* pDATA) {
         this->Free_FILE(pDATA);
         m_nLoadCNT--;
 #ifndef __SERVER
-        LogString(LOG_DEBUG_,
+        LogStringTrace(LOG_DEBUG_,
             "Free FILE : %s, LoadCNT: %d\n",
             pDATA->m_FileName.Get(),
             Get_LoadCOUNT());
@@ -400,7 +400,7 @@ CFileLIST<dType>::Get_DATA(tagFileDATA<dType>* pDATA) {
             pDATA->m_bLoad = true;
             m_nLoadCNT++;
 #ifndef __SERVER
-            LogString(LOG_DEBUG_,
+            LogStringTrace(LOG_DEBUG_,
                 "Load FILE : %s, LoadCNT: %d\n",
                 pDATA->m_FileName.Get(),
                 Get_LoadCOUNT());

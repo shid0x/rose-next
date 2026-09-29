@@ -253,12 +253,12 @@ lua_CallIntFUNC(lua_State* pLUA, const char* szFuncName, ...) {
         // 리턴된 결과가 있으므로 결과 값을 얻어온다.
         lua_GetRETURN(pLUA, iResultCnt);
 
-        LogString(LOG_DEBUG_, "lua function( %s ) return %d ... \n", szFuncName, iResultCnt);
+        LogStringTrace(LOG_DEBUG_, "lua function( %s ) return %d ... \n", szFuncName, iResultCnt);
 
         return iResultCnt;
     }
 
-    LogString(LOG_DEBUG_, "lua function( %s ) return %d result ... \n", szFuncName, iResultCnt);
+    LogStringTrace(LOG_DEBUG_, "lua function( %s ) return %d result ... \n", szFuncName, iResultCnt);
 
     return 0x80000000;
 }

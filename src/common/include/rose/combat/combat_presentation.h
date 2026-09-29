@@ -498,10 +498,15 @@ public:
     // provides -- a hit frame or a projectile impact. The local avatar's own
     // attack loop pops them oldest-first (pop_for_attacker), so this minus its
     // bullets still in flight is the number of swings it owes on screen.
-    size_t count_frame_presented_for_attacker(uint32_t attacker_id) const {
+    // arrived_by limits the count to events stamped (arrival_seq) no later than
+    // that: a skill command's owed swings all arrived before it, while the cast's
+    // own damage event -- its consumer is the cast's bullet -- can arrive while the
+    // owed swings are still playing and must not count as one more.
+    size_t count_frame_presented_for_attacker(uint32_t attacker_id,
+        uint32_t arrived_by = 0xFFFFFFFFu) const {
         size_t count = 0;
         for (const auto& event: m_events) {
-            if (event.attacker_id == attacker_id
+            if (event.attacker_id == attacker_id && event.arrival_seq <= arrived_by
                 && (event.presentation_kind == DamagePresentationKind::MeleeHitFrame
                     || event.presentation_kind == DamagePresentationKind::ProjectileImpact)) {
                 ++count;

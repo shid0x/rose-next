@@ -356,6 +356,10 @@ public:
     /// animation, because their attack command is player-driven and starts before
     /// any server round-trip. Everything else animates one swing per server swing.
     bool IsLocalAvatarAttacker();
+    /// A monster in the local player's fight -- targeting the avatar, or the
+    /// avatar's own target. The only remote objects whose command flow, queue
+    /// drops and position snaps are traced (Debug level only).
+    bool IsCombatTraceSubject();
     bool IsPresentedDead() const;
     /// Does this attacker still owe a hit frame for a confirmed melee swing the
     /// server already applied? True from the moment the swing is queued until the
@@ -394,6 +398,8 @@ public:
         m_iOwedSwingsBeforeCast = 0;
         m_dwOwedSwingBeforeCastSince = 0;
         m_bOwedSwingBeforeCastClosed = false;
+        // Only events that had arrived when the command applied can be owed swings.
+        m_dwOwedSwingArrivedBy = CurrentHPAuthoritySeq();
     }
     /// Release every ProjectileImpact event this attacker queued on us because its
     /// cast was abandoned before a bullet could spawn (see the remote-cast watchdog
@@ -616,8 +622,9 @@ public:
         return m_CombatDamageQueue.has_event(eventId);
     }
     /// Events from this attacker still waiting on a hit frame or projectile impact.
-    int CountFramePresentedDamageFrom(uint32_t attackerIndex) const {
-        return static_cast<int>(m_CombatDamageQueue.count_frame_presented_for_attacker(attackerIndex));
+    int CountFramePresentedDamageFrom(uint32_t attackerIndex, uint32_t arrivedBy) const {
+        return static_cast<int>(
+            m_CombatDamageQueue.count_frame_presented_for_attacker(attackerIndex, arrivedBy));
     }
     void PushCombatDamageEvent(const Rose::Combat::DamageEvent& event);
     Rose::Combat::PresentationResult PopCombatDamageEvent(int iAttacker, Rose::Combat::DamageEvent& event);
@@ -685,6 +692,8 @@ public:
     /// Monotonic client-side arrival-order counter for HP-authoritative packets.
     /// Used to detect a sync/heal that supersedes a deferred damage checkpoint.
     static uint32_t NextHPAuthoritySeq();
+    /// The last stamp handed out, without taking a new one.
+    static uint32_t CurrentHPAuthoritySeq();
     /////////////////////////////////////////////////////////////////////////////////
 
     /////////////////////////////////////////////////////////////////////////////////
@@ -747,6 +756,9 @@ public:
 
     void ClearAllCommand() { m_CommandQueue.ClearCommand(); }
 
+    /// Push a move / attack / stop / sit / stand / die / toggle; a remote object's is
+    /// validated so it runs when the queue drains (see the definition).
+    void QueueNonSkillCommand(CObjCommand* pCommand);
     /*override*/ virtual void PushCommandSit();
     /*override*/ virtual void PushCommandStand();
     /*override*/ virtual void PushCommandStop();
@@ -1019,7 +1031,14 @@ protected:
     int m_iOwedSwingsBeforeCast;
     DWORD m_dwOwedSwingBeforeCastSince; /// Tick of the first owed swing played (0 = none yet).
     bool m_bOwedSwingBeforeCastClosed; /// Settled or given up; no more swings for this command.
+    uint32_t m_dwOwedSwingArrivedBy; /// arrival_seq when the skill command applied.
     bool m_bOwedSwingMotionPlaying; /// Its attack motion is attached; cleared by Attack_END.
+    WORD m_wTracedCommand; /// Last command the remote command trace logged (0xFFFF = not traced).
+    D3DXVECTOR3 m_vTracedPos; /// Position at the previous frame, for the jump detector.
+    bool m_bTracedPosValid;
+    /// Remote objects: a command the queue itself is running applies even with more
+    /// queued behind it (see ProcQueuedCommand / CanApplyCommand).
+    bool m_bQueueGateBypass;
     /// Recent confirmed attackers, independent of the presentation queue.
     Rose::Combat::CombatCrowdTracker m_CombatCrowdTracker;
     int m_AruaAddMoveSpeed; /// 아루아 여신상태 일경우 증가되는 이동속도

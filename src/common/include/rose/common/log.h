@@ -104,7 +104,20 @@ public:
         } catch (const fmt::format_error&) {
             msg = format_str ? format_str : "";
         }
+        // Legacy messages end in "\n", and the logger ends every record with its
+        // own " \n": each one used to be followed by a line holding one space,
+        // twice the lines for the same content.
+        while (!msg.empty() && (msg.back() == '\n' || msg.back() == '\r')) {
+            msg.pop_back();
+        }
         Rose::Common::logger_write(level, "", 0, msg.c_str());
+    }
+
+    /// LogString at Trace level, for chatter (asset loading, script echo) that is
+    /// only worth reading when asked for with [LOG] LEVEL=trace.
+    template<typename... Args>
+    void static TraceString(unsigned short wLogMODE, const char* msg, Args&&... args) {
+        legacy_printf(Rose::Common::LogLevel::Trace, msg, std::forward<Args>(args)...);
     }
     // -- End Legacy
 
@@ -133,5 +146,6 @@ public:
 };
 
 #define LogString g_LOG.OutputString
+#define LogStringTrace g_LOG.TraceString
 
 #endif // CLOG_H

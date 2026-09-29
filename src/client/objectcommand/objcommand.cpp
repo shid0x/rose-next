@@ -8,7 +8,22 @@
 /// @brief  Manager class for object command
 //----------------------------------------------------------------------------------------------------
 
-CObjCommandManager::CObjCommandManager() {}
+CObjCommandManager::CObjCommandManager(): m_iTraceOwner(0) {}
+
+const char*
+CObjCommandManager::TypeName(int iType) {
+    static const char* s_szNames[OBJECT_COMMAND_MAX] = {"stop",
+        "attack",
+        "sit",
+        "stand",
+        "move",
+        "die",
+        "toggle",
+        "skill2self",
+        "skill2obj",
+        "skill2pos"};
+    return (iType >= 0 && iType < OBJECT_COMMAND_MAX) ? s_szNames[iType] : "?";
+}
 
 //----------------------------------------------------------------------------------------------------
 /// @param
@@ -90,10 +105,24 @@ CObjCommandManager::PushCommand(CObjCommand* pObjCommand) {
             || (*begin)->m_iType == OBJECT_COMMAND_Skill2POS) {
             /// 아직 결과를 받지 못한..
             if ((*begin)->m_bGetResultOfSkill == false) {
+                if (m_iTraceOwner) {
+                    LogString(LOG_DEBUG_,
+                        "CombatTrace queued command dropped, superseded by %s: obj %d type %s\n",
+                        TypeName(pObjCommand->m_iType),
+                        m_iTraceOwner,
+                        TypeName((*begin)->m_iType));
+                }
                 begin = m_ObjCommandList.erase(begin);
                 continue;
             }
         } else {
+            if (m_iTraceOwner) {
+                LogString(LOG_DEBUG_,
+                    "CombatTrace queued command dropped, superseded by %s: obj %d type %s\n",
+                    TypeName(pObjCommand->m_iType),
+                    m_iTraceOwner,
+                    TypeName((*begin)->m_iType));
+            }
             begin = m_ObjCommandList.erase(begin);
             continue;
         }
@@ -142,6 +171,12 @@ CObjCommandManager::GetLastInvalidSkillCommand() {
                     break;
 
                 if ((*begin)->m_bValid == false) {
+                    if (m_iTraceOwner) {
+                        LogString(LOG_DEBUG_,
+                            "CombatTrace queued command dropped, cleared by skill start: obj %d type %s\n",
+                            m_iTraceOwner,
+                            TypeName((*begin)->m_iType));
+                    }
                     begin = m_ObjCommandList.erase(begin);
                     continue;
                 }
@@ -222,6 +257,14 @@ CObjCommandManager::PopCommand(bool& bSkillCommand) {
 
     for (; begin != m_ObjCommandList.end();) {
         if ((*begin)->m_bValid == false) {
+            // Only skill commands are ever validated (GSV_SKILL_START), so every
+            // queued move / attack / stop ends here, never executed.
+            if (m_iTraceOwner) {
+                LogString(LOG_DEBUG_,
+                    "CombatTrace queued command dropped, never validated: obj %d type %s\n",
+                    m_iTraceOwner,
+                    TypeName((*begin)->m_iType));
+            }
             delete *begin;
             begin = m_ObjCommandList.erase(begin);
         } else {
@@ -233,7 +276,10 @@ CObjCommandManager::PopCommand(bool& bSkillCommand) {
             pObjCommand = *begin;
             m_ObjCommandList.erase(begin);
 
-            bSkillCommand = true;
+            // By type: a remote object's move / attack / stop is valid too now
+            // (CObjCHAR::PushCommand*), and ProcQueuedCommand's skill-only steps
+            // (result flag, queued skill starts) must not run for those.
+            bSkillCommand = IsSkillCommandType(pObjCommand->m_iType);
 
             return pObjCommand;
         }
@@ -268,6 +314,23 @@ CObjCommandManager::HasSkillCommand(int iSkillIDX) {
         }
     }
     return false;
+}
+
+bool
+CObjCommandManager::HasAnySkillCommand() {
+    std::list<CObjCommand*>::iterator it = m_ObjCommandList.begin();
+    for (; it != m_ObjCommandList.end(); ++it) {
+        if (IsSkillCommandType((*it)->m_iType)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool
+CObjCommandManager::IsSkillCommandType(int iType) {
+    return iType == OBJECT_COMMAND_Skill2SELF || iType == OBJECT_COMMAND_Skill2OBJ
+        || iType == OBJECT_COMMAND_Skill2POS;
 }
 
 CObjCommand*

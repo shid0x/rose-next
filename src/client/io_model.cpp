@@ -99,7 +99,7 @@ CBasicPART::UnloadVisible(HNODE hVIS) {
     g_MatFILE.Sub_DATAUseKEY(m_uiMatKEY);
 
     if (hVIS) {
-        LogString(LOG_DEBUG_, "unloadVisible :: %d %s \n", hVIS, getName(hVIS));
+        LogStringTrace(LOG_DEBUG_, "unloadVisible :: %d %s \n", hVIS, getName(hVIS));
         ::unloadVisible(hVIS);
     }
 }
@@ -398,7 +398,7 @@ CFixedPART::LoadVisible(char* szName, D3DVECTOR BasePOS, HNODE hParent) {
         LogString(LOG_DEBUG_, "loadAnimatable :: %d / %d, %s \n", hVis, hMesh, getName(hMesh));
     } else {
         hVis = ::loadVisible(szName, hMesh, hMat, g_GameDATA.m_hLight);
-        LogString(LOG_DEBUG_, "loadVisible :: %d / %d, %s \n", hVis, hMesh, getName(hMesh));
+        LogStringTrace(LOG_DEBUG_, "loadVisible :: %d / %d, %s \n", hVis, hMesh, getName(hMesh));
     }
 
     if (hVis) {

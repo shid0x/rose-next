@@ -123,7 +123,7 @@ CSystemProcScript::CallLuaFunction(const char* strFuncName, ...) {
         return iResultCnt;
     }
 
-    LogString(LOG_DEBUG_, "lua function( %s ) return %d result ... \n", strFuncName, iResultCnt);
+    LogStringTrace(LOG_DEBUG_, "lua function( %s ) return %d result ... \n", strFuncName, iResultCnt);
     return 0;
 }
 

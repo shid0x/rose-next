@@ -29,8 +29,13 @@ enum OBJECT_COMMAND_TYPE {
 class CObjCommandManager {
 private:
     std::list<CObjCommand*> m_ObjCommandList;
+    /// Client index of the owning object while it is worth tracing (a monster in
+    /// the local fight, set each frame by CObjCHAR::Proc under Debug); 0 = silent.
+    /// Only used to name the owner when a queued command is dropped.
+    int m_iTraceOwner;
 
 public:
+    void SetTraceOwner(int iOwner) { m_iTraceOwner = iOwner; }
     CObjCommandManager();
     ~CObjCommandManager();
 
@@ -51,6 +56,11 @@ public:
     /// legacy skill-damage receive path: a payload for a cast that is still queued
     /// on a remote caster must wait for that cast's action frame, not present now.
     bool HasSkillCommand(int iSkillIDX);
+    /// Is any skill command waiting in the queue?
+    bool HasAnySkillCommand();
+    static bool IsSkillCommandType(int iType);
+    /// Readable command type, for the CombatTrace lines.
+    static const char* TypeName(int iType);
 
     void ClearCommand();
 };

@@ -2387,7 +2387,7 @@ CMAP::ReadObjINFO(CFileSystem* pFileSystem, long lOffset, int iLumpType) {
         }
         this->m_pObjectIndex[iLumpType][iC] = iObjectIndex;
 
-        LogString(LOG_DEBUG_,
+        LogStringTrace(LOG_DEBUG_,
             "Object:: Map[%02d,%02d], Type:%d, ID: %d, Pos[%d,%d] \n",
             m_nZoneMapXIDX,
             m_nZoneMapYIDX,

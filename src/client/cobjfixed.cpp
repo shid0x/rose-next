@@ -475,7 +475,7 @@ CObjFIXED::SetLightMap(short nPartSEQ,
     }
 
     char* szName = CStr::Printf("@P%dx%d@%s", iXPos, iYPos, szLightMapFile);
-    LogString(LOG_DEBUG_,
+    LogStringTrace(LOG_DEBUG_,
         "SET LIGHT MAP map Obj: %d, Part: %d->%d, %s /  %s \n",
         m_nIndex,
         nPartSEQ,

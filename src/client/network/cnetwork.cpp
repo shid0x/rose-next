@@ -35,6 +35,10 @@ using namespace Rose::Common;
 using namespace Rose::Network;
 using namespace Rose::Util;
 
+// Every packet goes through recv_packet() and then the legacy switch; this lets the
+// switch tell a FlatBuffer packet it cannot name from a genuinely unknown one.
+static bool s_bLastPacketWasFlatBuffer = false;
+
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
 CNetwork::CNetwork(HINSTANCE hInstance) {
@@ -547,6 +551,11 @@ CNetwork::Proc_ZonePacket() {
 
         default:
             //_ASSERT(0);
+            // A FlatBuffer packet has no legacy type field: recv_packet() already
+            // handled it, and what reads as m_wType here is its root offset (0xc).
+            if (s_bLastPacketWasFlatBuffer) {
+                break;
+            }
             LogString(LOG_NORMAL,
                 "received Invalid packet type ... type: 0x%x , size: %d \n",
                 m_pRecvPacket->m_HEADER.m_wType,
@@ -789,6 +798,7 @@ void
 CNetwork::recv_packet(t_PACKET* packet) {
     flatbuffers::Verifier verifier(&packet->m_pDATA[2], packet->size - 2);
     bool valid = Packets::VerifyPacketDataBuffer(verifier);
+    s_bLastPacketWasFlatBuffer = valid;
     if (valid) {
         Packet p(&packet->m_pDATA[0], packet->size);
 

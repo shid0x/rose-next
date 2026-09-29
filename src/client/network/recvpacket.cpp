@@ -1742,6 +1742,13 @@ void
 CRecvPACKET::Recv_gsv_STOP() {
     CObjCHAR* pCHAR = g_pObjMGR->Get_ClientCharOBJ(m_pRecvPacket->m_gsv_STOP.m_wObjectIDX, true);
     if (pCHAR) {
+        // Names the server as the cause when the remote command trace shows a
+        // monster in the local fight falling into stop.
+        if (Log::level_enabled(Rose::Common::LogLevel::Debug) && pCHAR->IsCombatTraceSubject()) {
+            LogString(LOG_DEBUG_,
+                "CombatTrace GSV_STOP received: obj %d\n",
+                pCHAR->Get_INDEX());
+        }
         pCHAR->SetCMD_STOP();
     }
 }

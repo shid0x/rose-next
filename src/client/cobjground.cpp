@@ -163,7 +163,7 @@ CObjITEM::Proc() {
 //-------------------------------------------------------------------------------------------------
 CObjTREE::CObjTREE() {
     this->m_nTreeIdx = 0;
-    LogString(LOG_DEBUG_, "CObjTREE::CObjTREE () \n");
+    LogStringTrace(LOG_DEBUG_, "CObjTREE::CObjTREE () \n");
 }
 CObjTREE::~CObjTREE() {
     _ASSERT(this->m_nTreeIdx >= 0);

@@ -94,6 +94,21 @@ Live combat is server-authoritative. The client presents server damage events; i
 
 Monster AI script action `AIACT24` / `F_AIACT24` blocks hostile `btTarget == 0` condition-checked target skills unless that target is already the monster's current combat target. This prevents non-aggro scripted projectile attacks from sending early target-skill/damage packets. `btTarget == 1` current-target combat skills, `btTarget == 2` self skills, and allied/friendly skills remain allowed. **Since 2026-09-14 the block applies to non-monster casters only** (`Get_ObjTYPE() != OBJ_MOB`): a monster casting a hostile skill at a character its idle pattern found is how caster mobs *aggro* — Nigaki's `kh_2676.aip` has "enemy within 12 m → Voltage Jolt" as its only offensive action besides a 20 % chance to turn on whoever hit it — and blocking it left it a passive heal-bot that never fought back. The cast goes through and `SetCMD_Skill2OBJ` makes that character the current target, so every later cast is a normal combat skill. Logged as `non_aggro_script_skill_aggro`; the blocked case keeps `non_aggro_script_skill_blocked`. Note the server has no auto-aggro on damage: `Apply_DAMAGE` only fires `Do_DamagedAI`, so an AI file that relies on its source server's auto-targeting (a `beaten` pattern at 20 %) fights only as often as its AI says.
 
+### A Slow Must Not Wrap The Move Speed (2026-09-29)
+
+`CObjCHAR::total_move_speed()` is `stats.move_speed + Adj_RUN_SPEED()` returned as a
+`uint16_t`, and a slow is a *flat* value sized from the speed at the moment it landed -- for
+a monster in combat, its run speed. When the monster later walks (idle, walking home after a
+kill), the same flat slow comes off its much lower walk speed: a Rot Tracker slowed by 392
+(skill 1586, 49% of its 800 run) walked at 300 - 392 = -92, wrapped to **65444** -- 654 m/s.
+The server's copy crossed 10 m a frame and every client followed it: the "teleport" that
+always came right after the monster killed the player's hawk (the kill sends it walking
+home). It is floored at 30% of the current base now (the strongest slow the house authors is
+70%). Anything that adds a flat speed debuff must go through `total_move_speed()`, never
+subtract from `stats.move_speed` directly. Client trace that named it: `CombatTrace position
+jumped ... move_speed 65444`. Validated 2026-09-29: three fights with the slow and the hawk
+used heavily, no jump.
+
 ### A Junk NPC Row Must Degrade, Not Kill
 
 `CObjMOB::Init` derives max HP as `NPC_LEVEL * NPC_HP` and sizes the per-attacker saved-damage table (`m_SavedDAMAGED`, EXP/drop share) as `NPC_HP / 8 + 4` into a **short**. Three LIST_NPC rows (996 Moss Golem, 997 Nepenthes, 998 Turak — unspawned duplicates, HP column 7.9-13 million where the largest real value is 10,701) overflowed both: a negative max HP and a negative table size that `new[]` read as ~4 billion, so `/mon 996` killed the process with nothing in the log (2026-09-15). `ClampedMobMaxHP` / `ClampedSavedDamageCNT` (64-bit product clamped to `INT_MAX`; table capped at 4096) cover `Init` and `Change_CHAR`. The rows stay as they are — the balance passes leave them alone on purpose — and the Eldeon Moss Golem that actually spawns is **1591**. `/mon` and `/mon2` (`cheatcmd.cpp`, `MobRowRefusalReason`) now refuse such rows with a whisper saying why — no model, level 0, or an HP column over 20,000 — so a tester summoning by number cannot get an invisible or absurd monster. Survey 2026-09-15: of 1,426 named rows, 646 are placed on a map and 111 more are reachable through AI summons; of the 669 unreachable, 212 have junk stats, 183 share a name with a live row, 302 are coherent unused retail/event content. Ids are load-bearing (drop tables, AI, quests, dialogs), so rows are never deleted or renumbered.

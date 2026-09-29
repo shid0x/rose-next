@@ -1473,12 +1473,19 @@ CObjCHAR::Skill_ApplyIngSTATUS(short nSkillIDX, CObjCHAR* pSpeller, int iAdjustI
         }
 
         nAdjValue = CCal::Get_SkillAdjustVALUE(this, nSkillIDX, nI, iSpellerINT);
+        // Trace only what a player can see happen to someone: a player or a
+        // player's summon on either side, or a self-cast (boss buffs). Monsters
+        // buffing each other were 85% of a debug session's gameserver log.
+        const bool bTraceStatus = pSpeller == this || pSpeller->IsUSER() || this->IsUSER()
+            || pSpeller->GetCallerUsrIDX() || this->GetCallerUsrIDX();
         // 적용 가능 한가 ???
         if (!this->m_IngSTATUS.IsEnableApplay(nIngSTB, nAdjValue)) {
-            LogString(LOG_DEBUG_,
-                "SkillStatusTrace IsEnableApplay rejected: caster %d target %d skill %d slot %d ing_stb %d state_type %d nAdjValue %d\n",
-                pSpeller->Get_INDEX(), this->Get_INDEX(), nSkillIDX, nI,
-                nIngSTB, STATE_TYPE(nIngSTB), nAdjValue);
+            if (bTraceStatus) {
+                LogString(LOG_DEBUG_,
+                    "SkillStatusTrace IsEnableApplay rejected: caster %d target %d skill %d slot %d ing_stb %d state_type %d nAdjValue %d\n",
+                    pSpeller->Get_INDEX(), this->Get_INDEX(), nSkillIDX, nI,
+                    nIngSTB, STATE_TYPE(nIngSTB), nAdjValue);
+            }
             continue;
         }
 
@@ -1495,11 +1502,13 @@ CObjCHAR::Skill_ApplyIngSTATUS(short nSkillIDX, CObjCHAR* pSpeller, int iAdjustI
             this->Del_ActiveSKILL();
             CObjAI::SetCMD_STOP();
         }
-        LogString(LOG_DEBUG_,
-            "SkillStatusTrace applied: caster %d target %d skill %d slot %d ing_stb %d state_type %d nAdjValue %d duration %d DEF before %d after %d\n",
-            pSpeller->Get_INDEX(), this->Get_INDEX(), nSkillIDX, nI,
-            nIngSTB, STATE_TYPE(nIngSTB), nAdjValue, SKILL_DURATION(nSkillIDX),
-            defBefore, this->Get_DEF());
+        if (bTraceStatus) {
+            LogString(LOG_DEBUG_,
+                "SkillStatusTrace applied: caster %d target %d skill %d slot %d ing_stb %d state_type %d nAdjValue %d duration %d DEF before %d after %d\n",
+                pSpeller->Get_INDEX(), this->Get_INDEX(), nSkillIDX, nI,
+                nIngSTB, STATE_TYPE(nIngSTB), nAdjValue, SKILL_DURATION(nSkillIDX),
+                defBefore, this->Get_DEF());
+        }
 
         // 타운트 스킬이면...공격 대상 바꿈...
         if (ING_TAUNT == STATE_TYPE(nIngSTB)) {
@@ -2085,7 +2094,17 @@ CObjCHAR::Proc(void) {
 
 uint16_t
 CObjCHAR::total_move_speed() {
-    return this->stats.move_speed + this->m_IngSTATUS.Adj_RUN_SPEED();
+    // A slow is stored as a flat value sized from the speed at the moment it landed
+    // (a monster in combat runs), but it is subtracted from whatever base applies
+    // now. A Rot Tracker slowed by 392 (49% of its 800 run) walking home after a kill
+    // had 300 - 392 = -92, which this uint16_t wrapped to 65444: 654 m/s, 10 m a
+    // frame on the server and on every client -- the "teleport" (2026-09-29). Floor
+    // at 30% of the current base: the strongest slow the house authors is 70%.
+    const int iBase = this->stats.move_speed;
+    const int iSpeed = iBase + this->m_IngSTATUS.Adj_RUN_SPEED();
+    const int iFloor = iBase * 3 / 10;
+    const int iClamped = iSpeed < iFloor ? iFloor : (iSpeed > 0xFFFF ? 0xFFFF : iSpeed);
+    return static_cast<uint16_t>(iClamped);
 }
 
 uint16_t
