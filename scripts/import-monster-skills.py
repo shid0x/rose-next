@@ -180,6 +180,37 @@ skill needs to outlast that delay, or it is decoration. Powers re-based to the m
 ~2 per point) 120 -> ~250; the Penguins (~600 ATK, ~1.3 per point) 120 / 100
 -> ~160 / ~130. Field-mob spikes, not nukes.
 
+SHIBUYA's Deaders (2026-09-29)
+------------------------------
+The Jrose SECONDWALL monsters brought in by `import-shibuya.py` stage 4, which
+also rewrites their AI (casts re-pointed, the casts we cannot run stripped). The
+zone is levels 60-80 with two level-100 bosses, so every power is re-based to the
+magic formula by the caster's own normal swing, measured in `balance-sim.py`
+against level 65-85 players of all six profiles (the synthetic players misjudge
+absolute damage -- the Oro kit was 2x off -- but a skill-to-swing ratio shares
+the bias). Damage per power point: police (lv 73, ATK 330) ~1.7, Slave Puppet
+(lv 85) ~2.0, both bosses (lv 100, ATK ~600) ~3.0.
+
+  * Field casts ~2.5x a swing: Sniping 60, Twin Shot 40 (two hits), Poison
+    Bullet 30 + Poison II; Puppet Bolt 45 (a copy of the Mage bolt, since up to
+    five puppets cast it).
+  * Boss AoEs ~2x a swing, the one nuke ~3x: Astral Nova 115, Rot Flame 110,
+    Silencing Wave 60 + silence, Toxic Rain 50 + Poison II, Rot Inferno 170.
+  * Jrose radii are 20-50 m; ours are 8-10 m, like our other monster AoEs.
+  * Durations were authored for level 250: buffs 300 s -> 30 s, the hex 20 s,
+    poison and burn 60 s -> 5-10 s on our lowest tiers (Poison II, Burning),
+    since Jrose's statuses 103/106 tick for 500. Stuns and silences get 4-6 s
+    so they outlast the 1-3 s the client takes to present a cast.
+  * Collisions go to the tail: 869 -> 7015, 2072 -> 7016, 2111 -> 7017, 3687 ->
+    7018 (ours: Summon Mastery, Sell Trick, Weapon Research, GM Healing). 3780
+    is our own Karkia Stun, but at Karkia's power it would take ~70% of a level-75
+    player's HP, so Deader Rex's 1% cast of it is stripped instead. 2969 is
+    already here, identical to Jrose's.
+  * Not imported: 3691 (Jrose's "leave N HP" formula 7 has no equivalent here),
+    3656 (the puppets heal their master with cast target 3, which our server
+    does not implement), 6141 (a damage skill Jrose casts on the caster itself).
+    Stage 4 strips those casts from the AI.
+
 Usage
 -----
     python scripts/import-monster-skills.py --selftest
@@ -293,6 +324,39 @@ SKILLS = {
     3044: dict(name="Inguz Stun Wave", source="RoseZA", dmgtype=2, power=120, set={11: 32, 8: 800, 14: 4}),
     2979: dict(name="Pang Jump Attack", source="RoseZA", dmgtype=2, power=120),
     2980: dict(name="Artillery Jump Attack", source="RoseZA", dmgtype=2, power=100),
+    # SHIBUYA's Deaders (import-shibuya.py stage 4; see "SHIBUYA" in the docstring).
+    # Rot Tracker 4069 (sw_sby02.aip) and Deader Rex 4068 (sw109_boss02.aip) share
+    # the Astrum rows. Jrose keeps status and abilities in columns 88-99; `set`
+    # moves them into our 11/12 and 21-26 (LIST_STATUS 8-37 is the same table in
+    # both dumps). Durations and radii were authored for level 250 and are cut.
+    3722: dict(name="Astral Guard", source="Jrose", set={11: 20, 21: 19, 23: 30, 14: 30}),
+    3723: dict(name="Astral Might", source="Jrose", set={11: 18, 21: 18, 23: 30, 14: 30}),
+    3724: dict(name="Astral Hex", source="Jrose",
+               set={11: 19, 12: 21, 21: 18, 23: 30, 24: 19, 26: 30, 14: 20, 8: 1000}),
+    3726: dict(name="Astral Nova", source="Jrose", dmgtype=2, power=115, set={8: 1000}),
+    3744: dict(name="Stunning Strike", source="Jrose", set={11: 32, 14: 4}, clear=(21, 23)),
+    3760: dict(name="Silencing Wave", source="Jrose", dmgtype=2, power=60, set={11: 30, 14: 6, 8: 1000}),
+    3782: dict(name="Rot Flame", source="Jrose", dmgtype=2, power=110, set={11: 58, 14: 5, 8: 800}),
+    3783: dict(name="Rot Inferno", source="Jrose", dmgtype=2, power=170, set={11: 58, 14: 8, 8: 1000}),
+    3687: dict(name="Toxic Rain", source="Jrose", dest=7018, dmgtype=2, power=50,
+               set={11: 8, 14: 10, 8: 800}),
+    # Police zombies 1947/1948 (zombie_police_sby.aip): Jrose *player* gun skills,
+    # so the learn-tree columns and the STL key are cleared as for 871.
+    2067: dict(name="Sniping", source="Jrose", dmgtype=2, power=60,
+               clear=(2, 3, 4, 16, 17, 27, 35, 39, 40, 41, 42, 43, 44, 45, 46, 86)),
+    # Its dummy effect (77) is FILE_EFFECT 171, empty in Jrose too: dropped.
+    2072: dict(name="Twin Shot", source="Jrose", dest=7016, dmgtype=2, power=40,
+               clear=(2, 3, 4, 16, 17, 27, 35, 39, 40, 41, 42, 43, 44, 45, 46, 77, 78, 79, 86)),
+    2466: dict(name="Poison Bullet", source="Jrose", dmgtype=2, power=30, set={11: 8, 14: 8},
+               clear=(2, 3, 4, 16, 17, 27, 35, 39, 40, 41, 42, 43, 44, 45, 46, 86)),
+    2111: dict(name="Master Weapon", source="Jrose", dest=7017, set={11: 18, 21: 18, 23: 30, 14: 30},
+               clear=(2, 3, 4, 16, 17, 27, 35, 39, 40, 41, 42, 43, 44, 45, 46, 86)),
+    # Slave Puppet 1833 (sw109_mannequin.aip), Deader Rex's summons. 869 is a rank
+    # of the Jrose Mage bolt we already ship as 871; a full-power copy from five
+    # puppets would take ~28% of a player's HP per bolt, so they get their own row.
+    869: dict(name="Puppet Bolt", source="Jrose", dest=7015, dmgtype=2, power=45,
+              clear=(2, 3, 4, 16, 17, 27, 35, 39, 40, 41, 42, 43, 44, 45, 46, 86)),
+    2990: dict(name="Puppet Dispel", source="Jrose", set={11: 37}),
 }
 
 # LIST_SKILL columns (io_skill.h)
@@ -340,6 +404,7 @@ class Plan:
         self._src_tables = {}    # dump name -> {table: Stb}
         self.skill_rows = {}     # id -> cells
         self.effect_rows = {}    # FILE_EFFECT idx -> cells
+        self.sound_rows = {}     # FILE_SOUND idx -> cells (blank rows filled in place)
         self.bullet_rows = {}    # LIST_EFFECT idx -> cells
         self.efts = set()        # (dump root, data-relative .eft path)
         self.skipped = []        # ids whose row is already ours
@@ -356,6 +421,13 @@ class Plan:
         return self._src_tables[dump]
 
     # -- resolution ------------------------------------------------------
+    def _next_append(self):
+        """The row a `dest` append may use next: the table's end, or one past the
+        last row this plan already appends (several collisions in one run)."""
+        rows = self.o["LIST_SKILL.STB"].rows
+        planned = [d for d in self.skill_rows if d >= rows]
+        return max(planned) + 1 if planned else rows
+
     def _need_effect(self, idx, why):
         if idx <= 0:
             return
@@ -379,9 +451,16 @@ class Plan:
         if idx <= 0:
             return
         o, s = self.o["FILE_SOUND.STB"], self.s["FILE_SOUND.STB"]
-        if idx >= o.rows or idx >= s.rows or o.get(idx, 0).strip().lower() != s.get(idx, 0).strip().lower():
-            self.problems.append("%s: FILE_SOUND %d differs (%r vs %r)"
-                                 % (why, idx, o.get(idx, 0), s.get(idx, 0)))
+        ours = o.get(idx, 0).strip() if idx < o.rows else b""
+        theirs = s.get(idx, 0).strip() if idx < s.rows else b""
+        if ours.lower() == theirs.lower() and ours:
+            return
+        # A row blank here is filled in place, like FILE_EFFECT. The .wav itself
+        # is not in data/: sound ships loose in the deployed game's Sound folder.
+        if theirs and not ours and idx < o.rows:
+            self.sound_rows[idx] = [s.get(idx, c) for c in range(o.cols)]
+            return
+        self.problems.append("%s: FILE_SOUND %d differs (%r vs %r)" % (why, idx, ours, theirs))
 
     def _need_bullet(self, idx, why):
         if idx <= 0:
@@ -413,8 +492,8 @@ class Plan:
         if sid >= s.rows or not s.get(sid, C_TYPE).strip():
             self.problems.append("%s: not in source" % why)
             return
-        if dest > o.rows:
-            self.problems.append("%s: dest %d is past our LIST_SKILL end (%d rows; only appending at the end is supported)" % (why, dest, o.rows))
+        if dest > self._next_append():
+            self.problems.append("%s: dest %d is past our LIST_SKILL end (next free row %d; only appending at the end is supported)" % (why, dest, self._next_append()))
             return
         if spec.get("patch"):
             # Our own row, corrected in place (or copied to `dest` when the row is
@@ -423,8 +502,8 @@ class Plan:
             if sid >= o.rows or blank_row(o, sid):
                 self.problems.append("%s: patch source row %d is blank here" % (why, sid))
                 return
-            if dest > o.rows:
-                self.problems.append("%s: dest %d is past our LIST_SKILL end (%d rows)" % (why, dest, o.rows))
+            if dest > self._next_append():
+                self.problems.append("%s: dest %d is past our LIST_SKILL end (next free row %d)" % (why, dest, self._next_append()))
                 return
             if dest < o.rows and not blank_row(o, dest) \
                     and o.get(dest, C_NAME) == spec["name"].encode("latin-1") \
@@ -469,11 +548,13 @@ class Plan:
         for c, v in spec.get("set", {}).items():
             cells[c] = str(v).encode()
         self.skill_rows[dest] = cells
+        # Resolved from the row as written, so a `clear`ed column pulls nothing in.
+        cell = lambda c: int(cells[c]) if cells[c].strip().lstrip(b"-").isdigit() else 0
         for c in EFFECT_COLS:
-            self._need_effect(ival(s, sid, c), "%s col %d" % (why, c))
+            self._need_effect(cell(c), "%s col %d" % (why, c))
         for c in SOUND_COLS:
-            self._need_sound(ival(s, sid, c), "%s col %d" % (why, c))
-        self._need_bullet(ival(s, sid, C_BULLET), why)
+            self._need_sound(cell(c), "%s col %d" % (why, c))
+        self._need_bullet(cell(C_BULLET), why)
 
     # -- files ------------------------------------------------------------
     def files(self):
@@ -496,6 +577,9 @@ class Plan:
                      "  (appended)" if dest >= self.o["LIST_SKILL.STB"].rows else ""))
         for idx, cells in sorted(self.effect_rows.items()):
             print("   FILE_EFFECT %4d  %s" % (idx, cells[1].decode("latin-1")))
+        for idx, cells in sorted(self.sound_rows.items()):
+            print("   FILE_SOUND  %4d  %s   (the .wav must be in the deployed Sound folder)"
+                  % (idx, cells[0].decode("latin-1")))
         for idx, cells in sorted(self.bullet_rows.items()):
             print("   LIST_EFFECT %4d  bullet fx %s hit %s/%s speed %s" %
                   (idx, cells[11].decode(), cells[9].decode(), cells[10].decode(), cells[15].decode()))
@@ -624,7 +708,7 @@ def main():
         print("\nABORT: %s exists -- --restore first, or delete it to re-run on top" % manifest_path(ids))
         return 1
     man = {"stb": {}, "copied": []}
-    for n in ("LIST_SKILL.STB", "FILE_EFFECT.STB", "LIST_EFFECT.STB"):
+    for n in ("LIST_SKILL.STB", "FILE_EFFECT.STB", "FILE_SOUND.STB", "LIST_EFFECT.STB"):
         rel = os.path.join(STB, n).replace("\\", "/")
         man["stb"][rel] = base64.b64encode(open(os.path.join(root, STB, n), "rb").read()).decode("ascii")
     for dest, cells in plan.skill_rows.items():
@@ -634,10 +718,13 @@ def main():
     for idx, cells in plan.effect_rows.items():
         for c, v in enumerate(cells):
             plan.o["FILE_EFFECT.STB"].set(idx, c, v)
+    for idx, cells in plan.sound_rows.items():
+        for c, v in enumerate(cells):
+            plan.o["FILE_SOUND.STB"].set(idx, c, v)
     for idx, cells in plan.bullet_rows.items():
         for c, v in enumerate(cells):
             plan.o["LIST_EFFECT.STB"].set(idx, c, v)
-    for n in ("LIST_SKILL.STB", "FILE_EFFECT.STB", "LIST_EFFECT.STB"):
+    for n in ("LIST_SKILL.STB", "FILE_EFFECT.STB", "FILE_SOUND.STB", "LIST_EFFECT.STB"):
         open(os.path.join(root, STB, n), "wb").write(plan.o[n].to_bytes())
         print("   wrote %s" % n)
     for src, rel, have in files:

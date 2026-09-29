@@ -6,8 +6,11 @@ Jrose zone 126 "SW Shibuya" is a Tokyo street scene -- shops, office blocks, a
 survivors hole up in. Both come from a 2017 event built around the band
 SECONDWALL (YUKA, APG, RYO, YU-SUKE, SHOHEI appear as NPCs): the Deaders, an
 undead plague, have overrun SHIBUYA, and the band slipped into the Seven Hearts
-through the "Gap Between the Twin Walls" to find help. We want the walk, the
-people and their story, not the event: no monsters, no quests, no dungeon.
+through the "Gap Between the Twin Walls" to find help. The first import took
+the walk, the people and their story, not the event. The tribute (2026-09-29)
+brings the Deaders themselves into the streets, a level 60-80 zone with two
+level-100 bosses, and the band's requests as quests of our own (quest-editor
+packs, not Jrose's QSDs). Still no dungeon.
 
 Staged like scripts/import-skaaj.py; every stage is idempotent, --dry-run
 previews, --verify re-derives the state, --selftest proves every writer
@@ -24,6 +27,37 @@ round-trips byte-identically before anything is touched:
                 every quest branch hidden, the SECONDWALL mascot's "go back"
                 wired to Junon Polis, and Jones (Junon Polis) given a "take
                 me to SHIBUYA" option.
+    --stage 4   the Deaders: twelve LIST_NPC rows at their Jrose ids with OUR
+                stats (DEADERS), their models, their AI rebuilt from the Jrose
+                files with our edits (DEADER_AI), the police zombies' guns
+                (import-item.py) and the skill kit (import-monster-skills.py,
+                whose SHIBUYA notes explain every power and status). No spawn
+                points yet: those are the tribute's Phase 2.
+
+The Deaders (stage 4)
+---------------------
+  * **Jrose's field rows are placeholders** -- level 1, HP 100, which its event
+    rescaled -- and its level-235 copies belong to the dungeon. So every stat is
+    ours, from our own table's level medians (the DEADERS comment).
+  * **The Rot Tracker is a rare spawn**: any field zombie or police zombie that
+    dies can call it (SummonMasterDist, 5 m away). Jrose's rule ANDs three rolls
+    into 0.2% and guards with a level window that never matches; ours is one 5%
+    roll and "no ally 21-45 levels above me within 60 m", i.e. no boss already
+    near. Its own despawn rule held an age of -1200 s, which made it vanish the
+    moment a player stepped out of 40 m; it now lingers for at least 120 s.
+  * **Casts we cannot run are stripped, and events left empty are dropped** (a
+    pattern's events are first-match-wins, so an empty event would starve the
+    next): 3691 (a "leave N HP" formula we lack), 3656 (a heal on cast target 3,
+    unimplemented), 6141 (damage cast on the caster itself), 3780 (our Karkia
+    Stun, far too strong here). Four more are re-pointed at our tail
+    (CAST_REMAP) because their ids are other skills here.
+  * **Bare-handed rows get a hit effect** (403, the dog 453): Jrose left them
+    blank, which lands a hit with no visible impact. Jrose's quest triggers in
+    the death-event column are blanked -- the quest-editor would read one as a
+    quest to chain onto.
+  * **Drops are blank until Phase 2**, which also has to move the legacy tables
+    squatting on drop-table ids 126/127 (a drop table and a zone share ids).
+  * EXP is provisional; re-run rebalance-exp-rewards.py once the monsters spawn.
 
 Why this is a port and not a copy
 ---------------------------------
@@ -349,10 +383,78 @@ STRINGS = {
 }
 LTB_KEY = "SHIBUYA-{}"
 
+# ---- stage 4: the Deaders (the SHIBUYA tribute, 2026-09-29)
+# id -> (English name, level, HP col, ATK, HIT, DEF, RES, AVOID, EXP col). Jrose's
+# own rows are level-1/HP-100 placeholders (its event scaled them) or level-235
+# dungeon copies, so every number here is ours: our LIST_NPC medians at level
+# 60/68/76/100 (monsters with EXP, interpolated), times a per-species factor --
+# the dog is frail and evasive, the ghouls hit harder, the police are softer, the
+# puppet is a summon worth 30% EXP, the Rot Tracker 5x HP/EXP and x1.3 ATK, Deader
+# Rex 10x HP/EXP and x1.35 ATK, x1.2 DEF/RES (the house boss factor). Max HP is
+# level x the HP column (cobjnpc.cpp). EXP is provisional: rebalance-exp-rewards.py
+# prices monsters that spawn, so it is re-run once the Phase 2 spawns exist.
+DEADERS = {
+    4060: ("Business Zombie",     60,  29, 241, 154, 171, 122,  89,   67),
+    4061: ("Honey Zombie",        63,  29, 267, 174, 184, 129,  93,   70),
+    4062: ("Undead Dog",          66,  24, 264, 163, 198, 136, 122,   73),
+    4063: ("Cunning Ghoul",       70,  32, 327, 189, 212, 144, 103,   78),
+    1947: ("Police Zombie",       72,  30, 312, 178, 196, 148, 106,   80),
+    4064: ("Sly Ghoul",           74,  35, 344, 185, 223, 152, 119,   82),
+    1948: ("Policewoman Zombie",  75,  33, 313, 188, 203, 154, 110,   84),
+    4065: ("Cool Dead",           77,  37, 319, 193, 232, 159, 113,   88),
+    4066: ("Cutie Dead",          78,  37, 324, 194, 235, 162, 114,   92),
+    1833: ("Slave Puppet",        85,  27, 310, 206, 261, 185, 126,   35),
+    4069: ("Rot Tracker",        100, 205, 586, 253, 348, 256, 151,  845),
+    4068: ("Deader Rex",         100, 410, 609, 253, 379, 280, 151, 1690),
+}
+DEADER_STAT_COLS = (7, 8, 9, 10, 11, 12, 13, 17)   # level, HP .. AVOID, EXP
+DEADER_STRID_PREFIX = "LSBMOB"
+# Bare-handed rows Jrose left without a hit effect, which lands a hit with no
+# visible impact (the 667 Scarab lesson): our prisoners' 403 on the same
+# skeletons, our wolves' 453 on the dog. The police hit with their guns' bullet.
+DEADER_HAND_HIT = {4062: 453}
+DEADER_HAND_HIT_DEFAULT = 403
+NPC_HAND_HIT_COL, NPC_DEAD_EVENT_COL = 33, 41
+NPC_DROP_COLS = (18, 19, 20)       # table, money, rate: Phase 2 authors the drops
+
+AI_STB_REL = r"3DDATA\STB\FILE_AI.STB"
+AI_DIR_REL = r"3DDATA\AI"
+# FILE_AI row -> file, at Jrose's row number (all free here). Every file is
+# rebuilt from the pristine source with the edits below on each run.
+DEADER_AI = {246: "sw_sby01.aip", 247: "sw_sby02.aip", 358: "sw109_boss02.aip",
+             359: "sw109_mannequin.aip", 407: "zombie_police_sby.aip"}
+# Casts moved to our tail rows (their ids are other skills here) and casts we
+# cannot run; import-monster-skills.py's SHIBUYA notes give the reasons.
+CAST_REMAP = {869: 7015, 2072: 7016, 2111: 7017, 3687: 7018}
+CAST_STRIP = {3691, 3656, 6141, 3780}
+SHIBUYA_SKILLS = (3722, 3723, 3724, 3726, 3744, 3760, 3782, 3783, 3687,
+                  2067, 2072, 2466, 2111, 869, 2990)
+# The Rot Tracker as a rare spawn. Jrose's death rule ANDs three rolls (10%,
+# 10%, 20% = 0.2%) and guards on "no ally 100-500 levels below me within 40 m",
+# which never matches. Ours: one 5% roll, and no ally 21-45 levels above the
+# dying mob within 60 m -- the field is 60-78 and the bosses 100, so that is
+# "no boss (or boss's puppet) nearby", one Rot Tracker per area at most.
+ROT_TRACKER, ROT_TRACKER_CHANCE = 4069, 5
+ROT_TRACKER_GUARD = dict(dist=60, lo=-45, hi=-21)
+# Its own despawn rule ("no enemy within 40 m and older than N s -> suicide") holds
+# N = -1200, which our COND_30 reads as always old enough: it vanished the moment
+# a player stepped back. Two minutes first.
+ROT_TRACKER_MIN_AGE = 120
+
+WEAPON_STB_REL = r"3DDATA\STB\LIST_WEAPON.STB"
+IMPORT_ITEM = os.path.join(HERE, "import-item.py")
+IMPORT_SKILLS = os.path.join(HERE, "import-monster-skills.py")
+# The police guns: Jrose player pistols, held by the police as weapons. Stats
+# from our Bubble Gun (231): the same bullet (LIST_EFFECT 175) and sounds (82/78)
+# as the Jrose rows, and a monster's weapon only presents its hits.
+POLICE_GUNS = {1947: (1924, "Police Revolver"), 1948: (1300, "Police Derringer")}
+POLICE_GUN_TEMPLATE = 231
+
 # Every file this importer saves through a writer that leaves `<file>.bak`
 # beside it; the .baks are moved to build/ at the end (pack.rs would bake them).
 BAK_TRACKED = [ZONE_STB_REL, ZONE_STL_REL, WARP_STB_REL, NPC_STB_REL, NPC_STL_REL,
-               EVENT_STB_REL, NPC_CHR_REL, r"3DDATA\NPC\PART_NPC.ZSC", QSD_REL]
+               EVENT_STB_REL, NPC_CHR_REL, r"3DDATA\NPC\PART_NPC.ZSC", QSD_REL,
+               AI_STB_REL]
 
 
 # -------------------------------------------------------------------- helpers
@@ -462,6 +564,10 @@ def sweep_baks(ours):
     ev_dir = P(ours, EVENT_DIR_REL)
     extra = [f"{EVENT_DIR_REL}\\{f[:-4]}" for f in sorted(os.listdir(ev_dir))
              if f.lower().endswith(".bak")]
+    # import-item.py (the police guns) names its backups <file>.import-<id>.bak
+    for d in (r"3DDATA\STB", r"3DDATA\WEAPON"):
+        extra += [f"{d}\\{f[:-4]}" for f in sorted(os.listdir(P(ours, d)))
+                  if re.search(r"\.import-\d+\.bak$", f, re.I)]
     for rel in BAK_TRACKED + extra:
         bak = P(ours, rel) + ".bak"
         if not os.path.isfile(bak):
@@ -898,6 +1004,208 @@ def stage3(ours, src, src_index, dry):
         print(f"    {who:26s} {line.strip()[:90]}")
 
 
+# ------------------------------------------------------------------- stage 4
+mon = load("audit_ai_monster_refs", "audit-ai-monster-refs.py")   # .aip codec
+
+AI_CHANCE, AI_COUNT, AI_AGE = 8, 28, 31      # raw type index = condition + 1
+AI_CAST, AI_SUMMON_DIST = 25, 38             # raw type index = action + 1
+
+
+def ai_type(entry):
+    return struct.unpack_from("<I", entry, 4)[0] & 0xFF
+
+
+def build_aip(src_path, ai_row):
+    """Our version of one Deader AI file, from the pristine source. Returns
+    (bytes, [edit notes])."""
+    header, title, pats, tail = mon.parse_aip(open(src_path, "rb").read())
+    notes = []
+    out = []
+    for pname, evs in pats:
+        new_evs = []
+        for ename, conds, acts in evs:
+            kept = []
+            for a in acts:
+                if ai_type(a) == AI_CAST:
+                    skill, = struct.unpack_from("<h", a, 10)
+                    if skill in CAST_STRIP:
+                        notes.append(f"strip cast {skill}")
+                        continue
+                    if skill in CAST_REMAP:
+                        a = bytearray(a)
+                        struct.pack_into("<h", a, 10, CAST_REMAP[skill])
+                        a = bytes(a)
+                        notes.append(f"cast {skill} -> {CAST_REMAP[skill]}")
+                kept.append(a)
+            if acts and not kept:
+                # An event left with no action still matches, and a pattern's
+                # events are first-match-wins: it would starve the ones after it.
+                continue
+            summons_rt = any(ai_type(a) == AI_SUMMON_DIST
+                             and struct.unpack_from("<H", a, 8)[0] == ROT_TRACKER for a in kept)
+            if summons_rt:
+                chance = next(c for c in conds if ai_type(c) == AI_CHANCE)
+                count = next(c for c in conds if ai_type(c) == AI_COUNT)
+                chance = chance[:8] + bytes([ROT_TRACKER_CHANCE]) + chance[9:]
+                # AICOND27: int dist (m), BYTE allied, pad, short lo, short hi,
+                # WORD num, BYTE op -- "fewer than 1 ally with self-other in [lo,hi]"
+                count = bytearray(count)
+                g = ROT_TRACKER_GUARD
+                struct.pack_into("<iB", count, 8, g["dist"], 1)
+                struct.pack_into("<hhHB", count, 14, g["lo"], g["hi"], 1, 3)
+                conds = [chance, bytes(count)]
+                notes.append(f"Rot Tracker rule: {ROT_TRACKER_CHANCE}%, none within {g['dist']} m")
+            new_conds = []
+            for c in conds:
+                if ai_type(c) == AI_AGE and ai_row == 247:
+                    c = c[:8] + struct.pack("<i", ROT_TRACKER_MIN_AGE) + c[12:]
+                    notes.append(f"despawn age -> {ROT_TRACKER_MIN_AGE} s")
+                new_conds.append(c)
+            new_evs.append((ename, new_conds, kept))
+        out.append((pname, new_evs))
+    return mon.build_aip(header, title, out, tail), notes
+
+
+def weapon_row_named(ours, name):
+    w = O(ours, WEAPON_STB_REL)
+    for r in range(w.rows):
+        if w.get(r, 0).decode("latin-1").strip() == name:
+            return r
+    return None
+
+
+def import_police_guns(ours, src, dry):
+    """{npc id: our weapon row}. Each gun is imported once (found by name after)."""
+    out, planned = {}, 0
+    for npc, (src_row, name) in sorted(POLICE_GUNS.items()):
+        have = weapon_row_named(ours, name)
+        if have is not None:
+            out[npc] = have
+            print(f"    {name:26s} weapon row {have} (already ours)")
+            continue
+        cmd = [sys.executable, IMPORT_ITEM, "--type", "weapon", "--source", src,
+               "--source-row", str(src_row), "--art-only",
+               "--template-row", str(POLICE_GUN_TEMPLATE), "--name", name,
+               "--desc", "A Deader's sidearm from SHIBUYA."]
+        if dry:
+            cmd.append("--dry-run")
+        r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise SystemExit(f"import-item {name} failed:\n{r.stdout}\n{r.stderr}")
+        got = weapon_row_named(ours, name)
+        if got is None and dry:
+            got = O(ours, WEAPON_STB_REL).rows + planned
+            planned += 1
+        if got is None:
+            raise SystemExit(f"import-item wrote {name}, but no row carries the name")
+        out[npc] = got
+        print(f"    {name:26s} weapon row {got} from Jrose {src_row}"
+              + (" (dry run)" if dry else ""))
+    return out
+
+
+def stage4(ours, src, src_index, dry):
+    print("stage 4 -- the Deaders (monsters, AI, skills, weapons)")
+    ids = sorted(DEADERS)
+    src_npc, our_npc = S(src, NPC_STB_REL), O(ours, NPC_STB_REL)
+    our_npc.grow_to(max(ids) + 1)
+
+    guns = import_police_guns(ours, src, dry)
+
+    # 4a. LIST_NPC rows at their native ids, our numbers on the source's shape
+    written, kept = [], []
+    for i in ids:
+        name, *stats = DEADERS[i]
+        cur = our_npc.get(i, 0).decode("latin-1").strip()
+        if cur and cur != name:
+            raise SystemExit(f"our LIST_NPC row {i} is occupied by {cur!r}")
+        before = list(our_npc.d[i])
+        for c in range(oro.NPC_COPY_COLS):
+            our_npc.set(i, c, src_npc.get(i, c))
+        our_npc.set(i, 0, name)
+        for c, v in zip(DEADER_STAT_COLS, stats):
+            our_npc.set(i, c, str(v))
+        for c in NPC_DROP_COLS + oro.NPC_SELL_TAB_COLS:
+            our_npc.set(i, c, b"")
+        our_npc.set(i, NPC_DEAD_EVENT_COL, b"")      # Jrose quest triggers we do not ship
+        our_npc.set(i, oro.NPC_STRID_COL, f"{DEADER_STRID_PREFIX}{i}")
+        our_npc.set(i, oro.NPC_PVP_COL, oro.DEFAULT_PVP_STATE)
+        if i in guns:
+            our_npc.set(i, oro.NPC_R_WEAPON_COL, str(guns[i]))
+        elif not our_npc.get(i, NPC_HAND_HIT_COL).strip():
+            our_npc.set(i, NPC_HAND_HIT_COL, str(DEADER_HAND_HIT.get(i, DEADER_HAND_HIT_DEFAULT)))
+        ai = int(src_npc.get(i, oro.NPC_AI_COL) or 0)
+        if ai not in DEADER_AI:
+            raise SystemExit(f"{name} ({i}) uses Jrose AI row {ai}, which DEADER_AI does not cover")
+        (kept if our_npc.d[i] == before else written).append(i)
+    print(f"    {'LIST_NPC.STB':26s} {len(written)} rows written, {len(kept)} already ours")
+
+    our_stl = oro.Stl(P(ours, NPC_STL_REL))
+    nnames = 0
+    for i in ids:
+        key = f"{DEADER_STRID_PREFIX}{i}"
+        if not our_stl.has(key):
+            our_stl.append(key, i, DEADERS[i][0])
+            nnames += 1
+    print(f"    {'LIST_NPC_S.STL':26s} +{nnames} keys")
+
+    # 4b. AI rows, and the files rebuilt from source with our edits
+    src_ai, our_ai = S(src, AI_STB_REL), O(ours, AI_STB_REL)
+    our_ai.grow_to(max(DEADER_AI) + 1)
+    ai_rows = 0
+    for row, fname in sorted(DEADER_AI.items()):
+        cell = src_ai.get(row, 0)
+        if os.path.basename(cell.decode("latin-1").replace("\\", "/")).lower() != fname.lower():
+            raise SystemExit(f"source FILE_AI row {row} is {cell!r}, expected {fname}")
+        if our_ai.get(row, 0) != cell:
+            if our_ai.get(row, 0).strip():
+                raise SystemExit(f"our FILE_AI row {row} is {our_ai.get(row, 0)!r}")
+            our_ai.set(row, 0, cell)
+            ai_rows += 1
+    print(f"    {'FILE_AI.STB':26s} +{ai_rows} rows {sorted(DEADER_AI)}")
+    n_ai = 0
+    for row, fname in sorted(DEADER_AI.items()):
+        blob, notes = build_aip(os.path.join(P(src, AI_DIR_REL), fname), row)
+        if sk.write_if_changed(os.path.join(P(ours, AI_DIR_REL), fname), blob, dry, backup=False):
+            n_ai += 1
+        summary = ", ".join(sorted(set(notes))) or "verbatim"
+        print(f"    {fname:26s} {summary}")
+    print(f"    {'.aip files':26s} {n_ai} of {len(DEADER_AI)} (re)written")
+
+    our_npc.save(dry)
+    our_ai.save(dry)
+    if nnames:
+        our_stl.save(dry)
+
+    # 4c. models (clearing orphan CHR slots first, as stage 2 does) + bone effects
+    chr_ = oro.Chr(P(ours, NPC_CHR_REL))
+    cleared = [i for i in written if i < len(chr_.chars) and chr_.chars[i] is not None]
+    for i in cleared:
+        chr_.chars[i] = None
+    if cleared:
+        chr_.save(dry)
+        print(f"    {'LIST_NPC.CHR':26s} cleared orphan entries {cleared}")
+    oro.import_characters(ids, ours, src, dry, "monster")
+    src_chr = oro.Chr(P(src, NPC_CHR_REL))
+    efts = {src_chr.effects[e].decode("latin-1") for i in ids
+            for _, e in src_chr.chars[i]["effects"] if e < len(src_chr.effects)}
+    efts = {e for e in efts if "\\" in e or "/" in e}
+    if efts:
+        kk.copy_new(efts | kk.effect_chain(efts, src_index), src_index, ours, dry,
+                    "monster bone effects")
+
+    # 4d. the skill kit
+    cmd = [sys.executable, IMPORT_SKILLS, "--skills", ",".join(map(str, SHIBUYA_SKILLS))]
+    if dry:
+        cmd.append("--dry-run")
+    r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise SystemExit(f"import-monster-skills failed:\n{r.stdout}\n{r.stderr}")
+    wrote = [l for l in r.stdout.splitlines() if l.startswith("   LIST_SKILL ") and " type " in l]
+    print(f"    {'skill kit':26s} {len(SHIBUYA_SKILLS)} skills, "
+          f"{len(wrote)} to write" + (" (dry run)" if dry else ""))
+
+
 # -------------------------------------------------------------------- verify
 def verify(ours, src):
     print("verify")
@@ -1011,6 +1319,33 @@ def verify(ours, src):
                 carriers.append(f)
     check(len(carriers) >= len(TRAVEL_HOSTS),
           f"{len(carriers)} dialog(s) offer {TRAVEL_TRIGGER} {carriers}")
+
+    # stage 4
+    npc = O(ours, NPC_STB_REL)
+    chr_ = oro.Chr(P(ours, NPC_CHR_REL))
+    stats_ok = [i for i, (name, *st) in DEADERS.items()
+                if npc.get(i, 0).decode("latin-1") == name
+                and [int(npc.get(i, c) or 0) for c in DEADER_STAT_COLS] == st
+                and not npc.get(i, NPC_DEAD_EVENT_COL).strip()
+                and int(npc.get(i, oro.NPC_AI_COL) or 0) in DEADER_AI]
+    check(len(stats_ok) == len(DEADERS), f"{len(stats_ok)}/{len(DEADERS)} Deader rows (name, stats, AI, no Jrose trigger)")
+    check(all(stl.has(f"{DEADER_STRID_PREFIX}{i}") for i in DEADERS), "Deader STL keys")
+    check(all(i < len(chr_.chars) and chr_.chars[i] is not None for i in DEADERS), "Deader CHR entries")
+    guns_ok = all(int(npc.get(i, oro.NPC_R_WEAPON_COL) or 0) == weapon_row_named(ours, name)
+                  for i, (_, name) in POLICE_GUNS.items())
+    check(guns_ok, "police hold the imported guns")
+    ai = O(ours, AI_STB_REL)
+    ai_ok = 0
+    for row, fname in sorted(DEADER_AI.items()):
+        dp = os.path.join(P(ours, AI_DIR_REL), fname)
+        want, _ = build_aip(os.path.join(P(src, AI_DIR_REL), fname), row)
+        ai_ok += (ai.get(row, 0) == S(src, AI_STB_REL).get(row, 0)
+                  and os.path.isfile(dp) and open(dp, "rb").read() == want)
+    check(ai_ok == len(DEADER_AI), f"{ai_ok}/{len(DEADER_AI)} AI rows + files match the build")
+    r = subprocess.run([sys.executable, IMPORT_SKILLS, "--verify",
+                        "--skills", ",".join(map(str, SHIBUYA_SKILLS))],
+                       cwd=ROOT, capture_output=True, text=True)
+    check(r.returncode == 0, f"skill kit ({len(SHIBUYA_SKILLS)} rows) verifies")
     print("    " + ("ALL OK" if not bad else f"{len(bad)} problem(s)"))
     return 0 if not bad else 1
 
@@ -1065,6 +1400,12 @@ def selftest(ours, src):
         ok, _ = fate.qsd_parse_ok(open(P(ours, rel), "rb").read())
         assert ok, rel
     print("    QP401 / PVP10 QSDs parse exactly")
+    for row, fname in sorted(DEADER_AI.items()):
+        blob = open(os.path.join(P(src, AI_DIR_REL), fname), "rb").read()
+        assert mon.build_aip(*mon.parse_aip(blob)) == blob, fname
+    p = P(ours, AI_STB_REL)
+    assert oro.Stb(p).to_bytes() == open(p, "rb").read(), "FILE_AI"
+    print(f"    {len(DEADER_AI)} Deader .aip files and FILE_AI round-trip")
     for zone in (126, 2):
         x, y = landing(ours, src, zone)
         assert 100_000 < x < 10_000_000 and 100_000 < y < 10_000_000, (zone, x, y)
@@ -1075,7 +1416,7 @@ def selftest(ours, src):
 # ---------------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--stage", type=int, choices=(1, 2, 3), action="append")
+    ap.add_argument("--stage", type=int, choices=(1, 2, 3, 4), action="append")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--selftest", action="store_true")
@@ -1092,10 +1433,10 @@ def main():
     if args.verify:
         return verify(ours, src)
     if not args.stage:
-        ap.error("give --stage N (1-3), --verify or --selftest")
+        ap.error("give --stage N (1-4), --verify or --selftest")
     src_index = kk.index_tree(src)
     for st in sorted(set(args.stage)):
-        {1: stage1, 2: stage2, 3: stage3}[st](ours, src, src_index, args.dry_run)
+        {1: stage1, 2: stage2, 3: stage3, 4: stage4}[st](ours, src, src_index, args.dry_run)
         print()
     if args.dry_run:
         print("dry run: nothing written")
