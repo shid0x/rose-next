@@ -180,7 +180,12 @@ CObjCHAR::SetCMD_ATTACK(int iServerTarget, WORD wSrvDIST, const D3DVECTOR& PosGO
     }
 
     /// 현재 명령이 들어갈수 있나?
-    if (this->CanApplyCommand() == false) {
+    // Also while the avatar plays a swing it owed before a cast (see
+    // PlayOwedSwingBeforeCast): the server may already be swinging again after a
+    // quick skill, and applying that attack now would drop the cast on this
+    // client (CObjAI::SetCMD_ATTACK calls Casting_END). Queued, it runs once the
+    // cast has started, like any attack that arrives during a cast.
+    if (this->CanApplyCommand() == false || this->IsPlayingOwedSwingBeforeCast()) {
         this->PushCommandAttack(iServerTarget, wSrvDIST, PosGOTO);
         return;
     }
@@ -499,6 +504,163 @@ CObjCHAR::PresentPreemptedCombatSwing(const char* reason) {
     pDefender->PresentQueuedCombatDamageEvent(eventId, this, reason);
 }
 
+// A skill used mid-attack, on the local avatar. The server finishes the swing it
+// is in (its SetCMD_Skill2* goes to CS_NEXT_STOP) and only then casts; so does the
+// client -- but the avatar's attack motion self-loops on the client's own clock, a
+// little behind the server's, so when the client's current swing ends the server
+// has often already started (and applied, at frame 0) one more. Nothing would
+// ever animate that swing, and because the avatar's hit frames and bullets pop the
+// target's queue oldest-first, every later hit then presented the event before it:
+// one skill cast = one swing of permanent presentation lag. Measured on the Rot
+// Tracker (2026-09-29, Scout): 1 s -> 6 s over a fight, the 8 s hard cap sweeping
+// hits silently, and the kill shown 6 s after the monster died.
+//
+// So before the cast begins, play the owed swings: one attack motion each, whose
+// hit frame or bullet pops one queued event like any other swing. "Owed" is the
+// avatar's hit-frame/impact events still queued on the defender of its last
+// confirmed swing, minus its bullets already flying at it. Bounded: at most
+// kOwedSwingBeforeCastMax swings and kOwedSwingBeforeCastMs per skill command,
+// only when the command replaced an attack, and never out of range, on a dead
+// defender, or while the avatar is dying; past those bounds the cast goes ahead
+// and anything left is handled as before. Presentation only -- the server's
+// timing, damage and cast are untouched.
+static const int kOwedSwingBeforeCastMax = 2;
+static const DWORD kOwedSwingBeforeCastMs = 3000;
+
+bool
+CObjCHAR::IsPlayingOwedSwingBeforeCast() {
+    if (this != (CObjCHAR*)g_pAVATAR || m_iOwedSwingsBeforeCast == 0 || m_bOwedSwingBeforeCastClosed) {
+        return false;
+    }
+    if (m_bCastingSTART || !m_nToDoSkillIDX) {
+        return false;
+    }
+    switch (this->Get_COMMAND()) {
+        case CMD_SKILL2SELF:
+        case CMD_SKILL2OBJ:
+        case CMD_SKILL2POS:
+            return true;
+    }
+    return false;
+}
+
+bool
+CObjCHAR::PlayOwedSwingBeforeCast(int iSkillIDX) {
+    if (this != (CObjCHAR*)g_pAVATAR) {
+        return false;
+    }
+
+    // An owed swing played below has finished (the skill command only runs again
+    // once CS_BIT_INT is clear). Stand it down the way ProcCMD_ATTACK's refusal
+    // branch does: CS_STOP also clears CS_BIT_CHK -- a motion left on its last
+    // frame with frame checking on re-fires every action point on the next tick,
+    // i.e. a second arrow -- and Attack_END releases m_bAttackSTART, the trail and
+    // the animation rate (and clears m_bOwedSwingMotionPlaying). The next swing or
+    // the cast replaces the motion. Done before any early-out, so it also runs for
+    // a newer skill command that arrived while the swing was playing.
+    if (m_bOwedSwingMotionPlaying && !(this->Get_STATE() & CS_BIT_INT)) {
+        this->Set_STATE(CS_STOP);
+        this->Attack_END();
+    }
+
+    // Mounted combat is played by the cart / castle gear; left as it was.
+    if (this->GetPetMode() >= 0 || m_bOwedSwingBeforeCastClosed) {
+        return false;
+    }
+
+    // Only a cast that interrupted an attack can owe a swing.
+    if (this->Get_BECOMMAND() != CMD_ATTACK) {
+        return false;
+    }
+
+    if (m_dwPendingCombatSwingEventId == 0 || m_iPendingCombatSwingDefenderIndex == 0) {
+        return false;
+    }
+
+    CObjCHAR* pDefender = g_pObjMGR->Get_CharOBJ(m_iPendingCombatSwingDefenderIndex, true);
+    if (!pDefender) {
+        return false;
+    }
+
+    const int iQueued = pDefender->CountFramePresentedDamageFrom(this->Get_INDEX());
+    const int iInFlight = g_pBltMGR->CountLiveBullets(this->Get_INDEX(), pDefender->Get_INDEX());
+    const int iOwed = iQueued - iInFlight;
+
+    // Nothing owed. Checked every frame until the cast starts, so a swing whose
+    // CombatSwing lands a little late is still caught -- unless swings were
+    // already played, in which case this command is settled.
+    if (iOwed <= 0) {
+        if (m_iOwedSwingsBeforeCast > 0) {
+            LogString(LOG_DEBUG_,
+                "CombatTrace owed swings settled before cast: attacker %d defender %d skill %d swings %d\n",
+                this->Get_INDEX(),
+                pDefender->Get_INDEX(),
+                iSkillIDX,
+                m_iOwedSwingsBeforeCast);
+            m_bOwedSwingBeforeCastClosed = true;
+        }
+        return false;
+    }
+
+    const DWORD dwNow = g_GameDATA.GetGameTime();
+    const char* szGiveUp = NULL;
+    if (m_iOwedSwingsBeforeCast >= kOwedSwingBeforeCastMax) {
+        szGiveUp = "swing cap";
+    } else if (m_dwOwedSwingBeforeCastSince != 0
+        && (dwNow - m_dwOwedSwingBeforeCastSince) >= kOwedSwingBeforeCastMs) {
+        szGiveUp = "time cap";
+    } else if (this->Get_HP() <= DEAD_HP || m_bPendingAuthoritativeDeath) {
+        szGiveUp = "avatar dying";
+    } else if (pDefender->Get_HP() <= DEAD_HP) {
+        szGiveUp = "defender dead";
+    } else if (!this->IsInRANGE(pDefender, this->Get_AttackRange())) {
+        szGiveUp = "defender out of range";
+    }
+
+    if (szGiveUp) {
+        LogString(LOG_DEBUG_,
+            "CombatTrace owed swing not played before cast: attacker %d defender %d skill %d owed %d queued %d in_flight %d swings %d reason %s\n",
+            this->Get_INDEX(),
+            pDefender->Get_INDEX(),
+            iSkillIDX,
+            iOwed,
+            iQueued,
+            iInFlight,
+            m_iOwedSwingsBeforeCast,
+            szGiveUp);
+        m_bOwedSwingBeforeCastClosed = true;
+        return false;
+    }
+
+    if (m_dwOwedSwingBeforeCastSince == 0) {
+        m_dwOwedSwingBeforeCastSince = dwNow;
+    }
+    ++m_iOwedSwingsBeforeCast;
+
+    // Start_ATTACK's steps, aimed at the defender explicitly: m_iServerTarget is
+    // already the skill's target (or none, for a self skill), and the action
+    // frames fire at m_iActiveObject. The motion plays once (repeat 1) and, being
+    // CS_ATTACK (CS_BIT_INT), holds Proc() until it ends; the skill command then
+    // runs again and asks here first.
+    this->Set_ModelDIR(pDefender->m_PosCUR);
+    this->Set_STATE(CS_ATTACK);
+    this->Attack_START(pDefender);
+    m_iActiveObject = pDefender->Get_INDEX();
+    this->Set_MOTION(this->GetANI_Attack(), 0, this->Get_fAttackSPEED(), true, 1);
+    m_bOwedSwingMotionPlaying = true;
+
+    LogString(LOG_DEBUG_,
+        "CombatTrace owed swing played before cast: attacker %d defender %d skill %d owed %d queued %d in_flight %d swing %d\n",
+        this->Get_INDEX(),
+        pDefender->Get_INDEX(),
+        iSkillIDX,
+        iOwed,
+        iQueued,
+        iInFlight,
+        m_iOwedSwingsBeforeCast);
+    return true;
+}
+
 //--------------------------------------------------------------------------------
 /// class : CObjCHAR
 /// @param
@@ -589,6 +751,10 @@ CObjCHAR::CObjCHAR(): m_EndurancePack(this), m_ChangeActionMode(this), m_ObjVibr
     m_dwPendingCombatSwingTime = 0;
     m_bPreemptedSwingAwaitingMotionEnd = false;
     m_bOwedHitReaction = false;
+    m_iOwedSwingsBeforeCast = 0;
+    m_dwOwedSwingBeforeCastSince = 0;
+    m_bOwedSwingBeforeCastClosed = false;
+    m_bOwedSwingMotionPlaying = false;
     m_iPendingMountedAttackTarget = 0;
     m_dwPendingMountedAttackTime = 0;
 
@@ -1836,6 +2002,7 @@ CObjCHAR::Attack_END(bool bStopTrail) {
     }
 
     m_bAttackSTART = false;
+    m_bOwedSwingMotionPlaying = false;
 
     // The attack motion is gone. A swing that a skill command pre-empted while
     // this motion was still running (see PresentPreemptedCombatSwing) has just lost

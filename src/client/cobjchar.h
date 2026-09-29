@@ -379,6 +379,22 @@ public:
     /// command is held in m_CommandQueue while this is true, so the swing plays out
     /// (animation + digit at its hit frame) before the cast starts.
     bool OwesConfirmedSwingHitFrame(DWORD now);
+    /// Local avatar only. A skill used mid-attack: the server finishes the swing it
+    /// is in before it casts, but the avatar's attack loop runs on its own clock a
+    /// little behind the server's, so the client can reach the cast owing a swing
+    /// the server already applied. Play that swing first (one attack motion, whose
+    /// hit frame or bullet presents it), then let the cast go. Returns true while a
+    /// swing was started and the cast must wait. Bounded per skill command.
+    bool PlayOwedSwingBeforeCast(int iSkillIDX);
+    /// An owed swing is playing and the skill command it precedes is still pending
+    /// (not cast yet, not replaced). Only then; false for every other object.
+    bool IsPlayingOwedSwingBeforeCast();
+    /// Called when a skill command is applied; starts a new bound for the above.
+    void ResetOwedSwingBeforeCast() {
+        m_iOwedSwingsBeforeCast = 0;
+        m_dwOwedSwingBeforeCastSince = 0;
+        m_bOwedSwingBeforeCastClosed = false;
+    }
     /// Release every ProjectileImpact event this attacker queued on us because its
     /// cast was abandoned before a bullet could spawn (see the remote-cast watchdog
     /// in CObjAI::ProcCMD_Skill2OBJECT). Same resolution as
@@ -598,6 +614,10 @@ private:
 public:
     bool HasQueuedCombatDamageEvent(uint32_t eventId) const {
         return m_CombatDamageQueue.has_event(eventId);
+    }
+    /// Events from this attacker still waiting on a hit frame or projectile impact.
+    int CountFramePresentedDamageFrom(uint32_t attackerIndex) const {
+        return static_cast<int>(m_CombatDamageQueue.count_frame_presented_for_attacker(attackerIndex));
     }
     void PushCombatDamageEvent(const Rose::Combat::DamageEvent& event);
     Rose::Combat::PresentationResult PopCombatDamageEvent(int iAttacker, Rose::Combat::DamageEvent& event);
@@ -995,6 +1015,11 @@ protected:
     /// A hit reaction was suppressed so an in-flight confirmed swing could reach
     /// its hit frame; play it once that swing resolves.
     bool m_bOwedHitReaction;
+    /// PlayOwedSwingBeforeCast bookkeeping, per skill command (local avatar only).
+    int m_iOwedSwingsBeforeCast;
+    DWORD m_dwOwedSwingBeforeCastSince; /// Tick of the first owed swing played (0 = none yet).
+    bool m_bOwedSwingBeforeCastClosed; /// Settled or given up; no more swings for this command.
+    bool m_bOwedSwingMotionPlaying; /// Its attack motion is attached; cleared by Attack_END.
     /// Recent confirmed attackers, independent of the presentation queue.
     Rose::Combat::CombatCrowdTracker m_CombatCrowdTracker;
     int m_AruaAddMoveSpeed; /// 아루아 여신상태 일경우 증가되는 이동속도

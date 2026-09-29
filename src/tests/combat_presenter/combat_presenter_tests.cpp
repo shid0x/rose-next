@@ -2421,6 +2421,39 @@ main() {
             "a payload that never queues does not strand the avatar");
     }
 
+    // ---------------------------------------------------------------------------
+    // Owed swings before a cast (local avatar, Rot Tracker session 2026-09-29):
+    // the count is the attacker's hit-frame / projectile-impact events only --
+    // those are what its attack motions and bullets pop, oldest first.
+    // ---------------------------------------------------------------------------
+    {
+        CombatPresentationQueue queue;
+        expect(queue.count_frame_presented_for_attacker(374) == 0, "empty queue owes nothing");
+
+        DamageEvent arrow = event(1, 374, 111, 13715);
+        arrow.presentation_kind = DamagePresentationKind::ProjectileImpact;
+        queue.push(arrow);
+        queue.push(event(2, 374, 120, 13595)); // melee swing
+        DamageEvent skillArrow = event(3, 374, 492, 13103);
+        skillArrow.presentation_kind = DamagePresentationKind::ProjectileImpact;
+        queue.push(skillArrow);
+        DamageEvent immediate = event(4, 374, 30, 13073);
+        immediate.presentation_kind = DamagePresentationKind::Immediate;
+        queue.push(immediate);
+        DamageEvent tick = event(5, 374, 30, 13043);
+        tick.presentation_kind = DamagePresentationKind::StatusTick;
+        queue.push(tick);
+        queue.push(event(6, 966, 26, 13017)); // the hawk's swing
+
+        expect(queue.count_frame_presented_for_attacker(374) == 3,
+            "hit-frame and impact events of this attacker only");
+        expect(queue.count_frame_presented_for_attacker(966) == 1, "other attackers counted apart");
+
+        DamageEvent popped;
+        expect(queue.pop_for_attacker(374, popped) && popped.event_id == 1, "an arrow pops the oldest");
+        expect(queue.count_frame_presented_for_attacker(374) == 2, "one owed swing fewer after a pop");
+    }
+
     std::cout << "combat_presenter_tests passed\n";
     return 0;
 }

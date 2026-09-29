@@ -494,6 +494,22 @@ public:
         return false;
     }
 
+    // How many of this attacker's events wait on a consumer an attack motion
+    // provides -- a hit frame or a projectile impact. The local avatar's own
+    // attack loop pops them oldest-first (pop_for_attacker), so this minus its
+    // bullets still in flight is the number of swings it owes on screen.
+    size_t count_frame_presented_for_attacker(uint32_t attacker_id) const {
+        size_t count = 0;
+        for (const auto& event: m_events) {
+            if (event.attacker_id == attacker_id
+                && (event.presentation_kind == DamagePresentationKind::MeleeHitFrame
+                    || event.presentation_kind == DamagePresentationKind::ProjectileImpact)) {
+                ++count;
+            }
+        }
+        return count;
+    }
+
     bool has_pending_damage() const {
         for (const auto& event: m_events) {
             if (event.damage_value > 0 || event.lethal) {

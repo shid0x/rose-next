@@ -207,6 +207,22 @@ public:
         bool bDummy = false,
         int iSkillIDX = 0);
     void ProcBULLET();
+
+    /// Real bullets from one object to another that have not hit yet. Each one
+    /// will pop one queued damage event on impact; dummy bullets (multi-hit
+    /// visuals) never pop, and a bullet that already hit lingers only as a visual.
+    int CountLiveBullets(short nSourOBJ, short nDestOBJ) {
+        int iCount = 0;
+        for (classDLLNODE<CBullet*>* pNode = m_LIST.GetHeadNode(); pNode;
+             pNode = m_LIST.GetNextNode(pNode)) {
+            const CBullet* pBullet = pNode->DATA;
+            if (pBullet && !pBullet->m_dwHitTIME && !pBullet->m_bDummyBullet
+                && pBullet->m_nSourOBJ == nSourOBJ && pBullet->m_nDestOBJ == nDestOBJ) {
+                ++iCount;
+            }
+        }
+        return iCount;
+    }
 };
 extern CBulletMANAGER* g_pBltMGR;
 

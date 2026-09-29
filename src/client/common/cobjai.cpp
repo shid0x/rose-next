@@ -1026,6 +1026,7 @@ CObjAI::SetCMD_Skill2SELF(short nSkillIDX) {
     /// ó�� ���ۻ��´� ĳ���� ���º��� ����..
     //-----------------------------------------------------------------------------------------
     m_SkillActionState = SKILL_CASTING_STATE;
+    static_cast<CObjCHAR*>(this)->ResetOwedSwingBeforeCast();
 }
 
 //--------------------------------------------------------------------------------
@@ -1151,6 +1152,7 @@ CObjAI::SetCMD_Skill2OBJ(WORD wSrvDIST,
     /// ó�� ���ۻ��´� ĳ���� ���º��� ����..
     //-----------------------------------------------------------------------------------------
     m_SkillActionState = SKILL_CASTING_STATE;
+    static_cast<CObjCHAR*>(this)->ResetOwedSwingBeforeCast();
 
     return false;
 }
@@ -1242,6 +1244,7 @@ CObjAI::SetCMD_Skill2POS(const D3DVECTOR& PosGOTO, short nSkillIDX) {
     /// ó�� ���ۻ��´� ĳ���� ���º��� ����..
     //-----------------------------------------------------------------------------------------
     m_SkillActionState = SKILL_CASTING_STATE;
+    static_cast<CObjCHAR*>(this)->ResetOwedSwingBeforeCast();
 }
 
 //----------------------------------------------------------------------------------------------------
@@ -1752,8 +1755,24 @@ CObjAI::ProcCMD_ATTACK() {
 ///				���� ������ �ٷ� ó���� ��ų --> ���� ���·� �ȴ�.
 //--------------------------------------------------------------------------------
 
+// A skill used mid-attack on the local avatar can owe a swing the server already
+// applied; CObjCHAR::PlayOwedSwingBeforeCast plays it first. Asked only while the
+// cast has not begun: the command set a skill to do and casting has not started.
+static bool
+HoldCastForOwedSwing(CObjAI* pAI) {
+    if (pAI->m_bCastingSTART || !pAI->m_nToDoSkillIDX
+        || pAI->m_SkillActionState != SKILL_CASTING_STATE) {
+        return false;
+    }
+    return static_cast<CObjCHAR*>(pAI)->PlayOwedSwingBeforeCast(pAI->m_nToDoSkillIDX);
+}
+
 int
 CObjAI::ProcCMD_Skill2SELF() {
+    if (HoldCastForOwedSwing(this)) {
+        return 1;
+    }
+
     if (1 != this->Do_SKILL(0)) {
         ;
     }
@@ -1772,6 +1791,10 @@ CObjAI::ProcCMD_Skill2POSITION() {
     /// ���� ��ų ĳ������ �������� �ʾҴٸ�..
     //-----------------------------------------------------------------------------------------
     if (!m_bCastingSTART) {
+        if (HoldCastForOwedSwing(this)) {
+            return 1;
+        }
+
         t_POSITION posTemp = this->m_PosGOTO;
         // ��ҷ� �̵�... & ��ų ����
         if (this->Goto_POSITION(this->Get_AttackRange()) == false) {
@@ -1821,6 +1844,12 @@ CObjAI::ProcCMD_Skill2OBJECT() {
         /// ���� ��ų ĳ������ �������� �ʾҴٸ�..
         //-----------------------------------------------------------------------------------------
         if (!m_bCastingSTART) {
+            // Before moving to the skill target and before waiting for
+            // GSV_SKILL_START: the server plays out its swing at this point too.
+            if (HoldCastForOwedSwing(this)) {
+                return 1;
+            }
+
             int iAttackRange = this->Get_AttackRange();
 
             //-----------------------------------------------------------------------------------------
