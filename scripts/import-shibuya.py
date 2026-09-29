@@ -36,6 +36,11 @@ round-trips byte-identically before anything is touched:
                 plaza written into zone 126's REGEN lumps (rebuilt from the
                 Jrose template positions each run), the legacy table on drop
                 row 126 moved to 960, and the Shibuya tables 961-966 + 126.
+    --stage 6   the SECONDWALL cosmetics (COSMETICS): the band's quest rewards,
+                the four-piece mascot set and its box (package MASCOT_PACKAGE,
+                declared in sho_gameserver/src/gs_user.cpp -- rebuild it), and
+                the headphones the Rot Tracker drops. import-item.py --art-only
+                into free rows below 1000.
 
 The Deaders (stage 4)
 ---------------------
@@ -65,6 +70,19 @@ The Deaders (stage 4)
     (balance-trend-exclude.py): landing twelve monsters in levels 60-100 moved the
     trends five passes fit and verify against, although none of their rows
     changed.
+
+Cosmetics (stage 6)
+-------------------
+  * **Rows below 1000, filled in place** (import-item.py --target-row): a quest
+    reward and a drop cell are packed type*1000+no. A row must be blank, have an
+    empty model slot AND no orphan STL key -- use-item 975 had one, the box is
+    at 995.
+  * **Zero stats**: our cap/body/foot tables have no stat-free row to clone, so
+    those take a level-5 piece with --def 0 --res 0 --req-level 1; back and face
+    take Winter Spirits Wing and Style Sunglasses as they are. Caps copy Jrose's
+    hair-when-worn value (mascot head hides hair, headphones keep it) into both
+    of our hair columns. Column 3 is cleared: free to trade, sell and bank.
+  * import-item.py's .import-N.bak files land in STB/AVATAR/ITEM and are swept.
 
 Spawns and drops (stage 5)
 --------------------------
@@ -539,14 +557,73 @@ SBY_TABLES = {
         [(8, 39), (8, 137), (8, 169), (8, 506), (8, 65)],              # weapons 73-77
         [(9, 5), (9, 67), (9, 68)])),                                  # shield/books
     # A boss: eight gear slots (~36% a kill), two materials, a potion.
-    965: ("BOSS Rot Tracker (lv100)", _boss(
-        [(8, 11), (8, 109), (8, 210), (8, 239), (8, 309), (8, 267), (3, 426), (2, 426)],
-        [155, 65], 155)),                                              # gear 75-82
+    # The Rot Tracker also carries the four headphones (stage 6's caps 962-966)
+    # behind one redirect slot: ~1% each a kill, of a boss that is itself a 5%
+    # summon -- a collectible, not a farm.
+    965: ("BOSS Rot Tracker (lv100)", (
+        _boss([(8, 11), (8, 109), (8, 210), (8, 239), (8, 309), (8, 267), (3, 426), (2, 426)],
+              [155, 65], 155)[0] + [("redirect", 1)],                  # gear 75-82
+        {1: [(2, 962), (2, 963), (2, 964), (2, 966)]})),
     966: ("BOSS Deader Rex (lv100)", _boss(
         [(8, 40), (8, 138), (8, 339), (8, 170), (8, 437), (8, 827), (4, 327), (3, 627)],
         [155, 65], 155)),                                              # gear 81-83
 }
 SBY_ZONE_MIRROR = 963        # the 20% zone roll pays the middle band's table
+
+# ---- stage 6: the SECONDWALL cosmetics (Jrose's collab items)
+# (item type, Jrose row, our row, name, description, template row, cells to set).
+# Every row is below 1000 because a quest reward and a drop cell are packed
+# type*1000+no (the mascot set only goes through the box, whose package takes any
+# number, but rows below 1000 keep the set droppable later). Each row was blank
+# with an empty model slot and no orphan STL key (use-item 975 carries one, so
+# the box is at 995). --art-only: the model and icon are Jrose's, every stat is
+# a template's -- a zero-stat mask or wing where our tables have one, else a
+# level-5 piece with defence, resistance and level zeroed. Stats, if any, would
+# not matter much: these are meant for the costume slots.
+#   cap 33/34: hair shown when worn (Jrose's single column; 4 hides it, 0 keeps it)
+#   col 3:     no trade/sell restriction -- cosmetics, free to trade
+COSMETIC_ARMOUR = ("cap", "body", "foot")
+COSMETICS = [
+    ("body", 5150, 836, "SECONDWALL Tee (Logo)",
+     "The band's own shirt. Wear it to the show.", 4, {}),
+    ("body", 5151, 837, "SECONDWALL Tee (Black)",
+     "The band's own shirt, in tri-blend black. Wear it to the show.", 4, {}),
+    ("back", 1144, 925, "Electric Guitar (Cherry Sunburst)",
+     "Humbuckers and a sound that made rock history.", 809, {}),
+    ("faceitem", 1043, 332, "SECONDWALL Tattoo",
+     "A must for any SECONDWALL fan: the mascot, inked.", 37, {}),
+    ("back", 1284, 926, "SHOHEI's Drum Kit",
+     "SHOHEI's drums, strapped on for the road.", 809, {}),
+    # the mascot set, delivered by the box
+    ("cap", 5146, 957, "SW Mascot Head",
+     "Become the SECONDWALL mascot. Part of the mascot set.", 2, {33: 4, 34: 4}),
+    ("body", 5154, 838, "SW Mascot Suit",
+     "Become the SECONDWALL mascot. Part of the mascot set.", 4, {}),
+    ("foot", 5100, 835, "SW Mascot Shoes",
+     "Become the SECONDWALL mascot. Part of the mascot set.", 4, {}),
+    ("back", 1292, 927, "Backpack Mascot",
+     "A SECONDWALL mascot to carry on your back.", 809, {}),
+    # the Rot Tracker's rare drops
+    ("cap", 1114, 962, "Headphones",
+     "Deep, heavy bass.", 2, {33: 0, 34: 0}),
+    ("cap", 1656, 963, "Groovy Headphones (Pop)",
+     "Music so catchy your body moves on its own. Mind the sound leak.", 2, {33: 0, 34: 0}),
+    ("cap", 1807, 964, "Groovy Headphones (Cool)",
+     "Music so catchy your body moves on its own. Mind the sound leak.", 2, {33: 0, 34: 0}),
+    ("cap", 1920, 966, "Groovy Headphones (Soul)",
+     "Music so catchy your body moves on its own. Mind the sound leak.", 2, {33: 0, 34: 0}),
+]
+# The box: Jrose's own "SW Mascot Transformation BOX" icon on our Angelic Demon Box
+# (a class-322 package box). Its package, MASCOT_PACKAGE, is declared in
+# sho_gameserver/src/gs_user.cpp FindUseItemPackage (packages 770-913 are taken).
+MASCOT_PACKAGE = 920
+MASCOT_BOX = ("useitem", 4657, 995, "SW Mascot Costume Box",
+              "Everything it takes to become the SECONDWALL mascot: open it for the "
+              "head, the suit, the shoes and the backpack mascot.", 258, {20: MASCOT_PACKAGE})
+ITEM_STB_REL = {"cap": "LIST_CAP", "body": "LIST_BODY", "foot": "LIST_FOOT",
+                "back": "LIST_BACK", "faceitem": "LIST_FACEITEM", "useitem": "LIST_USEITEM"}
+ITEM_TYPE_NO = {"faceitem": 1, "cap": 2, "body": 3, "foot": 5, "back": 6, "useitem": 10}
+ITEM_RESTRICT_COL = 3
 
 # Camps. The Jrose template points (108, all Mini-Jelly Bean) are where its map
 # editor put spawns on the streets, so they are the authored positions to choose
@@ -577,7 +654,7 @@ SBY_REX = dict(pos=(44000, 31100), npc=4068, clear=45, interval=600)
 # beside it; the .baks are moved to build/ at the end (pack.rs would bake them).
 BAK_TRACKED = [ZONE_STB_REL, ZONE_STL_REL, WARP_STB_REL, NPC_STB_REL, NPC_STL_REL,
                EVENT_STB_REL, NPC_CHR_REL, r"3DDATA\NPC\PART_NPC.ZSC", QSD_REL,
-               AI_STB_REL, DROP_STB_REL]
+               AI_STB_REL, DROP_STB_REL] + [rf"3DDATA\STB\{t}.STB" for t in ITEM_STB_REL.values()]
 
 
 # -------------------------------------------------------------------- helpers
@@ -688,7 +765,7 @@ def sweep_baks(ours):
     extra = [f"{EVENT_DIR_REL}\\{f[:-4]}" for f in sorted(os.listdir(ev_dir))
              if f.lower().endswith(".bak")]
     # import-item.py (the police guns) names its backups <file>.import-<id>.bak
-    for d in (r"3DDATA\STB", r"3DDATA\WEAPON"):
+    for d in (r"3DDATA\STB", r"3DDATA\WEAPON", r"3DDATA\AVATAR", r"3DDATA\ITEM"):
         extra += [f"{d}\\{f[:-4]}" for f in sorted(os.listdir(P(ours, d)))
                   if re.search(r"\.import-\d+\.bak$", f, re.I)]
     for rel in BAK_TRACKED + extra:
@@ -1474,6 +1551,57 @@ def stage5(ours, src, src_index, dry):
     npc.save(dry)
 
 
+# ------------------------------------------------------------------- stage 6
+def item_stb(ours, kind):
+    return O(ours, rf"3DDATA\STB\{ITEM_STB_REL[kind]}.STB")
+
+
+def stage6(ours, src, src_index, dry):
+    print("stage 6 -- the SECONDWALL cosmetics")
+    imported = kept = 0
+    for kind, src_row, row, name, desc, tmpl, cells in COSMETICS + [MASCOT_BOX]:
+        st = item_stb(ours, kind)
+        cur = st.get(row, 0).decode("latin-1").strip() if row < st.rows else ""
+        if cur and cur != name:
+            raise SystemExit(f"our {ITEM_STB_REL[kind]} row {row} is {cur!r}")
+        if not cur:
+            cmd = [sys.executable, IMPORT_ITEM, "--type", kind, "--source", src,
+                   "--source-row", str(src_row), "--art-only", "--template-row", str(tmpl),
+                   "--target-row", str(row), "--copy-icon", "--name", name, "--desc", desc]
+            if kind != "useitem":
+                cmd.append("--copy-field-model")
+            if kind in COSMETIC_ARMOUR:
+                cmd += ["--def", "0", "--res", "0", "--req-level", "1"]
+            if dry:
+                cmd.append("--dry-run")
+            r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+            if r.returncode != 0 or "STL key" in r.stdout and "already exists" in r.stdout:
+                raise SystemExit(f"import-item {name} failed:\n{r.stdout}\n{r.stderr}")
+            imported += 1
+        else:
+            kept += 1
+        print(f"    {ITEM_STB_REL[kind]:14s} {row:4d}  {name}"
+              + ("" if cur else "  (from Jrose %d%s)" % (src_row, ", dry run" if dry else "")))
+    # the cells import-item does not own, on every run
+    fixed = 0
+    for kind in sorted({c[0] for c in COSMETICS + [MASCOT_BOX]}):
+        st = item_stb(ours, kind)
+        changed = False
+        for k, _s, row, name, _d, _t, cells in COSMETICS + [MASCOT_BOX]:
+            if k != kind or row >= st.rows or st.get(row, 0).decode("latin-1") != name:
+                continue
+            for c, v in list(cells.items()) + [(ITEM_RESTRICT_COL, "")]:
+                if st.get(row, c) != str(v).encode():
+                    st.set(row, c, str(v))
+                    changed = True
+                    fixed += 1
+        if changed:
+            st.save(dry)
+    print(f"    {'items':26s} {imported} imported, {kept} already ours, {fixed} cells set")
+    print(f"    NOTE: the box opens through package {MASCOT_PACKAGE} in gs_user.cpp -- "
+          "rebuild the gameserver")
+
+
 # -------------------------------------------------------------------- verify
 def verify(ours, src):
     print("verify")
@@ -1644,6 +1772,26 @@ def verify(ours, src):
     wired = [i for i, t in DEADER_DROPS.items()
              if npc.get(i, 18).decode() == ("" if t is None else str(t))]
     check(len(wired) == len(DEADER_DROPS), f"{len(wired)}/{len(DEADER_DROPS)} Deaders point at their table")
+
+    # stage 6
+    zsc_of = {"cap": ["LIST_MCAP", "LIST_WCAP"], "body": ["LIST_MBODY", "LIST_WBODY"],
+              "foot": ["LIST_MFOOT", "LIST_WFOOT"], "back": ["LIST_BACK"],
+              "faceitem": ["LIST_FACEIEM"], "useitem": []}
+    zscs = {z: oro.Zsc(P(ours, rf"3DDATA\AVATAR\{z}.ZSC")) for zs in zsc_of.values() for z in zs}
+    items_ok = []
+    for kind, _s, row, name, _d, _t, cells in COSMETICS + [MASCOT_BOX]:
+        st = item_stb(ours, kind)
+        good = (st.get(row, 0).decode("latin-1") == name
+                and int(st.get(row, 9) or 0) > 0
+                and all(st.get(row, c) == str(v).encode() for c, v in cells.items())
+                and not st.get(row, ITEM_RESTRICT_COL).strip()
+                and all(row < len(zscs[z].objects) and zscs[z].objects[row][1] for z in zsc_of[kind]))
+        if good:
+            items_ok.append(row)
+    n_items = len(COSMETICS) + 1
+    check(len(items_ok) == n_items, f"{len(items_ok)}/{n_items} cosmetics (name, icon, model, cells)")
+    gs = open(os.path.join(ROOT, "src", "sho_gameserver", "src", "gs_user.cpp"), encoding="latin-1").read()
+    check(f"Package({MASCOT_PACKAGE}," in gs, f"gs_user.cpp declares package {MASCOT_PACKAGE}")
     print("    " + ("ALL OK" if not bad else f"{len(bad)} problem(s)"))
     return 0 if not bad else 1
 
@@ -1714,7 +1862,7 @@ def selftest(ours, src):
 # ---------------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--stage", type=int, choices=(1, 2, 3, 4, 5), action="append")
+    ap.add_argument("--stage", type=int, choices=(1, 2, 3, 4, 5, 6), action="append")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--selftest", action="store_true")
@@ -1731,10 +1879,10 @@ def main():
     if args.verify:
         return verify(ours, src)
     if not args.stage:
-        ap.error("give --stage N (1-5), --verify or --selftest")
+        ap.error("give --stage N (1-6), --verify or --selftest")
     src_index = kk.index_tree(src)
     for st in sorted(set(args.stage)):
-        {1: stage1, 2: stage2, 3: stage3, 4: stage4, 5: stage5}[st](ours, src, src_index, args.dry_run)
+        {1: stage1, 2: stage2, 3: stage3, 4: stage4, 5: stage5, 6: stage6}[st](ours, src, src_index, args.dry_run)
         print()
     if args.dry_run:
         print("dry run: nothing written")

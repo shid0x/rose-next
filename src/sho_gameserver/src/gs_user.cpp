@@ -229,6 +229,12 @@ FindUseItemPackage(short package_id) {
         Package(776, Reward(ITEM_TYPE_KNAPSACK, 930)),
         Package(778, Reward(ITEM_TYPE_KNAPSACK, 946)),
         Package(779, Reward(ITEM_TYPE_KNAPSACK, 741)),
+
+        // SHIBUYA: the SECONDWALL mascot set, Kanna's finale reward (the "SW Mascot
+        // Costume Box", LIST_USEITEM 995; items from scripts/import-shibuya.py
+        // stage 6, which carries this id as MASCOT_PACKAGE).
+        Package(920, Reward(ITEM_TYPE_HELMET, 957), Reward(ITEM_TYPE_ARMOR, 838),
+            Reward(ITEM_TYPE_BOOTS, 835), Reward(ITEM_TYPE_KNAPSACK, 927)),
     };
 
     for (const auto& package: packages) {
