@@ -227,9 +227,8 @@ pub fn apply_quest(
             let monster_row = npc
                 .data
                 .iter()
-                .position(|r| {
-                    r.first().and_then(|s| s.trim().parse::<i32>().ok()) == Some(h.monster_id)
-                })
+                .enumerate()
+                .position(|(i, r)| npc_row_id(i, r) == h.monster_id)
                 .ok_or_else(|| anyhow!("monster {} not found in LIST_NPC", h.monster_id))?;
             let existing_de = cell(&npc.data[monster_row], NPC_COL_DEAD_EVENT)
                 .trim()
@@ -1025,14 +1024,13 @@ fn kill_trigger_name_for_token(
 /// directly, or the trigger was spliced into its chain (walk back to the head).
 fn monster_for_trigger_name(stb_dir: &Path, questdata_dir: &Path, kill: &str) -> Option<i32> {
     let npc = load_stb(&file_ci(stb_dir, "LIST_NPC.STB").ok()?).ok()?;
-    let id_of = |r: &Vec<String>| r.first().and_then(|s| s.trim().parse::<i32>().ok());
-
-    if let Some(r) = npc
+    if let Some((i, r)) = npc
         .data
         .iter()
-        .find(|r| cell(r, NPC_COL_DEAD_EVENT).trim() == kill)
+        .enumerate()
+        .find(|(_, r)| cell(r, NPC_COL_DEAD_EVENT).trim() == kill)
     {
-        return id_of(r);
+        return Some(npc_row_id(i, r));
     }
     // Chained: find our trigger, walk back over the check_next run to the head.
     let (_, host, pi, ti) = find_host_qsd(questdata_dir, kill).ok()?;
@@ -1047,8 +1045,9 @@ fn monster_for_trigger_name(stb_dir: &Path, questdata_dir: &Path, kill: &str) ->
         .unwrap_or(&triggers[j].name);
     npc.data
         .iter()
-        .find(|r| cell(r, NPC_COL_DEAD_EVENT).trim().as_bytes() == head)
-        .and_then(id_of)
+        .enumerate()
+        .find(|(_, r)| cell(r, NPC_COL_DEAD_EVENT).trim().as_bytes() == head)
+        .map(|(i, r)| npc_row_id(i, r))
 }
 
 /// Read the 4 quest texts (title / start / progress / complete) from LIST_QUEST_S
@@ -1718,6 +1717,16 @@ pub fn next_free_switch(root: &Path) -> Result<i32> {
 }
 
 // --- helpers ---------------------------------------------------------------
+
+/// A LIST_NPC row's id: its row label, or its index when the label is blank.
+/// The game indexes by row; the label is only what STB editors show, and rows
+/// an importer grows onto the table (`grow_to` in the Python scripts) carry
+/// none -- same rule as `data::collect_npcs`.
+fn npc_row_id(index: usize, row: &[String]) -> i32 {
+    row.first()
+        .and_then(|s| s.trim().parse::<i32>().ok())
+        .unwrap_or(index as i32)
+}
 
 pub(crate) fn cell(row: &[String], i: usize) -> &str {
     row.get(i).map(String::as_str).unwrap_or("")

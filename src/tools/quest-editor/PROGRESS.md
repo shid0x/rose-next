@@ -304,6 +304,12 @@ numbering writes nothing, create, keep, replace keeps the switch, byte-exact
 delete). 27 tests pass. A dry run on the live data appends cleanly to the Shibuya
 band's `.CON`s next to `import-shibuya.py`'s own appendix.
 
+Follow-up (first real pack, the SHIBUYA band): the writer found a monster by its
+STB **row label**, and rows a Python importer grows onto LIST_NPC (`grow_to`) have
+none, so it refused an existing monster that the data layer (which falls back to
+the row index) had already accepted. `write::npc_row_id` now uses the same
+label-or-index rule as `data::collect_npcs`, in the writer and in reconstruct.
+
 Noticed, not changed: token ids are `max + 1` (`next_free_quest_item_id`), now at
 967 -- ~32 left under the 999 ceiling although LIST_QUESTITEM has ~770 blank rows
 lower down. Gap-filling would be the fix when it runs out.

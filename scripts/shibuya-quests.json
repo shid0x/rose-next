@@ -1,0 +1,137 @@
+{
+  "quests": [
+    {
+      "key": "shibuya-yuka",
+      "once": true,
+      "title": "Clear the Streets",
+      "start_text": "The Business Zombies are everywhere around here -- still in their suits, still walking their old commute. Could you thin them out? Thirty should make this corner safe enough for the others.",
+      "progress_text": "Defeat 30 Business Zombies in SHIBUYA and report to YUKA in the Live House SEVEN.",
+      "complete_text": "You did it... the street outside feels quieter already. Here, take this. It's our band shirt -- wear it to our next show, once there is one.",
+      "objectives": [
+        { "kind": "hunt", "monster": 4060, "count": 30,
+          "token_name": "Business Zombie Badge",
+          "token_desc": "A company ID badge, torn from a Business Zombie." }
+      ],
+      "reward_exp": 30000, "reward_zuly": 5000,
+      "reward_item": { "item": "body:836", "qty": 1 },
+      "giver": { "npc": 4044,
+        "hook": "Is there anything I can do for you, YUKA?",
+        "accept": "Leave it to me. (Accept quest)",
+        "decline": "Not right now. (Decline)",
+        "after_accept": "Thank you. Please be careful out there.",
+        "turnin": "The street is clear. (Turn in)",
+        "progress": "I'm still working on it." }
+    },
+    {
+      "key": "shibuya-apg",
+      "once": true,
+      "title": "Safe Passage",
+      "start_text": "The Honey Zombies can sense people from a long way off. Anyone trying to reach this shelter walks straight into them. Would you deal with thirty of them?",
+      "progress_text": "Defeat 30 Honey Zombies in SHIBUYA and report to APG in the Live House SEVEN.",
+      "complete_text": "Thanks to you, people can reach us now. Take this shirt -- the black one's my favourite.",
+      "objectives": [
+        { "kind": "hunt", "monster": 4061, "count": 30,
+          "token_name": "Honey Zombie Hairpin",
+          "token_desc": "A glittering hairpin from a Honey Zombie." }
+      ],
+      "reward_exp": 32000, "reward_zuly": 5000,
+      "reward_item": { "item": "body:837", "qty": 1 },
+      "giver": { "npc": 4045,
+        "hook": "What can I do to help, APG?",
+        "accept": "I'll clear the way. (Accept quest)",
+        "decline": "Not right now. (Decline)",
+        "after_accept": "Thank you! They're drawn to the living, so watch your back.",
+        "turnin": "The way here is safe. (Turn in)",
+        "progress": "I'm still working on it." }
+    },
+    {
+      "key": "shibuya-ryo",
+      "once": true,
+      "title": "Stray Dogs",
+      "start_text": "I'm heading out to look for survivors, but the Undead Dogs pick up every trail. Could you take care of thirty of them while I search?",
+      "progress_text": "Defeat 30 Undead Dogs in SHIBUYA and report to RYO in the Live House SEVEN.",
+      "complete_text": "No dogs on my heels this time -- I even found two people hiding in a shop. This guitar was going to waste backstage. It's yours.",
+      "objectives": [
+        { "kind": "hunt", "monster": 4062, "count": 30,
+          "token_name": "Undead Dog Collar",
+          "token_desc": "A collar with a name tag nobody will read again." }
+      ],
+      "reward_exp": 34000, "reward_zuly": 6000,
+      "reward_item": { "item": "back:925", "qty": 1 },
+      "giver": { "npc": 4046,
+        "hook": "Need a hand out there, RYO?",
+        "accept": "I'll handle the dogs. (Accept quest)",
+        "decline": "Not right now. (Decline)",
+        "after_accept": "Great. I'll go and look for survivors, then.",
+        "turnin": "The dogs won't follow you now. (Turn in)",
+        "progress": "I'm still working on it." }
+    },
+    {
+      "key": "shibuya-yusuke",
+      "once": true,
+      "title": "Patching the Walls",
+      "start_text": "Every attack weakens this place somewhere. The Cunning Ghouls carry the kind of scrap we could use for repairs -- could you bring me fifteen pieces?",
+      "progress_text": "Collect 15 Repair Materials from Cunning Ghouls in SHIBUYA and bring them to YU-SUKE in the Live House SEVEN.",
+      "complete_text": "Perfect, this will hold the walls for a good while. Here -- every fan should have one of these.",
+      "objectives": [
+        { "kind": "hunt", "monster": 4063, "count": 15,
+          "token_name": "Repair Material",
+          "token_desc": "Scrap metal and cable a Cunning Ghoul was carrying. Good for patching walls." }
+      ],
+      "reward_exp": 30000, "reward_zuly": 6000,
+      "reward_item": { "item": "faceitem:332", "qty": 1 },
+      "giver": { "npc": 4047,
+        "hook": "Anything the shelter needs, YU-SUKE?",
+        "accept": "I'll bring you materials. (Accept quest)",
+        "decline": "Not right now. (Decline)",
+        "after_accept": "You're a lifesaver. I'll keep up the patrols meanwhile.",
+        "turnin": "Here are the repair materials. (Turn in)",
+        "progress": "I'm still gathering them." }
+    },
+    {
+      "key": "shibuya-shohei",
+      "once": true,
+      "title": "Hold the Line",
+      "start_text": "The Sly Ghouls kept a little of their wits -- they circle, they wait, they strike when nobody's watching. Take out thirty of them so we can search for food in peace.",
+      "progress_text": "Defeat 30 Sly Ghouls in SHIBUYA and report to SHOHEI in the Live House SEVEN.",
+      "complete_text": "That gave us room to breathe. You know what, take my drums. Keep the beat going out there.",
+      "objectives": [
+        { "kind": "hunt", "monster": 4064, "count": 30,
+          "token_name": "Sly Ghoul Claw",
+          "token_desc": "A long, hooked claw from a Sly Ghoul." }
+      ],
+      "reward_exp": 60000, "reward_zuly": 8000,
+      "reward_item": { "item": "back:926", "qty": 1 },
+      "giver": { "npc": 4048,
+        "hook": "How can I help, SHOHEI?",
+        "accept": "I'll hold the line. (Accept quest)",
+        "decline": "Not right now. (Decline)",
+        "after_accept": "Thanks. Don't let them get behind you.",
+        "turnin": "The Sly Ghouls are dealt with. (Turn in)",
+        "progress": "I'm still working on it." }
+    },
+    {
+      "key": "shibuya-kanna",
+      "once": true,
+      "title": "The King of the Deaders",
+      "requires": ["shibuya-yuka", "shibuya-apg", "shibuya-ryo", "shibuya-yusuke", "shibuya-shohei"],
+      "start_text": "The band trusts you now, and so do I. At the heart of this plague is a beast the Deaders gather around, on the far plaza to the north-east: the Deader Rex. Please... put it to rest.",
+      "progress_text": "Defeat the Deader Rex on SHIBUYA's north-east plaza and report to Kanna in the Live House SEVEN.",
+      "complete_text": "You did it. The air feels lighter already... Please accept this. Our friend the mascot would want you to have it.",
+      "objectives": [
+        { "kind": "hunt", "monster": 4068, "count": 1,
+          "token_name": "Deader Rex Fossil",
+          "token_desc": "A fragment of ancient bone from the Deader Rex." }
+      ],
+      "reward_exp": 100000, "reward_zuly": 20000,
+      "reward_item": { "item": "useitem:995", "qty": 1 },
+      "giver": { "npc": 4051,
+        "hook": "The band trusts me now, Kanna.",
+        "accept": "I'll face the Deader Rex. (Accept quest)",
+        "decline": "I need to prepare first. (Decline)",
+        "after_accept": "May the gods walk with you.",
+        "turnin": "The Deader Rex is at rest. (Turn in)",
+        "progress": "I haven't beaten it yet." }
+    }
+  ]
+}

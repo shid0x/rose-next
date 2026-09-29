@@ -41,6 +41,12 @@ round-trips byte-identically before anything is touched:
                 declared in sho_gameserver/src/gs_user.cpp -- rebuild it), and
                 the headphones the Rot Tracker drops. import-item.py --art-only
                 into free rows below 1000.
+    --stage 7   the band's quests: `quest-editor apply-pack` over
+                scripts/shibuya-quests.json -- five one-time hunts (one per band
+                member, each paying a stage-6 reward) and Kanna's finale on Deader
+                Rex, which requires all five. Keyed, so a re-run keeps them and
+                only re-adds their dialog options. **Run it after every --stage 3**,
+                which rebuilds the band's .CONs from source and drops the options.
 
 The Deaders (stage 4)
 ---------------------
@@ -70,6 +76,26 @@ The Deaders (stage 4)
     (balance-trend-exclude.py): landing twelve monsters in levels 60-100 moved the
     trends five passes fit and verify against, although none of their rows
     changed.
+
+The band's quests (stage 7)
+---------------------------
+  * **Our quest tech, not Jrose's QSDs**: kill-count hunts with named tokens
+    (YU-SUKE's "Repair Material" is fifteen Cunning Ghoul kills), one-time, the
+    option appended to each member's own dialog after their translated intro,
+    which already ends on the request. Kanna's intro line is re-worded to point
+    at the band (Jrose's asked for eighty Business Zombies), and her quest has
+    the five as prerequisites -- hidden, with no "!", until they are done.
+  * **Story, then epilogue**: the quest option is the only thing that asks.
+    Each member's translated intro keeps its backstory but ends on flavour (the
+    Jrose request lines are re-worded), and once their quest is done they switch
+    to Jrose's after-quest epilogue branch -- both nodes gated in Lua on the
+    quest's completion switch (QF_getUserSwitch; BAND_DIALOG). Kanna's epilogue
+    reuses her "well done" node with our own text. The switch numbers live in
+    the quest manifests, so stage 7 regates the dialogs once the quests exist
+    and re-applies the pack to put the options back.
+  * **Each hunt claims its monster's death-event column**, which stage 4 owns:
+    stage 4 writes that column from the quests' manifests (pack_hooks), so a
+    re-run keeps the kill triggers instead of blanking them with Jrose's.
 
 Cosmetics (stage 6)
 -------------------
@@ -232,6 +258,10 @@ QSD_REL = r"3DDATA\QUESTDATA\QP401.QSD"
 QSD_TEMPLATE_REL = r"3DDATA\QUESTDATA\PVP10.QSD"
 QSD_TEMPLATE_TRIGGER = "PvP10-061"
 QUEST_EDITOR = os.path.join(ROOT, "bin", "release", "quest-editor.exe")
+# The band's quests (stage 7): a quest-editor pack, keyed so a re-run keeps what
+# exists and only re-adds the dialog options -- which is exactly what a stage 3
+# re-run needs, since stage 3 rebuilds the band's .CONs from the Jrose source.
+QUEST_PACK = os.path.join(HERE, "shibuya-quests.json")
 
 # Jrose id -> English name. ASCII only: Stb.set encodes latin-1. The role
 # titles are ours; Jrose used "[SW]" and "[SHIBUYA]", which mean nothing here.
@@ -272,6 +302,22 @@ SHOW = {
     "EM02-088.CON": [(0, 1)],          # Juri: her stall
     "EM02-089.CON": [],                # the mascot: ungated already
 }
+# The band's dialog around their quest (stage 7): the translated intro until the
+# quest is done, then the Jrose epilogue branch -- the quest option is the only
+# thing that asks. Both gate on the quest's completion switch (QF_getUserSwitch;
+# only a one-time quest sets one), which comes from the pack's manifests. Until
+# stage 7 has created the quests the intro shows ungated and the epilogue stays
+# hidden, so stage 7 rebuilds these files once it knows the switches.
+#   .CON -> (pack key, intro node, epilogue node)
+BAND_DIALOG = {
+    "EM02-080.CON": ("shibuya-yuka", (0, 1), (0, 4)),
+    "EM02-081.CON": ("shibuya-apg", (0, 1), (0, 4)),
+    "EM02-082.CON": ("shibuya-ryo", (0, 1), (0, 4)),
+    "EM02-083.CON": ("shibuya-yusuke", (0, 1), (0, 4)),
+    "EM02-084.CON": ("shibuya-shohei", (0, 1), (0, 4)),
+    "EM02-087.CON": ("shibuya-kanna", (0, 1), (0, 4)),
+}
+GATE_TODO, GATE_DONE = "TA_SBY_Todo", "TA_SBY_Done"
 NODE_CHECK_OFF = 12
 APPENDIX_BEGIN = "-- SHIBUYA BEGIN\n"
 APPENDIX_END = "-- SHIBUYA END\n"
@@ -325,22 +371,33 @@ STRINGS = {
            "Walls\", and went to the Seven Hearts to look for help.",
     27510: "So that's what happened...",
     27511: "And that's where I met you... Please, won't you help this world?",
-    27512: "Then the first thing is to make this area safe.",
-    27513: "There seem to be a lot of the Deaders we call \"Business Zombies\" around "
-           "here. Please be careful. And thank you.",
-    27514: "Leave it to me!",
+    # The intros end on flavour, not on the request: the band's quest option (stage
+    # 7) is the one place that asks. Jrose's request lines are re-worded here.
+    27512: "I'll do what I can.",
+    27513: "Thank you. Just having someone from the Seven Hearts here gives me hope.",
+    27514: "We'll get through this.",
+    # ...and once her quest is done, the Jrose epilogue branch (BAND_DIALOG)
+    27519: "We still don't know what caused it. But no help ever came... Maybe the "
+           "Deaders didn't only appear in SHIBUYA, but everywhere in this world.",
+    27520: "Not just SHIBUYA... We have to find the cause.",
+    27521: "Yes. Let's find everyone who survived and work it out together.",
+    27522: "Right! I'll ask around for anything that might help.",
     # EM02-081 APG
     27532: "Ah! You made it to this world! I'm APG. ...It's in a terrible state, isn't it?",
     27533: "Yes, it gave me quite a shock.",
-    27534: "YUKA may already have told you everything, but may I ask you a favour too?",
-    27535: "What is it?",
+    27534: "YUKA may already have told you everything, but let me say it too: thank "
+           "you for coming all this way.",
+    27535: "Of course.",
     27536: "More than anything we want the world back the way it was, when it was "
            "peaceful. For that, the survivors first need somewhere they can live safely.",
     27537: "I see.",
-    27538: "So I'd like you to deal with the \"Honey Zombies\". They're uncannily good "
-           "at sensing people, so they're the biggest danger to anyone trying to "
-           "escape here.",
-    27539: "Understood.",
+    27538: "This live house is the closest thing to safety we have. If people can just "
+           "make it here, they'll have a chance.",
+    27539: "Then let's make sure they can.",
+    27544: "I'm heading out for supplies now. We can't live without them.",
+    27545: "Isn't that dangerous?",
+    27546: "I'll be fine. If I just keep running and don't stop to fight, I can manage!",
+    27547: "I'll look into what caused all this. Let's both do our best!",
     # EM02-082 RYO
     27557: "Welcome to SHIBUYA. Have you seen what it's like outside? This was a city "
            "that grew up differently from the Seven Hearts. And then, all of a "
@@ -349,10 +406,14 @@ STRINGS = {
     27559: "I don't know. But there's no use moping. We have to think about what we "
            "can do now.",
     27560: "True. This place seems fairly safe, so it could serve as a shelter.",
-    27561: "There may be other survivors out there too. I'd like to make this a place "
-           "people can live. ...I know. I'll go and look for survivors, so could you "
-           "take care of the \"Undead Dogs\" around here?",
-    27562: "Leave it to me!",
+    27561: "There may be other survivors out there too. I want to make this a place "
+           "people can live -- somewhere to come home to.",
+    27562: "It will be.",
+    27567: "I don't know the cause, but I think the Deaders probably appeared across "
+           "this entire world.",
+    27568: "All of them appearing at once... something must have set it off.",
+    27569: "It must have. I'll try to remember if there was anything on the news.",
+    27570: "Tell me whenever something comes back to you!",
     # EM02-083 YU-SUKE (Jrose's node names say RYO; the file is his)
     27580: "Oh, hey. You made it here safely. This building was solidly built to begin "
            "with, so we've been able to use it as a shelter.",
@@ -360,12 +421,14 @@ STRINGS = {
     27582: "Solid or not, every attack weakens it somewhere, so we have to step up "
            "the patrols and keep patching it.",
     27583: "That's true...",
-    27584: "And our supplies are running low. If only we could get our hands on some "
-           "repair materials...",
-    27585: "Then I'll go and gather some!",
-    27586: "Really!? I think the \"Cunning Ghouls\" probably carry the kind of thing we "
-           "need for repairs. I'll go and patrol the area, so I'm counting on you!",
-    27587: "Leave it to me!",
+    27584: "Our supplies are running low, too. We patch things up with whatever we "
+           "can find.",
+    27585: "You've held out this long.",
+    27586: "Stubbornness, mostly. And the others -- we keep each other going.",
+    27587: "Keep it up.",
+    27592: "Come to think of it, there was some big story on the news just before the "
+           "Deaders started roaming. What was it again...",
+    27593: "Tell me everything if it comes back to you!",
     # EM02-084 SHOHEI
     27603: "Fancy meeting you here. We had a show booked here, and we'd just arrived "
            "early to set up. Then, out of nowhere, all this happened...",
@@ -378,10 +441,13 @@ STRINGS = {
     27609: "Right. They say we've still got food to spare, but it might be worth "
            "looking for more anyway. The trouble is, we never know where the Deaders "
            "will come from, so there's never much time to search.",
-    27610: "Then I'll shore up the defences!",
-    27611: "Would you? Then please focus on the \"Sly Ghouls\". Maybe they kept a "
-           "little of their wits -- they move in tricky ways, and they're dangerous.",
-    27612: "Leave it to me!",
+    27610: "That must be hard.",
+    27611: "It is. But every time we all make it back here in one piece, it feels a "
+           "bit like finishing a show.",
+    27612: "Then let's keep playing.",
+    27617: "If there were even a few fewer of them out there, we could search a lot "
+           "further out... It's not easy.",
+    27618: "Finding the cause would help with that too. I'll look into it!",
     # EM02-085 Shimasaburo
     27685: "In a mess like this you can't let go of your weapon, eh. If you need ammo, "
            "I'll sort you out. What'll it be?",
@@ -422,9 +488,17 @@ STRINGS = {
            "me. Please forgive the rudeness of testing you when it is we who are "
            "asking for help.",
     27650: "Leave it to me. What should I do?",
-    27651: "Then, to begin, please defeat some eighty Business Zombies. That should "
-           "show everyone your strength beyond any doubt.",
+    # Jrose's line asks for eighty Business Zombies (its Q5461). Here the band's
+    # five requests are the test, and Kanna's own quest (stage 7) opens after them.
+    27651: "Then, to begin, lend the band your strength. YUKA, APG, RYO, YU-SUKE and "
+           "SHOHEI each need something done out there. Once all five of them trust you, "
+           "come back to me.",
     27652: "Understood!",
+    # Her epilogue node is Jrose's "well done, I'll secure this place" branch,
+    # re-written for the end of our story (Deader Rex at rest).
+    27658: "Thank you, truly. With the Deader Rex at rest, I can finally strengthen the "
+           "ward around this place. SHIBUYA has a chance now.",
+    27659: "Take care, Kanna.",
     # EM02-088 Juri
     28197: "Things being how they are, I can't offer any luxuries, but want to have a look?",
     28198: "Show me.",
@@ -654,7 +728,9 @@ SBY_REX = dict(pos=(44000, 31100), npc=4068, clear=45, interval=600)
 # beside it; the .baks are moved to build/ at the end (pack.rs would bake them).
 BAK_TRACKED = [ZONE_STB_REL, ZONE_STL_REL, WARP_STB_REL, NPC_STB_REL, NPC_STL_REL,
                EVENT_STB_REL, NPC_CHR_REL, r"3DDATA\NPC\PART_NPC.ZSC", QSD_REL,
-               AI_STB_REL, DROP_STB_REL] + [rf"3DDATA\STB\{t}.STB" for t in ITEM_STB_REL.values()]
+               AI_STB_REL, DROP_STB_REL] + [rf"3DDATA\STB\{t}.STB" for t in ITEM_STB_REL.values()] \
+    + [rf"3DDATA\STB\{t}" for t in ("LIST_QUEST.STB", "LIST_QUESTDATA.STB", "LIST_QUEST_S.STL",
+                                     "LIST_QUESTITEM.STB", "LIST_QUESTITEM_S.STL")]
 
 
 # -------------------------------------------------------------------- helpers
@@ -1089,12 +1165,28 @@ def appendix_upsert(appendix, body):
     return (s + APPENDIX_BEGIN + body + APPENDIX_END).encode("latin-1")
 
 
-def build_con(src_path, name):
-    """Our version of one dialog, derived from the pristine source."""
+def band_switches(ours):
+    """{pack key: completion switch} of the band's quests, once stage 7 made them."""
+    return {k: m["spec"]["one_time_switch"] for k, m in pack_quests(ours).items()
+            if m["spec"].get("one_time_switch") is not None}
+
+
+def build_con(src_path, name, switches=None):
+    """Our version of one dialog, derived from the pristine source. `switches`
+    (band_switches) gates a band member's intro and epilogue on their quest."""
     blob = open(src_path, "rb").read()
     show = set(SHOW[name])
+    band = BAND_DIALOG.get(name)
+    sw = (switches or {}).get(band[0]) if band else None
+    gated = {}
+    if band:
+        gated[band[1]] = GATE_TODO if sw is not None else ""
+        gated[band[2]] = GATE_DONE if sw is not None else "TA_Hidden"
     for mi, j, chk in list(con_nodes(blob)):
-        if (mi, j) in show:
+        if (mi, j) in gated:
+            if chk != gated[(mi, j)]:
+                blob = sk.con_set_check(blob, mi, j, gated[(mi, j)])
+        elif (mi, j) in show:
             if chk:
                 blob = sk.con_set_check(blob, mi, j, "")
         elif chk:
@@ -1104,7 +1196,45 @@ def build_con(src_path, name):
     body = APPENDIX_HEAD + "".join(
         f"function {c}(E) {CLICK_BODY.get(c, '')} end\n".replace("(E)  end", "(E) end")
         for c in clicks)
+    if sw is not None:
+        body += (f"function {GATE_TODO}(E) if QF_getUserSwitch({sw}) == 1 then return 0 end "
+                 f"return 1 end\n"
+                 f"function {GATE_DONE}(E) if QF_getUserSwitch({sw}) == 1 then return 1 end "
+                 f"return 0 end\n")
     return fate.con_join(head, lua, appendix_upsert(appendix, body)), clicks
+
+
+def con_matches(blob, want_blob):
+    """True when a dialog on disk is the build, or the build plus stage 7's quest
+    options (QE<sn>_* nodes and appendix Lua): every node the build writes is
+    there unchanged, the Lua is identical, the SHIBUYA appendix block contained."""
+    if blob == want_blob:
+        return True
+    have = {(mi, j): chk for mi, j, chk in con_nodes(blob)}
+    _h, lua, appx = fate.con_split(blob)
+    _wh, want_lua, want_appx = fate.con_split(want_blob)
+    block = want_appx[want_appx.find(APPENDIX_BEGIN.encode()):]
+    return (all(have.get((mi, j)) == chk for mi, j, chk in con_nodes(want_blob))
+            and lua == want_lua and block in appx)
+
+
+def write_cons(ours, src, dry, only=None):
+    """Rebuild the dialogs that do not match their build. Returns (rewritten,
+    click functions). A rebuild drops stage 7's quest options."""
+    switches = band_switches(ours)
+    n = nclicks = 0
+    for name in (only or CON_FILES):
+        sp = os.path.join(P(src, EVENT_DIR_REL), name)
+        if not os.path.isfile(sp):
+            raise SystemExit(f"source dialog missing: {sp}")
+        blob, clicks = build_con(sp, name, switches)
+        nclicks += len(clicks)
+        dp = os.path.join(P(ours, EVENT_DIR_REL), name)
+        if os.path.isfile(dp) and con_matches(open(dp, "rb").read(), blob):
+            continue
+        if sk.write_if_changed(dp, blob, dry, backup=False):
+            n += 1
+    return n, nclicks
 
 
 def stage3(ours, src, src_index, dry):
@@ -1169,17 +1299,9 @@ def stage3(ours, src, src_index, dry):
     print(f"    {'ulngtb_con.ltb':26s} {changed} of {len(STRINGS)} strings written "
           f"({orig_rows} -> {len(ltb.rows)} rows)")
 
-    # 3c. the dialogs themselves, rebuilt from the pristine source each run
-    n = nclicks = 0
-    for name in CON_FILES:
-        sp = os.path.join(P(src, EVENT_DIR_REL), name)
-        if not os.path.isfile(sp):
-            raise SystemExit(f"source dialog missing: {sp}")
-        blob, clicks = build_con(sp, name)
-        nclicks += len(clicks)
-        dp = os.path.join(P(ours, EVENT_DIR_REL), name)
-        if sk.write_if_changed(dp, blob, dry, backup=False):
-            n += 1
+    # 3c. the dialogs themselves, rebuilt from the pristine source when the build
+    # changed (a file that is the build plus stage 7's quest options is left be)
+    n, nclicks = write_cons(ours, src, dry)
     print(f"    {'.CON dialogs':26s} {n} of {len(CON_FILES)} rewritten "
           f"({nclicks} click functions overridden)")
 
@@ -1206,6 +1328,21 @@ def stage3(ours, src, src_index, dry):
 
 # ------------------------------------------------------------------- stage 4
 mon = load("audit_ai_monster_refs", "audit-ai-monster-refs.py")   # .aip codec
+
+
+def pack_hooks(ours):
+    """{monster id: kill trigger} the band's quests (stage 7) wired onto the
+    Deaders' death-event column. The quest-editor names a quest's primary kill
+    trigger `<sn>-2` and each extra hunt objective `<sn>-<10+i>`."""
+    hooks = {}
+    for m in pack_quests(ours).values():
+        spec, sn = m["spec"], m["spec"]["quest_sn"]
+        if "Hunt" in spec["kind"]:
+            hooks[spec["kind"]["Hunt"]["monster_id"]] = f"{sn}-2"
+        for i, o in enumerate(spec.get("extra_objectives", [])):
+            if "Hunt" in o:
+                hooks[o["Hunt"]["monster_id"]] = f"{sn}-{10 + i}"
+    return hooks
 
 AI_CHANCE, AI_COUNT, AI_AGE = 8, 28, 31      # raw type index = condition + 1
 AI_CAST, AI_SUMMON_DIST = 25, 38             # raw type index = action + 1
@@ -1313,6 +1450,7 @@ def stage4(ours, src, src_index, dry):
     guns = import_police_guns(ours, src, dry)
 
     # 4a. LIST_NPC rows at their native ids, our numbers on the source's shape
+    hooks = pack_hooks(ours)
     written, kept, fresh = [], [], []
     for i in ids:
         name, *stats = DEADERS[i]
@@ -1339,7 +1477,9 @@ def stage4(ours, src, src_index, dry):
                  (table, MONEY_BOSS if i in DEADER_BOSSES else MONEY_FIELD, DROP_RATE))
         for c, v in zip(NPC_DROP_COLS, drops):
             our_npc.set(i, c, str(v))
-        our_npc.set(i, NPC_DEAD_EVENT_COL, b"")      # Jrose quest triggers we do not ship
+        # Jrose's quest triggers go; the kill trigger a band quest (stage 7) hooks
+        # here is re-derived from the quest's manifest, so it survives a re-run.
+        our_npc.set(i, NPC_DEAD_EVENT_COL, hooks.get(i, ""))
         our_npc.set(i, oro.NPC_STRID_COL, f"{DEADER_STRID_PREFIX}{i}")
         our_npc.set(i, oro.NPC_PVP_COL, oro.DEFAULT_PVP_STATE)
         if i in guns:
@@ -1602,6 +1742,50 @@ def stage6(ours, src, src_index, dry):
           "rebuild the gameserver")
 
 
+# ------------------------------------------------------------------- stage 7
+def pack_quests(ours):
+    """{pack key: manifest} for the quests this pack created."""
+    d = P(ours, r"3DDATA\QUESTDATA\_quest-editor")
+    out = {}
+    for f in (sorted(os.listdir(d)) if os.path.isdir(d) else []):
+        if f.endswith(".qe.json"):
+            m = json.load(open(os.path.join(d, f), encoding="utf-8"))
+            if m.get("key", "").startswith("shibuya-"):
+                out[m["key"]] = m
+    return out
+
+
+def stage7(ours, src, src_index, dry):
+    print("stage 7 -- the band's quests (quest-editor pack)")
+    if not os.path.isfile(QUEST_EDITOR):
+        raise SystemExit(f"{QUEST_EDITOR} not built: cargo build --release -p quest-editor")
+    cmd = [QUEST_EDITOR, "apply-pack", ours, QUEST_PACK]
+    if not dry:
+        cmd.append("--write")
+
+    def run_pack(quiet):
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise SystemExit(f"apply-pack failed:\n{r.stdout}\n{r.stderr}")
+        for line in r.stdout.splitlines():
+            if quiet:
+                continue
+            if line.startswith(("CREATE", "KEEP", "REPLACE")) or "[ERROR]" in line:
+                print(f"    {line}")
+            elif ("APPEND quest" in line or "REFRESH quest" in line) and "option in" in line:
+                print(f"        {line.strip().split(' (accept')[0]}")
+
+    run_pack(quiet=False)
+    # Now the quests (and their completion switches) exist: gate the band's
+    # intro/epilogue on them. A rebuilt dialog loses its quest option, so the
+    # pack runs again to put it back (keyed: it only refreshes the options).
+    n, _ = write_cons(ours, src, dry, only=sorted(BAND_DIALOG))
+    if n:
+        print(f"    {'band dialogs':26s} {n} regated on their quest's completion switch")
+        if not dry:
+            run_pack(quiet=True)
+
+
 # -------------------------------------------------------------------- verify
 def verify(ours, src):
     print("verify")
@@ -1693,15 +1877,20 @@ def verify(ours, src):
     check(n == len(STRINGS), f"ulngtb_con.ltb: {n}/{len(STRINGS)} English strings")
 
     ok_files, leaks = 0, []
+    switches = band_switches(ours)
     for name in CON_FILES:
         dp = os.path.join(P(ours, EVENT_DIR_REL), name)
         if not os.path.isfile(dp):
             continue
         blob = open(dp, "rb").read()
-        want_blob, _ = build_con(os.path.join(P(src, EVENT_DIR_REL), name), name)
-        ok_files += blob == want_blob
+        want_blob, _ = build_con(os.path.join(P(src, EVENT_DIR_REL), name), name, switches)
+        ok_files += con_matches(blob, want_blob)
+        band = BAND_DIALOG.get(name)
+        gates = {band[1]: GATE_TODO, band[2]: GATE_DONE} if band and band[0] in switches else {}
         show = set(SHOW[name])
         for mi, j, chk in con_nodes(blob):
+            if chk.startswith("QE") or gates.get((mi, j)) == chk:
+                continue                               # the quest-editor's / our gates
             if chk not in ("", "TA_Hidden") or ((mi, j) in show and chk):
                 leaks.append(f"{name}:{mi}/{j}={chk}")
     check(ok_files == len(CON_FILES), f"{ok_files}/{len(CON_FILES)} dialogs match the build")
@@ -1718,12 +1907,13 @@ def verify(ours, src):
           f"{len(carriers)} dialog(s) offer {TRAVEL_TRIGGER} {carriers}")
 
     # stage 4
+    hooks = pack_hooks(ours)
     npc = O(ours, NPC_STB_REL)
     chr_ = oro.Chr(P(ours, NPC_CHR_REL))
     stats_ok = [i for i, (name, *st) in DEADERS.items()
                 if npc.get(i, 0).decode("latin-1") == name
                 and [int(npc.get(i, c) or 0) for c in DEADER_STAT_COLS[:-1]] == st[:-1]
-                and not npc.get(i, NPC_DEAD_EVENT_COL).strip()
+                and npc.get(i, NPC_DEAD_EVENT_COL).decode() == hooks.get(i, "")
                 and int(npc.get(i, oro.NPC_AI_COL) or 0) in DEADER_AI]
     check(len(stats_ok) == len(DEADERS), f"{len(stats_ok)}/{len(DEADERS)} Deader rows (name, stats, AI, no Jrose trigger)")
     check(all(stl.has(f"{DEADER_STRID_PREFIX}{i}") for i in DEADERS), "Deader STL keys")
@@ -1792,6 +1982,30 @@ def verify(ours, src):
     check(len(items_ok) == n_items, f"{len(items_ok)}/{n_items} cosmetics (name, icon, model, cells)")
     gs = open(os.path.join(ROOT, "src", "sho_gameserver", "src", "gs_user.cpp"), encoding="latin-1").read()
     check(f"Package({MASCOT_PACKAGE}," in gs, f"gs_user.cpp declares package {MASCOT_PACKAGE}")
+
+    # stage 7
+    pack = json.load(open(QUEST_PACK, encoding="utf-8"))["quests"]
+    made = pack_quests(ours)
+    check(sorted(made) == sorted(q["key"] for q in pack), f"{len(made)}/{len(pack)} band quests exist")
+    offered, hooked = 0, 0
+    for q in pack:
+        m = made.get(q["key"])
+        if not m:
+            continue
+        sn = m["spec"]["quest_sn"]
+        qsd = P(ours, rf"3DDATA\QUESTDATA\QX-{sn}.QSD")
+        mon_id = q["objectives"][0]["monster"]
+        hooked += (os.path.isfile(qsd)
+                   and npc.get(mon_id, NPC_DEAD_EVENT_COL).decode() == f"{sn}-2")
+        con = f"EM02-{80 + q['giver']['npc'] - 4044:03d}.CON"    # 4044 YUKA .. 4051 Kanna
+        if con in CON_FILES:
+            _h, _l, appendix = fate.con_split(open(os.path.join(P(ours, EVENT_DIR_REL), con), "rb").read())
+            offered += f"QE{sn}_".encode() in appendix
+    check(hooked == len(pack), f"{hooked}/{len(pack)} quest files present, kill triggers on their monsters")
+    check(offered == len(pack), f"{offered}/{len(pack)} band dialogs offer their quest "
+          "(a --stage 3 re-run drops them: re-run --stage 7)")
+    kanna = made.get("shibuya-kanna", {}).get("spec", {})
+    check(len(kanna.get("requires", [])) == 5, "Kanna's finale requires the band's five quests")
     print("    " + ("ALL OK" if not bad else f"{len(bad)} problem(s)"))
     return 0 if not bad else 1
 
@@ -1862,7 +2076,7 @@ def selftest(ours, src):
 # ---------------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--stage", type=int, choices=(1, 2, 3, 4, 5, 6), action="append")
+    ap.add_argument("--stage", type=int, choices=(1, 2, 3, 4, 5, 6, 7), action="append")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--selftest", action="store_true")
@@ -1879,10 +2093,13 @@ def main():
     if args.verify:
         return verify(ours, src)
     if not args.stage:
-        ap.error("give --stage N (1-6), --verify or --selftest")
+        ap.error("give --stage N (1-7), --verify or --selftest")
     src_index = kk.index_tree(src)
+    if 3 in args.stage and 7 not in args.stage and pack_quests(ours):
+        print("NOTE: --stage 3 rebuilds the band's .CONs, which drops their quest options;"
+              " add --stage 7 to put them back.\n")
     for st in sorted(set(args.stage)):
-        {1: stage1, 2: stage2, 3: stage3, 4: stage4, 5: stage5, 6: stage6}[st](ours, src, src_index, args.dry_run)
+        {1: stage1, 2: stage2, 3: stage3, 4: stage4, 5: stage5, 6: stage6, 7: stage7}[st](ours, src, src_index, args.dry_run)
         print()
     if args.dry_run:
         print("dry run: nothing written")

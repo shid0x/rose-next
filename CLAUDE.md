@@ -1181,7 +1181,7 @@ Jrose zones 126 (SHIBUYA, a Tokyo street walk) and 127 (Live House SEVEN, the
 survivors' shelter) from a 2017 band collab, at their **native** numbers. The band
 and the survivors tell their story, Shimasaburo and Juri run shops (our Junon Polis
 tabs), Sarasa the storage. In via Jones (Junon Polis), out via the SECONDWALL
-mascot. `scripts/import-shibuya.py` (`--stage 1-6`, `--dry-run`, `--verify`,
+mascot. `scripts/import-shibuya.py` (`--stage 1-7`, `--dry-run`, `--verify`,
 `--selftest`). **The tribute (2026-09-29, in progress)** turns it into a level
 60-80 zone: stage 4 imports the Deaders (twelve monsters at their Jrose ids with
 our stats, their AI rebuilt from Jrose's with our edits, the police guns, a
@@ -1190,13 +1190,14 @@ spawn off any field kill, and Deader Rex as the finale boss; stage 5 the 72
 camps, Rex's plaza and drop tables 960-966 (+ zone row 126, whose legacy table
 moved to 960); stage 6 the SECONDWALL cosmetics (quest rewards, the mascot set
 behind a class-322 box -- package 920 in `gs_user.cpp` -- and the Rot Tracker's
-headphones). The band's quests (a quest-editor pack; Kanna's finale requires the
-other five) follow. **The Deaders are listed in
+headphones); stage 7 the band's six quests (`scripts/shibuya-quests.json`, a
+quest-editor pack: five one-time hunts, then Kanna's Deader Rex finale, which
+requires all five). **The Deaders are listed in
 `scripts/balance-trend-exclude.py`**: new monsters in levels 60-199 move the trend
 every monster balance pass fits and verifies against -- add any future import's
 ids there too. **Re-running `--stage 3` rebuilds the band's
-`.CON`s from source and drops their quest options** -- re-apply the quest pack
-after it. Things that will bite:
+`.CON`s from source and drops their quest options** -- always follow it with
+`--stage 7`. Things that will bite:
 
 - **Every Jrose check is rewritten, not trusted.** Each node with a check function
   becomes `TA_Hidden` except the one branch per NPC in `SHOW`, and every `AT_*`
