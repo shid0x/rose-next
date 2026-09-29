@@ -300,6 +300,7 @@ mod tests {
             reward_zuly: 0,
             reward_item: None,
             one_time_switch: None,
+            requires: vec![],
             extra_objectives: vec![],
             title: "test".into(),
             start_text: String::new(),

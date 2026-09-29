@@ -243,6 +243,13 @@ struct QuestCreator {
     // extra objectives layered on top of the primary one (kill A and B, …)
     extra_objectives: Vec<ObjectiveDraft>,
     repeatable: bool,
+    /// Prerequisites: the completion switches of the one-time quests that must be
+    /// done before this one can be accepted.
+    requires: Vec<i32>,
+    /// While editing a one-time quest: its completion switch, reused by the
+    /// re-created copy so players who finished it stay finished and quests that
+    /// require it keep working (a fresh switch would silently break both).
+    editing_switch: Option<i32>,
     reward_exp: i32,
     reward_zuly: i32,
 
@@ -342,6 +349,8 @@ impl Default for QuestCreator {
             kill_count: 10,
             extra_objectives: Vec::new(),
             repeatable: true,
+            requires: Vec::new(),
+            editing_switch: None,
             reward_exp: 1000,
             reward_zuly: 500,
             reward_item_enabled: false,
@@ -730,6 +739,7 @@ impl QuestCreator {
                         .small(),
                     );
                 });
+                app.ui_prerequisites(ui);
                 ui.add_space(4.0);
                 match app.quest_type {
                     QuestType::Hunt => {
@@ -1893,10 +1903,92 @@ impl QuestCreator {
             .unwrap_or_else(|| format!("monster {id}"))
     }
 
+    /// Prerequisite picker: every one-time quest made by this editor (only those
+    /// record their completion), minus the quest being edited.
+    fn ui_prerequisites(&mut self, ui: &mut egui::Ui) {
+        let Some(ds) = self.data.as_ref() else {
+            return;
+        };
+        let candidates: Vec<(i32, i32, String)> = ds
+            .quest_switches
+            .iter()
+            .filter(|(sn, _)| Some(**sn) != self.editing)
+            .filter_map(|(sn, w)| {
+                let name = ds
+                    .quests
+                    .iter()
+                    .find(|q| q.sn == *sn)
+                    .map(|q| q.name.clone())
+                    .unwrap_or_else(|| format!("Quest #{sn}"));
+                w.own.map(|sw| (*sn, sw, name))
+            })
+            .collect();
+        // A switch no editor quest sets any more (its quest was deleted) stays
+        // listed so it can be unticked; verify flags it.
+        let orphans: Vec<i32> = self
+            .requires
+            .iter()
+            .copied()
+            .filter(|sw| !candidates.iter().any(|(_, s, _)| s == sw))
+            .collect();
+        let header = if self.requires.is_empty() {
+            "Requires: nothing".to_string()
+        } else {
+            format!("Requires: {} quest(s) done first", self.requires.len())
+        };
+        egui::CollapsingHeader::new(header)
+            .id_source("prereq_picker")
+            .show(ui, |ui| {
+                if candidates.is_empty() && orphans.is_empty() {
+                    ui.label(
+                        egui::RichText::new(
+                            "No one-time quests yet. Only a one-time quest records that it                              was completed, so only those can be required.",
+                        )
+                        .weak()
+                        .small(),
+                    );
+                    return;
+                }
+                egui::ScrollArea::vertical()
+                    .id_source("prereq_scroll")
+                    .max_height(140.0)
+                    .show(ui, |ui| {
+                        for (sn, sw, name) in &candidates {
+                            let mut on = self.requires.contains(sw);
+                            if ui.checkbox(&mut on, format!("#{sn}  {name}")).changed() {
+                                if on {
+                                    self.requires.push(*sw);
+                                } else {
+                                    self.requires.retain(|s| s != sw);
+                                }
+                            }
+                        }
+                        for sw in &orphans {
+                            let mut on = true;
+                            if ui
+                                .checkbox(
+                                    &mut on,
+                                    egui::RichText::new(format!(
+                                        "switch {sw} — no quest sets it any more"
+                                    ))
+                                    .color(theme::ERR),
+                                )
+                                .changed()
+                                && !on
+                            {
+                                self.requires.retain(|s| s != sw);
+                            }
+                        }
+                    });
+            });
+    }
+
     /// Pre-fill the form from a saved spec (for editing).
     fn load_spec_into_form(&mut self, spec: &QuestSpec) {
         self.kill_count = spec.count;
         self.repeatable = spec.one_time_switch.is_none();
+        self.editing_switch = spec.one_time_switch;
+        self.requires = spec.requires.iter().map(|p| p.switch_no).collect();
         self.reward_exp = spec.reward_exp;
         self.reward_zuly = spec.reward_zuly;
         match spec.reward_item {
@@ -2197,6 +2289,14 @@ impl QuestCreator {
             // Allocated at create time (scan) when `repeatable` is off; the preview
             // just needs to know it's one-time, which `!repeatable` conveys.
             one_time_switch: if self.repeatable { None } else { Some(-1) },
+            requires: self
+                .requires
+                .iter()
+                .map(|&sw| crate::gen::Prerequisite {
+                    quest_sn: ds.one_time_quest_for_switch(sw).unwrap_or(-1),
+                    switch_no: sw,
+                })
+                .collect(),
             extra_objectives,
             title: self.title.clone(),
             start_text: self.start_text.clone(),
@@ -2212,12 +2312,19 @@ impl QuestCreator {
         // Editing = delete the old quest first (always a real write), then create
         // a fresh one. Reload data in between so the new SN / token id are correct.
         let editing = self.editing.take();
+        let keep_switch = self.editing_switch.take().filter(|_| editing.is_some());
+        // A quest made by a pack keeps its key, or the next pack run would not
+        // recognise the edited copy and would create a duplicate.
+        let keep_key = editing
+            .and_then(|sn| crate::manifest::read_manifest(&root, sn).ok())
+            .and_then(|m| m.key);
         let mut pre_changes = Vec::new();
         if let Some(old_sn) = editing {
             match delete_quest(&root, old_sn, false) {
                 Ok(rep) => pre_changes = rep.changes,
                 Err(e) => {
                     self.editing = Some(old_sn);
+                    self.editing_switch = keep_switch;
                     self.error = Some(format!("edit: could not remove old quest #{old_sn}: {e:#}"));
                     return;
                 }
@@ -2233,6 +2340,9 @@ impl QuestCreator {
         // One-time: allocate a real free character switch (build_spec only marks it).
         if self.repeatable {
             spec.one_time_switch = None;
+        } else if let Some(s) = keep_switch {
+            // Editing a one-time quest: the copy keeps the original's switch.
+            spec.one_time_switch = Some(s);
         } else {
             match crate::write::next_free_switch(&root) {
                 Ok(s) => spec.one_time_switch = Some(s),
@@ -2247,6 +2357,11 @@ impl QuestCreator {
         match apply_quest(&root, &spec, &gen, dry) {
             Ok(mut report) => {
                 self.error = None;
+                if let (false, Some(k)) = (dry, &keep_key) {
+                    if let Err(e) = crate::manifest::set_key(&root, spec.quest_sn, k) {
+                        report.changes.push(format!("(could not keep pack key \"{k}\": {e:#})"));
+                    }
+                }
                 let mut changes = pre_changes;
                 changes.append(&mut report.changes);
 

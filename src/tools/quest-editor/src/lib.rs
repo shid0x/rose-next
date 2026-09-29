@@ -13,6 +13,7 @@ pub mod icons;
 pub mod ifo;
 pub mod ltb;
 pub mod manifest;
+pub mod pack;
 pub mod qsd;
 pub mod ui;
 pub mod verify;

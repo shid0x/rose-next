@@ -278,6 +278,18 @@ pub enum Objective {
     },
 }
 
+/// A quest that must be completed before this one can be accepted. Only a
+/// **one-time** quest can be a prerequisite: its completion is the persistent
+/// character switch it sets (`REWD_015 = 1`), which survives the quest's
+/// `Finish` and a relog. The switch is what the data checks; `quest_sn` is for
+/// display and is re-resolved from the switch on load, because editing the
+/// prerequisite gives it a new SN but keeps its switch.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Prerequisite {
+    pub quest_sn: i32,
+    pub switch_no: i32,
+}
+
 /// Inputs for generating a quest (Hunt or Fetch).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct QuestSpec {
@@ -297,6 +309,13 @@ pub struct QuestSpec {
     /// allocated by the writer (`next_free_switch`) before generation.
     #[serde(default)]
     pub one_time_switch: Option<i32>,
+
+    /// Quests that must be completed first. Each adds a `COND_014 switch == 1`
+    /// to the register trigger, which gates the server's accept, the dialog's
+    /// `CHK_accept` (it evaluates the register trigger) and the NPC "!" icon
+    /// alike. Empty (the default) = no prerequisite; old manifests load as such.
+    #[serde(default)]
+    pub requires: Vec<Prerequisite>,
 
     /// Extra objectives layered on top of `kind`. Empty (the default) = a plain
     /// single-objective quest, byte-identical to before this field existed (old
@@ -365,12 +384,15 @@ fn name_bytes(s: &str) -> Vec<u8> {
 }
 
 /// The register trigger: add the quest. For a one-time quest it first checks the
-/// "not done" switch, so re-taking is blocked once completed.
+/// "not done" switch, so re-taking is blocked once completed; each prerequisite
+/// adds a "that quest is done" switch check. The quest's own guard (value 0) and
+/// a prerequisite (value 1) are told apart by the expected value alone.
 fn register_trigger_entity(spec: &QuestSpec, name: &str) -> Trigger {
-    let conditions = match spec.one_time_switch {
+    let mut conditions = match spec.one_time_switch {
         Some(s) => vec![cond_switch(s, 0)], // register only if the switch is unset
         None => vec![],
     };
+    conditions.extend(spec.requires.iter().map(|p| cond_switch(p.switch_no, 1)));
     Trigger {
         check_next: 0,
         name: name_bytes(name),
@@ -652,6 +674,7 @@ mod tests {
             reward_zuly: 1000,
             reward_item: Some((10_001, 1)),
             one_time_switch: None,
+            requires: vec![],
             extra_objectives: vec![],
             title: "Jelly Hunt".into(),
             start_text: "Kill some jellies.".into(),
@@ -757,6 +780,47 @@ mod tests {
     }
 
     #[test]
+    fn prerequisites_gate_the_register_trigger_only() {
+        let mut spec = hunt_spec(5600, 1, 13_970, 1);
+        spec.one_time_switch = Some(50);
+        spec.requires = vec![
+            Prerequisite {
+                quest_sn: 5595,
+                switch_no: 45,
+            },
+            Prerequisite {
+                quest_sn: 5596,
+                switch_no: 46,
+            },
+        ];
+        let gen = generate(&spec);
+        let triggers = &gen.qsd.patterns[0].triggers;
+        let switch_conds = |t: &Trigger| -> Vec<(i16, u8)> {
+            t.conditions
+                .iter()
+                .filter(|e| e.etype == 14)
+                .map(|e| (i16::from_le_bytes([e.payload[0], e.payload[1]]), e.payload[2]))
+                .collect()
+        };
+
+        // Register: own "not done" guard first, then one "done" check per prerequisite.
+        assert_eq!(switch_conds(&triggers[0]), vec![(50, 0), (45, 1), (46, 1)]);
+        // Kill and complete triggers are untouched: a quest already in the log
+        // keeps progressing whatever happens to its prerequisites.
+        for t in &triggers[1..] {
+            assert!(switch_conds(t).is_empty());
+        }
+
+        // Still an accept for the "!" icon classifier (it looks at rewards).
+        let idx = crate::classify::TriggerIndex::from_qsd(&gen.qsd);
+        let c = idx.classify(&gen.register_trigger).expect("classified");
+        assert!(c.accept && c.add_quest_sn == Some(5600));
+
+        let bytes = gen.qsd.to_bytes();
+        assert_eq!(QsdFile::parse(&bytes).unwrap().to_bytes(), bytes);
+    }
+
+    #[test]
     fn multi_objective_ands_all_checks_and_wires_each_hunt() {
         // Primary: hunt monster 4 (token 13500) ×10. Extras: hunt monster 8
         // (token 13501) ×5, and fetch item 10060 ×3 (consumed).
@@ -824,6 +888,7 @@ mod tests {
             reward_zuly: 0,
             reward_item: None,
             one_time_switch: None,
+            requires: vec![],
             extra_objectives: vec![],
             title: "Bring boxes".into(),
             start_text: String::new(),

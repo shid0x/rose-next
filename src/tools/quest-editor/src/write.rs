@@ -568,6 +568,26 @@ pub fn delete_quest(root: &Path, quest_sn: i32, dry_run: bool) -> Result<WriteRe
         }
     }
 
+    // Quests that require this one check its completion switch. An edit re-creates
+    // the quest on the same switch, so they keep working; a plain delete leaves
+    // them waiting on a switch only players who already finished it have set.
+    let all_switches = crate::data::scan_editor_quest_switches(root);
+    if let Some(own) = all_switches.get(&quest_sn).and_then(|w| w.own) {
+        let dependents: Vec<String> = all_switches
+            .iter()
+            .filter(|(sn, w)| **sn != quest_sn && w.requires.contains(&own))
+            .map(|(sn, _)| format!("#{sn}"))
+            .collect();
+        if !dependents.is_empty() {
+            changes.push(format!(
+                "NOTE: quest(s) {} require #{quest_sn} (completion switch {own}). Editing \
+                 #{quest_sn} keeps that switch; deleting it for good makes them unobtainable \
+                 for anyone who has not finished it yet",
+                dependents.join(", ")
+            ));
+        }
+    }
+
     // Deleting the quest blanks its LIST_QUEST row, but characters that already
     // accepted it keep quest {sn} in their saved quest log (DB) — it will show
     // as a blank entry in their quest window until they abandon it in-game.
@@ -716,7 +736,11 @@ pub fn list_editor_quests(root: &Path) -> Result<Vec<EditorQuest>> {
             // generated data so older (pre-manifest) quests are still editable.
             let spec = crate::manifest::read_manifest(root, sn)
                 .ok()
-                .map(|m| m.spec)
+                .map(|m| {
+                    let mut spec = m.spec;
+                    refresh_prerequisites(root, &mut spec);
+                    spec
+                })
                 .or_else(|| reconstruct_spec(root, sn).ok());
             EditorQuest {
                 quest_sn: sn,
@@ -768,14 +792,11 @@ pub fn reconstruct_spec(root: &Path, quest_sn: i32) -> Result<crate::gen::QuestS
         })
         .ok_or_else(|| anyhow!("no complete trigger in {}", qsd_file.display()))?;
 
-    // One-time iff a COND_014 switch guard is present (on the register trigger).
-    let one_time_switch = qsd
-        .patterns
-        .iter()
-        .flat_map(|p| p.triggers.iter())
-        .flat_map(|t| t.conditions.iter())
-        .find(|e| e.etype == 14 && e.payload.len() >= 2)
-        .map(|e| i16::from_le_bytes([e.payload[0], e.payload[1]]) as i32);
+    // One-time iff the register trigger guards on its own switch (COND_014 == 0);
+    // its COND_014 == 1 checks are prerequisites, not the quest's own switch.
+    let switches = crate::data::read_quest_switches(&qsd, quest_sn).unwrap_or_default();
+    let one_time_switch = switches.own;
+    let requires = prerequisites_for(root, &switches.requires);
 
     // One COND_004 per objective, in trigger order: [primary, extra, extra, …].
     let cond4s: Vec<(i32, i32)> = complete
@@ -912,12 +933,40 @@ pub fn reconstruct_spec(root: &Path, quest_sn: i32) -> Result<crate::gen::QuestS
         reward_zuly,
         reward_item,
         one_time_switch,
+        requires,
         extra_objectives,
         title,
         start_text,
         progress_text,
         complete_text,
     })
+}
+
+/// Prerequisites for a list of required switches, each named after the editor
+/// quest that currently sets it (`-1` when none does -- verify reports that).
+pub fn prerequisites_for(root: &Path, switches: &[i32]) -> Vec<crate::gen::Prerequisite> {
+    if switches.is_empty() {
+        return Vec::new();
+    }
+    let all = crate::data::scan_editor_quest_switches(root);
+    switches
+        .iter()
+        .map(|&sw| crate::gen::Prerequisite {
+            quest_sn: all
+                .iter()
+                .find(|(_, w)| w.own == Some(sw))
+                .map_or(-1, |(sn, _)| *sn),
+            switch_no: sw,
+        })
+        .collect()
+}
+
+/// Re-point each prerequisite's `quest_sn` at the quest that sets its switch
+/// today. A manifest records the SN at save time, and editing a prerequisite
+/// moves it to a new SN (keeping its switch), so the stored number goes stale.
+pub fn refresh_prerequisites(root: &Path, spec: &mut crate::gen::QuestSpec) {
+    let switches: Vec<i32> = spec.requires.iter().map(|p| p.switch_no).collect();
+    spec.requires = prerequisites_for(root, &switches);
 }
 
 /// The monster that drives a hunt token: find the kill trigger that grants the

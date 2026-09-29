@@ -51,6 +51,7 @@ fn main() -> ExitCode {
         Some("icons-check") => cmd_icons_check(args.get(1)),
         Some("switch-check") => cmd_switch_check(args.get(1)),
         Some("warp-triggers") => cmd_warp_triggers(&args[1..]),
+        Some("apply-pack") => cmd_apply_pack(&args[1..]),
         _ => {
             eprintln!("usage:");
             eprintln!("  quest-editor verify <dir>   round-trip every .QSD, report drift");
@@ -68,6 +69,12 @@ fn main() -> ExitCode {
             eprintln!(
                 "  quest-editor create-fetch <root> <item_sn> <count> [exp] [zuly] [--write]\n\
                  \x20                            generate + apply a Fetch quest (item_sn = type*1000+id)"
+            );
+            eprintln!(
+                "  quest-editor apply-pack <root> <pack.json> [--replace] [--write]
+                                              create the quests a JSON pack describes (keyed, so a
+                                              re-run keeps what exists and refreshes its dialog
+                                              option); --replace re-creates existing ones. See pack.rs"
             );
             eprintln!("  quest-editor list   <root>            list editor-created quests (from manifests)");
             eprintln!(
@@ -406,6 +413,7 @@ fn build_hunt(ha: &HuntArgs) -> Result<(DataSet, QuestSpec, GeneratedQuest, Stri
         reward_zuly: ha.zuly,
         reward_item: None,
         one_time_switch: None,
+        requires: vec![],
         extra_objectives: vec![],
         title: format!("Hunt: {name}"),
         start_text: format!("Defeat {} {name}.", ha.count),
@@ -464,6 +472,34 @@ fn cmd_create(args: &[String]) -> Result<bool> {
             "\ntest in-game: register quest {} via GM cheat, kill {}x {name}, then /QUEST {}",
             spec.quest_sn, ha.count, gen.complete_trigger
         );
+    }
+    Ok(true)
+}
+
+fn cmd_apply_pack(args: &[String]) -> Result<bool> {
+    let write = args.iter().any(|a| a == "--write");
+    let replace = args.iter().any(|a| a == "--replace");
+    let pos: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();
+    if pos.len() < 2 {
+        bail!("usage: apply-pack <root> <pack.json> [--replace] [--write]");
+    }
+    let root = PathBuf::from(pos[0]);
+    let pack = quest_editor::pack::read_pack(Path::new(pos[1]))?;
+    println!(
+        "{}",
+        if write {
+            "=== APPLYING PACK ==="
+        } else {
+            "=== DRY RUN — no files written ==="
+        }
+    );
+    let log = quest_editor::pack::apply_pack(&root, &pack, replace, !write)?;
+    for line in &log {
+        println!("{line}");
+    }
+    if !write {
+        println!("
+(re-run with --write to apply)");
     }
     Ok(true)
 }
@@ -1125,6 +1161,7 @@ fn cmd_create_fetch(args: &[String]) -> Result<bool> {
         reward_zuly: zuly,
         reward_item: None,
         one_time_switch: None,
+        requires: vec![],
         extra_objectives: vec![],
         title: format!("Gather: {item_name}"),
         start_text: format!("Bring {count} {item_name}."),

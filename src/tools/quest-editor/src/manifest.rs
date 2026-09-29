@@ -38,6 +38,10 @@ pub struct Manifest {
     /// NPCs wired to give this quest (empty for quests without a dialog giver).
     #[serde(default)]
     pub givers: Vec<GiverWiring>,
+    /// The stable name a quest pack gave this quest (`pack.rs`), so a re-run of
+    /// the pack finds it instead of creating a duplicate. `None` for wizard quests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 impl Manifest {
@@ -48,6 +52,7 @@ impl Manifest {
             version: Self::VERSION,
             spec,
             givers: Vec::new(),
+            key: None,
         }
     }
 }
@@ -86,6 +91,14 @@ pub fn manifest_dir(root: &Path) -> Result<PathBuf> {
         .join("QUESTDATA")
         .join("_quest-editor");
     Ok(parent)
+}
+
+/// Record a quest pack's key in a quest's manifest.
+pub fn set_key(root: &Path, quest_sn: i32, key: &str) -> Result<()> {
+    let mut m = read_manifest(root, quest_sn)?;
+    m.key = Some(key.to_string());
+    write_manifest_full(root, &m)?;
+    Ok(())
 }
 
 pub fn manifest_path(root: &Path, quest_sn: i32) -> Result<PathBuf> {

@@ -260,6 +260,54 @@ item `13:129`. (Validate the id exists in the item DB when generating.)
 
 ## Status log
 
+### 2026-09-29 — Prerequisite quests + quest packs (for the Shibuya band quests)
+
+**Prerequisites.** `QuestSpec.requires: Vec<Prerequisite { quest_sn, switch_no }>`
+(serde default, so old manifests load). Each one adds `COND_014 switch == 1` to the
+**register** trigger, after the quest's own one-time guard (`== 0`); the two are
+told apart by the expected value alone (the server's `F_QSTCOND014` is a plain
+equality). Nothing else is needed for the gate to hold everywhere: the server
+checks the register trigger on accept, the dialog's `CHK_accept` evaluates it via
+`QF_checkQuestCondition("<sn>-1")`, and the NPC "!" probe runs the same check.
+Kill and complete triggers are untouched, so a quest already in a log keeps going.
+
+* Only a **one-time** editor quest can be required: its completion is the switch it
+  sets (`REWD_015 = 1`); a repeatable quest records nothing. `verify` refuses a
+  prerequisite whose switch no editor one-time quest owns, and the quest itself.
+* The switch is the source of truth; `quest_sn` is display and is re-resolved from
+  the switch on load (`write::refresh_prerequisites`), because an edit moves a
+  quest to a new SN.
+* **Edits now keep the quest's switch** (wizard `editing_switch`, pack `--replace`).
+  Before this an edit allocated a fresh one, which silently let everyone who had
+  finished a one-time quest take it again -- and would now also have orphaned
+  every quest requiring it.
+* `data::scan_editor_quest_switches` / `read_quest_switches` read every
+  `QX-<sn>.QSD`'s register trigger into `DataSet.quest_switches`; reconstruct uses
+  it (it used to take the first `COND_014` it found as the quest's own, which a
+  prerequisite would now break). Delete names the quests that require the one
+  being deleted. Wizard: a "Requires" picker under "Repeatable".
+
+**Packs** (`pack.rs`, CLI `apply-pack <root> <pack.json> [--replace] [--write]`):
+quests described in JSON, each with a stable `key` stored in its manifest
+(`Manifest.key`), so an importer can re-run it. New key = create; existing key =
+keep and refresh its dialog option (append is idempotent) -- which is what an
+importer that rebuilds a `.CON` from source needs after every run; `--replace` =
+delete + re-create on the old switch. `requires` names keys. Giver is append mode
+only. A dry run numbers later quests by simulating the earlier ones in the
+`DataSet` and skips their file-level preview (`apply_quest` checks numbers against
+the files). A wizard edit of a pack quest keeps its key.
+
+Tests: `gen::prerequisites_gate_the_register_trigger_only`,
+`tests/prerequisites.rs` (apply → verify refuses a bogus prerequisite → scanner +
+reconstruct → delete warns → all QSDs byte-exact), `tests/pack.rs` (dry-run
+numbering writes nothing, create, keep, replace keeps the switch, byte-exact
+delete). 27 tests pass. A dry run on the live data appends cleanly to the Shibuya
+band's `.CON`s next to `import-shibuya.py`'s own appendix.
+
+Noticed, not changed: token ids are `max + 1` (`next_free_quest_item_id`), now at
+967 -- ~32 left under the 999 ceiling although LIST_QUESTITEM has ~770 blank rows
+lower down. Gap-filling would be the fix when it runs out.
+
 ### 2026-08-07 — `warp-triggers`: define the map teleport triggers nothing defines
 
 A map-editor audit turned up 20 QSD trigger names that map event objects

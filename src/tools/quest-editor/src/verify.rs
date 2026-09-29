@@ -259,6 +259,40 @@ pub fn verify(ds: &DataSet, spec: &QuestSpec, gen: &GeneratedQuest) -> Vec<Issue
         }
     }
 
+    // Prerequisites: each must be a switch that some one-time editor quest sets on
+    // completion, or the quest could never be accepted -- nothing else ever turns
+    // that switch on, and the gate fails silently in game (no "!", no option).
+    let mut seen_switches: HashSet<i32> = HashSet::new();
+    for p in &spec.requires {
+        if spec.one_time_switch == Some(p.switch_no) {
+            out.push(Issue::err(format!(
+                "Prerequisite #{} is this quest itself — it could never be accepted.",
+                p.quest_sn
+            )));
+            continue;
+        }
+        if !seen_switches.insert(p.switch_no) {
+            out.push(Issue::warn(format!(
+                "Prerequisite #{} is listed twice.",
+                p.quest_sn
+            )));
+            continue;
+        }
+        match ds.one_time_quest_for_switch(p.switch_no) {
+            Some(sn) if sn == p.quest_sn => {}
+            Some(sn) => out.push(Issue::warn(format!(
+                "Prerequisite #{} now lives at quest #{sn} (it was edited); the gate \
+                 still works — it checks the quest's completion switch {}.",
+                p.quest_sn, p.switch_no
+            ))),
+            None => out.push(Issue::err(format!(
+                "Prerequisite #{} (switch {}) is not a one-time quest made by this editor. \
+                 Only a one-time quest records its completion, so the gate could never open.",
+                p.quest_sn, p.switch_no
+            ))),
+        }
+    }
+
     // Optional reward item.
     if let Some((sn, qty)) = spec.reward_item {
         if qty < 1 {

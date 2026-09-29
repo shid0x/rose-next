@@ -196,6 +196,9 @@ pub struct DataSet {
     /// appended quest gets SN == this value.
     pub quest_row_count: usize,
     pub item_db: ItemDb,
+    /// Every editor quest's switch wiring (own "done" switch + prerequisites),
+    /// by quest SN. See [`scan_editor_quest_switches`].
+    pub quest_switches: std::collections::BTreeMap<i32, QuestSwitches>,
 }
 
 impl DataSet {
@@ -225,6 +228,7 @@ impl DataSet {
             quests,
             quest_row_count,
             item_db,
+            quest_switches: scan_editor_quest_switches(root),
         })
     }
 
@@ -233,6 +237,23 @@ impl DataSet {
     /// at the end guarantees no collision with any existing quest.
     pub fn next_free_quest_sn(&self) -> i32 {
         self.quest_row_count as i32
+    }
+
+    /// The editor one-time quest whose completion sets `switch_no`, if any.
+    pub fn one_time_quest_for_switch(&self, switch_no: i32) -> Option<i32> {
+        self.quest_switches
+            .iter()
+            .find(|(_, w)| w.own == Some(switch_no))
+            .map(|(sn, _)| *sn)
+    }
+
+    /// The editor quests that list `switch_no` as a prerequisite.
+    pub fn quests_requiring_switch(&self, switch_no: i32) -> Vec<i32> {
+        self.quest_switches
+            .iter()
+            .filter(|(_, w)| w.requires.contains(&switch_no))
+            .map(|(sn, _)| *sn)
+            .collect()
     }
 
     pub fn find_monster(&self, id: i32) -> Option<&Monster> {
@@ -362,6 +383,68 @@ fn load_all_item_tables(stb_dir: &Path) -> HashMap<ItemCategory, Vec<Item>> {
             });
         }
         out.insert(cat, items);
+    }
+    out
+}
+
+/// The character-switch wiring of one editor quest (`QX-<sn>.QSD`), read from its
+/// register trigger `<sn>-1`: its own "not done yet" guard (`COND_014 == 0`,
+/// one-time quests only) and the prerequisite switches it checks (`== 1`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct QuestSwitches {
+    pub own: Option<i32>,
+    pub requires: Vec<i32>,
+}
+
+/// Read the switch wiring of an editor quest file. `None` when the file does not
+/// parse or has no `<sn>-1` register trigger.
+pub fn read_quest_switches(qsd: &crate::qsd::QsdFile, quest_sn: i32) -> Option<QuestSwitches> {
+    let reg_name = format!("{quest_sn}-1");
+    let reg = qsd.patterns.iter().flat_map(|p| p.triggers.iter()).find(|t| {
+        let n = t.name.strip_suffix(b"\0").unwrap_or(&t.name);
+        n == reg_name.as_bytes()
+    })?;
+    let mut out = QuestSwitches::default();
+    for e in reg.conditions.iter().filter(|e| e.etype == 14 && e.payload.len() >= 3) {
+        let sw = i16::from_le_bytes([e.payload[0], e.payload[1]]) as i32;
+        match e.payload[2] {
+            0 if out.own.is_none() => out.own = Some(sw),
+            1 => out.requires.push(sw),
+            _ => {}
+        }
+    }
+    Some(out)
+}
+
+/// Every editor quest's switch wiring, by quest SN: the `QX-<sn>.QSD` files in
+/// `QUESTDATA`. Retail quests are never listed -- they are not the editor's, and
+/// only an editor one-time quest is known to set its switch on completion.
+pub fn scan_editor_quest_switches(root: &Path) -> std::collections::BTreeMap<i32, QuestSwitches> {
+    let mut out = std::collections::BTreeMap::new();
+    let Some(dir) = resolve_stb_dir(root)
+        .ok()
+        .and_then(|d| d.parent().map(|p| p.join("QUESTDATA")))
+    else {
+        return out;
+    };
+    let Ok(rd) = fs::read_dir(&dir) else {
+        return out;
+    };
+    for entry in rd.flatten() {
+        let name = entry.file_name().to_string_lossy().to_ascii_uppercase();
+        let Some(sn) = name
+            .strip_prefix("QX-")
+            .and_then(|s| s.strip_suffix(".QSD"))
+            .and_then(|s| s.parse::<i32>().ok())
+        else {
+            continue;
+        };
+        let Ok(qsd) = crate::qsd::QsdFile::read_file(&entry.path()) else {
+            continue;
+        };
+        if let Some(sw) = read_quest_switches(&qsd, sn) {
+            out.insert(sn, sw);
+        }
     }
     out
 }

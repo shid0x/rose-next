@@ -117,6 +117,7 @@ fn multi_objective_apply_then_delete_restores_qsds_byte_exact() {
             reward_zuly: 100,
             reward_item: None,
             one_time_switch: None,
+            requires: vec![],
             extra_objectives: vec![
                 Objective::Hunt {
                     monster_id: claim_monster,
