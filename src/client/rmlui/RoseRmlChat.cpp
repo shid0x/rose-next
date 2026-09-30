@@ -37,13 +37,13 @@ namespace {
 const char* kIniPath = ".\\rose-next.ini";
 
 /// How much is kept: the session's lines, and the elements each list shows.
-/// The log shows 60 lines -- chit-chat, rarely scrolled back far -- because
+/// The log shows 100 lines -- chit-chat, rarely scrolled back far -- because
 /// RmlUi re-lays out the whole chat document on every new line, so the line
 /// count is paid again on each message. The store stays larger so a tab with
-/// a narrow filter ( Party ) still fills its 60 when switched to.
+/// a narrow filter ( Party ) still fills its 100 when switched to.
 const size_t kChatKeep = 400;
 const size_t kSystemKeep = 80;
-const int kLogView = 60;
+const int kLogView = 100;
 const int kSystemView = 40;
 
 /// The input's limit ( the wire allows 129 bytes after item-link tokens,

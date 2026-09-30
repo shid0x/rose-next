@@ -258,7 +258,15 @@ RoseRmlQuestJournal::Sample() {
 
     Rml::String strName, strDesc, strTimer;
     bool bTimed = false, bTimedOut = false;
-    std::vector<ItemVM> items;
+    /// Always the full grid, empty cells when nothing is selected: an array
+    /// that shrinks in the same frame "has_items" changes gets a row evaluated
+    /// past its end ( "Data array index out of bounds" on items[n].filled ).
+    std::vector<ItemVM> items(QUEST_ITEM_PER_QUEST);
+    for (int i = 0; i < QUEST_ITEM_PER_QUEST; ++i) {
+        items[i].index = i;
+        items[i].filled = false;
+        items[i].count = 0;
+    }
     if (bHasSel) {
         CQUEST& Quest = pAvatar->m_Quests.m_QUEST[iSlot];
         strName = RoseRmlText::FromGame(QUEST_NAME(m_iSelectedID));
@@ -275,10 +283,7 @@ RoseRmlQuestJournal::Sample() {
         }
 
         for (int i = 0; i < QUEST_ITEM_PER_QUEST; ++i) {
-            ItemVM vm;
-            vm.index = i;
-            vm.filled = false;
-            vm.count = 0;
+            ItemVM& vm = items[i];
             tagBaseITEM* pItem = Quest.GetSlotITEM(i);
             if (pItem && !pItem->IsEmpty()
                 && RoseRmlIcons::Resolve(IMAGE_RES_ITEM,
@@ -287,7 +292,6 @@ RoseRmlQuestJournal::Sample() {
                 if (pItem->IsEnableDupCNT())
                     vm.count = pItem->GetQuantity();
             }
-            items.push_back(vm);
         }
     }
 
