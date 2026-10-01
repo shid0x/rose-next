@@ -1,208 +1,309 @@
 # Karkia catacombs: implementation brief
 
-**Status, 2026-09-09: research complete, nothing built.** This document is the
-handoff into an implementation session. It does not repeat the reverse
-engineering — the three reports below are in the workspace and remain the
-authority for every recovered detail.
+**Status, 2026-10-01: redesigned, nothing built.** This version replaces the
+2026-09-09 brief (still in git history), which was organised around reproducing
+Jrose's catacombs. **Jrose is inspiration, not a spec**: we do not port its
+generator, its floor tables, its entry bookkeeping or its packets. The three
+Jrose reports (`jrose-catacombs-investigation.md`,
+`jrose-catacombs-collision-investigation.md`,
+`jrose-tower-of-sorrow-investigation.md`) stay useful as an art catalogue and for
+ideas, nothing more.
 
-| Report | Settles |
-|---|---|
-| [jrose-catacombs-investigation.md](jrose-catacombs-investigation.md) | Maze generator, mesh/descriptor selection, floor tables, warp gates, minimap, protocol, entry UI, bosses/chests. Appendices A and C are runnable transcriptions with conformance hashes. |
-| [jrose-catacombs-collision-investigation.md](jrose-catacombs-collision-investigation.md) | Per-part collision flags, hierarchy, unit/transform recipe, the flat-ground override, picking and residency integration points. Appendix has a snapshot recipe with hashes. |
-| [jrose-tower-of-sorrow-investigation.md](jrose-tower-of-sorrow-investigation.md) | The shared extension-packet transport, reused here. Also the reason the catacombs are the better first dungeon — see §6. |
-
-**Is more reverse engineering needed? No.** Both catacomb reports independently
-concluded another pass over the same client cannot recover what is missing, and
-this session found nothing to add. What remains is either ours to author (§4) or
-only answerable by building it (§5). The one optional external source is recorded
-footage, useful for corroborating presentation, not for recovering rules.
+The goal is the smallest version that plays well, built so each later step adds
+to it rather than replacing it.
 
 ---
 
-## 1. The design decision that shapes everything
+## 1. The feature, from the player's side
 
-**One shared maze per dungeon, seeded from the calendar, rerolled daily.**
+- A crypt mouth in the Desolate Cemetery (zone 87). A keeper NPC stands in front.
+- Hand the keeper Cemetery hearts → you are warped into the catacombs.
+- The catacombs are a **maze that is different every day**. One shared zone, everyone
+  in it together, no instances. Monsters in the corridors, a boss in the far room.
+- **Why go in: challenge and loot.** The boss drops unique weapons; ordinary
+  monsters drop good things too.
+- Dying puts you back **inside**, at the entrance hall.
+- A few minutes before the daily reset the crypt closes, everyone still inside is
+  sent back to the crypt mouth, and the next day's maze takes its place.
+- PvPvE is the goal but **comes later** (§7, M5). Everything before that ships as PvE.
 
-Jrose gives each party its own seeded instance. We are not doing that, for a
-reason that is structural rather than a shortcut:
+## 2. Design principles
 
-`CZoneLIST` allocates `m_ppThreadZONE` as a **flat array indexed by zone number**,
-sized to the zone table's row count ([zonelist.cpp:19,96](../src/sho_gameserver/src/zonelist.cpp)).
-One zone is one thread is one shared world. The `bool` on `CZoneTHREAD` is thread
-suspension, not an instance flag. **The server has no instancing of any kind.**
+These are what keep v1 small. Each one removes a whole class of engine work.
 
-Deriving the seed from the date rather than storing it removes three more things:
+1. **One shared zone, one maze per day.** The gameserver has no instancing
+   (`CZoneLIST` is a flat array indexed by zone number, one thread per zone), and
+   we do not need any.
+2. **The floor is terrain. Only walls are generated.** The zone is a flat terrain.
+   Height, click-to-move, monster heights and the avatar's height clamp all work as
+   in every other zone. That removes the ground-height policy, floor picking and
+   floor residency, which were the three hardest items in the old brief.
+3. **Walls are ordinary map objects.** Client collision against fixed objects
+   already works, and so does the correction that follows: the client sends
+   `CLI_CANTMOVE` and the server pulls its copy of the avatar back
+   (`classUSER::Recv_cli_CANTMOVE`, [gs_user.cpp](../src/sho_gameserver/src/gs_user.cpp)).
+   Every building wall in the game already relies on this.
+4. **Cells are always open; only the walls between cells change.** Every cell centre
+   is reachable on every day. So everything *placed*, such as monster spawn points,
+   the entrance hall, the boss room, pillars, the outer wall and decoration, is
+   authored **once** in the map file and stays valid whatever the seed. The seed only
+   decides which interior edges carry a wall.
+5. **Our own generator, our own PRNG.** It is small, deterministic and has a test
+   vector. It is not a port of anything.
 
-- No persistence, no reset job, no admin command to force a reroll.
-- No packet to distribute the seed — server and client agree because the calendar
-  agrees. (Jrose sends it in extension `0x29`; we would not need to.)
-- It is **reproducible**: a maze reported broken on Tuesday can be regenerated on
-  Thursday and inspected. A stored random seed loses that at rollover.
+## 3. The maze model
 
-Accepted consequence: the day's layout is public once someone maps it. For a
-family-and-friends alpha that is acceptable and arguably social; it resets daily.
+**Grid.** 10 x 10 cells to start (tunable). **The cell size comes from the wall
+art**: one wall mesh spans exactly one cell edge, so pick the wall first and size
+the cell to it (around 15 m is a good target). At 15 m the maze is 150 m across and
+fits inside one 160 m map block.
 
-**This same decision solves the navigation problem in §3.** The server rolls one
-seed per dungeon per day, derives one occupancy grid from it, and hands it to the
-zone the way a `.MOV` file would be. No per-party regeneration.
+**What is fixed, in the `.IFO`:**
+- the outer boundary walls;
+- a pillar at every grid vertex. Pillars hide wall joints and are always present,
+  whatever the seed;
+- floor decoration;
+- monster regen points at cell centres;
+- the entrance hall and the boss room. These are blocks of cells, for example 2 x 2,
+  that the generator is told to leave open inside;
+- the revive point in the entrance hall.
 
-## 2. Entry design
+**What is generated, from the seed:** the interior edges. A 10 x 10 grid has 180
+interior edges. A perfect maze (a spanning tree over 100 cells) opens 99 of them,
+so 81 carry a wall.
 
-An NPC at each crypt mouth takes a material toll and warps the party in.
+**Generator.**
+1. Carve a perfect maze, using a recursive backtracker or randomised Prim's, with the
+   fixed rooms pre-opened.
+2. **Braid it**: remove a share of the remaining walls (start around 10-15%, mostly
+   at dead ends) so there are loops. Pure perfect mazes are tedious to walk and,
+   once PvP arrives, give nobody an escape route.
 
-This deliberately replaces Jrose's entry subsystem — daily eligibility, two
-alternative payment items, leader sponsorship, per-catacomb once-a-day accounting,
-an 05:00 reset. The collision report's companion recovered that **interface** in
-full and was explicit that the **server bookkeeping behind it is unrecoverable**.
-Routing around it removes the least reconstructable part of the feature.
+The output is one edge bitset. Client and server consume exactly that.
 
-**Toll should come from the Cemetery, not a shop.** A bought toll is a gold cost
-with extra steps and puts the gate in a different zone from the door. Zone 87's
-monsters already drop, from `add-karkia-drops.py`'s `MAT_CEMETERY`:
+**Seed.** `seed = hash(salt, maze_id, reset_day)`. `reset_day` is the server's
+calendar day counted from the reset time, not from midnight. It is computed **on the
+server only** and sent to the client (§7, M3). The client never reads its own clock
+for this, because clocks and timezones differ (`client.log` is even in UTC). Because
+the seed comes from the date, any past day's maze can be regenerated to check a
+report. `maze_id` leaves room for a second crypt.
 
-| id | item | price |
-|---:|---|---:|
-| 151 | Black Hearts | 305 |
-| 152 | Green Hearts | 495 |
-| 153 | Blue Hearts | 875 |
+**Determinism.**
+- Write the PRNG ourselves (splitmix64 or xorshift).
+- Never use `rand()`. Never use `std::*_distribution` either, whose output is
+  implementation-defined.
+- Keep a **Python mirror** of the generator in `scripts/`. It writes the M2 static
+  layout, prints any day's maze as ASCII for debugging, and provides the **test
+  vectors**: a few `(seed → edge-bitset hash)` pairs, written into this doc once the
+  generator exists. The C++ version is done when it reproduces them.
 
-A crypt whose keeper asks for hearts, paid by the dead in the graveyard above it,
-closes the loop in one zone and needs no new drop authoring. The Cemetery bosses
-drop **Golden Hearts (156)** and **White Hearts (157)** — a natural gate for the
-second catacomb, giving the two dungeons an order without inventing anything.
+**Placement rules that will bite:**
+- **One wall per edge, never one per cell.** Two cells each placing "their" wall puts
+  two walls in exactly the same plane: the wall-flicker bug from
+  `fix-coplanar-object-overlaps.py`.
+- Walls stop at the pillar faces, or overlap into the pillar with no face in the same
+  plane as a pillar face.
+- Horizontal and vertical edges use the same mesh, rotated 90°.
+- The wall mesh's ZSC parts must carry a collision flag. Check that before choosing
+  the art.
 
-Existing machinery covers all of it: `quest-editor con-store`/`con-warp` for the
-dialog option, the QEX1 appendix for the Lua, `add-karkia-travel.py` for the warp
-leg. See [reference_con_dialog_format] in memory and `scripts/add-karkia-travel.py`.
+## 4. The daily cycle (server)
 
-## 3. What this session verified in *our* codebase
+A small state machine owned by the catacomb zone's thread. Timings are constants for
+now; move them to `server.toml` later if needed.
 
-The collision report makes claims about Rose Next. Three were checked directly and
-all three hold. These are the load-bearing ones.
+| State | When | What happens |
+|---|---|---|
+| OPEN | normal | keeper accepts the toll |
+| WARNING | reset - 10 min | zone-wide announcements, repeated |
+| CLOSED | reset - 5 min | keeper refuses (toll **not** taken) |
+| EVICT | reset | every player in the zone is warped to the crypt mouth in zone 87 |
+| REROLL | right after | kill all monsters, delete ground items, reset regen points, compute the new seed, back to OPEN |
 
-**Sorrow wall 113 will work.** Its collision sits on a *child* of a zero-collision
-root, which a root-only importer would drop. `zz_visible::gather_collidable`
-([zz_visible.cpp:1678](../src/engine/src/zz_visible.cpp)) pushes a node only if its
-own level is nonzero but **recurses into children unconditionally**, so the child
-is collected. Note it also requires `inscene` — residency is real (§5).
+**How the keeper knows the crypt is closed, with no new quest machinery.**
+- Quest conditions cannot read the clock, but they can read an **NPC event value**.
+  That is how Cornell's timed quest works (client `CLAUDE.md`, "Timed quests").
+- The cycle sets the keeper's event value: 1 = open, 0 = closed. The entry trigger's
+  condition checks it, so a refused entry never takes the hearts.
+- Set it from the C++ cycle, not from the keeper's `.aip`, so there is **one clock**.
+  Cornell's AI also shows the trap of opening on an edge: a server started after the
+  edge time skips the whole day.
 
-**The monster-height helper skips our floors.** `getWorldObjectHeightInScene`
-([zz_interface.cpp:8784](../src/engine/src/zz_interface.cpp)) contains
-`if (ZZ_IS_NOTMOVEABLE(level)) continue; // skip if not moveable`. Catacomb floors
-are `0x0C` = polygon collision **plus** NOTMOVEABLE, so every Sorrow floor and most
-Reminiscence floors are invisible to it — and `AdjustHeight_Monster` reaches it via
-`CTERRAIN::GetHeightTop`. Monsters would stand at the reused outdoor heightfield,
-looking like a placement bug.
+**GM commands (needed from M1, nobody can wait a day to test):**
+- `/catacomb status` shows the state, seed and time to reset;
+- `/catacomb reset` runs WARNING → EVICT → REROLL now, with short timers;
+- `/catacomb seed N` forces a seed.
 
-Jrose's answer is a hard flat plane: zones 76/77 branch to a function that is
-literally `fldz; ret 8`, returning 0.0 for every X/Y. **We need our own dungeon
-ground-height policy; this is not optional polish.** The avatar's collision
-response also *clamps* height against the terrain value, so a leftover heightfield
-can lift the player off a correctly placed floor.
+**Edge cases:**
+- **Dying** → revive point in the entrance hall. The zone's revive point is resolved
+  as the nearest one (`CZoneFILE::Get_RevivePOS`), and there is only one.
+- **Logging in inside** already lands you on that revive point, +/-5 m
+  (`gs_threadsql.cpp`, login path). With the hall at least one cell wide, that is
+  always open floor, whatever the day.
+- **Offline at the reset**: such a player is not evicted, and logs into *today's*
+  maze in the entrance hall without paying. Accepted for the alpha. The fix, if it
+  ever matters, is to store the entry day per character.
+- **Entering during WARNING** is allowed, and the keeper's text says when the crypt
+  seals.
 
-**The server movement grid is 5 m.** `nATTR_GRID_SIZE 500`
-([zonefile.h:117](../src/sho_gameserver/src/zonefile.h)), with `IsMovablePOS` on
-the next line. Three grid cells per 15 m maze cell — but as the report warns, that
-ratio does not establish index alignment, and `IsMovablePOS` is a *destination*
-test that says nothing about walls in between.
+## 5. Entry
 
-## 4. What this session found about our data
+- **Keeper NPC** at the crypt mouth in the Cemetery, with a crypt entrance object
+  placed in the Cemetery's IFO (or, for M1, just the NPC).
+- **Toll = Cemetery hearts**, already dropped there (`add-karkia-drops.py`
+  `MAT_CEMETERY`): Black 151, Green 152, Blue 153. Amount to be tuned.
+- **The payment is a QSD trigger**, so the server enforces it. The trigger:
+  - checks the keeper's event value is 1 (open);
+  - checks the hearts are in the bag;
+  - removes them;
+  - warps the player to the entrance hall.
 
-**Zone numbers collide.** Jrose's 76 and 77 are our **Golden Ring** and **Golden
-Ring** (Oro). Renumber, as we did for Karkia's own zones. `LIST_ZONE` has 145 rows,
-83 blank, and **89–130 is a free run of 42** sitting between our Karkia blocks
-(86–88 and 131–136, 144) — so 89/90 puts the catacombs beside the Cemetery in the
-table as well as in the fiction. Both are below `TEST_ZONE_NO` (250), so they will
-actually serve; see [reference_zone_number_ceiling] in memory.
+  The dialog option goes in through the QEX1 appendix (quest-editor `con-warp` /
+  `con-append`). This uses existing machinery only.
 
-**Monster ids are almost all free.** Of the 32 catacomb NPC ids, **31 are blank in
-our `LIST_NPC`**. The single collision is **2264 = our Terrasaurus Predator**. The
-two bosses (2771 Reminiscence, 2274 Sorrow) are both free.
+## 6. Content
 
-**The asset import is tiny.** 46 files, **0.74 MB** total —
-`3Ddata/KARKIA/KCatacomb` (13 ZMS + 10 DDS) and
-`3Ddata/MAPS/KARKIA/KCATACOMB` (11 ZSC + 10 STB + 2 DDS) — plus 31 `KCC*.AIP` at
-42 KB. Smaller than a single armour set.
+**Zone number: 90.** It is free in `LIST_ZONE`, its `ITEM_DROP` row is empty, and no
+monster's drop column points at it (checked 2026-10-01). Under `TEST_ZONE_NO` (250),
+so it is served. Skaaj took 89.
 
-**We have no catacomb assets today.** The only match under `data/` is an unrelated
-Eldeon mesh.
+**Zone files.** All of them are new:
+- `LIST_ZONE` row;
+- `.ZON` with the start and revive events;
+- flat terrain;
+- `.IFO`;
+- `.MOV`;
+- name via `add-zone-name.py`.
 
-**Newly imported textures will need mip chains** — every armour import this week
-logged `src_mips=1` slow creates. Run `scripts/add-dds-mipmaps.py --subdir` after
-importing; see its runs-on-record.
+No zone has been authored from scratch here before; every one so far was imported.
+The likely cheapest route is to **clone a small existing zone's files and flatten
+its heightmap with a script**. Decide at the start of M1.
 
-## 5. The work, in stages
+**Monsters.**
+- Start by **reusing Cemetery undead** at regen points in the cell centres. No import
+  is needed and the theme fits.
+- Keep aggro range under one cell and the leash short, so monsters stay in their own
+  cell until §7 M4.
+- Remember the spawn rules in the root `CLAUDE.md`: the regen point's `tacticPoint`
+  at 100, a per-slot count well under `limitCNT`.
+- Importing the Jrose catacomb monster art (31 NPC rows, under 1 MB) is a later
+  identity pass, not a prerequisite.
 
-Ordered so the risky parts are provable early and the cheap parts are testable
-before the expensive ones exist.
+**Boss.**
+- One regen point in the boss room, count 1, cap 1. Respawn interval to be decided
+  (a few hours, or once per day). REROLL resets it either way.
+- Boss loot = **unique weapons**:
+  - new imports via `import-item.py --art-only --template-row N`;
+  - or the Jrose weapons already imported (1381-1453), after checking whether
+    anything sells them.
 
-1. **Entry loop, against a placeholder.** NPC at the crypt mouth, material toll,
-   warp into *any* existing dungeon zone. Proves the part that is new to us — gate,
-   cost, descent, return — while the maze does not exist yet. Uses only tooling we
-   already have.
-2. **Asset import.** 46 files, renumbered zones, 31 NPC rows plus one remap for
-   2264. Then the mip pass.
-3. **Generator port.** Transcribe Appendix A of the main report to C++ and check
-   it against its published hash (`Maze(12345,15,15,1)` →
-   `8a5ee93a…`). Then Appendix C for descriptors
-   (`9af04a35…`, final PRNG state `554256261`). **Both have conformance vectors —
-   you know when you are done.**
-4. **Ground-height policy.** A dungeon plane at Z = 0 that `GetHeight`,
-   `GetHeightTop` and the avatar's height clamp all respect, without changing
-   ordinary-zone behaviour.
-5. **Scene assembly and collision.** ZSC bank selection, root transform, insertion.
-   Compare against the collision report's snapshot hashes
-   (Reminiscence `8a7c00a3…` 225 parts / 57,402 triangles; Sorrow `54f33e16…`
-   249 / 11,020).
-6. **Server occupancy.** Derive the movement grid from the same daily seed. Mind
-   the 3:1 ratio caveat and wall protrusions beyond the nominal tile.
-7. **Population.** Author it (§6). Place the two bosses, the chests and their
-   mimics.
-8. **Progression.** Gatekeeper → key → gate, if kept (§7).
+  Item ids up to **2047** can drop since the drop-code widening
+  (`drop_item_code.h`).
 
-## 6. What must be authored, not recovered
+**Drop tables.**
+- One table for the catacomb monsters, one for the boss, written by a script in the
+  style of `add-karkia-drops.py`, with `--simulate` to check rates.
+- **Fill row 90 too**: table ids and zone ids are one namespace, and with `col 20` at
+  80, about 20% of every roll goes to the zone's row. Left empty, a fifth of all
+  rolls drop nothing.
 
-Neither report found these in the client, and both concluded they are not there:
+**Level band.** Cemetery and up, to be decided. New monster rows whose level falls in
+60-199 must be added to `scripts/balance-trend-exclude.py`, and every balance pass
+re-verified (root `CLAUDE.md`, Monster Balance).
 
-- **Per-floor monster population, counts and positions.** The
-  `KCATACOMB010x_NPC.STB` files look authoritative and are **Ramesses/Oro copies**
-  — a trap the report flags explicitly. Do not build a "faithful" schedule from them.
-- **Gatekeeper selection** — which monster carries the key.
-- **Daily reset, pricing and once-per-day accounting** — replaced by §2 anyway.
-- **Server navigation representation.**
+## 7. Milestones
 
-For a maze this is a much lower-stakes authoring job than the tower's 250 floors of
-waves: scatter monsters through corridors and nobody can tell it is not original.
-That asymmetry is why the catacombs are the better first dungeon.
+Each milestone is playable on its own. Most of the engine risk sits in **M3**, and by
+then it comes down to one question.
 
-## 7. Decisions the implementation session should make first
+**M1: zone, entry, daily cycle (PvE, empty maze).** A flat, empty zone 90 with an
+entrance hall, a keeper with the toll, the cycle and the GM commands.
 
-1. **Keep the gatekeeper/key descent?** Jrose gates each floor on killing a
-   keyholder and gathering the party. It is cheap for us — a per-character counter,
-   or simply "the gate opens when this floor's named monster dies" — and it is what
-   stops the dungeon being a footrace to B5. Worth a deliberate yes/no rather than
-   quietly dropping it.
-2. **Both catacombs, or one?** Sorrow has richer wall geometry (28 parts to
-   Reminiscence's 17) and the harder boss. Shipping Reminiscence alone halves the
-   population authoring and proves the pipeline.
-3. **Five floors, or fewer?** The floor tables are data; nothing forces five.
-4. **What the toll actually costs**, and whether the second dungeon uses the boss
-   Hearts.
+*Done when:*
+- paying warps you in;
+- dying and relogging both put you in the hall;
+- `/catacomb reset` warns, closes (the keeper refuses and keeps your hearts), evicts
+  to the crypt mouth, clears the zone, and reopens.
 
-## 8. Acceptance
+**M2: one static maze with its content.** The Python generator writes one fixed
+seed's walls into the IFO, with pillars, the outer wall, regen points, the boss room,
+the drop tables and the first unique weapon. **Almost no C++.**
 
-The collision report's §6 lists six acceptance cases — ground, collision
-hierarchy, movement, picking, residency, server agreement. Use them as written.
+*Done when:*
+- it plays end to end;
+- wall collision holds at walking and running speed;
+- monsters behave in corridors;
+- the camera cannot spoil the maze from above. Wall height, fog and zoom limits are
+  tuned here; this is the main open question about the look.
 
-The three that no document can settle in advance, and where the time will go:
+**M3: walls change daily.**
+- The generator goes into `src/common`, shared by client and server, and reproduces
+  the Python test vectors.
+- The server sends the seed.
+- The client generates the wall placements and adds them **through the same
+  object-creation path the IFO's objects take**, so culling (bounds from mesh),
+  residency and collision treat them as ordinary map objects. The generated walls
+  have no lightmap; flat lighting suits a crypt, and Shibuya already ships unlit.
+- The interior walls leave the IFO; the fixed parts stay.
 
-- **Residency.** Does collision survive the camera turning, a streaming boundary,
-  and floor teardown? Note our ordinary patch removal also removes fixed objects
-  from the scene, and `gather_collidable` requires `inscene`.
-- **Picking.** Clicks must land on generated floors. `CTERRAIN::Pick_POSITION`
-  iterates terrain patches, so an inserted floor is *not* automatically a movement
-  destination — and terrain or sky hits will hide the gap.
-- **Step/slide response** at speed, and for cart/castle-gear widths.
+*First investigation:* do the walls go in **before** the map loads, with the seed
+sent ahead of the zone load on both entry paths (login and teleport)? Or can they be
+added to an already-loaded map whenever the seed packet arrives? The second is more
+robust to packet ordering and makes `/catacomb seed` live, but only if late insertion
+into loaded patches is safe.
 
-Everything verified so far is geometry and static tracing. Nobody has had this in
-our engine.
+*Done when:*
+- two clients see the same walls;
+- `/catacomb reset` produces a different layout;
+- the Python and C++ test vectors agree.
+
+**M4: monsters respect walls.** The server checks a monster's straight-line move
+against the closed edges. The walls lie on grid lines, so the check is a short walk
+through the cells the line crosses. A blocked chase stops at the wall or gives up.
+Aggro and leash can then be relaxed.
+
+**M5 and later: PvP and polish, in any order.**
+- `ZONE_PVP_STATE` 2 (everyone except your party). Check whether that mode needs a
+  zone entry trigger to assign teams, as the clan fields do (gameserver `CLAUDE.md`,
+  "PVP Ally Rule"), and whether the entrance hall needs protection from spawn
+  camping.
+- A minimap drawn from the seed: the UI2 minimap is RmlUi and could draw the edge
+  bitset.
+- Catacomb monster art, chests, several floors, a second crypt (`maze_id`).
+
+## 8. Accepted limitations (v1)
+
+- **Ranged attacks and area skills go through walls.** ROSE has no line-of-sight
+  check anywhere.
+- **Monsters can clip through walls until M4.** This is limited by keeping their
+  aggro range and leash tight.
+- **The server trusts the client's collision** for players, as in every zone. A
+  modified client can walk through walls.
+- **The usual minimap shows nothing useful.** No minimap until M5, which is arguably
+  right for a maze.
+- **Generated walls are unlit** (no lightmap).
+- **A player offline at reset gets today's maze for free** (§4).
+
+## 9. Traps from our codebase that apply here
+
+- **A zone with no `.MOV` blocks every cell**, which silently disables monster
+  leashing, wandering and fleeing. Ship an all-walkable `.MOV`.
+- **Drop-table ids are zone ids**, so fill row 90 (§6).
+- **The keeper's dialog** (`.CON`, QEX1) and **`UI_strID.ID`-style loose files** are
+  client data. Ship client and data together, and bake after data edits
+  (`scripts/pack.ps1`).
+- **No `.bak` under `data/`**: `pack.rs` would bake it.
+- **Restart the servers after any STB edit**; they cache tables at startup.
+- **Write generator scripts as files, not bash heredocs**: `\n` and `\0` become real
+  bytes.
+
+## 10. Open decisions
+
+1. **Wall art:** an existing wall mesh from our data for M2, or import the Jrose
+   KCatacomb pieces straight away (46 files, 0.74 MB, walls only, without the floor
+   parts)? This fixes the cell size.
+2. **Toll amount**, and which hearts.
+3. **Level band** for the monsters and the boss.
+4. **Boss respawn:** once per day, or every few hours.
+5. **Braid ratio and room sizes:** tune in M2.
+6. **Reset time:** any fixed server time; a constant for now.
