@@ -20,6 +20,8 @@ egui_extras = { version = "0.27", features = ["image"] }
 rfd = "0.14"
 roselib = { git = "https://github.com/rminderhoud/rose-tools" }
 byteorder = "1"
+encoding_rs = "0.8"
+ab_glyph = "0.2"
 log = "0.4"
 env_logger = "0.11"
 

@@ -12,6 +12,7 @@ use npc_shop_editor::icons::IconStore;
 use npc_shop_editor::monsters::{
     Monster, MonsterCatalog, MonsterFilter, Severity, StatusFilter, MAX_SPAWN_COUNT, PACKAGE_TABLES,
 };
+use npc_shop_editor::text::Codec;
 
 /// Broken monster rows keep their place in the list, drawn in rose.
 const ROSE: Color32 = Color32::from_rgb(255, 96, 150);
@@ -19,7 +20,30 @@ const AMBER: Color32 = Color32::from_rgb(235, 185, 80);
 
 fn main() -> eframe::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
-    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    let mut args: Vec<_> = std::env::args_os().skip(1).collect();
+    // --encoding auto|western|korean|japanese: how table text is decoded.
+    // Auto reads the script off each file, so this is only for overriding it.
+    let mut codec = Codec::Auto;
+    if let Some(i) = args.iter().position(|a| a == "--encoding") {
+        let value = args.get(i + 1).and_then(|v| v.to_str()).and_then(Codec::parse);
+        match value {
+            Some(c) => codec = c,
+            None => {
+                eprintln!("usage: --encoding auto|western|korean|japanese");
+                std::process::exit(2);
+            }
+        }
+        args.drain(i..i + 2);
+    }
+    if args.first().is_some_and(|a| a == "--check") {
+        // Headless: load a folder the way the window does and print what the
+        // "Data warnings" header would show. Exit 1 if either catalog failed.
+        let Some(root) = args.get(1).map(PathBuf::from) else {
+            eprintln!("usage: gm-item-browser --check <data folder or data.idx> [--encoding ...]");
+            std::process::exit(2);
+        };
+        std::process::exit(check(&root, codec));
+    }
     if args.first().is_some_and(|a| a == "--package-monsters") {
         // Used by scripts/package-gm-item-browser.ps1. The release build has no
         // console, so the packager redirects stderr and checks the exit code.
@@ -56,8 +80,121 @@ fn main() -> eframe::Result<()> {
                 .with_min_inner_size([1100.0, 650.0]),
             ..Default::default()
         },
-        Box::new(move |cc| Box::new(Browser::new(cc, root))),
+        Box::new(move |cc| Box::new(Browser::new(cc, root, codec))),
     )
+}
+
+/// `--check`: what the window would load from `root`, on the console.
+fn check(root: &Path, codec: Codec) -> i32 {
+    let assets = match Assets::open(root) {
+        Ok(assets) => assets,
+        Err(e) => {
+            eprintln!("cannot open {}: {e:#}", root.display());
+            return 1;
+        }
+    };
+    let mut failed = false;
+    let mut warnings = Vec::new();
+    match Catalog::load_with(&assets, codec) {
+        Ok(catalog) => {
+            let named = catalog
+                .items
+                .iter()
+                .filter(|i| !i.item.name.starts_with("Unnamed "))
+                .count();
+            println!("items: {} ({named} named)", catalog.items.len());
+            for item in catalog.items.iter().filter(|i| i.item.icon_no > 0).take(5) {
+                println!("  e.g. {}:{} {}", item.item.category as u8, item.item.id, item.item.name);
+            }
+            warnings.extend(catalog.warnings);
+        }
+        Err(e) => {
+            failed = true;
+            println!("items: FAILED: {e:#}");
+        }
+    }
+    match MonsterCatalog::load_with(&assets, codec) {
+        Ok(catalog) => {
+            let named = catalog.monsters.iter().filter(|m| m.has_game_name).count();
+            println!(
+                "monsters: {} ({named} with a game name; file checks {})",
+                catalog.monsters.len(),
+                if catalog.file_checks { "on" } else { "off" }
+            );
+            for m in catalog.monsters.iter().filter(|m| m.has_game_name).take(5) {
+                println!("  e.g. {} {}", m.id, m.name);
+            }
+            warnings.extend(catalog.warnings);
+        }
+        Err(e) => {
+            failed = true;
+            println!("monsters: FAILED: {e:#}");
+        }
+    }
+    println!("data warnings: {}", warnings.len());
+    for w in &warnings {
+        println!("  {w}");
+    }
+    // Load the fallback fonts into a headless context and run one frame, which
+    // is when egui parses them -- so a font the window would choke on fails here.
+    let ctx = egui::Context::default();
+    let fonts = install_fallback_fonts(&ctx);
+    let _ = ctx.run(egui::RawInput::default(), |ctx| {
+        egui::Area::new("probe".into()).show(ctx, |ui| {
+            ui.label("鏡の盾 나무 방패");
+        });
+    });
+    println!(
+        "fallback fonts: {}",
+        if fonts.is_empty() { "none (CJK names draw as boxes)".to_string() } else { fonts.join(", ") }
+    );
+    i32::from(failed)
+}
+
+/// egui ships Latin-only fonts, so a correctly decoded Japanese or Korean name
+/// still draws as boxes. Append whatever CJK fonts Windows has as fallbacks
+/// (egui walks a family's list until a glyph is found); `ROSE_GM_FONT` names
+/// one to try first. Returns what was loaded, for the data warnings header.
+fn install_fallback_fonts(ctx: &egui::Context) -> Vec<String> {
+    let mut fonts = egui::FontDefinitions::default();
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(custom) = std::env::var_os("ROSE_GM_FONT") {
+        candidates.push(custom.into());
+    }
+    let windir = std::env::var_os("WINDIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+    for name in [
+        "YuGothM.ttc", // Japanese (Windows 10+)
+        "meiryo.ttc",
+        "msgothic.ttc",
+        "malgun.ttf", // Korean
+        "msyh.ttc",   // Simplified Chinese, also covers most hanja/kanji
+        "simsun.ttc",
+    ] {
+        candidates.push(windir.join("Fonts").join(name));
+    }
+    let mut loaded = Vec::new();
+    for path in candidates {
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        // epaint unwraps the parse inside set_fonts; validate here instead so
+        // a damaged font file degrades to "no fallback" rather than a panic.
+        if ab_glyph::FontRef::try_from_slice_and_index(&bytes, 0).is_err() {
+            continue;
+        }
+        let key = format!("fallback-{}", loaded.len());
+        fonts
+            .font_data
+            .insert(key.clone(), egui::FontData::from_owned(bytes));
+        for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            fonts.families.entry(family).or_default().push(key.clone());
+        }
+        loaded.push(path.file_name().unwrap_or_default().to_string_lossy().into_owned());
+    }
+    ctx.set_fonts(fonts);
+    loaded
 }
 
 /// Copy the monster tables and write the manifest of model files they
@@ -238,12 +375,24 @@ struct Browser {
     quantity: i32,
     mobs: MonsterView,
     copied: Option<(String, std::time::Instant)>,
+    /// How table text is decoded; Auto reads the script off each file.
+    codec: Codec,
+    /// Set when no CJK fallback font could be loaded from the system.
+    font_note: Option<String>,
 }
 
 impl Browser {
-    fn new(cc: &eframe::CreationContext<'_>, root: Option<PathBuf>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, root: Option<PathBuf>, codec: Codec) -> Self {
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
+        let fonts = install_fallback_fonts(&cc.egui_ctx);
+        let font_note = fonts.is_empty().then(|| {
+            "No Japanese/Korean font found in the Windows Fonts folder: foreign names draw as \
+             boxes. Set ROSE_GM_FONT to a .ttf/.ttc to use one."
+                .to_string()
+        });
         let mut app = Self {
+            codec,
+            font_note,
             tab: Tab::Items,
             catalog: None,
             icons: IconStore::empty(Path::new(".")),
@@ -279,14 +428,16 @@ impl Browser {
         self.icons = IconStore::empty(Path::new("."));
         let (tx, rx) = mpsc::channel();
         let ctx = ctx.clone();
+        let codec = self.codec;
         self.loading = Some(rx);
         std::thread::spawn(move || {
             let result = Assets::open(&root)
                 .map(|assets| {
                     let assets = Arc::new(assets);
                     LoadedData {
-                        items: Catalog::load(&assets).map_err(|e| format!("{e:#}")),
-                        monsters: MonsterCatalog::load(&assets).map_err(|e| format!("{e:#}")),
+                        items: Catalog::load_with(&assets, codec).map_err(|e| format!("{e:#}")),
+                        monsters: MonsterCatalog::load_with(&assets, codec)
+                            .map_err(|e| format!("{e:#}")),
                         assets,
                     }
                 })
@@ -903,8 +1054,9 @@ impl Browser {
     fn warnings(&self) -> Vec<&str> {
         let items = self.catalog.iter().flat_map(|c| &c.warnings);
         let mobs = self.mobs.catalog.iter().flat_map(|c| &c.warnings);
-        self.load_notes
+        self.font_note
             .iter()
+            .chain(&self.load_notes)
             .chain(items)
             .chain(mobs)
             .map(String::as_str)
@@ -969,6 +1121,25 @@ impl eframe::App for Browser {
                     .clicked()
                 {
                     self.load(self.root.clone().unwrap(), ctx);
+                }
+                let before = self.codec;
+                egui::ComboBox::from_id_source("text-codec")
+                    .selected_text(format!("Text: {}", self.codec.label()))
+                    .show_ui(ui, |ui| {
+                        for codec in Codec::ALL {
+                            ui.selectable_value(&mut self.codec, codec, codec.label());
+                        }
+                    })
+                    .response
+                    .on_hover_text(
+                        "How the tables' text is decoded. Auto reads the script off each \
+                         file (Jrose is Japanese, retail and RoseZA are Korean, ours is \
+                         Western); pick one only if Auto gets a folder wrong.",
+                    );
+                if self.codec != before && self.loading.is_none() {
+                    if let Some(root) = self.root.clone() {
+                        self.load(root, ctx);
+                    }
                 }
                 if let Some((command, when)) = &self.copied {
                     if when.elapsed().as_secs() < 4 {

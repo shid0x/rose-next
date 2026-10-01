@@ -1,14 +1,11 @@
 //! GM catalog. Column constants follow common/include/rose/io/stb.h.
 use std::collections::HashMap;
-use std::io::Cursor;
 
 use anyhow::{bail, Context, Result};
-use roselib::files::stl::{StringTableLanguage, StringTableRow};
-use roselib::files::{STB, STL};
-use roselib::io::RoseFile;
 
 use crate::assets::Assets;
 use crate::data::{Item, ItemCategory, STORE_MAX_ITEM_NO};
+use crate::text::{self, Codec};
 
 pub struct Catalog {
     pub items: Vec<CatalogItem>,
@@ -58,9 +55,15 @@ impl CatalogItem {
 
 impl Catalog {
     pub fn load(assets: &Assets) -> Result<Self> {
+        Self::load_with(assets, Codec::Auto)
+    }
+
+    /// `codec` is how the tables' text is read: `Auto` decides per file, so a
+    /// Jrose folder (Shift-JIS, legacy string tables) and our own open alike.
+    pub fn load_with(assets: &Assets, codec: Codec) -> Result<Self> {
         let mut items = Vec::new();
         let mut warnings = Vec::new();
-        let prefixes = match english_names(assets, "3DDATA/STB/STR_ITEMPREFIX.STL") {
+        let prefixes = match english_names_with(assets, "3DDATA/STB/STR_ITEMPREFIX.STL", codec) {
             Ok(prefixes) => Some(prefixes),
             Err(e) => {
                 warnings.push(format!(
@@ -71,13 +74,9 @@ impl Catalog {
         };
         for &category in ItemCategory::ALL {
             let path = format!("3DDATA/STB/{}", category.stb_name());
-            let table = (|| -> Result<STB> {
-                let bytes = assets.read(&path)?;
-                let mut stb = STB::new();
-                stb.read(&mut Cursor::new(bytes))
-                    .map_err(|e| anyhow::anyhow!("{e}"))?;
-                Ok(stb)
-            })();
+            let table = assets
+                .read(&path)
+                .and_then(|bytes| text::read_stb(&bytes, codec));
             let table = match table {
                 Ok(table) => table,
                 Err(e) => {
@@ -86,7 +85,7 @@ impl Catalog {
                 }
             };
             let stl_path = path.replace(".STB", "_S.STL");
-            let names = match english_names(assets, &stl_path) {
+            let names = match english_names_with(assets, &stl_path, codec) {
                 Ok(names) => names,
                 Err(e) => {
                     warnings.push(format!(
@@ -96,7 +95,7 @@ impl Catalog {
                     HashMap::new()
                 }
             };
-            for (id, row) in table.data.iter().enumerate().skip(1) {
+            for (id, row) in table.iter().enumerate().skip(1) {
                 if let Some(item) = collect_item(category, id, row, &names, prefixes.as_ref()) {
                     items.push(item);
                 }
@@ -109,34 +108,10 @@ impl Catalog {
     }
 }
 
-pub(crate) type Names = HashMap<String, (String, String)>;
+pub(crate) type Names = text::Names;
 
-pub(crate) fn english_names(assets: &Assets, path: &str) -> Result<Names> {
-    let mut stl = STL::new();
-    stl.read(&mut Cursor::new(assets.read(path)?))
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-    let english = stl
-        .language_tables
-        .iter()
-        .find(|t| t.language == StringTableLanguage::English)
-        .context("no English translations")?;
-    Ok(stl
-        .keys
-        .iter()
-        .zip(&english.rows)
-        .filter_map(|(key, row)| {
-            let (name, description) = match row {
-                StringTableRow::ItemRow(row) => (&row.text, row.description.clone()),
-                StringTableRow::NormalRow(row) => (&row.text, String::new()),
-                StringTableRow::QuestRow(row) => (&row.text, row.description.clone()),
-            };
-            if name.trim().is_empty() {
-                None
-            } else {
-                Some((key.name.clone(), (name.clone(), description)))
-            }
-        })
-        .collect())
+pub(crate) fn english_names_with(assets: &Assets, path: &str, codec: Codec) -> Result<Names> {
+    text::read_stl_names(&assets.read(path)?, codec)
 }
 
 fn collect_item(

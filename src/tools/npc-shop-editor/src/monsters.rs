@@ -24,7 +24,8 @@ use roselib::files::STB;
 use roselib::io::RoseFile;
 
 use crate::assets::Assets;
-use crate::catalog::{english_names, RangeFilter};
+use crate::catalog::{english_names_with, RangeFilter};
+use crate::text::{self, Codec};
 
 pub const NPC_STB: &str = "3DDATA/STB/LIST_NPC.STB";
 pub const NPC_STL: &str = "3DDATA/STB/LIST_NPC_S.STL";
@@ -129,9 +130,14 @@ pub struct MonsterCatalog {
 
 impl MonsterCatalog {
     pub fn load(assets: &Assets) -> Result<Self> {
+        Self::load_with(assets, Codec::Auto)
+    }
+
+    /// `codec`: how the tables' text is read (see `text::Codec`).
+    pub fn load_with(assets: &Assets, codec: Codec) -> Result<Self> {
         let mut warnings = Vec::new();
-        let table = read_stb(assets, NPC_STB)?;
-        let names = english_names(assets, NPC_STL).unwrap_or_else(|e| {
+        let table = read_stb(assets, NPC_STB, codec)?;
+        let names = english_names_with(assets, NPC_STL, codec).unwrap_or_else(|e| {
             warnings.push(format!("Monster names use table names: {e:#}"));
             HashMap::new()
         });
@@ -156,7 +162,7 @@ impl MonsterCatalog {
         };
 
         let mut rows = Vec::new();
-        for (id, row) in table.data.iter().enumerate().skip(1) {
+        for (id, row) in table.iter().enumerate().skip(1) {
             let Some(mut monster) = collect_row(id, row, &names) else {
                 continue;
             };
@@ -240,11 +246,8 @@ impl MonsterCatalog {
     }
 }
 
-fn read_stb(assets: &Assets, path: &str) -> Result<STB> {
-    let mut stb = STB::new();
-    stb.read(&mut Cursor::new(assets.read(path)?))
-        .map_err(|e| anyhow::anyhow!("{path}: {e}"))?;
-    Ok(stb)
+fn read_stb(assets: &Assets, path: &str, codec: Codec) -> Result<Vec<Vec<String>>> {
+    text::read_stb(&assets.read(path)?, codec).map_err(|e| anyhow::anyhow!("{path}: {e}"))
 }
 
 fn optional<T>(

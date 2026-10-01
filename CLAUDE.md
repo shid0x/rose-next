@@ -80,7 +80,9 @@ src/
 │   ├── vfs-browser/     # rose-vfs: TUI browser for data.idx / .vfs (ratatui + rfd)
 │   ├── npc-shop-editor/ # egui editor for LIST_NPC/LIST_SELL shop tabs (COW on shared rows)
 │   │                   # also builds gm-item-browser.exe: read-only tester catalog, /item + /mon clipboard;
-│   │                   # flags broken LIST_NPC rows (server refusal, CHR/ZSC/mesh/texture/motion)
+│   │                   # flags broken LIST_NPC rows (server refusal, CHR/ZSC/mesh/texture/motion);
+│   │                   # opens foreign dumps too: text codec picked per file (src/text.rs, roselib
+│   │                   # is EUC-KR-only + rejects legacy I_NUM STLs), CJK fonts from Windows; --check
 │   └── quest-editor/    # CLI + egui wizard: Hunt/Fetch quests + NPC dialog givers (see its PROGRESS.md)
 ├── rmlui/               # (in client/) RmlUi integration: D3D9 backend, system iface, panels
 ├── lib_util/            # C++ utility library
