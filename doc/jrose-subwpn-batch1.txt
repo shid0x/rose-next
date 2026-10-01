@@ -1,5 +1,12 @@
 # Jrose SUB-WEAPON (shield) import, batch 1 -- our IDs 308-342, imported 2026-09-06.
 #
+# 2026-10-01: SUPERSEDED for stats and class. Checked on the avatar, only Garm
+# (309) and Righteous Shield NEO (330) of this batch are shields; the rest are
+# caster mirrors, bucklers and trinkets. scripts/repackage-subweapons.py re-files
+# them as retail class 262 Support Tool / 263 Charm, re-gates and re-stats every
+# row and renames five -- the ladder below is history. Rollback is that script's
+# --restore, not remove-trailing-items.py (the rows are live in inventories).
+#
 # First import into LIST_SUBWPN. Milestone 1 (back items, IDs 957-1061) is closed.
 #
 # Shields were identified by ZSC **dummy index 2** (DUMMY_IDX_L_SHIELD) rather

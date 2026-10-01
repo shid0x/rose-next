@@ -111,10 +111,12 @@ WEAPON_TABS = [
     ("Weapons lv210", "LIST_WEAPON", 8, 210, 19),
     ("Weapons lv230", "LIST_WEAPON", 8, 230, 13),
 ]
-SHIELD_LEVELS = (210, 230)
-# 8 since the Jrose shield import (rows 308-342) put six more at these levels;
-# same reasoning as the lv210 weapons above.
-SHIELD_EXPECTED = 8
+# The off-hand tab, explicit since 2026-10-01: repackage-subweapons.py turned
+# most of the imported "shields" into Support Tools and Charms, so "every
+# LIST_SUBWPN row at level 210/230" no longer means "the shields". Huzam sells
+# the three buyable shields, the 210/230 caster mirrors and Chronos Aspis; the
+# lv240 shield (Righteous Shield NEO) is boss loot and the charms are drops.
+HUZAM_OFFHAND = [309, 306, 307, 308, 314, 326]
 
 
 def encode_item(item_type, item_no):
@@ -195,11 +197,11 @@ def build_plan(m):
         plan.append((HUZAM_NPC_ROW, label,
                      {i: encode_item(typ, r) for i, r in enumerate(rows)}))
 
-    shields = []
-    for level in SHIELD_LEVELS:
-        shields += [encode_item(9, r) for r in rows_at_level(m, "LIST_SUBWPN", level)]
-    if len(shields) != SHIELD_EXPECTED:
-        sys.exit(f"found {len(shields)} shields, expected {SHIELD_EXPECTED}")
+    z = m.Stb(os.path.join(STB, "LIST_SUBWPN.STB"))
+    for r in HUZAM_OFFHAND:
+        if not z.get(r, 0).strip():
+            sys.exit(f"LIST_SUBWPN row {r} is blank -- refusing to stock it")
+    shields = [encode_item(9, r) for r in HUZAM_OFFHAND]
     plan.append((HUZAM_NPC_ROW, "Shields", {i: v for i, v in enumerate(shields)}))
 
     for npc, label, slots in plan:

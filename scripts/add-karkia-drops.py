@@ -57,6 +57,10 @@ Materials are metals, leather and "hearts", never wood: Karkia is a dead world
 of ruins and undead and its tables should not read like a forest. Bosses get the
 top of the range.
 
+(2026-10-01: the "shield" bucket is now an off-hand bucket -- repackage-subweapons.py
+turned most of the imported shields into Support Tools and Charms and left one
+real shield per tier; see the OFF_* lists. Re-applied with `--rewrite`.)
+
 The signature drops are the two imported Jrose sets, which have **no source
 anywhere in the game** until now:
 
@@ -157,14 +161,30 @@ MAT_GARDEN = [755, 756, 757, 741, 749, 750, 764, 758]
 USE_FIELD = [13, 32]                                      # Vital / Spiritual (XL)
 USE_BOSS = [35, 36]                                       # Health / Mana Bottle (XL)
 
-# Jrose shields by level band (type 9)
-SHIELD_210 = [308, 309, 310]                              # Freyja, Garm, Fafnir
-SHIELD_215 = [320, 321, 322]                              # Steam Clock x3
-SHIELD_220 = [311, 312, 313]                              # Cathedral, Ashura, Reconquista
-SHIELD_225 = [331]                                        # Lord Knight
-SHIELD_230 = [314, 315, 316]                              # Ushumgal, Zlatorog, Lindwurm
-SHIELD_235 = [328]                                        # Lord of Riot
-SHIELD_240 = [317, 318, 319]                              # the Evolved trio
+# Off-hand bucket (type 9). Until 2026-10-01 these were seven "shield" lists of
+# the Jrose imports; repackage-subweapons.py then made most of those rows
+# Support Tools (262, casters) and Charms (263, DEX or STR trinkets), leaving
+# one real shield per tier: Garm 309 (210), Golden Angel 306 (220), Ancient
+# Davion 307 (230), Righteous Shield NEO 330 (240). A bucket is a five-slot
+# redirect window, so each tier's window is shield + tool + charms, with the
+# shield listed twice where there is room so its own rate stays near the old
+# 1-in-30. Read as [shield, tool, light charm, melee charm, ...].
+OFF_210 = [309, 308, 310]                                 # Garm, Freyja, Fafnir's Scale
+OFF_215 = [321, 320, 322]                                 # Steam Clock silver/gold/black
+OFF_220 = [306, 311, 312, 313]                            # Golden Angel, Cathedral, Ashura, Reconquista
+OFF_225 = [331]                                           # Lord Knight Crest
+OFF_230 = [307, 314, 315, 316]                            # Davion, Ushumgal, Zlatorog, Lindwurm Talon
+OFF_235 = [328]                                           # Lord of Riot
+OFF_240 = [330, 317, 318, 319]                            # NEO, Evolved Ushumgal/Zlatorog/Lindwurm
+
+OFF_CEMETERY = OFF_210 + [OFF_215[0], OFF_210[0]]         # 900 / zone 87
+OFF_OFFICER = [OFF_215[2]] + [306, 311, 313] + OFF_225    # 901
+OFF_DSEED = OFF_210 + [312, OFF_215[1]]                   # 902
+OFF_SPIRE = OFF_230 + [OFF_240[0]]                        # 906 / zone 88
+OFF_MEMORIES = OFF_230 + [OFF_230[0]]                     # 909
+OFF_QUEEN = OFF_240 + [OFF_240[0]]                        # 910
+OFF_GARDEN = OFF_240 + OFF_235                            # 911
+OFF_BOSS = OFF_240[:2]                                    # boss common slots: NEO + Evolved Ushumgal
 
 # Jrose weapons by tier (type 8) -- all above id 999, so all wide-encoded
 WPN_220 = [1426, 1427, 1428, 1429, 1430, 1431, 1432, 1433, 1434, 1435, 1436]
@@ -220,37 +240,31 @@ def boss(mythicals, shields, mats=None):
 
 TABLES = {
     900: ("Cemetery trash (17 mobs, lv215-228)",
-          field(MAT_CEMETERY, USE_FIELD, SHIELD_210 + SHIELD_215[:2],
-                WPN_220[:5])),
+          field(MAT_CEMETERY, USE_FIELD, OFF_CEMETERY, WPN_220[:5])),
     901: ("Revived Quarantine Officer (lv223)",
-          field(MAT_CEMETERY, USE_FIELD, SHIELD_215[2:] + SHIELD_220 + SHIELD_225,
-                WPN_220[5:10])),
+          field(MAT_CEMETERY, USE_FIELD, OFF_OFFICER, WPN_220[5:10])),
     902: ("D-Seed (lv215)",
-          field(MAT_CEMETERY, USE_FIELD, SHIELD_210 + SHIELD_215[:2],
-                [WPN_220[10]] + WPN_220[:4])),
+          field(MAT_CEMETERY, USE_FIELD, OFF_DSEED, [WPN_220[10]] + WPN_220[:4])),
     906: ("Alpha roster (10 mobs, lv228-240)",
-          field(MAT_SPIRE, USE_FIELD, SHIELD_230 + SHIELD_235 + SHIELD_240[:1],
-                WPN_235[:5], extra=WPN_235[5:])),
+          field(MAT_SPIRE, USE_FIELD, OFF_SPIRE, WPN_235[:5], extra=WPN_235[5:])),
     # --- the flashback zones, stage 7b --------------------------------------
     909: ("Memories wildlife (lv230-232)",
-          field(MAT_MEMORIES, USE_FIELD, SHIELD_230 + SHIELD_215[:2],
-                WPN_235[:5])),
+          field(MAT_MEMORIES, USE_FIELD, OFF_MEMORIES, WPN_235[:5])),
     910: ("ELITE Basilissa Melitta (lv238)",
-          elite(WPN_235[5:], SHIELD_240, MAT_GARDEN)),
+          elite(WPN_235[5:], OFF_QUEEN, MAT_GARDEN)),
     911: ("Garden wildlife (lv235-240)",
-          field(MAT_GARDEN, USE_FIELD, SHIELD_235 + SHIELD_240 + SHIELD_225,
-                WPN_235[5:])),
+          field(MAT_GARDEN, USE_FIELD, OFF_GARDEN, WPN_235[5:])),
     903: ("BOSS Hebarn Officer Pazugenti (lv240)",
-          boss([1389, 1398, 1404, 1407, 1419, 1395, 1392, 1386], SHIELD_240)),
+          boss([1389, 1398, 1404, 1407, 1419, 1395, 1392, 1386], OFF_BOSS)),
     904: ("BOSS Hebarn Officer Scylla Mira (lv240)",
-          boss([1383, 1386, 1392, 1401, 1410, 1413, 1416, 1389], SHIELD_240)),
+          boss([1383, 1386, 1392, 1401, 1410, 1413, 1416, 1389], OFF_BOSS)),
     905: ("BOSS Corroded Golem + Revived Veteran (lv238/235)",
-          boss([1395, 1404, 1416, 1413, 1401, 1410, 1383, 1398], SHIELD_240)),
+          boss([1395, 1404, 1416, 1413, 1401, 1410, 1383, 1398], OFF_BOSS)),
     907: ("BOSS Deadly Drake (lv238, Cemetery)",
-          boss([1389, 1392, 1395, 1398, 1401, 1404, 1407, 1410], SHIELD_240,
+          boss([1389, 1392, 1395, 1398, 1401, 1404, 1407, 1410], OFF_BOSS,
                MAT_DRAKE)),
     908: ("BOSS Deadly Drake Alpha (lv240, Spire Village)",
-          boss([1383, 1386, 1413, 1416, 1419, 1389, 1398, 1404], SHIELD_240,
+          boss([1383, 1386, 1413, 1416, 1419, 1389, 1398, 1404], OFF_BOSS,
                MAT_DRAKE)),
 }
 
@@ -352,7 +366,7 @@ def npc_cells_before(npc):
     return out
 
 
-def apply(oro, dry):
+def apply(oro, dry, rewrite=False):
     drop = oro.Stb(DROP_STB)
     npc = oro.Stb(NPC_STB)
     npc_before = npc_cells_before(npc)
@@ -364,11 +378,12 @@ def apply(oro, dry):
         if row >= drop.rows:
             raise SystemExit(f"ITEM_DROP has no row {row}")
         occupied = [s for s in range(LAST_SLOT + 1) if drop.get(row, 1 + s).strip()]
-        if occupied and not all(int(drop.get(row, 1 + s) or 0) == cells.get(s, 0)
-                                for s in occupied):
+        if occupied and not rewrite and not all(
+                int(drop.get(row, 1 + s) or 0) == cells.get(s, 0) for s in occupied):
             raise SystemExit(
                 f"ITEM_DROP row {row} already has content in slots {occupied[:6]} "
-                "-- refusing to overwrite a table we did not author")
+                "-- refusing to overwrite a table we did not author "
+                "(--rewrite if the TABLES above changed and these rows are ours)")
         for s in range(LAST_SLOT + 1):
             v = cells.get(s, 0)
             drop.set(row, 1 + s, str(v).encode("latin-1") if v else b"")
@@ -443,6 +458,9 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--restore", action="store_true")
+    ap.add_argument("--rewrite", action="store_true",
+                    help="overwrite rows this script authored earlier (after a TABLES change); "
+                         "the original whole-file backup is kept")
     args = ap.parse_args()
 
     oro = load("import-oro")
@@ -475,7 +493,7 @@ def main():
               f"{len(bad)} problem(s)" + ("\n  " + "\n  ".join(bad[:10]) if bad else ""))
         return 1 if bad else 0
 
-    report, blobs, npc_before = apply(oro, args.dry_run)
+    report, blobs, npc_before = apply(oro, args.dry_run, args.rewrite)
     print("\n".join(report))
     if args.dry_run:
         print("\ndry run: nothing written")

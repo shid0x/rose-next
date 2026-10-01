@@ -496,6 +496,11 @@ CItem::GetToolTip(CInfo& ToolTip, DWORD dwDialogType, DWORD dwType) {
             } else {
                 AddItemDefaultTopText(sItem, ToolTip);
                 AddItemLifeDuration(sItem, ToolTip);
+                // Support Tools (262) and Charms (263) carry DEF/RES too -- the
+                // server sums every equip slot regardless of class -- but retail
+                // only printed the line for shields, so a tool's RES was invisible.
+                if (ITEM_DEFENCE(nItemType, nItemIdx) || ITEM_RESISTENCE(nItemType, nItemIdx))
+                    AddItemDefence(sItem, ToolTip);
             }
 
             if (bIsDetail) {

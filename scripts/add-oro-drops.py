@@ -212,14 +212,17 @@ class Plan:
     # -- table shapes -----------------------------------------------------
     def buckets(self, tier, i):
         kd = self.kd
+        # Off-hand windows (2026-10-01, repackage-subweapons.py): one shield per
+        # tier plus that tier's Support Tool and Charms, shield doubled when
+        # there is room -- the same shape as Karkia's OFF_* lists.
         if tier == "RING":
-            groups = {1: [(T_SUBWPN, s) for s in kd.SHIELD_210 + kd.SHIELD_215[:2]],
+            groups = {1: [(T_SUBWPN, s) for s in kd.OFF_CEMETERY],          # Garm x2, Freyja, Fafnir's Scale, silver clock
                       2: [(T_WEAPON, w) for w in rot(WPN_ORO_210, i)]}
         elif tier == "WASTE":
-            groups = {1: [(T_SUBWPN, s) for s in kd.SHIELD_220 + kd.SHIELD_225 + kd.SHIELD_230[:1]],
+            groups = {1: [(T_SUBWPN, s) for s in kd.OFF_220 + [kd.OFF_230[0]]],  # Golden Angel, Cathedral, Ashura, Reconquista, Davion
                       2: [(T_WEAPON, w) for w in rot(kd.WPN_220, i)]}
         else:
-            groups = {1: [(T_SUBWPN, s) for s in kd.SHIELD_230 + kd.SHIELD_235 + kd.SHIELD_240[:1]],
+            groups = {1: [(T_SUBWPN, s) for s in kd.OFF_SPIRE],             # Davion, Ushumgal, Zlatorog, Lindwurm Talon, NEO
                       2: [(T_WEAPON, w) for w in rot(kd.WPN_235, i)],
                       3: [(T_BODY, b) for b in ARMOUR_240[T_BODY]],
                       4: [(T_CAP, c) for c in ARMOUR_240[T_CAP]]}
@@ -237,11 +240,11 @@ class Plan:
         kd = self.kd
         if tier == "RING":
             common = [(T_WEAPON, w) for w in rot(WPN_ORO_210, i)]
-            common += [(T_SUBWPN, s) for s in kd.SHIELD_215[:2]]
+            common += [(T_SUBWPN, s) for s in kd.OFF_210[:2]]        # Garm, Freyja
             groups = {}
         elif tier == "WASTE":
             common = [(T_WEAPON, w) for w in rot(kd.WPN_235, i)]
-            common += [(T_SUBWPN, s) for s in kd.SHIELD_230[:2]]
+            common += [(T_SUBWPN, s) for s in kd.OFF_230[:2]]        # Davion, Ushumgal
             groups = {}
         else:
             # gauntlets and boots only: the field tables already reach body
@@ -249,7 +252,7 @@ class Plan:
             # king to 50% armour a kill against a Karkia boss's 36-38% mythical
             pieces = [(T_ARMS, a) for a in ARMOUR_240[T_ARMS]] + [(T_FOOT, f) for f in ARMOUR_240[T_FOOT]]
             common = pieces[:BOSS_ARMOUR_SLOTS]
-            common += [(T_SUBWPN, s) for s in kd.SHIELD_240[:2]]
+            common += [(T_SUBWPN, s) for s in kd.OFF_BOSS]            # NEO, Evolved Ushumgal
             groups = {}
         common += list(fam_mats) + [self.m("Spiritual Stone of Oro")]
         common += [(T_USE, kd.USE_BOSS[0])]

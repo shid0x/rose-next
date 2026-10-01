@@ -73,8 +73,8 @@ GATES = {
     327: ("Lero Escudo",       "caster", 170),
     328: ("Lord of Riot",      "heavy",  375),
     329: ("Red Feather Compass", "caster", 160),
-    330: ("Righteous Shield NEO", "heavy", 264),
-    331: ("Lord Knight Shield", "heavy", 375),
+    330: ("Righteous Shield NEO", "heavy", 375),   # lv240 since repackage-subweapons.py
+    331: ("Lord Knight", "heavy", 375),
     332: ("Black Heaven Dragon", "light", 300),
     333: ("Black Heaven Lion",  "light",  270),
     334: ("Gryphon Lumen",     "caster", 190),
@@ -112,6 +112,10 @@ def main():
     if args.verify:
         bad = 0
         for r, (frag, role, want) in sorted(GATES.items()):
+            if data[r][4].strip() != b"261":
+                print("  %-4d %-26s re-packaged (not a shield since repackage-subweapons.py)"
+                      % (r, data[r][0].decode("latin-1")[:26]))
+                continue
             slot, lv = req_slots(data[r])
             cur = int(data[r][slot + 1].decode("latin-1") or 0) if slot is not None else None
             ok = cur == want
@@ -129,6 +133,9 @@ def main():
         if frag.lower() not in name.lower():
             sys.exit("row %d is %r, expected a name containing %r -- the table has shifted, "
                      "refusing to re-gate the wrong row" % (r, name, frag))
+        if data[r][4].strip() != b"261":
+            print("  %-4d %-26s re-packaged, skipped" % (r, name[:26]))
+            continue
         slot, lv = req_slots(data[r])
         if slot is None:
             sys.exit("row %d (%s) has no STR requirement slot to rewrite" % (r, name))
