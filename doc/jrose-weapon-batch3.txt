@@ -1,0 +1,66 @@
+# Jrose WEAPON import, batch 3 -- our IDs 1456-1468, imported 2026-10-01.
+#
+# The dark colourway of Jrose's Japanese-legend set: 13 weapons, one per weapon
+# type, Jrose rows 1374-1386 (display grade 94, an "M" badge painted into the
+# icon). Each is a retexture of a mesh from the level-100 set at Jrose rows
+# 1269-1298 (Kunikuzushi, Tonbokiri, Shichishito, Kintaro's axe, Onikiri and
+# Kumokiri ...), which is NOT imported: same 13 meshes, plain textures. None of
+# the 13 meshes was in our data before this batch.
+#
+# Batches 1 and 2 missed the set because its meshes share no filename prefix --
+# the five sets taken there were found by prefix (215_*, rose_*, t_unique_* ...).
+#
+# THE STATS ARE PLACEHOLDERS. The set was imported to be looked at in game before
+# deciding what it is for (end-game uniques, a "wildcard" tier, dungeon boss
+# rewards). Every row is therefore a plain --art-only clone of OUR level-230
+# flagship of its own weapon type (rows 1355-1367) with nothing overridden: same
+# ATK, speed, level, requirement and bonuses as the template. Do not read the
+# numbers as a balance decision, and re-stat the rows once the purpose is chosen
+# -- at which point the rules in jrose-weapon-batch1.txt apply (anchor to the
+# flagship's EFFECTIVE ATK; --bonus overwrites the template's ATK bonus in slot
+# 1; derive the requirement from the item's own level).
+#
+# Decided the same day: the set is parked as boss loot for the Karkia catacombs,
+# and carries the red boss-loot name (prefix id 22 in col 44, written by
+# scripts/set-boss-loot-tier.py -- run it after a replay). The stats stay
+# placeholders until that boss exists.
+#
+# THE TEMPLATE MUST BE THE SAME WEAPON TYPE -- see batch 1.
+#
+# The art is older than the other sets: 76-672 vertices a mesh against 665-2071
+# for t_unique, and 128x256 textures. The gun of the set is an M-16.
+#
+# The icons carry Jrose's "M" badge, because --copy-icon copies the cell as it
+# is. Redraw or replace them if the badge means nothing in the tier they end in.
+#
+# Names are the Japanese names romanised; the descriptions are Jrose's, translated.
+#
+# Fields, pipe-separated:
+#
+#   jrose_row | our_template_row | name | description
+#
+# Replay (from the repo root; --dry-run first):
+#
+#   grep -v '^#' doc/jrose-weapon-batch3.txt | while IFS='|' read -r row tmpl name desc; do
+#     python scripts/import-item.py --type weapon \
+#       --source "C:/Users/Thomas/Desktop/Testclients/Jrose" \
+#       --source-row "$row" --art-only --template-row "$tmpl" \
+#       --name "$name" --desc "$desc" --copy-icon
+#   done
+#
+# Then: scripts/add-dds-mipmaps.py, delete any .bak under data/, bake, deploy.
+# Roll the whole batch back with:
+#   python scripts/remove-trailing-items.py --type weapon --from-id 1456 --dry-run
+1374|1362|Kunihoroboshi|A cannon out of hell, said to have ended whole nations.
+1375|1358|Futaitengiri|A spear holding a demon's strength. It yields to nothing.
+1376|1365|Majin|Katars cut from a demon's claws.
+1377|1364|Imi Kozuchi|A mallet from hell. Shake it and death answers.
+1378|1360|Takemikazuchi|The thunder god's bow, after it took on the power of the underworld.
+1379|1357|Enma-to|The great sword the lord of hell judges the dead with.
+1380|1355|Murasamemaru|A cursed blade that drank demon blood and never lost the taint.
+1381|1363|Kitsunebi|The staff of a high priest who commanded forbidden sorcery.
+1382|1361|M-16 Commando|The rifle of a soldier from hell, carried through more wars than anyone counted.
+1383|1359|Kingin Mafu|The great axe of the two demon-king brothers, one gold and one silver.
+1384|1366|Magamagamaru|A cursed pair of blades, one ominous and one crooked.
+1385|1356|Haja no Bo|A club with the strength of a blood-starved wolf of hell.
+1386|1367|Kekkando|A crossbow holding the strength of a giant hippo turned demon.

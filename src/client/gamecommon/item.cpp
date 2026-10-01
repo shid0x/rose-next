@@ -1651,6 +1651,9 @@ CItem::GetItemNameColor(int type, int no) {
         color = D3DCOLOR_ARGB(255, 255, 128, 255); ///분홍색
     else if (iRareType >= 1 && iRareType <= 20)
         color = D3DCOLOR_ARGB(0xFF, 0, 0xFF, 0xFF); ///하늘색
+    else if (iRareType == 22)
+        // Boss loot. STR_ITEMPREFIX 22 is blank, so the name gets no prefix word.
+        color = D3DCOLOR_ARGB(255, 255, 64, 64);
 
     return color;
 }
