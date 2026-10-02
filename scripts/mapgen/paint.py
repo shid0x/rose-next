@@ -130,11 +130,13 @@ def astar(cost, a, b):
     return path[::-1]
 
 
-def paint(field, ts, stats, cfg, seed, waypoints):
+def paint(field, ts, stats, cfg, seed, waypoints, forced=None):
     """Corner lattice (row 0 = south) of brush ids for a heightfield.
 
     cfg is the spec's "paint" section. waypoints is a list of paths, each a
-    list of lattice (row, col) points.
+    list of lattice (row, col) points. `forced` (lattice-shaped, -1 = free)
+    pins corners to a brush: lakes' seabed and sand. Forced corners are kept
+    by legalize, routed around by paths, and left out of the calibration.
     """
     counts, bands = stats
     slopes = corner_slopes(field)
@@ -157,6 +159,8 @@ def paint(field, ts, stats, cfg, seed, waypoints):
     if waypoints:
         cost = 1.0 + (slopes / cfg.get("path_slope_scale_deg", 12.0)) ** 2
         cost[slopes > cfg.get("max_path_slope_deg", 30.0)] = np.inf
+        if forced is not None:
+            cost[forced >= 0] = np.inf                  # paths never run into water or its beach
         for pts in waypoints:
             for a, b in zip(pts, pts[1:]):
                 route = astar(cost, a, b)
@@ -177,11 +181,17 @@ def paint(field, ts, stats, cfg, seed, waypoints):
         priority[b] = len(cfg["priority"]) - rank
     index = {b: i for i, b in enumerate(land)}
 
+    fixed = on_path.copy()
+    if forced is not None:
+        fixed |= forced >= 0
+
     def realise(bias):
         lattice = np.array(land)[np.argmax(bias[band].transpose(2, 0, 1) + noise, axis=0)]
         lattice[on_path] = path_brush
+        if forced is not None:
+            lattice[forced >= 0] = forced[forced >= 0]
         tiles.legalize(lattice, ts, priority, allow_saddles=cfg.get("allow_saddles", False),
-                       protected=on_path)
+                       protected=fixed)
         return lattice
 
     # Argmax over noisy scores under-picks rare brushes, and legalize turns
@@ -193,7 +203,7 @@ def paint(field, ts, stats, cfg, seed, waypoints):
     for _ in range(cfg.get("calibration_rounds", 8)):
         lattice = realise(bias)
         for k in np.unique(band):
-            sel = (band == k) & ~on_path
+            sel = (band == k) & ~fixed
             if not sel.any():
                 continue
             got = np.bincount([index.get(b, 0) for b in lattice[sel]], minlength=len(land)) / sel.sum()

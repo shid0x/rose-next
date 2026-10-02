@@ -18,7 +18,12 @@ from PIL import Image
 from .terrain import GRID_CM
 
 
-def render_tiles(field, lattice, colours, analysis, out_path, px_per_tile=8, exaggeration=4.0):
+def _tint_water(rgb, wet_px):
+    """Blend the water colour over wet pixels (the client's sea is blue-green)."""
+    rgb[wet_px] = rgb[wet_px] * 0.35 + np.array([40, 110, 150]) * 0.65
+
+
+def render_tiles(field, lattice, colours, analysis, out_path, px_per_tile=8, exaggeration=4.0, wet=None):
     """Painted preview: corner brushes blended bilinearly across each 10 m
     tile (roughly how the tile textures blend), times a hillshade. Start in
     blue, chunk borders in white."""
@@ -46,6 +51,8 @@ def render_tiles(field, lattice, colours, analysis, out_path, px_per_tile=8, exa
     vr = np.clip(((np.arange(out.shape[0]) + 0.5) / n * 4).astype(int), 0, field.shape[0] - 1)
     vc = np.clip(((np.arange(out.shape[1]) + 0.5) / n * 4).astype(int), 0, field.shape[1] - 1)
     out *= shade[vr][:, vc][..., None]
+    if wet is not None:
+        _tint_water(out, wet[vr][:, vc])
     out[::16 * n, :] = 255
     out[:, ::16 * n] = 255
     sr, sc = analysis["start_cell"]
@@ -55,7 +62,7 @@ def render_tiles(field, lattice, colours, analysis, out_path, px_per_tile=8, exa
     return out_path
 
 
-def render(field, analysis, out_path, scale=2, exaggeration=4.0):
+def render(field, analysis, out_path, scale=2, exaggeration=4.0, wet=None):
     gx = np.gradient(field, axis=1) / GRID_CM * exaggeration
     gy = np.gradient(field, axis=0) / GRID_CM * exaggeration
     # Light from the north-west, 45 degrees up; relief exaggerated for display only.
@@ -70,6 +77,8 @@ def render(field, analysis, out_path, scale=2, exaggeration=4.0):
     colour[analysis["steep"]] = (200, 70, 60)
     colour[analysis["traps"]] = (230, 0, 230)
     rgb = colour * shade[..., None]
+    if wet is not None:
+        _tint_water(rgb, wet[:-1, :-1])
 
     rows, cols = shade.shape
     rgb[::64, :] = 255                                             # chunk borders (64 cells each)

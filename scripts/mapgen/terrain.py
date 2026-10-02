@@ -135,9 +135,10 @@ def gradient(field):
     return gx, gy
 
 
-def pick_start(field, max_slope_deg=10.0, radius_cells=2):
+def pick_start(field, max_slope_deg=10.0, radius_cells=2, avoid=None):
     """The vertex nearest the field's centre whose surrounding cells are all
-    gentler than `max_slope_deg`. Returns (row, col) of a vertex."""
+    gentler than `max_slope_deg` and not in `avoid` (a vertex mask, e.g.
+    water and its shore). Returns (row, col) of a vertex."""
     gx, gy = gradient(field)
     steep = np.hypot(gx, gy) > math.tan(math.radians(max_slope_deg))
     h, w = field.shape
@@ -147,6 +148,8 @@ def pick_start(field, max_slope_deg=10.0, radius_cells=2):
         for c in range(radius_cells, w - 1 - radius_cells):
             d = (r - cy) ** 2 + (c - cx) ** 2
             if best_d is not None and d >= best_d:
+                continue
+            if avoid is not None and avoid[r, c]:
                 continue
             if not steep[r - radius_cells:r + radius_cells, c - radius_cells:c + radius_cells].any():
                 best, best_d = (r, c), d

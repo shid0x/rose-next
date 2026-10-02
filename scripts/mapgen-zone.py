@@ -55,7 +55,7 @@ BUILD = os.path.join(REPO, "build", "mapgen")
 sys.path.insert(0, HERE)
 
 import mapgen  # noqa: E402
-from mapgen import chunk, paint, preview, terrain, tiles, walk, zon  # noqa: E402
+from mapgen import chunk, ifo, paint, preview, terrain, tiles, walk, water, zon  # noqa: E402
 from mapgen.zone import (CHUNK_CM, EventPoint, Tile, ZoneParams, build_zone,  # noqa: E402
                          centre_world, chunk_stem)
 
@@ -129,8 +129,13 @@ def params_from_spec(s):
                    tile=Tile(**{k: v for k, v in s["tile"].items() if not k.startswith("_")}),
                    events=[])
     t = s.get("terrain")
+    p.lakes, p.avoid = [], None
     if t:
         p.field = terrain.generate(p.width, p.height, t, t["seed"])
+    if s.get("water"):
+        if p.field is None:
+            raise SystemExit("'water' needs a 'terrain' section")
+        add_lakes(s, p)
     anchor = start_vertex(s, p)
     for e in s["events"]:
         dc, dr = (int(round(v / terrain.GRID_CM)) for v in e.get("offset_cm", [0, 0]))
@@ -162,8 +167,10 @@ def params_from_spec(s):
                 else:
                     pts.append((int(round(pt[1] * (rows - 1))), int(round(pt[0] * (cols - 1)))))
             paths.append(pts)
+        forced = lake_brushes(s, p, (rows, cols))
+        paths = [[free_corner(pt, forced) for pt in pts] for pts in paths]
         seed = cfg.get("seed", t["seed"] + 1)
-        p.lattice = paint.paint(p.field, ts, stats, cfg, seed, paths)
+        p.lattice = paint.paint(p.field, ts, stats, cfg, seed, paths, forced)
         p.tile_grid = tiles.tiles_from_lattice(p.lattice, ts, np.random.default_rng(seed + 1))
     return p
 
@@ -189,10 +196,77 @@ def brush_colours(ts, template):
 
 def start_vertex(s, p):
     """(row, col) of the start point in the field: the gentle spot nearest the
-    centre (terrain.pick_start), or the centre for flat ground."""
+    centre (terrain.pick_start) away from water, or the centre for flat ground."""
     if p.field is None:
         return (p.height * 32, p.width * 32)
-    return terrain.pick_start(p.field)
+    return terrain.pick_start(p.field, avoid=getattr(p, "avoid", None))
+
+
+def add_lakes(s, p):
+    """Carve the spec's lakes into p.field; fill p.lakes and p.water.
+
+    Each lake: {"centre": "auto" | [fx, fy] (fractions of the map, x east,
+    y north), "radius_m", "depth_cm", "shore_m", "shore_slope_deg",
+    "irregularity", "ring_m", "margin_cm"}. p.avoid marks the water and a
+    `keep_clear_m` band around it, where the start may not go.
+    """
+    w = s["water"]
+    band_m = ((s.get("terrain") or {}).get("ridge") or {}).get("width_m", 0)
+    rows, cols = p.field.shape
+    p.avoid = np.zeros(p.field.shape, bool)
+    for i, lake in enumerate(w.get("lakes", [])):
+        rng = np.random.default_rng(s["terrain"]["seed"] + 100 + i)
+        if lake.get("centre", "auto") == "auto":
+            centre = water.pick_centre(p.field, lake["radius_m"], band_m + 10,
+                                       lake.get("ring_m", 25.0), p.avoid)
+        else:
+            fx, fy = lake["centre"]
+            centre = (int(round(fy * (rows - 1))), int(round(fx * (cols - 1))))
+        p.field, level = water.carve(p.field, lake, rng, centre)
+        mask = water.lake_mask(p.field, level, centre)
+        p.lakes.append({"centre": centre, "level": level, "mask": mask})
+        clear = int(w.get("keep_clear_m", 15) * 100 / terrain.GRID_CM)
+        grown = mask.copy()
+        for _ in range(clear):
+            g = grown.copy()
+            g[1:] |= grown[:-1]; g[:-1] |= grown[1:]; g[:, 1:] |= grown[:, :-1]; g[:, :-1] |= grown[:, 1:]
+            grown = g
+        p.avoid |= grown
+    p.water = {}
+    for lk in p.lakes:
+        for key, rects in water.rects_for(lk["mask"], lk["level"], p.x0, p.y0, p.width, p.height).items():
+            p.water.setdefault(key, []).extend(rects)
+
+
+def lake_brushes(s, p, shape):
+    """Lattice of forced brushes (-1 = free): seabed under the water, beach sand
+    on the shore. In JG the chain table then puts dark soil between sand and
+    grass, the way retail coasts are painted."""
+    forced = np.full(shape, -1, int)
+    w = s.get("water") or {}
+    if not getattr(p, "lakes", None):
+        return forced
+    seabed, sand = w.get("seabed_brush", 7), w.get("sand_brush", 6)
+    corners = p.field[::4, ::4]
+    for lk in p.lakes:
+        L, wet = lk["level"], lk["mask"][::4, ::4]
+        near = wet.copy()
+        for _ in range(w.get("beach_corners", 2)):           # 10 m per corner step
+            g = near.copy()
+            g[1:] |= near[:-1]; g[:-1] |= near[1:]; g[:, 1:] |= near[:, :-1]; g[:, :-1] |= near[:, 1:]
+            near = g
+        forced[near & (corners < L + w.get("beach_above_cm", 150))] = sand
+        forced[wet & (corners < L - w.get("seabed_below_cm", 50))] = seabed
+    return forced
+
+
+def free_corner(pt, forced):
+    """Nearest lattice corner to `pt` that no lake pins (path endpoints)."""
+    if forced[pt] < 0:
+        return pt
+    free = np.argwhere(forced < 0)
+    d = np.hypot(free[:, 0] - pt[0], free[:, 1] - pt[1])
+    return tuple(int(v) for v in free[np.argmin(d)])
 
 
 def play_mask(s, p):
@@ -217,6 +291,32 @@ def terrain_checks(s, p, field, start, check):
     print("        steepest cell %.1f deg; %d cells >= 54 deg; %d cells reachable"
           % (a["max_slope_deg"], a["steep_cells"], a["reach_cells"]))
     return a
+
+
+def water_checks(p, field, rects_by_chunk, check):
+    """Phase 4 checks; `rects_by_chunk` from the spec or read back from the IFOs."""
+    if not rects_by_chunk:
+        return None
+    for ok, msg in water.check(field, rects_by_chunk, p.x0, p.y0):
+        check(ok, msg)
+    cov, lvl = water.coverage(rects_by_chunk, field.shape, p.x0, p.y0)
+    wet = cov & (field < lvl)
+    n = sum(len(r) for r in rects_by_chunk.values())
+    depth = float(np.nanmax(np.where(wet, lvl - field, np.nan))) if wet.any() else 0.0
+    print("        %d water rectangles in %d chunks; %.0f m2 of water, deepest %.1f m; levels %s cm"
+          % (n, len(rects_by_chunk), wet.sum() * (terrain.GRID_CM / 100) ** 2, depth / 100,
+             sorted({r[1] for rs in rects_by_chunk.values() for r in rs})))
+    return wet
+
+
+def water_from_disk(zdir, p):
+    out = {}
+    for x, y in p.chunks():
+        with open(os.path.join(zdir, chunk_stem(x, y) + ".IFO"), "rb") as f:
+            o = ifo.parse(f.read()).lump(ifo.OCEAN)
+        if o is not None and o.rects:
+            out[(x, y)] = [tuple(r) for r in o.rects]
+    return out
 
 
 def tile_checks(ts, grid, have, check):
@@ -418,8 +518,9 @@ def cmd_preview(s):
         raise SystemExit("spec has no 'terrain' section")
     check = Checks()
     a = terrain_checks(s, p, p.field, start_vertex(s, p), check)
+    wet = water_checks(p, p.field, p.water, check)
     os.makedirs(BUILD, exist_ok=True)
-    out = preview.render(p.field, a, os.path.join(BUILD, "preview-%s.png" % s["folder"]))
+    out = preview.render(p.field, a, os.path.join(BUILD, "preview-%s.png" % s["folder"]), wet=wet)
     lo, hi = float(p.field.min()), float(p.field.max())
     print("  heights %.1f .. %.1f m; walkability preview %s" % (lo / 100, hi / 100, out))
     if p.lattice is not None:
@@ -427,7 +528,7 @@ def cmd_preview(s):
         zstb, _, _ = tables()
         colours = brush_colours(ts, template_zon(s, zstb))
         out2 = preview.render_tiles(p.field, p.lattice, colours, a,
-                                    os.path.join(BUILD, "preview-%s-tiles.png" % s["folder"]))
+                                    os.path.join(BUILD, "preview-%s-tiles.png" % s["folder"]), wet=wet)
         share = np.bincount(p.lattice.ravel(), minlength=ts.brushes) / p.lattice.size
         # Retail target for THIS terrain: the table's per-band mix weighted by
         # how many of our corners fall in each slope band.
@@ -442,8 +543,11 @@ def cmd_preview(s):
             print("     %-14s %5.1f%%  (retail %5.1f%%)" % (ts.brush_names[b], 100 * share[b], 100 * target[i]))
         print("  tile preview %s" % out2)
         tile_checks(ts, p.tile_grid, np.ones(p.tile_grid.shape, bool), check)
-    again = terrain.generate(p.width, p.height, s["terrain"], s["terrain"]["seed"])
-    check(np.array_equal(again.view("u4"), p.field.view("u4")), "same spec + seed -> bit-identical field")
+    again = params_from_spec(s)
+    same = np.array_equal(again.field.view("u4"), p.field.view("u4")) and again.water == p.water
+    if p.tile_grid is not None:
+        same &= np.array_equal(again.tile_grid, p.tile_grid)
+    check(same, "same spec + seed -> bit-identical terrain, water and tiles")
     return 1 if check.failed else 0
 
 
@@ -677,6 +781,10 @@ def cmd_verify(s):
           int(round((start.x + 520000 - p.x0 * CHUNK_CM) / terrain.GRID_CM)))
     check(abs(float(field[sv]) - start.z) < 1.0, "start event height %.1f cm = terrain %.1f cm" % (start.z, field[sv]))
     terrain_checks(s, p, field, sv, check)
+    on_disk_water = water_from_disk(zdir, p)
+    if s.get("water") or on_disk_water:
+        check(on_disk_water == (p.water or {}), "water rectangles on disk = the spec's (%d chunks)" % len(on_disk_water))
+        water_checks(p, field, on_disk_water, check)
     if s.get("paint"):
         ts = load_tileset(s["paint"])
         zt = tiles.read_stb_cells(P(ZONETYPE_STB))

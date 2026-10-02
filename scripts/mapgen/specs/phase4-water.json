@@ -1,0 +1,120 @@
+{
+  "_comment": "Phase 4: the phase 3 map plus a lake carved into its lowest area, with water rectangles and seabed/sand shores. See docs/mapgen/PLAN.md.",
+  "name": "Mapgen Test",
+  "folder": "MAPGEN01",
+  "planet_dir": "JUNON",
+  "template_zone_row": 22,
+  "chunks": {
+    "x0": 30,
+    "y0": 30,
+    "width": 4,
+    "height": 4
+  },
+  "tile": {
+    "brush": 1,
+    "tile_set": 1,
+    "tile_index": 15,
+    "tile_id": 5,
+    "_comment": "unused when 'paint' is present"
+  },
+  "terrain": {
+    "seed": 20261002,
+    "base_cm": 1000,
+    "hills": {
+      "amplitude_cm": 2500,
+      "wavelength_m": 240,
+      "octaves": 4,
+      "persistence": 0.45
+    },
+    "max_play_slope_deg": 38,
+    "ridge": {
+      "height_cm": 4500,
+      "width_m": 36
+    },
+    "min_connected_fraction": 0.95
+  },
+  "paint": {
+    "tileset": "JG",
+    "stats": "jg_brush_by_slope.json",
+    "exclude_brushes": [
+      6,
+      7,
+      8
+    ],
+    "_exclude": "beach sand, seabed, stream gravel: shores and water are phase 4",
+    "noise_spread": 2.5,
+    "patch_wavelength_m": 60,
+    "path_brush": 0,
+    "max_path_slope_deg": 30,
+    "path_slope_scale_deg": 12,
+    "priority": [
+      0,
+      7,
+      6,
+      4,
+      2,
+      3,
+      5,
+      1
+    ],
+    "_priority": "when two corners of a tile clash, the earlier brush keeps its corner: path (dark soil) > seabed > sand > rock > dark grass > sparse grass > bright soil > bright grass",
+    "paths": [
+      {
+        "points": [
+          [
+            0.12,
+            0.25
+          ],
+          "start",
+          [
+            0.88,
+            0.72
+          ]
+        ]
+      }
+    ]
+  },
+  "events": [
+    {
+      "name": "start",
+      "at": "start_spot",
+      "offset_cm": [
+        0,
+        0
+      ]
+    },
+    {
+      "name": "restore",
+      "at": "start_spot",
+      "offset_cm": [
+        250,
+        0
+      ]
+    }
+  ],
+  "minimap": "NOMAP",
+  "water": {
+    "lakes": [
+      {
+        "centre": "auto",
+        "radius_m": 40,
+        "depth_cm": 400,
+        "shore_m": 14,
+        "shore_slope_deg": 18,
+        "irregularity": 0.25,
+        "ring_m": 25,
+        "margin_cm": 30,
+        "bank_m": 10,
+        "skirt_m": 40,
+        "max_cut_cm": 1200
+      }
+    ],
+    "keep_clear_m": 15,
+    "_brushes": "seabed under water deeper than 50 cm, beach sand within 2 corners (20 m) of the water and below 1.5 m above it; JG's chain table then puts dark soil between sand and grass",
+    "seabed_brush": 7,
+    "sand_brush": 6,
+    "beach_corners": 2,
+    "beach_above_cm": 150,
+    "seabed_below_cm": 50
+  }
+}

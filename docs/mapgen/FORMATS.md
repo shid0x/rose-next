@@ -349,8 +349,30 @@ What retail files contain (phase 0 corpus scan, 1,538 IFOs):
   `3DDATA\JUNON\Water\ocean01_01..25.dds`, loaded once in
   `src/client/io_basic.cpp:113-121` and shared by every zone.
 - A lake is therefore always animated ocean.
-- `size` is the tessellation cell size: width / size quads
-  (`io_terrain.cpp:2109-2119`).
+- `size` sets how often the texture repeats: the client passes width / size
+  and height / size as the repeat counts of one quad (`io_terrain.cpp:2109-2119`,
+  `src/engine/src/zz_interface.cpp:6446-6486`).
+- **The water plane is drawn from the start corner**, by (end - start). The
+  editor draws the quad between the two stored corners
+  (`xadet/.../MapManager/Terrain/Water.cs:150-183`), so both conventions show
+  the same footprint.
+- **Retail conventions** (phase 4 scan of 850 rectangles in 62 zones):
+  - `size` is always 2000 and start z == end z;
+  - start is the NW corner (min x, **max** y) in 777, the SW corner in 73;
+  - 94% lie inside their own chunk;
+  - 95% are whole 20 m widths;
+  - 1-13 rectangles per chunk IFO;
+  - the surface is typically 1-19 m above the deepest ground under it.
+- **Nothing collides with water.** Character collision skips ocean nodes as
+  it skips terrain (`cobjchar_collision.cpp:674`), so a player walks into a
+  lake along its bed. Water is therefore not a barrier, and lake shores fall
+  under the slope rule like any other ground. Confirmed in game: a player
+  walks into a generated lake and back out (user, 2026-10-02).
+- **A rectangle is loaded and unloaded with the chunk whose IFO holds it**
+  (`m_OceanLIST`, `io_terrain.cpp:2124`, freed at `:2765-2773`). mapgen keeps
+  each rectangle inside its own chunk.
+- **Generated water confirmed in game and editor** (user, 2026-10-02): same
+  waterline in both, no plane showing through the ground.
 
 ## MOV (one per chunk, server only)
 
@@ -539,7 +561,6 @@ Collision has no file of its own:
 
 ## Not verified
 
-- **Water:** whether anything stops a player walking into water.
 - **IFO lump 7:** whether the client's misparse of it is always harmless, or
   just harmless on the data we have. Retail only ever holds the 16x16
   default, so copying that is safe.

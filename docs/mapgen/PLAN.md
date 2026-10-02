@@ -321,7 +321,58 @@ A lake at a set level with shore tiles.
 
 - **Checks:** same waterline in editor and client; the plane does not show
   outside the basin.
-- **Status:** NOT STARTED.
+- **Status:** DONE 2026-10-02. The user confirmed with editor and in-game
+  screenshots:
+  - the same waterline in both;
+  - walking along the shore is normal;
+  - you can walk into the lake and back out.
+
+  The pale band at the water's edge is shallow water over sand brightened by
+  the sea material's "lighten" blend. Its slightly polygonal outline is the
+  flat plane meeting the 2.5 m terrain grid, as on retail shores.
+  - **Zone 12 now** is the phase 3 map plus one lake:
+    - about 5,000 m² and 4 m deep, water level 8.57 m;
+    - carved into the flattest low site (south-west quarter);
+    - a seabed → sand → dark soil → grass shore.
+    - Warps: lake `/mm 12 498 501`; walk in from the east at
+      `/mm 12 504 501`.
+  - **`verify`, re-read from the IFOs on disk:**
+    - rectangles on disk equal the spec's;
+    - each rectangle starts at its NW corner, has start z == end z, is whole
+      20 m cells, and lies inside its own chunk;
+    - every lake vertex is covered;
+    - water shows nowhere outside its basin;
+    - 0 traps.
+  - **Also:** the editor's readers see 1 water plane in each of the two lake
+    chunks; all regression checks pass (oracle, both selftests, retail tiles,
+    9,132-file round-trip).
+- **How:**
+  - `scripts/mapgen/water.py`: site choice, carving, lake mask, per-chunk
+    20 m rectangles, checks.
+  - The painter takes `forced` brushes (seabed under water, sand on the
+    beach). Paths route around them; calibration ignores them.
+  - The start avoids water plus a 15 m band.
+  - Spec: `scripts/mapgen/specs/phase4-water.json`.
+- **Changes from the plan / decisions made:**
+  - **Water conventions copied from retail's 850 rectangles:**
+    - `size` 2000;
+    - start = NW corner (min x, max y; 777 of 850);
+    - equal z;
+    - 20 m cells;
+    - one chunk per rectangle (retail: 94%) so streaming never drops a
+      rectangle that another chunk needs.
+  - **Water level = just under the lowest ground in a ring outside the
+    outline.** The ground under every rectangle is then either lake or above
+    the surface by construction.
+  - **First attempt carved a crater over a quarter of the map:** it picked
+    the lowest spot (at the foot of 30-40 m hills) and let the shore cone run
+    until it met the ground. It passed every check (nothing unwalkable) but
+    looked wrong in the preview. Fixed:
+    - the flattest low site is chosen instead;
+    - the shore shaping fades out over a 40 m skirt;
+    - a site needing more than `max_cut_cm` of extra cutting is refused.
+  - **Players walk into water along the bed** (nothing collides with ocean
+    nodes), so lake shores fall under the same trap check as any slope.
 
 ### Phase 5 — decoration
 
@@ -388,3 +439,9 @@ Baked terrain lightmap, generated `.MOV`, minimap.
   phase 4 (water).
 - 2026-10-02 — Saddle fix confirmed by the user in the editor; phase 3
   committed.
+- 2026-10-02 — Phase 4 built: retail water conventions measured, lake
+  carving + rectangles + checks written, zone 12 reinstalled with a lake;
+  automated checks pass; in-game/editor waterline check handed to the user.
+- 2026-10-02 — Phase 4 confirmed by the user (waterline, shore, walk in/out)
+  and committed. Next: phase 5 (decoration: trees and rocks from the JG
+  decoration catalogue).

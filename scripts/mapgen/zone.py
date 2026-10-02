@@ -68,6 +68,9 @@ class ZoneParams:
     # Global tile grid (16*height, 16*width) of chunk.TILE_DTYPE, row 0 = south
     # (phase 3, from paint + tiles.tiles_from_lattice). None = `tile` everywhere.
     tile_grid: Optional[np.ndarray] = None
+    # Water rectangles per chunk slot (x, y): [(sx, sz, sy, ex, ez, ey), ...]
+    # in zone-relative cm, as water.rects_for builds them (phase 4).
+    water: Optional[dict] = None
 
     def chunks(self):
         for y in range(self.y0, self.y0 + self.height):
@@ -114,7 +117,7 @@ def make_mov():
     return chunk.Mov(32, 32, np.zeros((32, 32), dtype="u1"))   # 0 = AI may move
 
 
-def make_ifo(stem_x, stem_y):
+def make_ifo(stem_x, stem_y, water_rects=()):
     """An empty chunk IFO laid out exactly as the editor's File > New writes it:
     all 13 lumps in enum order (editor/IFO.cs:1202-1500, New.xaml.cs:266-301)."""
     water = np.zeros(256, dtype=ifo.WATER_CELL)
@@ -126,7 +129,7 @@ def make_ifo(stem_x, stem_y):
         (ifo.EFFECT, []), (ifo.MORPH, []),
         (ifo.WATER, ifo.WideWater(16, 16, water)),
         (ifo.REGEN, []),
-        (ifo.OCEAN, ifo.Ocean(2000.0, [])),        # the editor's tessellation size
+        (ifo.OCEAN, ifo.Ocean(2000.0, list(water_rects))),   # 2000: retail/editor texture repeat
         (ifo.WARP, []), (ifo.COLLISION, []), (ifo.EVENT_OBJECT, []),
     ]
     c = Container()
@@ -191,7 +194,7 @@ def build_zone(p, template_zon):
             block = np.ascontiguousarray(p.tile_grid[r0:r0 + 16, c0:c0 + 16][::-1])   # TIL row 0 = north
             files[stem + ext(".til")] = chunk.build_til(chunk.Til(16, 16, block))
         files[stem + ext(".mov")] = mov
-        files[stem + ext(".ifo")] = ifo.build(make_ifo(x, 64 - y))
+        files[stem + ext(".ifo")] = ifo.build(make_ifo(x, 64 - y, (p.water or {}).get((x, y), ())))
         files["%s/LIGHTMAP/BUILDINGLIGHTMAPDATA.LIT" % stem] = empty_lit
         files["%s/LIGHTMAP/OBJECTLIGHTMAPDATA.LIT" % stem] = empty_lit
     return files
