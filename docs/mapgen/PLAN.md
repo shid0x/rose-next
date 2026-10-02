@@ -879,7 +879,7 @@ combat spaces. Zones 12, 13, 30 and 38 uninstalled first.
   (`/mm 12 496 507`, the camp), zone 13 `MAPGEN11` "Mapgen Ledgewood"
   (`/mm 13 491 512`, the farm). Both pass every check from disk (81 / 72),
   including their sightlines. Walk selftest and round-trip (9,229 / 9,229)
-  pass. In-game review handed to the user. Not committed.
+  pass. In-game review handed to the user. Committed `6a80f325`.
 - **Sightlines are now a check** (`sightlines` in a layout; `sight_blockers`
   in `mapgen-zone.py`): the line from an eye (1.7 m; a landmark's top at
   9 m) to a target (a village's roofs at 5 m) is sampled every metre against
