@@ -1,6 +1,7 @@
 """Build, install, verify and uninstall a generated zone (mapgen phase 1+).
 
     python scripts/mapgen-zone.py oracle                # byte-compare with the editor's File > New
+    python scripts/mapgen-zone.py preview SPEC          # terrain checks + build/mapgen/preview-<folder>.png
     python scripts/mapgen-zone.py build SPEC --out DIR  # write the zone folder anywhere
     python scripts/mapgen-zone.py install SPEC [--zone N] [--dry-run]
     python scripts/mapgen-zone.py verify SPEC
@@ -54,7 +55,7 @@ BUILD = os.path.join(REPO, "build", "mapgen")
 sys.path.insert(0, HERE)
 
 import mapgen  # noqa: E402
-from mapgen import chunk, zon  # noqa: E402
+from mapgen import chunk, preview, terrain, walk, zon  # noqa: E402
 from mapgen.zone import (CHUNK_CM, EventPoint, Tile, ZoneParams, build_zone,  # noqa: E402
                          centre_world, chunk_stem)
 
@@ -124,17 +125,75 @@ def template_zon(s, zstb):
 def params_from_spec(s):
     c = s["chunks"]
     p = ZoneParams(folder=s["folder"], x0=c["x0"], y0=c["y0"], width=c["width"],
-                   height=c["height"], ground_cm=float(s["ground_cm"]),
+                   height=c["height"], ground_cm=float(s.get("ground_cm", 0)),
                    tile=Tile(**{k: v for k, v in s["tile"].items() if not k.startswith("_")}),
                    events=[])
-    cx, cy = centre_world(p)
+    t = s.get("terrain")
+    if t:
+        p.field = terrain.generate(p.width, p.height, t, t["seed"])
+    anchor = start_vertex(s, p)
     for e in s["events"]:
-        if e.get("at") != "centre":
-            raise SystemExit("only 'at: centre' events are supported in phase 1")
-        dx, dy = e.get("offset_cm", [0, 0])
-        p.events.append(EventPoint(e["name"], cx + dx, cy + dy, p.ground_cm))
+        dc, dr = (int(round(v / terrain.GRID_CM)) for v in e.get("offset_cm", [0, 0]))
+        if e.get("at") == "centre":
+            r, col = (p.height * 32, p.width * 32)
+        elif e.get("at") == "start_spot":
+            r, col = anchor
+        else:
+            raise SystemExit("event 'at' must be 'centre' or 'start_spot'")
+        r, col = r + dr, col + dc
+        z = p.ground_cm if p.field is None else float(p.field[r, col])
+        p.events.append(EventPoint(e["name"], p.x0 * CHUNK_CM + col * terrain.GRID_CM,
+                                   p.y0 * CHUNK_CM + r * terrain.GRID_CM, z))
     p.start_chunk = (c["x0"] + c["width"] // 2, c["y0"] + c["height"] // 2)
     return p
+
+
+def start_vertex(s, p):
+    """(row, col) of the start point in the field: the gentle spot nearest the
+    centre (terrain.pick_start), or the centre for flat ground."""
+    if p.field is None:
+        return (p.height * 32, p.width * 32)
+    return terrain.pick_start(p.field)
+
+
+def play_mask(s, p):
+    """Cells inside the ridge band: the area the connectivity check is about."""
+    rows, cols = p.height * 64, p.width * 64
+    r = (s.get("terrain") or {}).get("ridge") or {}
+    band = int(r.get("width_m", 0) * 100 / terrain.GRID_CM) if r.get("height_cm") else 0
+    m = np.zeros((rows, cols), bool)
+    m[band:rows - band, band:cols - band] = True
+    return m
+
+
+def terrain_checks(s, p, field, start, check):
+    """The phase 2 terrain checks; `field` may come from the spec or from disk."""
+    a = walk.analyse(field, start, play_mask(s, p))
+    need = (s.get("terrain") or {}).get("min_connected_fraction", 0.95)
+    check(a["trap_cells"] == 0,
+          "no area the player can walk into but not climb out of (%d trap cells)" % a["trap_cells"])
+    check(a["connected_fraction"] >= need,
+          "start connected to %.1f%% of the gentle play area (need %.0f%%)"
+          % (100 * a["connected_fraction"], 100 * need))
+    print("        steepest cell %.1f deg; %d cells >= 54 deg; %d cells reachable"
+          % (a["max_slope_deg"], a["steep_cells"], a["reach_cells"]))
+    return a
+
+
+def field_from_disk(zdir, p):
+    """Rebuild the global field from installed HIMs; also return seam mismatches."""
+    field = np.full(terrain.field_shape(p.width, p.height), np.nan, "<f4")
+    seams = []
+    for x, y in p.chunks():
+        with open(os.path.join(zdir, chunk_stem(x, y) + ".HIM"), "rb") as f:
+            h = chunk.parse_him(f.read()).heights[::-1]                 # row 0 = south
+        r0, c0 = (y - p.y0) * 64, (x - p.x0) * 64
+        dst = field[r0:r0 + 65, c0:c0 + 65]
+        known = ~np.isnan(dst)
+        if known.any() and not np.array_equal(dst[known], h[known]):
+            seams.append(chunk_stem(x, y))
+        field[r0:r0 + 65, c0:c0 + 65] = h
+    return field, seams
 
 
 def build_files(s, zstb):
@@ -219,6 +278,22 @@ def cmd_build(s, out):
     return 0
 
 
+def cmd_preview(s):
+    """Generate, analyse and render without installing anything."""
+    p = params_from_spec(s)
+    if p.field is None:
+        raise SystemExit("spec has no 'terrain' section")
+    check = Checks()
+    a = terrain_checks(s, p, p.field, start_vertex(s, p), check)
+    os.makedirs(BUILD, exist_ok=True)
+    out = preview.render(p.field, a, os.path.join(BUILD, "preview-%s.png" % s["folder"]))
+    lo, hi = float(p.field.min()), float(p.field.max())
+    print("  heights %.1f .. %.1f m; preview %s" % (lo / 100, hi / 100, out))
+    again = terrain.generate(p.width, p.height, s["terrain"], s["terrain"]["seed"])
+    check(np.array_equal(again.view("u4"), p.field.view("u4")), "same spec + seed -> bit-identical field")
+    return 1 if check.failed else 0
+
+
 def cmd_install(s, zone_arg, dry):
     if os.path.exists(manifest_path(s)):
         raise SystemExit("%s is already installed (%s); uninstall first" % (s["folder"], manifest_path(s)))
@@ -231,6 +306,13 @@ def cmd_install(s, zone_arg, dry):
         raise SystemExit("zone %d is not free (LIST_ZONE / ITEM_DROP row, or LZON%03d key)" % (n, n))
 
     files = build_files(s, zstb)
+    p = params_from_spec(s)
+    if p.field is not None:
+        gate = Checks()
+        print("terrain checks before install:")
+        terrain_checks(s, p, p.field, start_vertex(s, p), gate)
+        if gate.failed:
+            raise SystemExit("terrain fails its checks; nothing installed (see `preview`)")
     row = row_values(s, n, zstb)
     cells = {c: [zstb.get(n, c).decode("latin-1"), row[c].decode("latin-1")]
              for c in range(zstb.cols) if zstb.get(n, c) != row[c]}
@@ -422,6 +504,27 @@ def cmd_verify(s):
         inside = chunk_stem(int(wx // CHUNK_CM), int(wy // CHUNK_CM)) in stems
         check(inside, "event %r at world (%.0f, %.0f) lies on a chunk" % (e.name, wx, wy))
     start = next(e for e in z.lump(zon.EVENTS) if e.name == b"start")
+
+    # Terrain, re-derived from the files on disk rather than from the spec.
+    field, seams = field_from_disk(zdir, p)
+    check(not seams, "neighbouring chunks share identical edge heights %s" % (seams or ""))
+    bad_bounds = []
+    for x, y in p.chunks():
+        with open(os.path.join(zdir, chunk_stem(x, y) + ".HIM"), "rb") as f:
+            him = chunk.parse_him(f.read())
+        placeholder = bool(np.all(np.abs(him.bounds.patches) > 1e30))
+        flat = float(him.heights.min()) == float(him.heights.max())
+        if placeholder and flat:
+            continue                       # phase-1 style flat chunk: editor placeholders
+        want = chunk.compute_him_bounds(him.heights)
+        if not (np.array_equal(want.patches, him.bounds.patches) and np.array_equal(want.quads, him.bounds.quads)):
+            bad_bounds.append(chunk_stem(x, y))
+    check(not bad_bounds, "HIM culling bounds are real and match the retail formula %s" % (bad_bounds or ""))
+    sv = (int(round((start.y + 520000 - p.y0 * CHUNK_CM) / terrain.GRID_CM)),
+          int(round((start.x + 520000 - p.x0 * CHUNK_CM) / terrain.GRID_CM)))
+    check(abs(float(field[sv]) - start.z) < 1.0, "start event height %.1f cm = terrain %.1f cm" % (start.z, field[sv]))
+    terrain_checks(s, p, field, sv, check)
+
     print("\n  GM warp: /mm %d %d %d" % (n, round((start.x + 520000) / 1000), round((start.y + 520000) / 1000)))
     print("  %s" % ("ALL CHECKS PASSED" if not check.failed else "%d CHECK(S) FAILED" % check.failed))
     return 1 if check.failed else 0
@@ -475,6 +578,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("oracle")
+    sub.add_parser("walk-selftest")
+    pv = sub.add_parser("preview")
+    pv.add_argument("spec")
     b = sub.add_parser("build")
     b.add_argument("spec")
     b.add_argument("--out", required=True)
@@ -490,7 +596,14 @@ def main():
     a = ap.parse_args()
     if a.cmd == "oracle":
         return cmd_oracle()
+    if a.cmd == "walk-selftest":
+        print("Walkability checker on synthetic terrain with known answers:")
+        fails = walk.selftest()
+        print("  %s" % ("ALL PASSED" if not fails else "FAILED: %s" % fails))
+        return 1 if fails else 0
     s = load_spec(a.spec)
+    if a.cmd == "preview":
+        return cmd_preview(s)
     if a.cmd == "build":
         return cmd_build(s, a.out)
     if a.cmd == "install":

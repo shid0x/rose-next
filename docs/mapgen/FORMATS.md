@@ -77,6 +77,9 @@ The GM command `/mm <zone> <x> <y>` warps to absolute world coordinates in
 - **No minimap.** `NOMAP` in col 8 gives an empty panel, as row 134 already
   does. A blank cell makes `SetMinimap` return before freeing, so the previous
   zone's minimap would stay up (`cminimapdlg.cpp:124-127`).
+  - The client logs `interface: loadTexture() failed. file [NOMAP] not found`
+    on entering the zone; it is harmless (user, 2026-10-02).
+  - A generated minimap (phase 8) removes it.
 - **Triggers.** Cols 22-24 are QSD trigger names; JG01's col 22 is
   `PvP1301-340`. Never inherit them from a template row.
 - **Revive.** Cols 31-33 (revive zone/x/y) are unused; revive goes through the
@@ -91,6 +94,9 @@ works everywhere:
 - the files are exactly what the editor's File > New writes, with no
   per-chunk plane lightmap: the client's `default_light.dds` fallback is
   confirmed working.
+- **Map edge:** the player simply cannot walk past the last chunk; it behaves
+  like a retail map edge (user, 2026-10-02). A generated map needs no barrier
+  at its border for correctness. A ridge there is only for looks.
 
 ## ZON (one per zone)
 
@@ -177,8 +183,29 @@ Read at `io_terrain.cpp:2489-2593`; editor `editor/HIM.cs:216-364`.
   - bounds: 663 HIMs real, 875 placeholder;
   - counts: always 256 patches and 85 quads;
   - name: `"quad"` in 1,347 files, empty in 191 (the client discards it).
-- **Which way the patch bounds are indexed** (patch row 0 = south or north) is
-  not yet verified; see "Not verified".
+- **Bounds layout and formula (settled 2026-10-02, phase 2).** Implemented
+  in `scripts/mapgen/chunk.py` `compute_him_bounds`; reproduces all 661
+  consistent retail files.
+  - **Patches are stored south row first**, the opposite of the heights:
+    patch k covers patch row k / 16 from the south and column k % 16 from the
+    west. The client reads them into `m_PATCH[k/16][k%16]`
+    (`io_terrain.cpp:2577-2583`), whose row index grows north (`:1320-1329`).
+    Each value is (max, min) over the patch's 5x5 vertices.
+  - **Quads** are the client's tree (`io_terrain.cpp:780-827`): node i has
+    children 4i+1..4i+4 at (x,y), (x+h,y), (x+h,y+h), (x,y+h) in patch units
+    from the south-west, on levels of 16/8/4/2 patches.
+  - **Quad values** are the max/min of the node's patches, but seeded with
+    max = -10 and min = 10000. That is the original tool's quirk, also in
+    `editor/HIM.cs:317-340`, and it decides 255 retail files.
+  - **Measured:**
+    - patch bounds match south-first in 661 of 663 retail files with real
+      bounds;
+    - the two others (`JUNON/JD03/31_32`, `JUNON/JZ01_1/33_30`) are stale
+      after a hand edit;
+    - quads match in 663 / 663.
+  - `mapgen-roundtrip.py --selftest` re-proves this on every run.
+  - **Confirmed in game (user, 2026-10-02):** generated terrain carrying these
+    real bounds never vanishes while the camera turns.
 
 ## TIL (one per chunk) — tiles
 
@@ -389,7 +416,7 @@ What the generator should write in each:
 | ZON lump 4 name / BGM / sky strings | client stores, never uses | copied from JG01 |
 | HIM `grid_per_patch`, `patch_size` | nothing | 4, 250 |
 | HIM trailer name | nothing | `"quad"` |
-| HIM bounds | client culling | placeholders until the indexing is verified; real values in phase 2 |
+| HIM bounds | client culling | real values (`compute_him_bounds`); placeholders only for an editor-identical flat chunk |
 | TIL `brush`, `tile_index`, `tile_set` | editor autotile brush | phase 3, from the JG tileset, so the editor can keep painting |
 | IFO record `name` | nothing | empty |
 | IFO record `obj_type` | log only | the per-lump value in the IFO section |
@@ -397,6 +424,45 @@ What the generator should write in each:
 | IFO lump 0 MAPINFO | nothing | `16, 16, x, y`, name `"x_y"`, zero matrix (as the editor) |
 | IFO lump 7 WATER | nothing; the client misparses and discards it | 16x16, `type = 1`, rest 0 — or omit the lump |
 | LIT `tga_name`, `lightmap_index`, DDS catalogue | nothing | not written in v1 (no object lightmaps): empty LIT files as File > New writes, or none |
+
+## Slope rule (who can walk where)
+
+Settled 2026-10-02 in phase 2; implemented in `scripts/mapgen/walk.py`.
+
+**Only the local player is slope-checked.** For `OBJ_USER`,
+`AdjustHeight_Avatar` runs (`cobjchar_collision.cpp:88-92`, `:269-293`).
+On bare terrain it goes through `CollisionResponseNone_Avatar` → `ApplySliding`
+→ `StopMovingForCollision` if refused (`:1290-1301`); carts and castle gear
+take the same path. Monsters (`AdjustHeight_Monster`) and other players
+(`AdjustHeight_Other`) only follow terrain height.
+
+**The gradient comes from three of the cell's four corners.** For the 2.5 m
+cell under the character it is a forward difference from the cell's SW
+corner (`CMAP::GetNormal`, `io_terrain.cpp:2038-2048`; corner order
+`:2846-2849`):
+
+    gx = (h(SE) - h(SW)) / 250
+    gy = (h(NW) - h(SW)) / 250
+
+The NE corner is ignored.
+
+**A step is refused** (`ApplySliding`, `cobjchar_collision.cpp:1104-1180`)
+when both hold:
+
+- |g| >= tan(0.3π) = 1.376 (54°);
+- the move has a non-negative component along g, the uphill direction.
+
+Downhill moves are always allowed. On a steep cell the walkable directions are
+the open half-plane g·d < 0, so a steep slope can be descended but never
+climbed or traversed level.
+
+**The NE-corner blind spot.** Because the NE corner is ignored, the cell just
+outside a pit's south-west corner reads as flat even though its NE corner is
+at the pit floor. That only matters for a path exactly through the corner
+point; `walk.py` excludes it.
+
+**No barrier is needed at the map border:** the player cannot walk past the
+last chunk (user-verified, phase 1).
 
 ## How the files reference each other
 
@@ -418,15 +484,13 @@ Collision has no file of its own:
 
 ## Not verified
 
-- **HIM trailer indexing:** whether patch bound `(i, j)` in the trailer is
-  counted from the south or the north row, and the order of the 85 quadtree
-  nodes. It matters once we write real bounds; placeholders are safe meanwhile.
 - **TIL autotile neighbour rule:** the tile-id formula is verified on the
   corpus, but not yet that neighbouring tiles agree on shared corners
   (phase 3's first check).
-- **Slope limit:** `ApplySliding` blocks an uphill step at >= 0.3π (54°)
-  (`cobjchar_collision.cpp:1104-1180`). Not yet traced through every caller.
-- **Map edge:** what happens when a player walks off the last chunk.
+- **Walking down a steep face in game:** the slope rule's "refuse uphill" half
+  is confirmed in the client (the phase 2 ridge stops the player). The
+  "always allow downhill" half is read from the code and unit-tested but not
+  yet tried in game.
 - **Water:** whether anything stops a player walking into water.
 - **IFO lump 7:** whether the client's misparse of it is always harmless, or
   just harmless on the data we have. Retail only ever holds the 16x16

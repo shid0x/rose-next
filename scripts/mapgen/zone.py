@@ -22,7 +22,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-from . import chunk, ifo, lit, zon
+from . import chunk, ifo, lit, terrain, zon
 from .container import Container, Region
 
 CHUNK_CM = 16000            # 16 patches x 4 grids x 250 cm
@@ -62,6 +62,9 @@ class ZoneParams:
     start_chunk: Optional[Tuple[int, int]] = None   # ZON lump 0; client overwrites it
     economy: Optional[zon.Economy] = None    # None = copy the template's
     file_case_upper: bool = True             # chunk extensions, as retail/editor write them
+    # Global heightfield (terrain.field_shape(width, height), row 0 = south, cm).
+    # None = flat at ground_cm with the editor's placeholder bounds (phase 1).
+    field: Optional[np.ndarray] = None
 
     def chunks(self):
         for y in range(self.y0, self.y0 + self.height):
@@ -83,12 +86,18 @@ def centre_world(p):
 
 
 def make_him(ground_cm):
+    """Flat chunk with the editor's +/-FLT_MAX placeholder bounds, exactly as
+    File > New writes it (kept so the editor oracle stays byte-identical)."""
     heights = np.full((65, 65), ground_cm, dtype="<f4")
-    # Culling bounds: the editor's +/-FLT_MAX placeholders (875 retail HIMs).
-    # Real values wait for the trailer indexing to be verified (phase 2).
     pair = np.array([FLT_MAX, -FLT_MAX], dtype="<f4")
     bounds = chunk.HimBounds(b"quad", np.tile(pair, (256, 1)), np.tile(pair, (85, 1)))
     return chunk.Him(65, 65, 4, 250.0, heights, bounds)
+
+
+def make_him_from(heights_file_order):
+    """Chunk from real heights, with real culling bounds computed the retail way."""
+    h = np.ascontiguousarray(heights_file_order, dtype="<f4")
+    return chunk.Him(65, 65, 4, 250.0, h, chunk.compute_him_bounds(h))
 
 
 def make_til(t):
@@ -147,18 +156,24 @@ def make_zon(p, template):
 def build_zone(p, template_zon):
     """Return {relative path within the zone folder: bytes}."""
     tiles = template_zon.lump(zon.TILES)
+    if p.field is not None and p.field.shape != terrain.field_shape(p.width, p.height):
+        raise ValueError("field shape %s does not fit %dx%d chunks" % (p.field.shape, p.width, p.height))
     if not 0 <= p.tile.tile_id < len(tiles):
         raise ValueError("tile id %d is not in the template's %d-row tile table"
                          % (p.tile.tile_id, len(tiles)))
     ext = (lambda e: e.upper()) if p.file_case_upper else (lambda e: e)
     files = {p.folder + ext(".zon"): zon.build(make_zon(p, template_zon))}
-    him = chunk.build_him(make_him(p.ground_cm))
+    flat_him = chunk.build_him(make_him(p.ground_cm)) if p.field is None else None
     til = chunk.build_til(make_til(p.tile))
     mov = chunk.build_mov(make_mov())
     empty_lit = lit.build_lit(lit.Lit(objects=[], dds_list=[]))
     for x, y in p.chunks():
         stem = chunk_stem(x, y)
-        files[stem + ext(".him")] = him
+        if p.field is None:
+            files[stem + ext(".him")] = flat_him
+        else:
+            files[stem + ext(".him")] = chunk.build_him(make_him_from(
+                terrain.chunk_heights(p.field, x - p.x0, y - p.y0)))
         files[stem + ext(".til")] = til
         files[stem + ext(".mov")] = mov
         files[stem + ext(".ifo")] = ifo.build(make_ifo(x, 64 - y))

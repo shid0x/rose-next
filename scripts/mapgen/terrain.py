@@ -1,0 +1,155 @@
+"""Seeded terrain heightfields (phase 2).
+
+A zone's terrain is one global heightfield sampled every 2.5 m (the HIM
+grid). Shape is (64 * chunks_y + 1, 64 * chunks_x + 1); row 0 = SOUTH,
+column 0 = WEST; values in cm. Chunks are slices of it, so neighbouring
+chunks share their edge vertices exactly.
+
+Pipeline (all deterministic from the seed):
+
+1. Hills: fractal gradient (Perlin) noise.
+2. Slope cap for the play area. A min-plus "cone" envelope cuts every peak
+   steeper than `max_play_slope_deg`:
+
+       H'(p) = min_q H(q) + k * L1(p, q)
+
+   It is exact and separable, so four cumulative-min sweeps compute it
+   (`slope_cap`). It bounds both forward differences the client's slope
+   test uses (io_terrain.cpp:2038-2048), so the interior can contain no
+   wall a player cannot climb.
+3. Ridge: an optional smooth rise along the map border, steep enough in its
+   middle to be impassable. It is scenery only: the client already stops
+   the player at the last chunk (user-verified, phase 1).
+"""
+
+import math
+
+import numpy as np
+
+GRID_CM = 250.0                 # HIM vertex spacing
+VERTS_PER_CHUNK = 64            # 16 patches x 4 grids
+
+
+def field_shape(chunks_x, chunks_y):
+    return (VERTS_PER_CHUNK * chunks_y + 1, VERTS_PER_CHUNK * chunks_x + 1)
+
+
+def perlin(shape, cell_verts, rng):
+    """2D gradient noise in about [-0.7, 0.7]; one lattice cell = `cell_verts` vertices."""
+    h, w = shape
+    gy = int(math.ceil((h - 1) / cell_verts)) + 2
+    gx = int(math.ceil((w - 1) / cell_verts)) + 2
+    ang = rng.uniform(0.0, 2.0 * math.pi, size=(gy, gx))
+    gvx, gvy = np.cos(ang), np.sin(ang)
+    off = rng.uniform(0.0, 1.0, size=2)                  # random lattice phase
+    y = np.arange(h)[:, None] / cell_verts + off[0]
+    x = np.arange(w)[None, :] / cell_verts + off[1]
+    x0, y0 = np.floor(x).astype(int), np.floor(y).astype(int)
+    fx, fy = x - x0, y - y0
+
+    def dot(ix, iy, dx, dy):
+        return gvx[iy, ix] * dx + gvy[iy, ix] * dy
+
+    n00 = dot(x0, y0, fx, fy)
+    n10 = dot(x0 + 1, y0, fx - 1, fy)
+    n01 = dot(x0, y0 + 1, fx, fy - 1)
+    n11 = dot(x0 + 1, y0 + 1, fx - 1, fy - 1)
+    u = fx * fx * fx * (fx * (fx * 6 - 15) + 10)         # quintic fade
+    v = fy * fy * fy * (fy * (fy * 6 - 15) + 10)
+    return (n00 * (1 - u) + n10 * u) * (1 - v) + (n01 * (1 - u) + n11 * u) * v
+
+
+def fbm(shape, wavelength_m, octaves, persistence, rng):
+    """Fractal noise normalised to [-1, 1]."""
+    total = np.zeros(shape)
+    amp, cell = 1.0, wavelength_m * 100.0 / GRID_CM
+    for _ in range(octaves):
+        total += amp * perlin(shape, max(cell, 2.0), rng)
+        amp *= persistence
+        cell /= 2.0
+    m = np.abs(total).max()
+    return total / m if m > 0 else total
+
+
+def _cone_1d(a, step, axis):
+    """Min-plus with |i-j|*step along one axis (both directions)."""
+    a = np.moveaxis(a, axis, -1)
+    idx = np.arange(a.shape[-1]) * step
+    fwd = np.minimum.accumulate(a - idx, axis=-1) + idx
+    rev = (np.minimum.accumulate((fwd + idx)[..., ::-1], axis=-1))[..., ::-1] - idx
+    return np.moveaxis(np.minimum(fwd, rev), -1, axis)
+
+
+def slope_cap(h, max_slope_deg):
+    """Largest field <= h whose x and y forward differences are all
+    <= tan(max) / sqrt(2) per grid. The client's gradient magnitude is then
+    <= tan(max) (io_terrain.cpp:2043-2044)."""
+    step = math.tan(math.radians(max_slope_deg)) / math.sqrt(2.0) * GRID_CM
+    out = _cone_1d(h, step, 1)
+    return _cone_1d(out, step, 0)
+
+
+def ridge(shape, height_cm, width_m):
+    """Border rise: 0 inside, `height_cm` at the edge, smoothstep over `width_m`.
+    The peak slope is 1.5 * height / width (smoothstep's derivative)."""
+    h, w = shape
+    wv = width_m * 100.0 / GRID_CM
+    yy = np.arange(h)[:, None]
+    xx = np.arange(w)[None, :]
+    d = np.minimum(np.minimum(xx, w - 1 - xx), np.minimum(yy, h - 1 - yy)).astype(float)
+    t = np.clip(1.0 - d / wv, 0.0, 1.0)
+    return height_cm * t * t * (3 - 2 * t)
+
+
+def generate(chunks_x, chunks_y, t, seed):
+    """Global heightfield (row 0 = south) from the spec's "terrain" section."""
+    shape = field_shape(chunks_x, chunks_y)
+    rng = np.random.default_rng(seed)
+    hills = t.get("hills", {})
+    field = np.full(shape, float(t.get("base_cm", 0.0)))
+    if hills.get("amplitude_cm", 0):
+        field += hills["amplitude_cm"] * fbm(shape, hills.get("wavelength_m", 200.0),
+                                             hills.get("octaves", 4),
+                                             hills.get("persistence", 0.45), rng)
+    if "max_play_slope_deg" in t:
+        field = slope_cap(field, t["max_play_slope_deg"])
+    r = t.get("ridge")
+    if r and r.get("height_cm", 0):
+        field = field + ridge(shape, r["height_cm"], r.get("width_m", 40.0))
+    return np.round(field.astype("<f4"), 1).astype("<f4")   # 1 mm steps: stable bytes
+
+
+def chunk_heights(field, cx, cy):
+    """(65, 65) heights of chunk (cx, cy) counted from the field's SW chunk,
+    in HIM FILE order (row 0 = north)."""
+    r0, c0 = cy * VERTS_PER_CHUNK, cx * VERTS_PER_CHUNK
+    return np.ascontiguousarray(field[r0:r0 + 65, c0:c0 + 65][::-1])
+
+
+def gradient(field):
+    """Per-cell gradient as the client computes it: forward differences from
+    the cell's south-west corner (io_terrain.cpp:2038-2048, :2846-2849).
+    Shape (rows-1, cols-1), dimensionless (cm per cm)."""
+    gx = (field[:-1, 1:] - field[:-1, :-1]) / GRID_CM
+    gy = (field[1:, :-1] - field[:-1, :-1]) / GRID_CM
+    return gx, gy
+
+
+def pick_start(field, max_slope_deg=10.0, radius_cells=2):
+    """The vertex nearest the field's centre whose surrounding cells are all
+    gentler than `max_slope_deg`. Returns (row, col) of a vertex."""
+    gx, gy = gradient(field)
+    steep = np.hypot(gx, gy) > math.tan(math.radians(max_slope_deg))
+    h, w = field.shape
+    cy, cx = (h - 1) / 2.0, (w - 1) / 2.0
+    best, best_d = None, None
+    for r in range(radius_cells, h - 1 - radius_cells):
+        for c in range(radius_cells, w - 1 - radius_cells):
+            d = (r - cy) ** 2 + (c - cx) ** 2
+            if best_d is not None and d >= best_d:
+                continue
+            if not steep[r - radius_cells:r + radius_cells, c - radius_cells:c + radius_cells].any():
+                best, best_d = (r, c), d
+    if best is None:
+        raise ValueError("no gentle spot for the start point")
+    return best

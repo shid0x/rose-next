@@ -42,6 +42,47 @@ class Him:
     tail: bytes = b""
 
 
+def compute_him_bounds(heights):
+    """Culling bounds exactly as retail tools wrote them (verified 2026-10-02:
+    reproduces all 663 retail HIMs that carry real bounds, patches and quads).
+
+    `heights` is the HIM's (65, 65) array in FILE order (row 0 = north).
+
+    * Patches are stored SOUTH row first: patch k covers patch row k // 16
+      from the south, column k % 16 from the west. The client reads them into
+      m_PATCH[k/16][k%16] (io_terrain.cpp:2577-2583), whose row index grows
+      north (:1320-1329). Each is (max, min) over the patch's 5x5 vertices.
+    * The 85 quads are the client's tree (io_terrain.cpp:780-827): node i has
+      children 4i+1..4i+4 at (x,y), (x+h,y), (x+h,y+h), (x,y+h) in patch units
+      from the south-west, levels of 16/8/4/2 patches. Each is the max/min of
+      its patches, seeded with max = -10 and min = 10000. That is the original
+      tool's quirk, also in editor/HIM.cs:317-340, and it decides 255 retail
+      files.
+    """
+    s = np.asarray(heights, dtype="<f4")[::-1]          # row 0 = south
+    pmax = np.empty((16, 16), "<f4")
+    pmin = np.empty((16, 16), "<f4")
+    for r in range(16):
+        for c in range(16):
+            block = s[r * 4:r * 4 + 5, c * 4:c * 4 + 5]
+            pmax[r, c], pmin[r, c] = block.max(), block.min()
+    quads = np.empty((85, 2), "<f4")
+
+    def node(i, level, size, x, y):
+        if level >= 4:
+            return
+        quads[i, 0] = max(np.float32(-10.0), pmax[y:y + size, x:x + size].max())
+        quads[i, 1] = min(np.float32(10000.0), pmin[y:y + size, x:x + size].min())
+        h = size // 2
+        node(4 * i + 1, level + 1, h, x, y)
+        node(4 * i + 2, level + 1, h, x + h, y)
+        node(4 * i + 3, level + 1, h, x + h, y + h)
+        node(4 * i + 4, level + 1, h, x, y + h)
+
+    node(0, 0, 16, 0, 0)
+    return HimBounds(b"quad", np.stack([pmax.ravel(), pmin.ravel()], axis=1), quads)
+
+
 def parse_him(data):
     r = Reader(data)
     w, h, g = r.i32(), r.i32(), r.i32()

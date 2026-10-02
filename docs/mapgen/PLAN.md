@@ -172,7 +172,65 @@ height bounds computed, top-down preview PNG.
     to reach the start back using only climbable steps;
   - ground never culls when turning the camera;
   - click-to-move works on slopes.
-- **Status:** NOT STARTED.
+- **Status:** DONE 2026-10-02. The user confirmed in game:
+  - the ground never vanishes while turning the camera;
+  - moving up and down the hills works;
+  - the ridge stops the player;
+  - the only new log line is `interface: loadTexture() failed. file [NOMAP]
+    not found`, harmless (see FORMATS.md, `LIST_ZONE` rules).
+
+  Not separately tested: walking back down after getting onto the ridge face.
+  The model says it always works.
+  - **Zone 12 now holds the phase 2 terrain**, replacing the flat zone in the
+    same folder:
+    - 4x4 chunks (640 m), slots x/y 30-33;
+    - seeded rolling hills, heights -15..70 m;
+    - an impassable border ridge, 45 m high, 36 m wide.
+    - Warp: `/mm 12 512 512`.
+  - **Automated checks — `mapgen-zone.py verify`, all re-derived from the
+    files on disk:**
+    - shared chunk edges identical;
+    - HIM culling bounds real and equal to the retail formula;
+    - start height equals the terrain;
+    - **0 trap cells**;
+    - start connected to 100% of the gentle play area.
+  - **Other checks:**
+    - `walk-selftest` passes its 8 synthetic cases: walled pit = trap, pit
+      with ramp = none, cliff drop with and without a ramp back, plateau,
+      53° slope, 56° bowl;
+    - same spec and seed give a bit-identical field;
+    - editor readers load every file;
+    - full round-trip passes at 9,132 files;
+    - the bounds formula is re-proved on every `--selftest`.
+  - **Interior slopes** are median 10.8°, p90 19°, max 30°. Retail JG zones run
+    median 11-16°, with about 15% of cells >= 54° as cliffs; ours are the ridge
+    only, about 11%.
+  - **Preview:** `mapgen-zone.py preview SPEC` writes
+    `build/mapgen/preview-<folder>.png`. Green = walkable and connected,
+    red = >= 54°, magenta = trap, white = chunk borders, blue = start.
+- **How:**
+  - `scripts/mapgen/terrain.py`: Perlin fBm hills, an exact min-plus slope
+    cap (`slope_cap`), a smoothstep border ridge, start spot = nearest gentle
+    spot to the centre.
+  - `scripts/mapgen/walk.py`: the client's step rule on 2.5 m cells, liberal
+    reach / strict escape (FORMATS.md, "Slope rule").
+  - `scripts/mapgen/preview.py`.
+  - `chunk.compute_him_bounds`.
+  - Spec: `scripts/mapgen/specs/phase2-terrain.json`.
+- **Changes from the plan / decisions made:**
+  - Went straight to the 4x4 target size: a ridge plus hills needs more than
+    320 m.
+  - The ridge is scenery: the border already blocks the player (user,
+    phase 1).
+  - Height bounds are now real values, computed the retail way, not
+    placeholders.
+  - The trap check had to be built carefully. Its first version missed a
+    walled pit: the client ignores a cell's NE corner, which opens a fake
+    diagonal escape. The second version invented traps at a pit's rim because
+    it allowed no diagonal escape at all. The final rule requires a diagonal
+    step to pass through a side cell, and the selftest pins all three
+    behaviours.
+  - `install` refuses terrain that fails the checks.
 
 ### Phase 3 — tile painting
 
@@ -240,3 +298,11 @@ Baked terrain lightmap, generated `.MOV`, minimap.
 - 2026-10-02 — Phase 1 confirmed by the user (editor, server, client) and
   committed. Next: phase 2 (terrain). Its first job is to settle the HIM
   trailer indexing (FORMATS.md, "Not verified") before writing real bounds.
+- 2026-10-02 — The map edge simply blocks the player (user). Phase 2 built:
+  HIM bounds format and the client's slope rule settled from code + corpus;
+  terrain generator, trap checker and preview written; zone 12 reinstalled
+  with 4x4 terrain; automated checks pass. In-game checks handed to the user.
+- 2026-10-02 — Phase 2 confirmed in game by the user and committed. Next:
+  phase 3 (tile painting with the JG tileset). Its first check is to
+  regenerate an existing JG zone's TIL from its own corner brushes. Phase 8's
+  minimap will also retire the harmless `NOMAP` texture warning.

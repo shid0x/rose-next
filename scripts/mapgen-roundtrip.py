@@ -234,6 +234,32 @@ def selftest(root):
           (42, (100.0, 200.0, 300.0)))
     check(".lit", m_lit, lambda l: (l.objects[-1].obj_index, l.objects[-1].parts[0].position_in_map),
           (9, 3))
+
+    # The culling-bound formula the generator uses must reproduce every retail
+    # HIM that stores real bounds. The two known exceptions carry patch bounds
+    # that disagree with their own heights (stale after a hand edit); their
+    # quads still follow the formula from the stored patches.
+    known_stale = {os.path.join("JUNON", "JD03", "31_32.HIM"), os.path.join("JUNON", "JZ01_1", "33_30.HIM")}
+    real = match = 0
+    stale_seen = set()
+    for dirpath, _, files in os.walk(root):
+        for fn in files:
+            if not fn.lower().endswith(".him"):
+                continue
+            path = os.path.join(dirpath, fn)
+            him = chunk.parse_him(open(path, "rb").read())
+            if him.bounds is None or np.any(np.abs(him.bounds.patches) > 1e30):
+                continue
+            real += 1
+            want = chunk.compute_him_bounds(him.heights)
+            if np.array_equal(want.patches, him.bounds.patches) and np.array_equal(want.quads, him.bounds.quads):
+                match += 1
+            elif os.path.relpath(path, root).upper() in {k.upper() for k in known_stale}:
+                stale_seen.add(os.path.relpath(path, root))
+            else:
+                problems.append("HIM bounds formula disagrees with %s" % os.path.relpath(path, root))
+    print("  HIM bounds formula reproduces %d of %d HIMs with real bounds, generated ones included (+%d known stale)"
+          % (match, real, len(stale_seen)))
     return problems
 
 
