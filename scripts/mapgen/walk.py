@@ -103,9 +103,17 @@ def analyse(field, start_vertex, play_mask=None, blocked=None):
         dst = _shift(src, -dr, -dc)                          # target cell (indexed at source) allows entering
         inside = _shift(np.ones_like(src), -dr, -dc)         # target exists
         liberal[(dr, dc)] = (src | dst) & inside
+        free = ~blocked if blocked is not None else np.ones_like(src)
+        if blocked is not None:
+            # Walls block both ways, so the liberal flood obeys them exactly as
+            # the strict one does; only the slope rule stays one-sided. A
+            # liberal flood through walls made every pocket walled in by
+            # several objects (a fence corner against a wine press) a "trap".
+            liberal[(dr, dc)] &= free & _shift(free, -dr, -dc)
+            if dr and dc:
+                liberal[(dr, dc)] &= _shift(free, -dr, 0) | _shift(free, 0, -dc)
         # strict move a -> b; for the reverse flood (who can reach the start)
         # we walk edges backwards: from b to a, indexed by b.
-        free = ~blocked if blocked is not None else np.ones_like(src)
         ok = src & free                                      # allows d and is not inside an object
         strict = ok & _shift(ok, -dr, -dc) & inside          # indexed by a, move a -> a+(dr,dc)
         if dr and dc:                                        # diagonal: via a side cell, not the corner point
@@ -197,8 +205,8 @@ def selftest():
     bowl[28:37, 28:37] = bowl[28:37, 28:37].min()   # flat floor at the centre
     expect("start inside a 56-degree bowl: can walk nowhere uphill", bowl, traps=False, home_frac=None)
 
-    def expect_blocked(name, blocked, traps):
-        a = analyse(flat, centre, blocked=blocked)
+    def expect_blocked(name, blocked, traps, field=flat):
+        a = analyse(field, centre, blocked=blocked)
         ok = (a["trap_cells"] > 0) == traps
         print("  %s %-58s traps %4d" % ("ok  " if ok else "FAIL", name, a["trap_cells"]))
         if not ok:
@@ -207,8 +215,15 @@ def selftest():
     ring = np.zeros((n - 1, n - 1), bool)
     ring[8:16, 8:16] = True
     ring[9:15, 9:15] = False                # a pocket fully walled by objects
-    expect_blocked("pocket walled in by rocks: flagged (conservative)", ring, traps=True)
+    expect_blocked("pocket walled in by rocks: unreachable, so not a trap", ring, traps=False)
     gap = ring.copy()
     gap[11:13, 8] = False                   # a 5 m gap in the west wall
     expect_blocked("same rock ring with a 5 m gap: no trap", gap, traps=False)
+    pinch = ring.copy()
+    pinch[8, 8] = False                     # walls meeting only at a corner point
+    pinch[9, 9] = False
+    expect_blocked("ring opened only at a corner point: sealed, no trap", pinch, traps=False)
+    pit = flat.copy()
+    pit[9:16, 9:16] = -1500.0               # the pocket's floor 15 m down
+    expect_blocked("rock ring with a gap into a 15 m pit: trap", gap, traps=True, field=pit)
     return fails

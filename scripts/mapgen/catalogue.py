@@ -151,6 +151,164 @@ def mesh_vertices(data_dir, rel):
     return None
 
 
+def mesh_triangles(data_dir, rel):
+    """(n, 3, 3) triangle corners in cm, or None. Same layout walk as
+    fix-coplanar-object-overlaps.py load_mesh, which round-trips every mesh
+    we ship."""
+    try:
+        with open(os.path.join(data_dir, rel.replace("\\", os.sep)), "rb") as f:
+            b = f.read()
+    except OSError:
+        return None
+    e = b.index(b"\0")
+    magic = b[:e].decode("latin-1")
+    ver = int(magic[3:]) if magic[:3] == "ZMS" and magic[3:].isdigit() else 0
+    p = e + 1
+    fmt = struct.unpack_from("<I", b, p)[0]
+    p += 4 + 24
+    if ver in (7, 8):
+        nb = struct.unpack_from("<H", b, p)[0]
+        p += 2 + 2 * nb
+        nv = struct.unpack_from("<H", b, p)[0]
+        p += 2
+        verts = np.frombuffer(b, "<f4", nv * 3, p).reshape(nv, 3).astype(float) * 100.0
+        p += 12 * nv
+        sizes = [(4, 12), (8, 16), (64, 12), (128, 8), (256, 8), (512, 8), (1024, 8)]
+        if (fmt & 16) and (fmt & 32):
+            p += 24 * nv
+        for bit, size in sizes:
+            if fmt & bit:
+                p += size * nv
+        nf = struct.unpack_from("<H", b, p)[0]
+        p += 2
+        faces = np.frombuffer(b, "<u2", nf * 3, p).reshape(nf, 3).astype(int)
+    elif ver == 6:
+        nb = struct.unpack_from("<I", b, p)[0]
+        p += 4 + 8 * nb
+        nv = struct.unpack_from("<I", b, p)[0]
+        p += 4
+        verts = np.frombuffer(b, "<f4", nv * 4, p).reshape(nv, 4)[:, 1:].astype(float)
+        p += 16 * nv
+        sizes = [(4, 16), (8, 20), (64, 16), (128, 12), (256, 12), (512, 12), (1024, 12)]
+        if (fmt & 16) and (fmt & 32):
+            p += 36 * nv
+        for bit, size in sizes:
+            if fmt & bit:
+                p += size * nv
+        nf = struct.unpack_from("<I", b, p)[0]
+        p += 4
+        faces = np.frombuffer(b, "<u4", nf * 4, p).reshape(nf, 4)[:, 1:].astype(int)
+    else:
+        return None
+    if len(faces) and faces.max() >= len(verts):
+        return None
+    return verts[faces]
+
+
+class Footprints:
+    """Walls of placed objects on the 2.5 m walk grid, from real geometry.
+
+    For each object, the triangles of its colliding parts in model space.
+    For each placement, only near-vertical triangles (|normal z| < 0.5, i.e.
+    steeper than 60 degrees: walls, trunks, rock faces) within the body's
+    height band above the ground block walking. Flatter triangles are floors
+    the character walks on (the client finds ground height by ray, and
+    collides its feet and body spheres with walls:
+    cobjchar_collision.cpp:510-530, :1338-1461).
+
+    Circles from collision_profile were too coarse with houses in play:
+    they boxed a free cell in between the Breezy Hills windmill, house and
+    crates.
+    """
+
+    def __init__(self, data_dir, deco_zsc, cnst_zsc):
+        self.data_dir = data_dir
+        self.zsc = {"OBJECT": read_zsc(os.path.join(data_dir, deco_zsc)),
+                    "CNST": read_zsc(os.path.join(data_dir, cnst_zsc))}
+        self.cache = {}
+
+    def triangles(self, lump, oid):
+        key = (lump, oid)
+        if key not in self.cache:
+            meshes, objs = self.zsc[lump]
+            tris = []
+            if 0 <= oid < len(objs):
+                parts = objs[oid]["parts"]
+                for i, part in enumerate(parts):
+                    if not part["collision"] or not 0 <= part["mesh"] < len(meshes):
+                        continue
+                    t = mesh_triangles(self.data_dir, meshes[part["mesh"]])
+                    if t is None or not len(t):
+                        continue
+                    tris.append(_to_model(parts, i, t.reshape(-1, 3)).reshape(-1, 3, 3))
+            self.cache[key] = np.concatenate(tris) if tris else np.zeros((0, 3, 3))
+        return self.cache[key]
+
+    def mark(self, blocked, q, band=(25.0, 250.0), step_cm=60.0):
+        """Mark the cells a placed object's walls cover (q: lump, id, x, y,
+        z, rot (x,y,z,w), scale, sink)."""
+        t = self.triangles(q.get("lump", "OBJECT"), q["id"])
+        if not len(t):
+            return
+        w = (t.reshape(-1, 3) * np.array(q["scale"])) @ _quat(q["rot"]) + np.array([q["x"], q["y"], q["z"]])
+        w = w.reshape(-1, 3, 3)
+        n = np.cross(w[:, 1] - w[:, 0], w[:, 2] - w[:, 0])
+        ln = np.linalg.norm(n, axis=1)
+        ok = ln > 1e-6
+        steep = ok & (np.abs(n[:, 2]) < 0.5 * np.where(ok, ln, 1.0))
+        ground = q["z"] - q.get("sink", 0.0)
+        lo, hi = ground + band[0], ground + band[1]
+        zmin, zmax = w[:, :, 2].min(1), w[:, :, 2].max(1)
+        w = w[steep & (zmax >= lo) & (zmin <= hi)]
+        if not len(w):
+            return
+        edge = np.max(np.linalg.norm(w - np.roll(w, 1, axis=1), axis=2), axis=1)
+        g = terrain.GRID_CM
+        local = np.zeros_like(blocked)
+        self._raster(local, w, edge, lo, hi, step_cm)
+        if not local.any():
+            return
+        # A solid object (rock, closed house) rasterises as a ring of wall
+        # cells around an interior nobody can enter: block what the outside
+        # cannot reach. An open doorway connects the inside to the outside and
+        # keeps it walkable.
+        rr, cc = np.nonzero(local)
+        r0, r1 = max(0, rr.min() - 1), min(blocked.shape[0], rr.max() + 2)
+        c0, c1 = max(0, cc.min() - 1), min(blocked.shape[1], cc.max() + 2)
+        box = local[r0:r1, c0:c1]
+        outside = np.zeros_like(box)
+        outside[0, :] |= ~box[0, :]
+        outside[-1, :] |= ~box[-1, :]
+        outside[:, 0] |= ~box[:, 0]
+        outside[:, -1] |= ~box[:, -1]
+        while True:
+            grown = outside.copy()
+            grown[1:] |= outside[:-1]
+            grown[:-1] |= outside[1:]
+            grown[:, 1:] |= outside[:, :-1]
+            grown[:, :-1] |= outside[:, 1:]
+            grown &= ~box
+            if np.array_equal(grown, outside):
+                break
+            outside = grown
+        blocked[r0:r1, c0:c1] |= ~outside
+
+    def _raster(self, blocked, w, edge, lo, hi, step_cm):
+        g = terrain.GRID_CM
+        for k in np.unique(np.clip(np.ceil(edge / step_cm).astype(int), 1, 40)):
+            sel = w[np.clip(np.ceil(edge / step_cm).astype(int), 1, 40) == k]
+            i, j = np.meshgrid(np.arange(k + 1), np.arange(k + 1))
+            keep = i + j <= k
+            a, b = i[keep] / k, j[keep] / k
+            pts = (sel[:, None, 0] * (1 - a - b)[None, :, None] + sel[:, None, 1] * a[None, :, None]
+                   + sel[:, None, 2] * b[None, :, None]).reshape(-1, 3)
+            pts = pts[(pts[:, 2] >= lo) & (pts[:, 2] <= hi)]
+            r = (pts[:, 1] // g).astype(int)
+            c = (pts[:, 0] // g).astype(int)
+            inside = (r >= 0) & (r < blocked.shape[0]) & (c >= 0) & (c < blocked.shape[1])
+            blocked[r[inside], c[inside]] = True
+
+
 def _to_model(parts, i, pts):
     j, seen = i, set()
     while 0 <= j < len(parts) and j not in seen:

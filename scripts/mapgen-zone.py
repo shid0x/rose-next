@@ -41,6 +41,7 @@ import datetime
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -55,7 +56,7 @@ BUILD = os.path.join(REPO, "build", "mapgen")
 sys.path.insert(0, HERE)
 
 import mapgen  # noqa: E402
-from mapgen import catalogue, chunk, decorate, ifo, paint, preview, terrain, tiles, walk, water, zon  # noqa: E402
+from mapgen import catalogue, chunk, decorate, ifo, paint, prefab, preview, terrain, tiles, walk, water, zon  # noqa: E402
 from mapgen.zone import (CHUNK_CM, EventPoint, Tile, ZoneParams, build_zone,  # noqa: E402
                          centre_world, chunk_stem)
 
@@ -136,6 +137,11 @@ def params_from_spec(s):
         if p.field is None:
             raise SystemExit("'water' needs a 'terrain' section")
         add_lakes(s, p)
+    p.villages = []
+    if s.get("villages"):
+        if p.field is None:
+            raise SystemExit("'villages' needs a 'terrain' section")
+        add_villages(s, p)
     anchor = start_vertex(s, p)
     for e in s["events"]:
         dc, dr = (int(round(v / terrain.GRID_CM)) for v in e.get("offset_cm", [0, 0]))
@@ -168,9 +174,34 @@ def params_from_spec(s):
                     pts.append((int(round(pt[1] * (rows - 1))), int(round(pt[0] * (cols - 1)))))
             paths.append(pts)
         forced = lake_brushes(s, p, (rows, cols))
-        paths = [[free_corner(pt, forced) for pt in pts] for pts in paths]
+        path_block = forced >= 0
+        start_corner = (int(round(anchor[0] / 4)), int(round(anchor[1] / 4)))
+        for v in p.villages:
+            for r, c, b in v["brushes"]:
+                if 0 <= r < rows and 0 <= c < cols and forced[r, c] < 0:
+                    forced[r, c] = b
+                    path_block[r, c] = True     # a path through the village would be painted over
+            path_block |= v["corner_block"]
+        pb = cfg.get("path_brush", 0)
+        for v in p.villages:
+            if not v["connect"]:
+                continue
+            # The route in from the entrance paints over the village's own
+            # brushes, from the gate inwards until it meets ground the
+            # village already paints with the path brush.
+            own = {(r, c): b for r, c, b in v["brushes"]}
+            for corner in reversed(v["inner_path"]):
+                if not (0 <= corner[0] < rows and 0 <= corner[1] < cols):
+                    continue
+                if own.get(corner) == pb and corner != v["inner_path"][-1]:
+                    break
+                forced[corner] = pb
+        paths = [[free_corner(pt, path_block) for pt in pts] for pts in paths]
+        for v in p.villages:
+            if v["connect"]:
+                paths.append([free_corner(v["gate"], path_block), free_corner(start_corner, path_block)])
         seed = cfg.get("seed", t["seed"] + 1)
-        p.lattice, p.path_corners = paint.paint(p.field, ts, stats, cfg, seed, paths, forced)
+        p.lattice, p.path_corners = paint.paint(p.field, ts, stats, cfg, seed, paths, forced, path_block)
         p.tile_grid = tiles.tiles_from_lattice(p.lattice, ts, np.random.default_rng(seed + 1))
     p.placed = None
     dcfg = s.get("decorate")
@@ -178,13 +209,194 @@ def params_from_spec(s):
         if p.lattice is None:
             raise SystemExit("'decorate' needs a 'paint' section")
         cat = catalogue.load(os.path.join(STATS_DIR, dcfg["catalogue"]))
+        avoid = water_margin(s, p, dcfg) | village_mask(p, dcfg.get("village_clear_m", 4.0))
         _, placed = decorate.place(p.field, p.lattice, p.x0, p.y0, cat, dcfg,
-                                   dcfg.get("seed", t["seed"] + 7), water_margin(s, p, dcfg),
-                                   p.path_corners, anchor)
-        placed, p.deco_removed = decorate.repair(placed, p.field, anchor, play_mask(s, p))
+                                   dcfg.get("seed", t["seed"] + 7), avoid, p.path_corners, anchor)
+        placed, p.deco_removed = decorate.repair(placed, p.field, anchor, play_mask(s, p),
+                                                 fixed=village_members(p), footprints=footprints(s))
         p.placed = placed
         p.objects = decorate.records_by_chunk(placed, p.x0, p.y0)
+    members = village_members(p)
+    if members:
+        vdeco, vcnst = prefab.records(members, p.x0, p.y0)
+        p.objects = dict(p.objects or {})
+        for k, recs in vdeco.items():
+            p.objects[k] = list(p.objects.get(k, [])) + recs
+        p.cnst = vcnst
     return p
+
+
+def add_villages(s, p):
+    """Place each spec village: pick a flat corner-aligned site, flatten a pad,
+    instantiate the (turned) prefab. Fills p.villages; widens p.avoid."""
+    rng = np.random.default_rng(s["terrain"]["seed"] + 300)
+    band_m = ((s.get("terrain") or {}).get("ridge") or {}).get("width_m", 0)
+    taken = []
+    rows, cols = 16 * p.height + 1, 16 * p.width + 1
+    if p.avoid is None:
+        p.avoid = np.zeros(p.field.shape, bool)
+    for v in s["villages"]:
+        pf = prefab.load(os.path.join(PREFAB_DIR, v["prefab"] + ".json"))
+        k = int(rng.integers(4)) if v.get("rotation", "auto") == "auto" else int(v["rotation"]) // 90
+        pfr = prefab.rotate(pf, k)
+        pad_m = pf["radius_m"] + v.get("pad_margin_m", 6.0)
+        skirt = v.get("skirt_m", 30.0)
+        centre = prefab.pick_site(p.field, pad_m, skirt, p.avoid, band_m + 10, taken)
+        p.field, height = prefab.flatten(p.field, centre, pad_m, skirt)
+        placed, brushes = prefab.instantiate(pfr, centre, height)
+        cells = (p.field.shape[0] - 1, p.field.shape[1] - 1)
+        fp = footprints(s)
+        for q in placed:
+            q["rc"] = prefab.footprint_radius(fp, q, cells)
+        taken.append((centre[0], centre[1], pad_m + skirt))
+        grow = int((pad_m + v.get("keep_clear_m", 6.0)) * 100 / terrain.GRID_CM)
+        yy, xx = np.mgrid[0:p.field.shape[0], 0:p.field.shape[1]]
+        pad_mask = np.hypot(yy - centre[0], xx - centre[1]) <= grow
+        p.avoid |= pad_mask
+        # corners paths may not cross: under any blocking member
+        cb = np.zeros((rows, cols), bool)
+        for q in placed:
+            if q["rc"]:
+                rr = int(math.ceil((q["rc"] + 150) / 1000.0))
+                qr, qc = q["y"] / 1000.0, q["x"] / 1000.0
+                for r in range(int(qr) - rr, int(qr) + rr + 2):
+                    for c in range(int(qc) - rr, int(qc) + rr + 2):
+                        if 0 <= r < rows and 0 <= c < cols and math.hypot(c - qc, r - qr) * 1000 <= q["rc"] + 150:
+                            cb[r, c] = True
+        # Entrance: the named member's bearing (spec "entrance"), else the
+        # middle of the widest open arc in the village's walls, else the
+        # side facing the map centre. The path then runs on the walk grid
+        # from the centre out through it, and on to the start from there.
+        blocked = decorate.blocked_cells(placed, cells, fp)
+        cr, cc = centre[0] // 4, centre[1] // 4
+        arcs = prefab.openings(blocked, centre, pad_m)
+        if v.get("entrance"):
+            named = [q for q in placed if q["name"] == v["entrance"]]
+            if not named:
+                raise SystemExit("village %s has no member named %r" % (v["prefab"], v["entrance"]))
+            g = terrain.GRID_CM
+            bearing = math.degrees(math.atan2(np.mean([q["y"] for q in named]) - centre[0] * g,
+                                              np.mean([q["x"] for q in named]) - centre[1] * g)) % 360
+            how = "member %s" % v["entrance"]
+        elif arcs:
+            bearing, how = prefab.arc_middle(arcs[0]), "widest opening %d-%d deg" % arcs[0]
+        else:
+            bearing, how = math.degrees(math.atan2(rows / 2 - cr, cols / 2 - cc)) % 360, "facing the map centre"
+        route = prefab.inner_route(blocked, centre, bearing, pad_m)
+        if route is None:
+            raise SystemExit("village %s: no walkable way out of the centre" % v["prefab"])
+        inner = prefab.route_corners(route)
+        p.villages.append({"prefab": v["prefab"], "centre": centre, "height": height, "pad_m": pad_m,
+                           "turns": k, "members": placed, "brushes": brushes, "corner_block": cb,
+                           "gate": inner[-1], "inner_path": inner, "entrance_deg": bearing,
+                           "entrance_how": how, "openings": arcs, "connect": v.get("connect", True)})
+
+
+_fp_cache = {}
+
+
+def footprints(s):
+    """catalogue.Footprints for the spec's template zone (DECO + CNST ZSCs)."""
+    key = s["template_zone_row"]
+    if key not in _fp_cache:
+        zstb, _, _ = tables()
+        rel = lambda col: zstb.get(key, col).decode("latin-1").replace("\\\\", "\\")
+        _fp_cache[key] = catalogue.Footprints(DATA, rel(COL_DECO), rel(COL_CNST))
+    return _fp_cache[key]
+
+
+def village_members(p):
+    return [q for v in getattr(p, "villages", []) or [] for q in v["members"]]
+
+
+def village_mask(p, margin_m):
+    """Vertices inside any village pad plus `margin_m`."""
+    m = np.zeros(p.field.shape, bool)
+    yy, xx = np.mgrid[0:p.field.shape[0], 0:p.field.shape[1]]
+    for v in getattr(p, "villages", []) or []:
+        m |= np.hypot(yy - v["centre"][0], xx - v["centre"][1]) * terrain.GRID_CM / 100 <= v["pad_m"] + margin_m
+    return m
+
+
+def village_checks(s, p, members, field, start, check):
+    """Phase 6 checks on placed village members (from the spec or from disk)."""
+    if not members:
+        return
+    zstb, _, _ = tables()
+    ok_ids, missing = True, set()
+    for lump_name, col in (("OBJECT", COL_DECO), ("CNST", COL_CNST)):
+        rel = zstb.get(s["template_zone_row"], col).decode("latin-1").replace("\\\\", "\\")
+        meshes, objs = catalogue.read_zsc(P(rel))
+        for q in members:
+            if q["lump"] != lump_name:
+                continue
+            if not 0 <= q["id"] < len(objs) or not objs[q["id"]]["parts"]:
+                ok_ids = False
+                continue
+            missing.update(catalogue.object_box(DATA, meshes, objs[q["id"]])[2])
+    check(ok_ids, "every village object id exists in its ZSC (decoration or construction)")
+    check(not missing, "every mesh of every village object exists on disk %s" % (sorted(missing)[:3] or ""))
+    g = terrain.GRID_CM
+    rough, unreachable = [], []
+    blocked = decorate.blocked_cells(members + (p.placed or []), (field.shape[0] - 1, field.shape[1] - 1),
+                                     footprints(s))
+    a = walk.analyse(field, start, play_mask(s, p), blocked)
+    fp = footprints(s)
+    for q in members:
+        if not q["rc"]:
+            continue
+        # flatness under the cells the member's walls actually stand on (a
+        # disc of its radius reaches past a long fence into the skirt)
+        own = np.zeros_like(blocked)
+        fp.mark(own, q)
+        orr, occ = np.nonzero(own)
+        if not len(orr):
+            continue
+        vr = np.concatenate([orr, orr, orr + 1, orr + 1])
+        vc = np.concatenate([occ, occ + 1, occ, occ + 1])
+        hts = field[vr, vc]
+        if float(hts.max() - hts.min()) > 5.0:
+            rough.append("%s#%d (%.0f cm)" % (q["name"], q["id"], float(hts.max() - hts.min())))
+        reach = q["rc"] + 300
+        cr0, cr1 = int((q["y"] - reach) // g), int((q["y"] + reach) // g) + 1
+        cc0, cc1 = int((q["x"] - reach) // g), int((q["x"] + reach) // g) + 1
+        home = a["home"][max(0, cr0):cr1 + 1, max(0, cc0):cc1 + 1]
+        if not home.any():
+            unreachable.append("%s#%d" % (q["name"], q["id"]))
+    check(not rough, "ground under every village building is flat within 5 cm %s" % (rough[:3] or ""))
+    check(not unreachable, "every village building can be reached from the start %s" % (unreachable[:3] or ""))
+    check(a["trap_cells"] == 0, "with village and decoration collision: no trap (%d cells)" % a["trap_cells"])
+    lat = getattr(p, "lattice", None)
+    if lat is not None and s.get("paint"):
+        pb = s["paint"].get("path_brush", 0)
+        bad = []
+        for v in getattr(p, "villages", []) or []:
+            if not v["connect"]:
+                continue
+            # the way out of the centre is walkable with every object in place ...
+            if prefab.inner_route(blocked, v["centre"], v["entrance_deg"], v["pad_m"]) is None:
+                bad.append(v["prefab"] + " (no walkable route)")
+                continue
+            # ... and the path brush runs unbroken from the start to the entrance
+            seen, todo = set(), [(int(round(start[0] / 4)), int(round(start[1] / 4)))]
+            todo = [q for q in todo if lat[q] == pb]
+            while todo:
+                q = todo.pop()
+                if q in seen:
+                    continue
+                seen.add(q)
+                for d in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    n = (q[0] + d[0], q[1] + d[1])
+                    if 0 <= n[0] < lat.shape[0] and 0 <= n[1] < lat.shape[1] and lat[n] == pb and n not in seen:
+                        todo.append(n)
+            if v["inner_path"][-1] not in seen:
+                bad.append(v["prefab"])
+        check(not bad, "a path runs from the start into every village's entrance %s" % (bad or ""))
+    for v in getattr(p, "villages", []) or []:
+        print("        village %s: %d members (%d blocking), pad %.0f m at %.1f m, turned %d deg, "
+              "entrance %.0f deg (%s), path in %d corners"
+              % (v["prefab"], len(v["members"]), sum(1 for q in v["members"] if q["rc"]), v["pad_m"],
+                 v["height"] / 100, v["turns"] * 90, v["entrance_deg"], v["entrance_how"], len(v["inner_path"])))
 
 def water_margin(s, p, dcfg):
     """Vertices where no decoration may stand: lakes plus `water_clear_m`."""
@@ -258,7 +470,8 @@ def deco_checks(s, p, placed, field, start, check, zdir=None):
                     tight += 1
     check(tight == 0, "colliding objects keep a %.0f m walkable gap (%d pairs closer)" % (gap / 100, tight))
 
-    blocked = decorate.blocked_cells(placed, (field.shape[0] - 1, field.shape[1] - 1))
+    blocked = decorate.blocked_cells(placed + village_members(p), (field.shape[0] - 1, field.shape[1] - 1),
+                                     footprints(s))
     a = walk.analyse(field, start, play_mask(s, p), blocked)
     need = (s.get("terrain") or {}).get("min_connected_fraction", 0.95)
     check(a["trap_cells"] == 0,
@@ -375,11 +588,14 @@ def lake_brushes(s, p, shape):
     return forced
 
 
-def free_corner(pt, forced):
-    """Nearest lattice corner to `pt` that no lake pins (path endpoints)."""
-    if forced[pt] < 0:
+def free_corner(pt, blocked):
+    """Nearest lattice corner to `pt` that paths may use (path endpoints).
+    `blocked` is a bool mask, or a forced-brush lattice (-1 = free)."""
+    if blocked.dtype != bool:
+        blocked = blocked >= 0
+    if not blocked[pt]:
         return pt
-    free = np.argwhere(forced < 0)
+    free = np.argwhere(~blocked)
     d = np.hypot(free[:, 0] - pt[0], free[:, 1] - pt[1])
     return tuple(int(v) for v in free[np.argmin(d)])
 
@@ -632,6 +848,44 @@ def cmd_stats():
     return 0
 
 
+PREFAB_DIR = os.path.join(HERE, "mapgen", "prefabs")
+
+
+def cmd_prefab_extract(a):
+    """Lift a retail cluster into scripts/mapgen/prefabs/<name>.json."""
+    zstb, _, _ = tables()
+    src, tmpl = a.zone_row, a.template_row
+    norm = lambda c, r: zstb.get(r, c).decode("latin-1").replace("\\\\", "\\").upper()
+    for col in (COL_DECO, COL_CNST):
+        if norm(col, src) != norm(col, tmpl):
+            raise SystemExit("zone %d's col %d (%s) differs from template %d's (%s): its object ids would "
+                             "point at different objects" % (src, col, norm(col, src), tmpl, norm(col, tmpl)))
+    zon_rel = zstb.get(src, COL_ZON).decode("latin-1")
+    zone_dir = os.path.dirname(P(zon_rel))
+    with open(P(zon_rel), "rb") as f:
+        ztype = zon.parse(f.read()).lump(zon.INFO).zone_type
+    ts_name = zone_tileset_name(ztype, tiles.read_stb_cells(P(ZONETYPE_STB)))
+    ts = tiles.Tileset(tiles.tileset_path(DATA, ts_name)) if ts_name else None
+    cat = catalogue.load(os.path.join(STATS_DIR, "jg_decoration.json"))
+    pf = prefab.extract(DATA, zone_dir, norm(COL_DECO, src), norm(COL_CNST, src), cat,
+                        (a.centre[0] * 1000.0, a.centre[1] * 1000.0), a.radius, tileset=ts)
+    pf = dict({"_comment": "Village prefab lifted by `mapgen-zone.py prefab-extract`; see scripts/mapgen/prefab.py.",
+               "name": a.name, "source_zone_row": src,
+               "source_zone": zstb.get(src, COL_NAME).decode("latin-1"),
+               "source_centre_mm": a.centre, "tileset": ts_name,
+               "deco_zsc": norm(COL_DECO, src), "cnst_zsc": norm(COL_CNST, src)}, **pf)
+    os.makedirs(PREFAB_DIR, exist_ok=True)
+    out = os.path.join(PREFAB_DIR, a.name + ".json")
+    prefab.save(out, pf)
+    from collections import Counter
+    comp = Counter("%s:%s" % (m["lump"][0], m["name"]) for m in pf["members"])
+    blocking = sum(1 for m in pf["members"] if prefab.blocking_radius_of(m) > 0)
+    print("wrote %s: %d members (%d blocking), %d brush corners, ground relief %.1f m (tileset %s)"
+          % (out, len(pf["members"]), blocking, len(pf["brushes"]), pf["ground_relief_cm"] / 100, ts_name))
+    print("   " + ", ".join("%s x%d" % kv for kv in comp.most_common()))
+    return 0
+
+
 def cmd_preview(s):
     """Generate, analyse and render without installing anything."""
     p = params_from_spec(s)
@@ -641,6 +895,7 @@ def cmd_preview(s):
     a = terrain_checks(s, p, p.field, start_vertex(s, p), check)
     wet = water_checks(p, p.field, p.water, check)
     deco_checks(s, p, p.placed, p.field, start_vertex(s, p), check)
+    village_checks(s, p, village_members(p), p.field, start_vertex(s, p), check)
     os.makedirs(BUILD, exist_ok=True)
     out = preview.render(p.field, a, os.path.join(BUILD, "preview-%s.png" % s["folder"]), wet=wet)
     lo, hi = float(p.field.min()), float(p.field.max())
@@ -651,7 +906,7 @@ def cmd_preview(s):
         colours = brush_colours(ts, template_zon(s, zstb))
         out2 = preview.render_tiles(p.field, p.lattice, colours, a,
                                     os.path.join(BUILD, "preview-%s-tiles.png" % s["folder"]), wet=wet,
-                                    objects=p.placed)
+                                    objects=(p.placed or []) + village_members(p))
         share = np.bincount(p.lattice.ravel(), minlength=ts.brushes) / p.lattice.size
         # Retail target for THIS terrain: the table's per-band mix weighted by
         # how many of our corners fall in each slope band.
@@ -913,8 +1168,25 @@ def cmd_verify(s):
         cat = catalogue.load(os.path.join(STATS_DIR, s["decorate"]["catalogue"]))
         on_disk = {k: zdir_records(zdir, *k) for k in p.chunks()}
         placed_disk = decorate.placed_from_records(on_disk, p.x0, p.y0, cat, field)
-        check(len(placed_disk) == len(p.placed or []), "objects on disk = the spec's (%d)" % len(placed_disk))
-        deco_checks(s, p, placed_disk, field, sv, check, zdir)
+        vm = village_mask(p, 0.0)
+        g = terrain.GRID_CM
+        in_village = [bool(vm[min(int(round(q["y"] / g)), vm.shape[0] - 1), min(int(round(q["x"] / g)), vm.shape[1] - 1)])
+                      for q in placed_disk]
+        deco_disk = [q for q, iv in zip(placed_disk, in_village) if not iv]
+        n_vdeco = sum(1 for q in village_members(p) if q["lump"] == "OBJECT")
+        check(len(deco_disk) == len(p.placed or []) and len(placed_disk) - len(deco_disk) == n_vdeco,
+              "objects on disk = the spec's (%d decorations + %d village decorations)"
+              % (len(deco_disk), len(placed_disk) - len(deco_disk)))
+        deco_checks(s, p, deco_disk, field, sv, check, zdir)
+    if s.get("villages"):
+        cnst_disk = []
+        for k in p.chunks():
+            path = os.path.join(zdir, chunk_stem(*k) + ".IFO")
+            with open(path, "rb") as f:
+                cnst_disk += ifo.parse(f.read()).lump(ifo.CNST) or []
+        want = sum(1 for q in village_members(p) if q["lump"] == "CNST")
+        check(len(cnst_disk) == want, "construction records on disk = the spec's (%d)" % len(cnst_disk))
+        village_checks(s, p, village_members(p), field, sv, check)
     if s.get("paint"):
         ts = load_tileset(s["paint"])
         zt = tiles.read_stb_cells(P(ZONETYPE_STB))
@@ -979,6 +1251,12 @@ def main():
     sub.add_parser("walk-selftest")
     sub.add_parser("tiles-selftest")
     sub.add_parser("stats")
+    pe = sub.add_parser("prefab-extract")
+    pe.add_argument("name")
+    pe.add_argument("--zone-row", type=int, required=True)
+    pe.add_argument("--centre", type=float, nargs=2, required=True, help="world position in /mm units (10 m)")
+    pe.add_argument("--radius", type=float, required=True, help="metres")
+    pe.add_argument("--template-row", type=int, default=22, help="the zone row whose ZSCs the prefab must match")
     pv = sub.add_parser("preview")
     pv.add_argument("spec")
     b = sub.add_parser("build")
@@ -1000,6 +1278,8 @@ def main():
         return cmd_tiles_selftest()
     if a.cmd == "stats":
         return cmd_stats()
+    if a.cmd == "prefab-extract":
+        return cmd_prefab_extract(a)
     if a.cmd == "walk-selftest":
         print("Walkability checker on synthetic terrain with known answers:")
         fails = walk.selftest()

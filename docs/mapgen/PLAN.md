@@ -447,7 +447,119 @@ and joined by paths.
 
 - **Checks:** ground under each footprint is flat within a few cm; every
   building is reachable from the start.
-- **Status:** NOT STARTED.
+- **Status:** DONE 2026-10-02. The user confirmed the entrance fix in the
+  editor: the path leaves the farm through its archway and runs on to the
+  huts. No in-game re-test needed (paint only; collision unchanged).
+  - **First install, tested by the user in game and in the editor:**
+    - collision around houses, fences and the windmill is normal;
+    - nothing floats or is half-buried;
+    - the farm's fields and fences are acceptable on flat ground;
+    - the pad edges blend into the hills;
+    - but **the paths did not reach the entrances** (user and assistant both
+      saw it). The path ended at the pad-edge corner facing the map centre:
+      for the farm, bearing -53° by the end of the fence ring, with the
+      `farmgate` archway at 175°.
+  - **Fixed (second install):** each village has an entrance, and a path
+    runs from its centre out through the entrance and on to the start (see
+    "How", step 5). Fixing it exposed two checker defects, both fixed
+    (see "Changes"): fences were invisible to the collision checks, and
+    pockets walled in by several objects read as traps.
+  - **Zone 12 now** is the phase 5 map plus two villages:
+    - `breezy_farm` (Breezy Hills farm, windmill and fields): 55 members,
+      52 of them blocking (fences now count); 96 m pad at -1.8 m; turned
+      90°; entrance = the `farmgate` archway at 175° (named in the spec).
+      Warp `/mm 12 507 519`.
+    - `sunshine_huts` (Sunshine Coast huts): 8 members, 8 blocking,
+      2 of them construction records; 68 m pad at 16.0 m; turned 0°;
+      entrance = the middle of its widest opening (333-22°, so 358°). Warp
+      `/mm 12 526 500`.
+    - Decoration is placed after the villages and keeps 4 m off the pads:
+      1,173 decorations (the new paths moved the paint, and decoration
+      follows the paint), none removed by `repair`.
+  - **`verify` from disk:**
+    - decoration and construction records on disk = the spec's (2 CNST);
+    - every village object id exists in its ZSC and every mesh is on disk;
+    - ground under every village member's walls is flat within 5 cm;
+    - every blocking village member can be reached from the start;
+    - with village and decoration collision: 0 traps;
+    - a path-brush trail runs unbroken from the start into every village's
+      entrance, and the way from the centre out through it is walkable with
+      every object in place;
+    - all phase 2-5 checks still pass (and the phase 5 spec still passes).
+  - **Also:** `fix-coplanar-object-overlaps.py --zone 12 --dry-run`: 0 pairs
+    among 1,236 placements; oracle, walk and tile selftests and the
+    round-trip (9,132 / 9,132) pass.
+- **How:**
+  - `mapgen-zone.py prefab-extract NAME --zone-row R --centre X Y --radius M`
+    lifts every lump 1 / lump 3 record within the radius of a retail zone,
+    plus the corner brushes under it, into `scripts/mapgen/prefabs/NAME.json`
+    (`scripts/mapgen/prefab.py`). Members are stored relative to the centre,
+    with their height above the original ground.
+  - Placement (`add_villages`) runs after the lakes are carved and before
+    the start spot, painting and decoration (the start then avoids the
+    pads):
+    1. `prefab.rotate` turns the prefab by a multiple of 90°, so its brush
+       lattice turns with it exactly (`rotation: "auto"` = seeded).
+    2. `prefab.pick_site` chooses the tile-corner vertex with the lowest
+       relief within pad + skirt, clear of the lakes, the ridge band and
+       earlier villages.
+    3. `prefab.flatten` sets the pad (prefab radius + `pad_margin_m`) to its
+       mean height and blends back over `skirt_m` with a smoothstep.
+    4. `prefab.instantiate` places the members at pad height + their stored
+       height above ground; the prefab's brushes are forced in `paint`.
+    5. With `connect`, the village gets a path in:
+       - **entrance:** the member named by the spec's `entrance` (the farm's
+         `farmgate`); else the middle of the widest arc of bearings along
+         which a ray from the centre reaches the pad edge without crossing a
+         wall cell (`prefab.openings`); else the side facing the map centre;
+       - **inner route:** a walk-grid route (2.5 m cells, so it fits a 7 m
+         archway the 10 m tile lattice cannot see) from the centre to the
+         pad edge at that bearing (`prefab.inner_route`). Its tile corners
+         are forced to the path brush over the village's own paint, from the
+         pad edge inwards until it meets ground the village already paints
+         with the path brush;
+       - **outer route:** the usual A* path from the route's outer end to the
+         start. Paths may not cross village paint (it would cover them) or
+         corners under blocking members.
+  - Spec: `scripts/mapgen/specs/phase6-village.json`.
+- **Changes from the plan / decisions made:**
+  - **Prefabs are lifted, not authored.** Five were extracted from JG zones
+    whose `LIST_ZONE` row names the same DECO / CNST ZSCs (object ids are
+    indices into those): `breezy_farm`, `sunshine_huts`, `sunshine_cove`,
+    `anima_camp`, `kenji_houses`. The spec uses the first two.
+  - **Most village buildings are decoration, not construction.** JG's houses,
+    windmill, fences and crates live in `LIST_DECO_JG` (editor categories
+    VILLAGE / ETC). `LIST_CNST_JG` holds only the beach houses (`shouse`,
+    `mhouse`, `lhouse`); the Sunshine Coast prefabs carry them.
+  - **Collision from triangles, not circles.** With houses in play, the
+    phase 5 circle footprints boxed in a free cell between the windmill, a
+    house and crates (one false trap). `catalogue.Footprints` now rasterises
+    the near-vertical colliding triangles of each placement (25-250 cm above
+    the ground) onto the 2.5 m grid, then fills enclosed interiors: an
+    unfilled house is a ring around unreachable cells, which first read as
+    21 traps.
+  - **Fences were invisible to the checks** (found with the entrance fix).
+    An object's radius came from its mesh vertices, and a fence plank has
+    vertices only at its foot and top: sunk 1 m, neither is in the body
+    band, so the radius was 0 and `blocked_cells` skipped it. Now
+    `blocked_cells` and `repair` use every object's wall triangles
+    (`Footprints`), whatever its radius, and village members get their
+    radius from those cells (`prefab.footprint_radius`). The flatness check
+    measures the ground under a member's wall cells.
+  - **Walls now block both trap floods alike** (`walk.analyse`). The
+    liberal "can get there" flood ignored blocked cells, so any pocket walled
+    in by several objects (a fence corner against the wine press: 5 cells)
+    read as a trap. A wall blocks both ways: a walled pocket you can enter
+    you can also leave. Only the slope rule is one-sided, so only it differs
+    between the floods. The selftest's "walled pocket = trap (conservative)"
+    case is now "unreachable, no trap", plus two new cases: walls touching at
+    a corner point seal, and a wall gap into a 15 m pit is still a trap.
+  - **The farm's source ground had 16 m of relief.** Members keep their
+    height above the original ground, so on a flat pad its fields and fences
+    sit level instead of on a slope. Whether that reads well is part of the
+    in-game check; `extract` prints the relief so flatter sources can be
+    preferred.
+  - **No lightmap entries** for village objects either (flat-lit v1).
 
 ### Phase 7 — text input
 
@@ -509,3 +621,15 @@ Baked terrain lightmap, generated `.MOV`, minimap.
   density fine as a baseline, flat look expected. Open for later: object
   and terrain lightmaps (phase 8 or a dedicated lighting phase), per-spec
   density tuning. Next: phase 6 (village prefabs).
+- 2026-10-02 — Phase 5 committed. Phase 6 built: five prefabs extracted
+  from JG zones, site picking + pad flattening + paths, geometry-based
+  collision footprints; zone 12 reinstalled with two villages; automated
+  checks pass; in-game and editor look handed to the user. Not committed.
+- 2026-10-02 — Phase 6 reviewed by the user in game and in the editor:
+  collision, placement and blend fine; paths did not reach the village
+  entrances. Fixed before commit: entrances (named member or widest
+  opening) with a walk-grid route in. Two checker defects fixed on the way
+  (fences skipped; walled pockets read as traps). Zone 12 reinstalled;
+  automated checks pass; path re-test handed to the user.
+- 2026-10-02 — Entrance fix confirmed by the user in the editor; phase 6
+  committed. Next: phase 7 (text → spec).

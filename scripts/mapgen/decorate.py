@@ -156,7 +156,8 @@ def place(field, lattice, x0, y0, cat, cfg, seed, avoid_vertices, path_corners, 
                     continue
                 z = height(x, y) + sink
                 yaw = rng.uniform(0, 2 * math.pi)
-                q = {"id": o["id"], "x": x, "y": y, "z": z, "scale": s, "yaw": yaw, "rc": rc, "rv": rv,
+                q = {"id": o["id"], "lump": "OBJECT", "x": x, "y": y, "z": z, "scale": (s, s, s), "yaw": yaw,
+                     "rot": (0.0, 0.0, math.sin(yaw / 2), math.cos(yaw / 2)), "rc": rc, "rv": rv,
                      "sink": sink, "category": o["category"]}
                 placed.append(q)
                 bucket.setdefault((int(x // 1000), int(y // 1000)), []).append(q)
@@ -170,12 +171,10 @@ def records_by_chunk(placed, x0, y0):
         wx, wy = x0 * CHUNK_CM + q["x"], y0 * CHUNK_CM + q["y"]
         cx, cy = int(wx // CHUNK_CM), int(wy // CHUNK_CM)
         lx, ly = wx - cx * CHUNK_CM, wy - cy * CHUNK_CM
-        half = q["yaw"] / 2
         rec = ifo.Record(name=b"", warp_id=0, event_id=0, obj_type=1, obj_id=q["id"],
                          map_x=int(lx // terrain.GRID_CM), map_y=63 - int(ly // terrain.GRID_CM),
-                         rot=(0.0, 0.0, math.sin(half), math.cos(half)),
-                         pos=(wx - ORIGIN_CM, wy - ORIGIN_CM, q["z"]),
-                         scale=(q["scale"],) * 3)
+                         rot=q["rot"], pos=(wx - ORIGIN_CM, wy - ORIGIN_CM, q["z"]),
+                         scale=q["scale"])
         out.setdefault((cx, cy), []).append(rec)
     return out
 
@@ -198,23 +197,25 @@ def placed_from_records(records_by_chunk_, x0, y0, cat, field):
             ground = float(field[iy, ix] * (1 - fx) * (1 - fy) + field[iy, ix + 1] * fx * (1 - fy)
                            + field[iy + 1, ix] * (1 - fx) * fy + field[iy + 1, ix + 1] * fx * fy)
             sink = r.pos[2] - ground
-            out.append({"id": r.obj_id, "x": x, "y": y, "z": r.pos[2], "scale": s, "sink": sink,
+            out.append({"id": r.obj_id, "lump": "OBJECT", "x": x, "y": y, "z": r.pos[2], "scale": tuple(r.scale),
+                        "rot": tuple(r.rot), "sink": sink,
                         "rc": blocking_radius(o.get("collision_profile", []), s, sink),
                         "rv": o.get("radius_cm", 0.0) * s, "category": o.get("category", "?"), "rec": r})
     return out
 
 
-def repair(placed, field, start, play_mask, max_rounds=20):
+def repair(placed, field, start, play_mask, max_rounds=20, fixed=(), footprints=None):
     """Remove colliding objects next to any trap cell until there is none.
 
     A tree on a >= 54 degree slope can block the only downhill way out of a
-    steep cell, a real trap under the client's step rule. Returns
+    steep cell, a real trap under the client's step rule. `fixed` colliders
+    (village members) count as obstacles but are never removed. Returns
     (kept, removed count).
     """
     removed = 0
     g = terrain.GRID_CM
     for _ in range(max_rounds):
-        blocked = blocked_cells(placed, (field.shape[0] - 1, field.shape[1] - 1))
+        blocked = blocked_cells(list(placed) + list(fixed), (field.shape[0] - 1, field.shape[1] - 1), footprints)
         a = walk.analyse(field, start, play_mask, blocked)
         if not a["trap_cells"]:
             return placed, removed
@@ -222,7 +223,19 @@ def repair(placed, field, start, play_mask, max_rounds=20):
         txy = np.stack([(tc + 0.5) * g, (tr + 0.5) * g], axis=1)
         keep = []
         for q in placed:
-            if q["rc"] and np.min(np.hypot(txy[:, 0] - q["x"], txy[:, 1] - q["y"])) < q["rc"] + 2 * g:
+            near = np.min(np.hypot(txy[:, 0] - q["x"], txy[:, 1] - q["y"]))
+            if footprints is not None:
+                # by its own wall cells: "rc" misses tall flat walls
+                hit = False
+                if near < 2000:
+                    own = np.zeros_like(blocked)
+                    footprints.mark(own, q)
+                    orr, occ = np.nonzero(own)
+                    hit = len(orr) > 0 and np.min(np.hypot(orr[:, None] - tr[None, :],
+                                                           occ[:, None] - tc[None, :])) <= 2
+            else:
+                hit = q["rc"] and near < q["rc"] + 2 * g
+            if hit:
                 removed += 1
             else:
                 keep.append(q)
@@ -230,11 +243,21 @@ def repair(placed, field, start, play_mask, max_rounds=20):
     return placed, removed
 
 
-def blocked_cells(placed, cells_shape):
-    """2.5 m cells whose centre lies inside a colliding object's footprint."""
+def blocked_cells(placed, cells_shape, footprints=None):
+    """2.5 m cells a colliding object blocks.
+
+    With `footprints` (catalogue.Footprints): the cells its near-vertical
+    colliding geometry covers between 0.25 and 2.5 m above the ground.
+    Without: a disc of its blocking radius (coarser; houses then box in free
+    cells between them)."""
     blocked = np.zeros(cells_shape, bool)
     g = terrain.GRID_CM
     for q in placed:
+        if footprints is not None:
+            # Every object, not only those with a radius: the vertex profile
+            # behind "rc" misses tall flat walls (fences).
+            footprints.mark(blocked, q)
+            continue
         if not q["rc"]:
             continue
         r0, r1 = int((q["y"] - q["rc"]) // g), int((q["y"] + q["rc"]) // g) + 1

@@ -130,13 +130,15 @@ def astar(cost, a, b):
     return path[::-1]
 
 
-def paint(field, ts, stats, cfg, seed, waypoints, forced=None):
+def paint(field, ts, stats, cfg, seed, waypoints, forced=None, path_block=None):
     """(Corner lattice (row 0 = south) of brush ids, path-corner mask) for a heightfield.
 
     cfg is the spec's "paint" section. waypoints is a list of paths, each a
     list of lattice (row, col) points. `forced` (lattice-shaped, -1 = free)
-    pins corners to a brush: lakes' seabed and sand. Forced corners are kept
-    by legalize, routed around by paths, and left out of the calibration.
+    pins corners to a brush: lakes' seabed and sand, villages' lifted
+    paint. Forced corners are kept by legalize and left out of the
+    calibration. Paths route around `path_block` (lattice mask; default:
+    every forced corner).
     """
     counts, bands = stats
     slopes = corner_slopes(field)
@@ -159,8 +161,9 @@ def paint(field, ts, stats, cfg, seed, waypoints, forced=None):
     if waypoints:
         cost = 1.0 + (slopes / cfg.get("path_slope_scale_deg", 12.0)) ** 2
         cost[slopes > cfg.get("max_path_slope_deg", 30.0)] = np.inf
-        if forced is not None:
-            cost[forced >= 0] = np.inf                  # paths never run into water or its beach
+        block = path_block if path_block is not None else (forced >= 0 if forced is not None else None)
+        if block is not None:
+            cost[block] = np.inf                        # water, beaches, buildings
         for pts in waypoints:
             for a, b in zip(pts, pts[1:]):
                 route = astar(cost, a, b)

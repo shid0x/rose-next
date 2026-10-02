@@ -342,6 +342,14 @@ What retail files contain (phase 0 corpus scan, 1,538 IFOs):
   - uniform scale, typically 1.2-3.8.
   - The big "waterfall rock" (`stone0211`) sits on ~62° slopes over the rock
     brush: retail covers its cliffs with rock objects.
+- **Construction (lump 3) in JG** (phase 6 survey): `LIST_CNST_JG.ZSC`
+  holds only the beach houses (`shouse`, `mhouse`, `lhouse`). Every other JG
+  village building (farm houses, windmill, fences, crates, wells) is a
+  **decoration** in `LIST_DECO_JG`, editor category VILLAGE or ETC. CNST
+  records use the same header and `map_x` / `map_y` convention as lump 1,
+  with `obj_type = 4`; the editor lists them from
+  `3DDATA/STB/LIST_CNST_JG.STB`. Generated CNST records load in the editor's
+  readers (phase 6).
 - **Lump 7 (WATER):** always 16x16. `use = 0`, `height = 0`, `type = 1`,
   `index = 0`, `reserved = 0`, apart from 44 files with some `type = 0`.
   This is exactly what the editor's File > New writes.
@@ -575,6 +583,22 @@ Collision has no file of its own:
   - The client tests collision with spheres around the character's feet and
     body (`cobjchar_collision.cpp:510-530`). So only colliding geometry
     near the ground blocks walking (`catalogue.collision_profile`).
+  - Ground height under the character comes from a downward ray, which
+    hits object floors too (`:1338-1461`). So flat colliding triangles are
+    floors to stand on, and only near-vertical ones (|normal z| < 0.5) are
+    walls. `catalogue.Footprints` rasterises those walls 25-250 cm above
+    the ground onto the 2.5 m grid and fills enclosed interiors (phase 6;
+    a circle per object boxed in free cells between houses).
+  - **A radius from mesh vertices misses tall flat walls.** A fence plank
+    has vertices only at its foot and top; sunk 1 m, neither lies in the
+    body band, so `collision_profile` gives it radius 0 although its wall
+    crosses the band. Collision checks must go through the triangles
+    (`Footprints`), never skip an object for a zero radius.
+  - **Walls block both ways; only slopes are one-way.** Object collision
+    is symmetric, so a pocket walled in by objects is never a trap: if you
+    can get in, you can get out the same way. `walk.analyse` applies walls
+    identically to its "can get there" and "can get back" floods, and keeps
+    the step rule one-sided.
   - **Confirmed in game** (user, 2026-10-02): generated rocks and trunks
     block, grass and flowers don't. Objects with no `.lit` entry render
     without baked lighting, which looks flat but is otherwise correct.
