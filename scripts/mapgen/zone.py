@@ -65,6 +65,9 @@ class ZoneParams:
     # Global heightfield (terrain.field_shape(width, height), row 0 = south, cm).
     # None = flat at ground_cm with the editor's placeholder bounds (phase 1).
     field: Optional[np.ndarray] = None
+    # Global tile grid (16*height, 16*width) of chunk.TILE_DTYPE, row 0 = south
+    # (phase 3, from paint + tiles.tiles_from_lattice). None = `tile` everywhere.
+    tile_grid: Optional[np.ndarray] = None
 
     def chunks(self):
         for y in range(self.y0, self.y0 + self.height):
@@ -161,6 +164,13 @@ def build_zone(p, template_zon):
     if not 0 <= p.tile.tile_id < len(tiles):
         raise ValueError("tile id %d is not in the template's %d-row tile table"
                          % (p.tile.tile_id, len(tiles)))
+    if p.tile_grid is not None:
+        if p.tile_grid.shape != (16 * p.height, 16 * p.width):
+            raise ValueError("tile grid %s does not fit %dx%d chunks" % (p.tile_grid.shape, p.width, p.height))
+        ids = p.tile_grid["tile_id"]
+        if ids.min() < 0 or ids.max() >= len(tiles):
+            raise ValueError("painted tile ids %d..%d outside the %d-row tile table"
+                             % (ids.min(), ids.max(), len(tiles)))
     ext = (lambda e: e.upper()) if p.file_case_upper else (lambda e: e)
     files = {p.folder + ext(".zon"): zon.build(make_zon(p, template_zon))}
     flat_him = chunk.build_him(make_him(p.ground_cm)) if p.field is None else None
@@ -174,7 +184,12 @@ def build_zone(p, template_zon):
         else:
             files[stem + ext(".him")] = chunk.build_him(make_him_from(
                 terrain.chunk_heights(p.field, x - p.x0, y - p.y0)))
-        files[stem + ext(".til")] = til
+        if p.tile_grid is None:
+            files[stem + ext(".til")] = til
+        else:
+            r0, c0 = (y - p.y0) * 16, (x - p.x0) * 16
+            block = np.ascontiguousarray(p.tile_grid[r0:r0 + 16, c0:c0 + 16][::-1])   # TIL row 0 = north
+            files[stem + ext(".til")] = chunk.build_til(chunk.Til(16, 16, block))
         files[stem + ext(".mov")] = mov
         files[stem + ext(".ifo")] = ifo.build(make_ifo(x, 64 - y))
         files["%s/LIGHTMAP/BUILDINGLIGHTMAPDATA.LIT" % stem] = empty_lit

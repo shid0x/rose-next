@@ -240,7 +240,80 @@ Autotile painting with the JG tileset: slope → cliff, low → shore, paths.
   brushes and match >= 99%; on generated maps every tile id exists in the ZON
   tile table, neighbours agree on shared corners, only legal brush pairs (the
   tileset's chain table).
-- **Status:** NOT STARTED.
+- **Status:** DONE 2026-10-02. The user re-checked in the editor after the
+  saddle fix: "looks better", with a continuous path and no dotted rows.
+  - **Seen in that screenshot, not yet judged:** the sparse-grass (`T004`)
+    patches show as squarish yellow, woven-looking blocks with fairly hard
+    edges in the editor. It may be the texture or its transition tiles (set
+    4/5, ids 72-86). Worth a look in game when the layout is reworked.
+  - **User review (in-game and editor screenshots):** the tile transitions
+    render cleanly in game and the path reads as a path; no issue.
+  - **The layout looks random** (user): expected, since phase 3 tested the
+    tile mechanics. The spatial design is open work below.
+  - **Saddles found from the editor overview.** The editor showed a dotted
+    line along the path and a "ladder" on a slope: checkerboard tiles
+    (masks 6/9, two opposite blobs). They are legal, but retail JG uses them on
+    ~0.04% of tiles and we had 1.3%.
+    - Fixed: diagonal path steps now also paint a side corner, and
+      `tiles.remove_saddles` removes the rest without breaking legality.
+    - Now 0 saddles; `verify` allows at most 0.2%.
+  - **Retail check** (`mapgen-zone.py tiles-selftest`): every JG zone's tiles
+    regenerate from its own corner brushes at **99.22-99.96%** (need 99%).
+    Neighbours agree on 99.5-99.96% of shared corners.
+  - **Zone 12 now** is the phase 2 terrain painted with the JG tileset, with a
+    dirt path from the south-west through the start to the north-east.
+    `verify` re-derives from disk:
+    - 0 illegal tiles;
+    - 100% corner agreement;
+    - 4096/4096 tile ids as their corners call for;
+    - the zone type selects the JG tileset for the editor.
+  - **Brush mix vs retail's** (weighted by this terrain's slopes):
+
+    | Brush | Ours | Retail |
+    |---|---|---|
+    | bright grass | 55% | 57% |
+    | dark grass | 19% | 13% |
+    | dark soil | 9% | 16% |
+    | rock | 15% | 10% |
+    | sparse grass | 2% | 2% |
+    | bright soil | 0.4% | 1.5% |
+  - **Open for later (not a phase 3 failure):** the layout matches retail's
+    *proportions*, not its *structure*. Patches are noise blobs, where retail
+    puts brushes with purpose: rock under cliffs, dirt around buildings and
+    along roads. Revisit with objects (phase 5) and villages (phase 6). Knobs
+    already in the spec: `patch_wavelength_m`, `noise_spread`, the priority
+    order.
+  - **Previews:** `preview` also writes
+    `build/mapgen/preview-<folder>-tiles.png` (brush colours from the real
+    textures, hillshaded).
+  - **Waiting on the user:** a screenshot and impressions in game — do the
+    tile transitions and the rock patches look right?
+- **How:**
+  - `scripts/mapgen/tiles.py`: tileset, corner↔tile, `legalize` (chain
+    table), `regenerate_check`.
+  - `scripts/mapgen/paint.py`: the brush-by-slope statistics, calibrated
+    noisy argmax, A* paths.
+  - The statistics table: `scripts/mapgen/stats/jg_brush_by_slope.json`.
+  - Spec: `scripts/mapgen/specs/phase3-paint.json`.
+- **Changes from the plan / decisions made:**
+  - **Painting follows retail statistics, not slope thresholds.** The corpus
+    showed retail does not put rock on its steepest ground (above 60°: 53%
+    grass, 9% rock); cliffs are presumably rock objects, phase 5.
+  - **Calibration on the final lattice.** Brush shares are calibrated after
+    paths and `legalize`. Plain log-probabilities left dark grass at 3%
+    against 13%.
+  - **Paths are dark soil**, which borders grass directly in JG; bright soil
+    would need a dark-soil rim.
+  - **Bugs caught by the checks before install:**
+    - A* compared its estimate with the cost so far and expanded nothing;
+    - tile fields were assigned positionally into a struct whose field order
+      differs;
+    - the brush names were read from a header row shifted by one;
+    - a local variable in `verify` shadowed the `tiles` module.
+  - **Saddle removal had to be a separate, guarded pass.** Folding it into the
+    in-between-brush fixer made the two undo each other forever. Each accepted
+    change now strictly reduces the saddle count and keeps every touched tile
+    legal; path corners are never changed.
 
 ### Phase 4 — water
 
@@ -306,3 +379,12 @@ Baked terrain lightmap, generated `.MOV`, minimap.
   phase 3 (tile painting with the JG tileset). Its first check is to
   regenerate an existing JG zone's TIL from its own corner brushes. Phase 8's
   minimap will also retire the harmless `NOMAP` texture warning.
+- 2026-10-02 — The ridge can be walked down (user): both halves of the slope
+  rule confirmed in game. Phase 3 built and installed over zone 12; automated
+  checks pass; in-game look handed to the user. Not committed yet.
+- 2026-10-02 — Phase 3 reviewed by the user in game and in the editor: tiles
+  render correctly; the layout is random, which is expected at this stage.
+  Saddle tiles found in the editor view, removed, zone 12 reinstalled. Next:
+  phase 4 (water).
+- 2026-10-02 — Saddle fix confirmed by the user in the editor; phase 3
+  committed.

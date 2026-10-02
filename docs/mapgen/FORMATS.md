@@ -221,9 +221,14 @@ Read at `io_terrain.cpp:2602-2648`; editor `editor/TIL.cs:81-138`.
   - `tile_set` = k selects **game row k+1** of the zone type's
     `Table_Tileset_*.STB`. Row 0 is the `MAX_TILE_SET` header
     (`xadet/.../Data/TileSet.cs:48-65`; editor col = game col + 1);
-  - `brush` = the brush the tile shows. A full tile (mask 15) shows the set's
-    `MinimumBrush` and uses `TileNumberF`; mask 0 shows `MaximumBrush` and
-    uses `TileNumber0`;
+  - `brush` is editor bookkeeping (the brush last painted). In retail JG:
+    - full tiles always carry the set's `MinimumBrush`;
+    - edge tiles carry it 90% of the time (17,710 vs 2,048 carrying
+      `MaximumBrush`);
+    - the client ignores it, and mapgen writes `MinimumBrush`.
+
+    A full tile (mask 15) shows `MinimumBrush` and uses `TileNumberF`; mask 0
+    shows `MaximumBrush` and uses `TileNumber0`;
   - `tile_id` is derived from them:
     - mask 15 → `TileNumberF`;
     - mask 0 → `TileNumber0`;
@@ -417,13 +422,60 @@ What the generator should write in each:
 | HIM `grid_per_patch`, `patch_size` | nothing | 4, 250 |
 | HIM trailer name | nothing | `"quad"` |
 | HIM bounds | client culling | real values (`compute_him_bounds`); placeholders only for an editor-identical flat chunk |
-| TIL `brush`, `tile_index`, `tile_set` | editor autotile brush | phase 3, from the JG tileset, so the editor can keep painting |
+| TIL `brush`, `tile_index`, `tile_set` | editor autotile brush | written from the corner lattice (`tiles.tiles_from_lattice`), so the editor can keep painting |
 | IFO record `name` | nothing | empty |
 | IFO record `obj_type` | log only | the per-lump value in the IFO section |
 | IFO record `map_x` / `map_y` | log only | the 2.5 m grid cell (exact orientation not settled; 0 is also retail-valid) |
 | IFO lump 0 MAPINFO | nothing | `16, 16, x, y`, name `"x_y"`, zero matrix (as the editor) |
 | IFO lump 7 WATER | nothing; the client misparses and discards it | 16x16, `type = 1`, rest 0 — or omit the lump |
 | LIT `tga_name`, `lightmap_index`, DDS catalogue | nothing | not written in v1 (no object lightmaps): empty LIT files as File > New writes, or none |
+
+## Tile painting: corner brushes (settled 2026-10-02, phase 3)
+
+Implemented in `scripts/mapgen/tiles.py`.
+
+**A zone's painting is one lattice of corner brushes.** It has 16 × chunks
++ 1 corners per axis, 10 m apart, and every tile's (`tile_set`,
+`tile_index`) encodes the brushes at its 4 corners.
+
+- **Mask bits → corners:** 1 = SE, 2 = SW, 4 = NE, 8 = NW.
+  - A set bit means that corner is the set's `MinimumBrush`, a clear bit its
+    `MaximumBrush`.
+  - Found by testing all 24 bit→corner assignments: this one makes
+    neighbouring tiles agree on 99.82% of shared corners in JG01; the next
+    best manages 70%.
+  - It matches the editor's brush code (`Brush.cs:76-84` paints the 8
+    neighbours with masks 1/3/2/5/10/4/12/8).
+- **Sets come in mirror pairs**, (a,b) and (b,a), sharing tile ids. A tile
+  with corners {a,b} uses either; mapgen takes the set whose min is the
+  smaller brush id.
+- **Chain table** (rows after `MAX_BRUSH_COUNT`): `chain[a][b] == 99` means
+  a and b may share a tile; otherwise it names the brush to put between them.
+  - In JG every brush pair is either direct or one step apart through bright
+    grass (1) or dark soil (0).
+  - No tile ever holds three brushes.
+- **Re-derived on every retail zone** (`mapgen-zone.py tiles-selftest`):
+  - neighbours agree on 98.5-100% of shared corners;
+  - regenerating each tile from the lattice reproduces 99.22-99.96% of JG tiles
+    (99%+ for EJ, LP, LZ and ODG too). Full tiles count as matching when
+    they land in the same brush's variant range.
+  - Karkia, Skaaj and Shibuya score ~0%: their tiles were not authored with
+    the tileset their zone type names.
+- **Confirmed in game (user, 2026-10-02):** generated tiles built this way
+  render with clean transitions in the client, and the editor shows and keeps
+  painting them.
+- **Saddles are avoided.** A tile with SW == NE != SE == NW (masks 6 / 9)
+  shows two opposite blobs, using the `*_04` textures with a two-blob alpha.
+  Retail JG uses them on ~0.04% of tiles. A diagonal line of single corners
+  produces a dotted row of them, which shows as a "ladder" or dotted line in
+  the editor (user screenshot, 2026-10-02).
+- **Brush mix on retail JG ground** (`scripts/mapgen/stats/jg_brush_by_slope.json`,
+  regenerate with `mapgen-zone.py stats`):
+  - rock is not a steep-slope texture: above 60° it is 9% of corners, against
+    53% bright grass;
+  - rock peaks at 30-50° (about 26%);
+  - dark and sparse grass grow with slope;
+  - sand and seabed sit at or below 0 m (shores, phase 4).
 
 ## Slope rule (who can walk where)
 
@@ -464,6 +516,9 @@ point; `walk.py` excludes it.
 **No barrier is needed at the map border:** the player cannot walk past the
 last chunk (user-verified, phase 1).
 
+**Both halves confirmed in game (user, 2026-10-02):** the phase 2 ridge (up
+to 69°) stops the player going up, and the player can walk back down it.
+
 ## How the files reference each other
 
 ```text
@@ -484,13 +539,6 @@ Collision has no file of its own:
 
 ## Not verified
 
-- **TIL autotile neighbour rule:** the tile-id formula is verified on the
-  corpus, but not yet that neighbouring tiles agree on shared corners
-  (phase 3's first check).
-- **Walking down a steep face in game:** the slope rule's "refuse uphill" half
-  is confirmed in the client (the phase 2 ridge stops the player). The
-  "always allow downhill" half is read from the code and unit-tested but not
-  yet tried in game.
 - **Water:** whether anything stops a player walking into water.
 - **IFO lump 7:** whether the client's misparse of it is always harmless, or
   just harmless on the data we have. Retail only ever holds the 16x16

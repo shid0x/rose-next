@@ -55,7 +55,7 @@ BUILD = os.path.join(REPO, "build", "mapgen")
 sys.path.insert(0, HERE)
 
 import mapgen  # noqa: E402
-from mapgen import chunk, preview, terrain, walk, zon  # noqa: E402
+from mapgen import chunk, paint, preview, terrain, tiles, walk, zon  # noqa: E402
 from mapgen.zone import (CHUNK_CM, EventPoint, Tile, ZoneParams, build_zone,  # noqa: E402
                          centre_world, chunk_stem)
 
@@ -145,7 +145,46 @@ def params_from_spec(s):
         p.events.append(EventPoint(e["name"], p.x0 * CHUNK_CM + col * terrain.GRID_CM,
                                    p.y0 * CHUNK_CM + r * terrain.GRID_CM, z))
     p.start_chunk = (c["x0"] + c["width"] // 2, c["y0"] + c["height"] // 2)
+    p.lattice = None
+    cfg = s.get("paint")
+    if cfg:
+        if p.field is None:
+            raise SystemExit("'paint' needs a 'terrain' section")
+        ts = load_tileset(cfg)
+        stats = paint.load_stats(os.path.join(STATS_DIR, cfg["stats"]))
+        rows, cols = 16 * p.height + 1, 16 * p.width + 1
+        paths = []
+        for path in cfg.get("paths", []):
+            pts = []
+            for pt in path["points"]:
+                if pt == "start":
+                    pts.append((int(round(anchor[0] / 4)), int(round(anchor[1] / 4))))
+                else:
+                    pts.append((int(round(pt[1] * (rows - 1))), int(round(pt[0] * (cols - 1)))))
+            paths.append(pts)
+        seed = cfg.get("seed", t["seed"] + 1)
+        p.lattice = paint.paint(p.field, ts, stats, cfg, seed, paths)
+        p.tile_grid = tiles.tiles_from_lattice(p.lattice, ts, np.random.default_rng(seed + 1))
     return p
+
+
+def load_tileset(cfg):
+    return tiles.Tileset(tiles.tileset_path(DATA, cfg["tileset"]))
+
+
+def brush_colours(ts, template):
+    """Mean RGB of each brush's first full-tile texture, for previews."""
+    from PIL import Image
+    table, textures = template.lump(zon.TILES), template.lump(zon.TEXTURES)
+    out = {}
+    for b, (_, first, _) in ts.full.items():
+        row = table[first]
+        path = P(textures[row[0] + row[2]].decode("latin-1"))
+        try:
+            out[b] = tuple(np.asarray(Image.open(path).convert("RGB")).reshape(-1, 3).mean(0))
+        except OSError:
+            out[b] = (255, 0, 255)
+    return out
 
 
 def start_vertex(s, p):
@@ -178,6 +217,19 @@ def terrain_checks(s, p, field, start, check):
     print("        steepest cell %.1f deg; %d cells >= 54 deg; %d cells reachable"
           % (a["max_slope_deg"], a["steep_cells"], a["reach_cells"]))
     return a
+
+
+def tile_checks(ts, grid, have, check):
+    """Phase 3 checks on a tile grid (row 0 = south)."""
+    agreement, matched, total, illegal = tiles.regenerate_check(grid, have, ts)
+    check(illegal == 0, "every tile is one brush or a legal brush pair (%d illegal)" % illegal)
+    check(agreement == 1.0, "neighbouring tiles agree on every shared corner (%.2f%%)" % (100 * agreement))
+    check(matched == total, "every tile id is the one its corners call for (%d / %d)" % (matched, total))
+    m = grid["tile_index"][have]
+    saddles = int(np.isin(m, (6, 9)).sum())
+    check(saddles <= 0.002 * m.size,
+          "checkerboard (saddle) tiles %d = %.2f%% (retail JG ~0.04%%; allow <= 0.2%%)"
+          % (saddles, 100.0 * saddles / max(1, m.size)))
 
 
 def field_from_disk(zdir, p):
@@ -278,6 +330,87 @@ def cmd_build(s, out):
     return 0
 
 
+ZONETYPE_STB = r"3DDATA\TERRAIN\TILES\ZONETYPEINFO.STB"
+ZONETYPE_TILESET_COL = 5          # game col; the editor reads editor col 6 (MapManager.cs:552)
+
+
+def zone_tileset_name(zone_type, zt_cells):
+    """'JG' from 'Table_Tileset_JG.STB' for a ZON's zone type, or None."""
+    if not 0 <= zone_type < len(zt_cells):
+        return None
+    name = zt_cells[zone_type][ZONETYPE_TILESET_COL].strip()
+    if not name.lower().startswith("table_tileset_"):
+        return None
+    return name[len("table_tileset_"):].rsplit(".", 1)[0]
+
+
+def cmd_tiles_selftest():
+    """Phase 3's first check, on retail data.
+
+    For every zone whose type has a tileset, it rebuilds the corner-brush
+    lattice from the zone's own tiles and measures how often neighbours agree
+    on shared corners. It then regenerates every tile from that lattice with
+    the painter's rule and compares the result with the file. Junon grassland
+    (JG) zones must reach 99%.
+    """
+    zt = tiles.read_stb_cells(P(ZONETYPE_STB))
+    sets = {}
+    worst_jg, failed = 1.0, []
+    print("%-22s %-6s %6s  %8s  %8s  %s" % ("zone", "tset", "tiles", "corners", "regen", "illegal"))
+    for planet in sorted(os.listdir(P(r"3DDATA\MAPS"))):
+        pdir = os.path.join(P(r"3DDATA\MAPS"), planet)
+        for zone_name in sorted(os.listdir(pdir)):
+            zdir = os.path.join(pdir, zone_name)
+            zons = [f for f in os.listdir(zdir) if f.lower().endswith(".zon")]
+            if not zons or not any(f.lower().endswith(".til") for f in os.listdir(zdir)):
+                continue
+            with open(os.path.join(zdir, zons[0]), "rb") as f:
+                ztype = zon.parse(f.read()).lump(zon.INFO).zone_type
+            name = zone_tileset_name(ztype, zt)
+            if not name or not os.path.isfile(tiles.tileset_path(DATA, name)):
+                continue
+            ts = sets.setdefault(name, tiles.Tileset(tiles.tileset_path(DATA, name)))
+            grid, have, _ = tiles.load_zone_tiles(zdir)
+            if np.any(grid["tile_set"][have] >= len(ts.sets)):
+                print("%-22s %-6s  tile_set outside the tileset: not authored with it" % (planet + "/" + zone_name, name))
+                continue
+            agreement, matched, total, illegal = tiles.regenerate_check(grid, have, ts)
+            frac = matched / max(1, total)
+            print("%-22s %-6s %6d  %7.2f%%  %7.2f%%  %d" % (planet + "/" + zone_name, name, total,
+                                                             100 * agreement, 100 * frac, illegal))
+            if name == "JG" and "MAPGEN" not in zone_name:
+                worst_jg = min(worst_jg, frac)
+                if frac < 0.99:
+                    failed.append(zone_name)
+    print("\nJG zones: worst regeneration %.2f%% (need 99%%) %s"
+          % (100 * worst_jg, "PASS" if not failed else "FAIL %s" % failed))
+    return 1 if failed else 0
+
+
+STATS_DIR = os.path.join(HERE, "mapgen", "stats")
+JG_ZONES = ["JG01", "JG02", "JG03", "JG04", "JG05", "JG06", "JG07", "JG08"]
+
+
+def cmd_stats():
+    """Regenerate scripts/mapgen/stats/jg_brush_by_slope.json from retail JG zones."""
+    ts = tiles.Tileset(tiles.tileset_path(DATA, "JG"))
+    dirs = [P(r"3DDATA\MAPS\JUNON\%s" % z) for z in JG_ZONES]
+    counts = paint.brush_slope_stats(dirs, ts)
+    os.makedirs(STATS_DIR, exist_ok=True)
+    out = os.path.join(STATS_DIR, "jg_brush_by_slope.json")
+    paint.save_stats(out, counts, ts, JG_ZONES)
+    print("wrote %s" % out)
+    land = [b for b in range(ts.brushes) if b not in paint.WATER_BRUSHES_JG]
+    print("land-brush share per slope band (what the painter aims for):")
+    print("  %-9s" % "deg" + "".join("%8s" % ("b%d" % b) for b in land))
+    for i in range(len(paint.SLOPE_BANDS) - 1):
+        row = counts[i, land].astype(float)
+        row /= max(1.0, row.sum())
+        print("  %2d-%-6d" % (paint.SLOPE_BANDS[i], paint.SLOPE_BANDS[i + 1]) + "".join("%7.1f%%" % (100 * v) for v in row))
+    print("  brushes: %s" % ", ".join("b%d=%s" % (b, ts.brush_names[b]) for b in land))
+    return 0
+
+
 def cmd_preview(s):
     """Generate, analyse and render without installing anything."""
     p = params_from_spec(s)
@@ -288,7 +421,27 @@ def cmd_preview(s):
     os.makedirs(BUILD, exist_ok=True)
     out = preview.render(p.field, a, os.path.join(BUILD, "preview-%s.png" % s["folder"]))
     lo, hi = float(p.field.min()), float(p.field.max())
-    print("  heights %.1f .. %.1f m; preview %s" % (lo / 100, hi / 100, out))
+    print("  heights %.1f .. %.1f m; walkability preview %s" % (lo / 100, hi / 100, out))
+    if p.lattice is not None:
+        ts = load_tileset(s["paint"])
+        zstb, _, _ = tables()
+        colours = brush_colours(ts, template_zon(s, zstb))
+        out2 = preview.render_tiles(p.field, p.lattice, colours, a,
+                                    os.path.join(BUILD, "preview-%s-tiles.png" % s["folder"]))
+        share = np.bincount(p.lattice.ravel(), minlength=ts.brushes) / p.lattice.size
+        # Retail target for THIS terrain: the table's per-band mix weighted by
+        # how many of our corners fall in each slope band.
+        counts, bands = paint.load_stats(os.path.join(STATS_DIR, s["paint"]["stats"]))
+        land = [b for b in range(ts.brushes) if b not in s["paint"].get("exclude_brushes", paint.WATER_BRUSHES_JG)]
+        mix = counts[:, land] / counts[:, land].sum(axis=1, keepdims=True)
+        sl = paint.corner_slopes(p.field)
+        w = np.bincount(np.clip(np.digitize(sl, bands) - 1, 0, len(bands) - 2).ravel(), minlength=len(bands) - 1)
+        target = (w[:, None] * mix).sum(0) / w.sum()
+        print("  brush share, painted vs retail mix for this terrain's slopes:")
+        for i, b in enumerate(land):
+            print("     %-14s %5.1f%%  (retail %5.1f%%)" % (ts.brush_names[b], 100 * share[b], 100 * target[i]))
+        print("  tile preview %s" % out2)
+        tile_checks(ts, p.tile_grid, np.ones(p.tile_grid.shape, bool), check)
     again = terrain.generate(p.width, p.height, s["terrain"], s["terrain"]["seed"])
     check(np.array_equal(again.view("u4"), p.field.view("u4")), "same spec + seed -> bit-identical field")
     return 1 if check.failed else 0
@@ -466,7 +619,7 @@ def cmd_verify(s):
     # Content: chunk set, grid sizes, tile ids and textures, events.
     with open(zon_path, "rb") as f:
         z = zon.parse(f.read())
-    tiles, textures = z.lump(zon.TILES), z.lump(zon.TEXTURES)
+    tile_table, textures = z.lump(zon.TILES), z.lump(zon.TEXTURES)
     p = params_from_spec(s)
     stems = {chunk_stem(x, y) for x, y in p.chunks()}
     on_disk = {os.path.splitext(f)[0] for f in os.listdir(zdir) if f.upper().endswith(".HIM")}
@@ -485,11 +638,11 @@ def cmd_verify(s):
         with open(os.path.join(zdir, st + ".TIL"), "rb") as f:
             til = chunk.parse_til(f.read())
         ids = np.unique(til.tiles["tile_id"])
-        if ids.min() < 0 or ids.max() >= len(tiles):
-            problems.append("%s.TIL tile ids %s outside the %d-row tile table" % (st, ids.tolist(), len(tiles)))
+        if ids.min() < 0 or ids.max() >= len(tile_table):
+            problems.append("%s.TIL tile ids %s outside the %d-row tile table" % (st, ids.tolist(), len(tile_table)))
             continue
         for tid in ids:
-            r = tiles[int(tid)]
+            r = tile_table[int(tid)]
             used_tex.update({int(r[0] + r[2]), int(r[1] + r[3])})
     check(not problems, "every chunk: HIM/TIL/IFO/MOV present, HIM 65x65, tile ids in the ZON tile table %s"
           % (problems or ""))
@@ -524,6 +677,13 @@ def cmd_verify(s):
           int(round((start.x + 520000 - p.x0 * CHUNK_CM) / terrain.GRID_CM)))
     check(abs(float(field[sv]) - start.z) < 1.0, "start event height %.1f cm = terrain %.1f cm" % (start.z, field[sv]))
     terrain_checks(s, p, field, sv, check)
+    if s.get("paint"):
+        ts = load_tileset(s["paint"])
+        zt = tiles.read_stb_cells(P(ZONETYPE_STB))
+        check(zone_tileset_name(z.lump(zon.INFO).zone_type, zt) == s["paint"]["tileset"],
+              "ZON zone type selects the %s tileset in ZONETYPEINFO (editor brushes match)" % s["paint"]["tileset"])
+        grid, have, _ = tiles.load_zone_tiles(zdir)
+        tile_checks(ts, grid, have, check)
 
     print("\n  GM warp: /mm %d %d %d" % (n, round((start.x + 520000) / 1000), round((start.y + 520000) / 1000)))
     print("  %s" % ("ALL CHECKS PASSED" if not check.failed else "%d CHECK(S) FAILED" % check.failed))
@@ -579,6 +739,8 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("oracle")
     sub.add_parser("walk-selftest")
+    sub.add_parser("tiles-selftest")
+    sub.add_parser("stats")
     pv = sub.add_parser("preview")
     pv.add_argument("spec")
     b = sub.add_parser("build")
@@ -596,6 +758,10 @@ def main():
     a = ap.parse_args()
     if a.cmd == "oracle":
         return cmd_oracle()
+    if a.cmd == "tiles-selftest":
+        return cmd_tiles_selftest()
+    if a.cmd == "stats":
+        return cmd_stats()
     if a.cmd == "walk-selftest":
         print("Walkability checker on synthetic terrain with known answers:")
         fails = walk.selftest()
