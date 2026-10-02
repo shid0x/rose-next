@@ -130,6 +130,35 @@ def astar(cost, a, b):
     return path[::-1]
 
 
+def despeckle(lattice, min_same=2):
+    """Corners with fewer than `min_same` of their 8 neighbours on the same
+    brush take their neighbourhood's most common brush.
+
+    Retail paints in patches (neighbouring corners agree 75% of the time on
+    flat ground, 89% on cliffs); per-brush noise leaves single corners. A
+    lone corner costs far more than itself: legalize turns every
+    lower-priority neighbour into the in-between brush, so one bright-soil
+    corner in grass becomes a ring of up to eight dark-soil corners. On
+    cliffs that took dark soil from retail's 12% to 35% (phase 7 review,
+    "weird tiles on mountains")."""
+    rows, cols = lattice.shape
+    nb = int(lattice.max()) + 1
+    counts = np.zeros((nb, rows, cols), int)
+    pad = np.pad(lattice, 1, constant_values=-1)
+    for dr in (-1, 0, 1):
+        for dc in (-1, 0, 1):
+            if dr or dc:
+                win = pad[1 + dr:1 + dr + rows, 1 + dc:1 + dc + cols]
+                for b in range(nb):
+                    counts[b] += win == b
+    own = np.take_along_axis(counts, lattice[None], 0)[0]
+    mode = np.argmax(counts, axis=0)
+    out = lattice.copy()
+    lone = own < min_same
+    out[lone] = mode[lone]
+    return out
+
+
 def paint(field, ts, stats, cfg, seed, waypoints, forced=None, path_block=None, area_bias=None):
     """(Corner lattice (row 0 = south) of brush ids, path-corner mask) for a heightfield.
 
@@ -144,6 +173,14 @@ def paint(field, ts, stats, cfg, seed, waypoints, forced=None, path_block=None, 
     """
     counts, bands = stats
     slopes = corner_slopes(field)
+    for _ in range(int(cfg.get("band_smooth", 0))):
+        # Average each corner's slope with its neighbours before banding: on
+        # a cliff the raw slope flips between bands corner by corner, and
+        # each band has its own bias, which speckles the paint.
+        sm = slopes.copy()
+        sm[1:-1, 1:-1] = (slopes[1:-1, 1:-1] * 4 + slopes[:-2, 1:-1] + slopes[2:, 1:-1]
+                          + slopes[1:-1, :-2] + slopes[1:-1, 2:]) / 8.0
+        slopes = sm
     rows, cols = slopes.shape
     land = [b for b in range(ts.brushes) if b not in cfg.get("exclude_brushes", WATER_BRUSHES_JG)]
     probs = counts[:, land] + 1.0                       # +1: no brush is ever impossible
@@ -157,6 +194,59 @@ def paint(field, ts, stats, cfg, seed, waypoints, forced=None, path_block=None, 
     for i in range(len(land)):
         # fbm measures wavelength on the 2.5 m vertex grid; corners are 4 vertices apart.
         noise[i] = spread * terrain.fbm((rows, cols), wave_m / 4.0, 3, 0.5, rng)
+
+    # Cliffs: retail paints steep ground in large hand-made areas of a few
+    # brushes (neighbours agree 89% above 60 deg). Corners steeper than
+    # `cliff.deg` choose only from `cliff.palette` (brush: share), on a long
+    # noise wavelength, and stay out of the calibration below.
+    cliff = cfg.get("cliff")
+    is_cliff = np.zeros((rows, cols), bool)
+    if cliff:
+        sm = slopes.copy()
+        sm[1:-1, 1:-1] = (slopes[1:-1, 1:-1] * 4 + slopes[:-2, 1:-1] + slopes[2:, 1:-1]
+                          + slopes[1:-1, :-2] + slopes[1:-1, 2:]) / 8.0
+        is_cliff = sm >= cliff.get("deg", 45.0)
+        crng = np.random.default_rng(seed + 977)
+        cliff_score = np.full((len(land), rows, cols), -np.inf)
+        if cliff.get("materials"):
+            # One material per stretch of cliff (user, phase 7b review: faces
+            # still showed grass and earth stripes): grass, rock or earth,
+            # from the cover around it (area_bias, smoothed ~30 m) unless
+            # the layout names one; within a material, a dominant brush on a
+            # very long wavelength.
+            mat = np.zeros((rows, cols), int)              # 0 grass, 1 rock, 2 earth
+            fixed_mat = cliff.get("material", "auto")
+            if fixed_mat != "auto":
+                mat[:] = ["grass", "rock", "earth"].index(fixed_mat)
+            elif area_bias is not None:
+                # the cover within ~40 m of a cliff decides its material: a
+                # rocky area stops short of the cliff that bounds it
+                def spread(a, k=4):
+                    out = a.copy()
+                    pad = np.pad(a, k, mode="edge")
+                    for dr in range(-k, k + 1):
+                        for dc in range(-k, k + 1):
+                            if dr * dr + dc * dc <= k * k:
+                                out = np.maximum(out, pad[k + dr:k + dr + rows, k + dc:k + dc + cols])
+                    return out
+                rock = spread(area_bias[:, :, 4])
+                soil = spread(area_bias[:, :, 0] + area_bias[:, :, 5])
+                mat[rock > 0.35] = 1
+                mat[(soil > 0.35) & (soil > rock)] = 2
+            noise_c = {b: terrain.fbm((rows, cols), cliff.get("wavelength_m", 400.0) / 4.0, 2, 0.5, crng) for b in land}
+            for i, b in enumerate(land):
+                share = np.zeros((rows, cols))
+                for k, name in enumerate(("grass", "rock", "earth")):
+                    share[mat == k] = cliff["materials"][name].get(str(b), 0.0)
+                with np.errstate(divide="ignore"):
+                    cliff_score[i] = np.where(share > 0, np.log(np.maximum(share, 1e-9))
+                                              + cliff.get("spread", 1.0) * noise_c[b], -np.inf)
+        else:
+            for i, b in enumerate(land):
+                share = cliff["palette"].get(str(b))
+                if share:
+                    cliff_score[i] = np.log(share) + cliff.get("spread", 2.5) * terrain.fbm(
+                        (rows, cols), cliff.get("wavelength_m", 160.0) / 4.0, 2, 0.5, crng)
 
     path_brush = cfg.get("path_brush", 0)
     on_path = np.zeros((rows, cols), bool)
@@ -194,7 +284,11 @@ def paint(field, ts, stats, cfg, seed, waypoints, forced=None, path_block=None, 
         score = bias[band].transpose(2, 0, 1) + noise
         if extra is not None:
             score = score + extra[:, :, land].transpose(2, 0, 1)
+        if cliff:
+            score = np.where(is_cliff[None], cliff_score, score)
         lattice = np.array(land)[np.argmax(score, axis=0)]
+        for _ in range(int(cfg.get("despeckle", 0))):
+            lattice = despeckle(lattice, cfg.get("despeckle_min", 2))
         lattice[on_path] = path_brush
         if forced is not None:
             lattice[forced >= 0] = forced[forced >= 0]
@@ -211,7 +305,7 @@ def paint(field, ts, stats, cfg, seed, waypoints, forced=None, path_block=None, 
     for _ in range(cfg.get("calibration_rounds", 8)):
         lattice = realise(bias)
         for k in np.unique(band):
-            sel = (band == k) & ~fixed
+            sel = (band == k) & ~fixed & ~is_cliff
             if not sel.any():
                 continue
             got = np.bincount([index.get(b, 0) for b in lattice[sel]], minlength=len(land)) / sel.sum()

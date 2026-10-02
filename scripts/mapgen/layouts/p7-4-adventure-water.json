@@ -4,16 +4,31 @@
  "notes": [
   "'Like Adventure Plain': Adventurer's Plain (JG01) measured by `mapgen-zone.py profiles`: its terrain character (hilly, median slope 22 degrees) and its decoration density per kind relative to all of Junon.",
   "50% water: the land is flooded to the level that puts half of the play area under water, so the water follows the hills' own low ground (Adventurer's Plain itself is 37% water).",
-  "Adventurer's Plain's own village (a harbour village there: piers, port barrels and boxes) is placed by the water. First tries asked for the centre (flooded) and then anywhere 15 m back from the water (no room for a 69 m village with half the map under water). The start is beside it."
+  "Adventurer's Plain's own village (a harbour village there: piers, port barrels and boxes) is placed by the water. First tries asked for the centre (flooded) and then anywhere 15 m back from the water (no room for a 69 m village with half the map under water). The start is beside it.",
+  "Phase 7b: the village now stands on its stilts over the water's edge, as in Adventurer's Plain.",
+  "Phase 7b: low cliffs (25 m) with a boulder rim around an organic play area (the defaults)."
  ],
  "name": "Mapgen Flooded Plain",
  "folder": "MAPGEN05",
  "size": "4x4",
  "seed": 7004,
- "terrain": {"like": "JG01", "border": "cliffs"},
- "water": {"flood": {"share": 0.5}},
+ "terrain": {
+  "like": "JG01",
+  "border": "cliffs"
+ },
+ "water": {
+  "flood": {
+   "share": 0.5
+  }
+ },
  "villages": [
-  {"name": "village", "prefab": "adventurer_village", "where": "near water"}
+  {
+   "name": "village",
+   "prefab": "adventurer_village",
+   "where": "near water"
+  }
  ],
- "start": {"near": "village"}
+ "start": {
+  "near": "village"
+ }
 }

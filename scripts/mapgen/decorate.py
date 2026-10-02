@@ -93,6 +93,10 @@ def place(field, lattice, x0, y0, cat, cfg, seed, avoid_vertices, path_corners, 
     cluster = terrain.fbm((rows, cols), cfg.get("cluster_wavelength_m", 80.0) / 4.0, 3, 0.5, rng)
     cluster = np.clip(1.0 + cfg.get("cluster_strength", 0.8) * cluster / max(1e-6, np.abs(cluster).max()), 0.0, None)
     mult = cfg.get("density", 1.0)
+    max_slope = cfg.get("max_slope_deg")
+    if max_slope is not None:
+        sgx, sgy = terrain.gradient(field)
+        slope_deg = np.degrees(np.arctan(np.hypot(sgx, sgy)))
     kmult = np.ones((len(objs), rows, cols))
     if area_mult:
         for i, o in enumerate(objs):
@@ -147,6 +151,11 @@ def place(field, lattice, x0, y0, cat, cfg, seed, avoid_vertices, path_corners, 
                     continue
                 if avoid_vertices[int(round(y / grid_cm)), int(round(x / grid_cm))]:
                     continue
+                if max_slope is not None and o["category"] != "STONE":
+                    sr_ = min(int(y // grid_cm), slope_deg.shape[0] - 1)
+                    sc_ = min(int(x // grid_cm), slope_deg.shape[1] - 1)
+                    if slope_deg[sr_, sc_] > max_slope:
+                        continue
                 if math.hypot(x - start_xy[0], y - start_xy[1]) < start_clear + rc:
                     continue
                 if len(path_xy) and np.min(np.hypot(path_xy[:, 0] - x, path_xy[:, 1] - y)) < path_clear + rc:
@@ -172,6 +181,29 @@ def place(field, lattice, x0, y0, cat, cfg, seed, avoid_vertices, path_corners, 
                 placed.append(q)
                 bucket.setdefault((int(x // 1000), int(y // 1000)), []).append(q)
 
+    cap = cfg.get("max_per_chunk")
+    if cap:
+        # Never more than retail's busiest chunk: thin over-full chunks by
+        # removing small non-colliding objects (grass, flowers) at random,
+        # evenly across the chunk, so a dense field keeps its look.
+        by_chunk = {}
+        for i, q in enumerate(placed):
+            by_chunk.setdefault((int(q["x"] // CHUNK_CM), int(q["y"] // CHUNK_CM)), []).append(i)
+        drop = set()
+        for key in sorted(by_chunk):
+            idx = by_chunk[key]
+            extra = len(idx) - cap
+            if extra > 0:
+                # grass and flowers first: many trees (palms, leafy crowns)
+                # have no ground collision either, and a dense forest's
+                # chunks lost their trees to the cap
+                small = [i for i in idx if not placed[i]["rc"] and placed[i]["category"] == "GRASS"]
+                if len(small) < extra:
+                    small += [i for i in idx if not placed[i]["rc"] and placed[i]["category"] != "GRASS"]
+                take = small[:len(small)] if len(small) <= extra else \
+                    [small[j] for j in sorted(rng.choice(len(small), size=extra, replace=False))]
+                drop.update(int(i) for i in take)
+        placed = [q for i, q in enumerate(placed) if i not in drop]
     return records_by_chunk(placed, x0, y0), placed
 
 
@@ -214,7 +246,7 @@ def placed_from_records(records_by_chunk_, x0, y0, cat, field):
     return out
 
 
-def repair(placed, field, start, play_mask, max_rounds=20, fixed=(), footprints=None):
+def repair(placed, field, start, play_mask, max_rounds=20, fixed=(), footprints=None, trap_scope=None):
     """Remove colliding objects next to any trap cell until there is none.
 
     A tree on a >= 54 degree slope can block the only downhill way out of a
@@ -226,7 +258,7 @@ def repair(placed, field, start, play_mask, max_rounds=20, fixed=(), footprints=
     g = terrain.GRID_CM
     for _ in range(max_rounds):
         blocked = blocked_cells(list(placed) + list(fixed), (field.shape[0] - 1, field.shape[1] - 1), footprints)
-        a = walk.analyse(field, start, play_mask, blocked)
+        a = walk.analyse(field, start, play_mask, blocked, trap_scope=trap_scope)
         if not a["trap_cells"]:
             return placed, removed
         tr, tc = np.nonzero(a["traps"])

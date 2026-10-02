@@ -559,6 +559,45 @@ last chunk (user-verified, phase 1).
 **Both halves confirmed in game (user, 2026-10-02):** the phase 2 ridge (up
 to 69°) stops the player going up, and the player can walk back down it.
 
+**The rule tests the cell the step lands in** (settled phase 7b from code).
+`ApplySliding` takes the normal at `m_vCOM`, the model's centre of mass
+*after* the move (`getModelCOMPositionWorld`, `cobjchar_collision.cpp:457`,
+`:1128`), with the move direction `m_vNext - m_vPrevious`; a refused step
+resets to the previous position. So a character can slide *along* a curved
+steep face: each step is downhill by the gradient of the cell it lands in
+while the path as a whole climbs. `walk.py`'s liberal reach (either cell
+allows) includes exactly that, which is why it found ways up low organic
+cliffs; it is not over-cautious there.
+
+**The cell model over-states climbing** (phase 7b). Even with the
+landing-cell rule, `walk.py` finds El Verloon Desert 98% reachable from its
+start, Gorge of Silence with 24% "trap" cells and Canyon City of Zant with
+4%, yet players cannot climb those mountains in game: it chains
+8-direction steps that zig-zag up a curved face, which nobody steering by
+mouse does. So (user's decision) traps are looked for inside the play area
+only, and borders are judged by their steepness against retail
+(`RETAIL_BORDER`, `border_profile` in `mapgen-zone.py`). Inside the play
+area the check is unchanged.
+
+**The NE-corner blind spot is a real way up a face** (phase 7b). On a
+face rising toward the north-east, a cell's SW, SE and NW corners can sit
+on one contour while its NE corner is metres higher; the client reads the
+cell as flat and lets the player step up it diagonally (map 2: corners
+28.1 / 27.0 / 28.8 m, NE 39.1 m, a walkable line up an 11 m-per-step
+face). `close_ring` lifts the NW and SE corners of every such reachable
+face cell to a steep slope from the original ground (once per corner,
+within the face band) until gentle ground from the start ends at the play
+area's edge; the border check verifies it.
+
+**A generated cliff needs a wide margin over 54°** (phase 7b). Cliffs
+following an organic outline, designed at a 64° peak (50 m over 36 m),
+measured as low as 52-54° in some cells where the outline ran
+diagonally, and the walk check found a way up. 80 m over 24 m (designed
+79°) holds on all five phase 7 maps. The walk and `play_share` checks catch
+any cliff that leaks. A low cliff (25-45 m) only seals with a barrier along
+its top (boulders or a fence, `mapgen/barrier.py`): its steep band is two or
+three cells, and the slide-along-the-face path above gets over it.
+
 ## How the files reference each other
 
 ```text

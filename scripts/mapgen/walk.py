@@ -83,7 +83,7 @@ def _flood(seed, step_ok):
         cur = nxt
 
 
-def analyse(field, start_vertex, play_mask=None, blocked=None):
+def analyse(field, start_vertex, play_mask=None, blocked=None, trap_scope=None):
     """Return a dict of masks over cells (rows-1, cols-1) plus summary numbers.
 
     start_vertex is (row, col) in the field; the start cell is the one to its
@@ -127,6 +127,12 @@ def analyse(field, start_vertex, play_mask=None, blocked=None):
     traps = reach & ~can_return
     if blocked is not None:
         traps &= ~blocked
+    if trap_scope is not None:
+        # Only inside the play area (phase 7b, user's choice "match retail"):
+        # this cell model finds ways up mountains that nobody climbs in game
+        # (El Verloon 98% reachable under it, Gorge of Silence 24% "traps"),
+        # so mountains are judged by their steepness against retail instead.
+        traps &= trap_scope
 
     gentle = ~steep
     if blocked is not None:

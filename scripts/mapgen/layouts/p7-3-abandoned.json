@@ -5,20 +5,46 @@
   "UNSUPPORTED: 'city'. The Junon grassland set has no city buildings, walls, gates or ruins, and no lifted prefab is bigger than a hamlet. Closest possible: three village clusters scattered over the map.",
   "UNSUPPORTED: 'abandoned' as broken or ruined buildings: every Junon building model is intact. Expressed instead as no roads between the clusters and overgrown ground around and between them.",
   "Jagged terrain: the 'rugged' character (short, high hills; play slopes up to 45 degrees).",
-  "A real abandoned city needs another tileset's buildings and ruins: see PLAN.md, Beyond v1."
+  "A real abandoned city needs another tileset's buildings and ruins: see PLAN.md, Beyond v1.",
+  "Phase 7b: the Adventurer's Plain and Kenji Beach clusters stand on stilts over water in retail; inland they are their dry-ground variants (adventurer_houses, kenji_houses_land: same houses and crates, no decks).",
+  "Phase 7b: low cliffs (25 m) with a boulder rim around an organic play area (the defaults)."
  ],
  "name": "Mapgen Ruins",
  "folder": "MAPGEN04",
  "size": "4x4",
  "seed": 7003,
- "terrain": {"character": "rugged", "border": "cliffs"},
+ "terrain": {
+  "character": "rugged",
+  "border": "cliffs"
+ },
  "villages": [
-  {"name": "quarter_a", "prefab": "adventurer_village", "where": "north-west", "connect": false},
-  {"name": "quarter_b", "prefab": "kenji_houses", "where": "east", "connect": false},
-  {"name": "quarter_c", "prefab": "anima_camp", "where": "south-west", "connect": false}
+  {
+   "name": "quarter_a",
+   "prefab": "adventurer_houses",
+   "where": "north-west",
+   "connect": false
+  },
+  {
+   "name": "quarter_b",
+   "prefab": "kenji_houses_land",
+   "where": "east",
+   "connect": false
+  },
+  {
+   "name": "quarter_c",
+   "prefab": "anima_camp",
+   "where": "south-west",
+   "connect": false
+  }
  ],
- "start": {"where": "centre"},
+ "start": {
+  "where": "centre"
+ },
  "cover": [
-  {"where": "everywhere", "is": "overgrown", "density": "dense"}
+  {
+   "where": "everywhere",
+   "is": "overgrown",
+   "density": "dense"
+  }
  ]
 }

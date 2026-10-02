@@ -40,11 +40,77 @@ SOFT = 0.35          # soft edge as a share of the radius / depth
 L1_TO_EUCLID = 1.2
 
 
+def _edt_1d(f, want_index=False):
+    """Squared distance transform of one line (Felzenszwalb & Huttenlocher);
+    with `want_index`, also the index each position's minimum came from."""
+    n = len(f)
+    src = np.zeros(n, int)
+    d = np.empty(n)
+    v = np.zeros(n, int)
+    z = np.empty(n + 1)
+    k = 0
+    v[0] = 0
+    z[0], z[1] = -np.inf, np.inf
+    for q in range(1, n):
+        if f[q] >= 1e17:
+            continue
+        while True:
+            p = v[k]
+            if f[p] >= 1e17:
+                s = -np.inf
+            else:
+                s = ((f[q] + q * q) - (f[p] + p * p)) / (2.0 * q - 2.0 * p)
+            if s <= z[k] and k > 0:
+                k -= 1
+                continue
+            if f[p] >= 1e17:
+                v[k] = q
+                z[k] = -np.inf
+                z[k + 1] = np.inf
+            else:
+                k += 1
+                v[k] = q
+                z[k] = s
+                z[k + 1] = np.inf
+            break
+    k = 0
+    for q in range(n):
+        while z[k + 1] < q:
+            k += 1
+        p = v[k]
+        d[q] = (q - p) ** 2 + f[p] if f[p] < 1e17 else 1e18
+        src[q] = p
+    return (d, src) if want_index else d
+
+
+def nearest(mask):
+    """(distance m, row, col of the nearest `mask` vertex) for every vertex:
+    the exact Euclidean feature transform (two 1-D passes)."""
+    h, w = mask.shape
+    f = np.where(mask, 0.0, 1e18)
+    d1 = np.empty((h, w))
+    r1 = np.empty((h, w), int)
+    for c in range(w):
+        d1[:, c], r1[:, c] = _edt_1d(f[:, c], True)
+    d2 = np.empty((h, w))
+    c2 = np.empty((h, w), int)
+    for r in range(h):
+        d2[r, :], c2[r, :] = _edt_1d(d1[r, :], True)
+    rows = r1[np.arange(h)[:, None], c2]
+    return np.sqrt(d2) * terrain.GRID_CM / 100.0, rows, c2
+
+
 def distance_m(mask):
-    """Approximate distance (m) from every vertex to the nearest vertex of `mask`."""
-    a = np.where(mask, 0.0, 1e9)
-    d = terrain._cone_1d(terrain._cone_1d(a, 1.0, 1), 1.0, 0)
-    return d / L1_TO_EUCLID * terrain.GRID_CM / 100.0
+    """Exact Euclidean distance (m) from every vertex to the nearest vertex of
+    `mask` (two 1-D passes). An L1 approximation used before made walls
+    built on it (terrain.shape_walls) dip under the 54-degree cliff slope
+    where an outline ran at a shallow angle to the grid, leaving gaps."""
+    if not mask.any():
+        return np.full(mask.shape, 1e9)
+    f = np.where(mask, 0.0, 1e18)
+    rows = np.array([_edt_1d(f[:, c]) for c in range(f.shape[1])]).T
+    out = np.array([_edt_1d(rows[r, :]) for r in range(f.shape[0])])
+    return np.sqrt(out) * terrain.GRID_CM / 100.0
 
 
 def _smooth(t):
@@ -52,32 +118,56 @@ def _smooth(t):
     return t * t * (3 - 2 * t)
 
 
-def resolve(desc, shape, features):
-    """(weight [0..1] per vertex, target (row, col) floats, radius in vertices)."""
+def _radial(fx, fy, play):
+    """A map-fraction point mapped onto the play region: the centre goes to
+    its centroid, and a point at distance t (0.5 = the rectangle's edge) in
+    a direction goes t / 0.5 of the way to the region's own extent that
+    way, times 0.8. "North-west" lands inside an organic blob, not in the
+    bounding box's empty corner, with room for a lake before the cliffs."""
+    rr, cc = np.nonzero(play)
+    c0r, c0c = rr.mean(), cc.mean()
+    vx, vy = fx - 0.5, fy - 0.5
+    t = math.hypot(vx, vy)
+    if t < 1e-9:
+        return c0r, c0c
+    ux, uy = vx / t, vy / t
+    reach = float(np.max((cc - c0c) * ux + (rr - c0r) * uy))
+    k = min(1.0, t / 0.5) * reach * 0.8       # corners ~63% of the way out, sides ~48%: room for a lake
+    return c0r + uy * k, c0c + ux * k
+
+
+def resolve(desc, shape, features, frame=None, play=None):
+    """(weight [0..1] per vertex, target (row, col) floats, radius in vertices).
+
+    `frame` (r0, r1, c0, c1), the play region's bounding box when the map
+    has a shape: compass words then mean the play area's north, centre ...,
+    not the map rectangle's (much of which is cliffs)."""
     h, w = shape
     yy, xx = np.mgrid[0:h, 0:w].astype(float)
-    side = min(h, w) - 1
+    r0f, r1f, c0f, c1f = frame if frame is not None else (0, h - 1, 0, w - 1)
+    fh, fw = r1f - r0f, c1f - c0f
+    side = min(fh, fw)
     if desc.get("all"):
-        return np.ones(shape), ((h - 1) / 2.0, (w - 1) / 2.0), side / 2.0
+        return np.ones(shape), ((r0f + r1f) / 2.0, (c0f + c1f) / 2.0), side / 2.0
     if "point" in desc:
         fx, fy = desc["point"]
         r = desc.get("radius", 0.2) * side
-        cr, cc = fy * (h - 1), fx * (w - 1)
+        cr, cc = (r0f + fy * fh, c0f + fx * fw) if play is None else _radial(fx, fy, play)
         d = np.hypot(yy - cr, xx - cc)
         return _smooth((r - d) / max(1e-6, SOFT * r)), (cr, cc), r
     if "box" in desc:
         fx0, fy0, fx1, fy1 = desc["box"]
-        r0, r1, c0, c1 = fy0 * (h - 1), fy1 * (h - 1), fx0 * (w - 1), fx1 * (w - 1)
+        r0, r1, c0, c1 = r0f + fy0 * fh, r0f + fy1 * fh, c0f + fx0 * fw, c0f + fx1 * fw
         soft = SOFT * 0.5 * min(r1 - r0, c1 - c0)
         inside = np.minimum(np.minimum(yy - r0, r1 - yy), np.minimum(xx - c0, c1 - xx))
         return _smooth(inside / max(1e-6, soft) + 0.5), ((r0 + r1) / 2, (c0 + c1) / 2), \
             0.5 * min(r1 - r0, c1 - c0)
     if "edge" in desc:
         depth = desc.get("depth", 0.25) * side
-        d = terrain.edge_distance(shape, (desc["edge"],))
+        d = {"south": yy - r0f, "north": r1f - yy, "west": xx - c0f, "east": c1f - xx}[desc["edge"]]
         dx, dy = terrain.direction(desc["edge"])
-        cr, cc = (h - 1) * (0.5 + dy * (0.5 - desc.get("depth", 0.25) / 2)), \
-            (w - 1) * (0.5 + dx * (0.5 - desc.get("depth", 0.25) / 2))
+        cr, cc = r0f + fh * (0.5 + dy * (0.5 - desc.get("depth", 0.25) / 2)), \
+            c0f + fw * (0.5 + dx * (0.5 - desc.get("depth", 0.25) / 2))
         return _smooth((depth - d) / max(1e-6, SOFT * depth) + 0.5), (cr, cc), depth / 2
     if "near" in desc:
         f = _feature(features, desc["near"])

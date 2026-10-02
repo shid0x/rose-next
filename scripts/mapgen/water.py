@@ -160,6 +160,67 @@ def components(mask):
     return out
 
 
+def lowpass(field, radius_m, passes=3):
+    """Box blur repeated (about Gaussian): the terrain's large shapes only."""
+    k = max(1, int(radius_m * 100 / terrain.GRID_CM))
+    out = field.astype(float)
+    for _ in range(passes):
+        for axis in (0, 1):
+            pad = np.pad(out, [(k, k) if a == axis else (0, 0) for a in range(2)], mode="edge")
+            cs = np.cumsum(pad, axis=axis)
+            cs = np.concatenate([np.zeros_like(np.take(cs, [0], axis=axis)), cs], axis=axis)
+            n = out.shape[axis]
+            hi = np.take(cs, np.arange(2 * k + 1, 2 * k + 1 + n), axis=axis)
+            lo = np.take(cs, np.arange(0, n), axis=axis)
+            out = (hi - lo) / (2 * k + 1)
+    return out
+
+
+def flood_compact(field, region, fraction, smooth_m=60.0, depth_cm=300.0, shore_m=14.0,
+                  shore_slope_deg=12.0, bank_m=12.0, margin_cm=30.0, min_m2=2500.0, dry=None):
+    """Water as compact basins: "half the map is water" the way retail
+    does it (seas and large lakes; 5-11% of retail's land lies within 30 m
+    of a shore, against 62% when the raw hilly terrain was flooded into a
+    maze of channels and islets, phase 7b).
+
+    The wet area is chosen on a low-passed copy of the terrain (`smooth_m`)
+    so it follows the large shapes only; the ground is then made to agree:
+    inside, lowered to at least `depth_cm` below the level over `shore_m`;
+    outside, raised to `margin_cm` above it, rising at `shore_slope_deg`
+    over `bank_m`, so no stray hollow floods. Returns (field, level, basins).
+    """
+    from . import areas
+    lp = lowpass(field, smooth_m)
+    vals = np.sort(lp[region])
+    level = float(np.floor(vals[min(len(vals) - 1, int(fraction * len(vals)))]))
+    wet = (lp < level) & region                       # never through the cliffs around the play area
+    vert_m2 = (terrain.GRID_CM / 100.0) ** 2
+    for rr, cc in components(wet):
+        if len(rr) * vert_m2 < min_m2:
+            wet[rr, cc] = False
+    d_in = areas.distance_m(~wet)                     # inside: distance to the shore
+    d_out = areas.distance_m(wet)                     # outside: distance to the water
+    t = np.clip(d_in / max(1e-6, shore_m), 0.0, 1.0)
+    inside = level - 40.0 - (depth_cm - 40.0) * t * t * (3 - 2 * t)
+    k = math.tan(math.radians(shore_slope_deg)) * 100.0
+    outside = level + margin_cm + k * np.minimum(d_out, bank_m)
+    # carve and raise only inside the play area: the border is built from
+    # the finished rim afterwards (mapgen-zone.params_from_spec)
+    # `dry` (default: region) is lifted above the waterline: the whole play
+    # area, including the strip the water keeps off its edge, or a low strip
+    # under the waterline becomes the rim the border is built from
+    lift = region if dry is None else (region | dry)
+    out = np.where(wet, np.minimum(field, inside), np.where(lift, np.maximum(field, outside), field))
+    out = np.round(out.astype("<f4"), 1).astype("<f4")
+    kept = []
+    for rr, cc in components(out < level):
+        m = np.zeros(field.shape, bool)
+        m[rr, cc] = True
+        i = int(np.argmin(out[rr, cc]))
+        kept.append({"centre": (int(rr[i]), int(cc[i])), "mask": m})
+    return out, level, kept
+
+
 def flood(field, region, fraction=None, level=None, min_depth_cm=80.0, min_m2=1200.0, fill_above_cm=20.0):
     """Water by level instead of by carving: everything below one level is
     water ("half the map is water", a coast below a tilted land).

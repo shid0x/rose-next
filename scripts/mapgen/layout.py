@@ -71,6 +71,35 @@ SYNONYMS = {"jagged": "rugged", "rough": "rugged", "plain": "flat", "plains": "f
 
 RISE_CM = {"gentle": 2000, "moderate": 3500, "steep": 5500}
 
+# Map shape (phase 7b, DESIGN.md "Map shape"): retail keeps 24-55% of a zone
+# walkable and dry, the rest cliffs, highlands and sea biting in deep and
+# unevenly from the edges. "square" is the phase 1-7 ring of cliffs.
+SHAPES = ["organic", "basin", "winding", "valley north-south", "valley east-west", "square"]
+PLAY = {"small": 0.3, "medium": 0.45, "large": 0.6}
+
+# Cliff height around the play area (user, phase 7b review: "cliffs don't
+# need to be so high"). Steepness, not height, stops a player, but a low
+# curved face offers a sideways ramp (the client tests the cell a step
+# lands in), so low and medium cliffs carry a rim of boulders or a fence
+# (mapgen/barrier.py), which seals them; "none" is a fence line alone.
+# Sealing measured on all five phase 7 maps (0-1 trap cells, 44-50% walkable).
+CLIFFS = {"low": (2500, 12), "medium": (4500, 16), "high": (8000, 24), "none": (0, 0)}
+RIMS = ["rocks", "fence", "none"]
+# Mountains (the default border since the second phase 7b review): retail's
+# borders are ~30 m ranges, a steep 10-15 m face and an irregular body
+# (user: El Verloon's mountains "are not high yet players can't climb"). No
+# rim: "mountains cannot be climbed after a certain slope". (face cm, face m,
+# body cm)
+# Only heights verified to hold on all five phase 7 maps are offered: lower
+# faces or bodies (tried 19-28 m faces, 7-12 m bodies, 26-45 m ridges) left
+# 10-20 m out under retail's steepness and reopened the flooded map. The
+# medium range stands ~37-40 m 10-20 m out: taller than most retail borders
+# (18-30 m), as tall as Gorge of Silence.
+MOUNTAINS = {"medium": (3000, 10, 1500, 45), "high": (3800, 12, 2600, 45)}
+# Tops: "plateau" (default since the third phase 7b review: a highground top,
+# 4 m of gentle variation) or "ridges" (the sharp El Verloon-like body).
+TOPS = {"plateau": 400, "ridges": None}
+
 FEATURE = {
     # walkable: added before the slope cap
     "hill":       {"kind": "hill", "radius_m": {"small": 50, "medium": 75, "large": 100},
@@ -192,8 +221,26 @@ def base_spec():
     for k in ("villages", "_comment"):
         s.pop(k, None)
     s["paint"]["paths"] = []
+    # Paint in retail-sized patches (phase 7b, DESIGN.md "Ground paint"):
+    # despeckle the noise picks, longer patches, a cliff palette above 40
+    # deg. Measured over the five phase 7 maps against JG01-05/07: corners
+    # agree 74.5 / 80.1 / 83.8% (all / >=45 / >=60 deg; retail 75.5 / 83.6
+    # / 88.8), cliff soil 10-14% (retail 11-12; was 24-35), rock 10-12%.
+    s["paint"].update({"despeckle": 2, "patch_wavelength_m": 90, "calibration_rounds": 16,
+                       # one cliff material for the whole map, from its theme
+                       # (user, phase 7b review: a rock cliff beside a meadow looks
+                       # strange; El Verloon's mountains are all its desert rock)
+                       "cliff": {"deg": 40, "material": "grass", "wavelength_m": 400, "spread": 1.0,
+                                 "materials": {"grass": {"1": 0.85, "2": 0.15},
+                                               "rock": {"4": 0.85, "1": 0.15},
+                                               "earth": {"0": 0.8, "1": 0.2}}},
+                       "coherence_target": {"all": 75.5, "steep": 83.6, "tolerance": 6.0}})
     s["water"] = {k: v for k, v in s["water"].items() if k != "lakes"}
     s["decorate"]["kinds"] = "jg_object_kinds.json"
+    s["decorate"]["max_per_chunk"] = 250            # retail's busiest chunk holds 278
+    # nothing but rocks on cliff faces (user, third phase 7b review: grass
+    # tufts and shrubs on the border's faces)
+    s["decorate"]["max_slope_deg"] = 45
     return s
 
 
@@ -214,7 +261,14 @@ def compile_layout(lay):
     s["_layout"] = {"description": lay.get("description", ""), "notes": lay.get("notes", [])}
     s["name"] = lay.get("name", "Mapgen")
     s["folder"] = lay.get("folder") or _err("layout needs a 'folder' (MAPGENnn)")
-    m = re.fullmatch(r"(\d)x(\d)", str(lay.get("size", "4x4")))
+    size = lay.get("size")
+    if size is None:
+        # a map need not be big (user, phase 7b review): one village, one
+        # lake and no mountains fit a 3x3 (480 m); more needs a 4x4
+        small = (len(lay.get("villages", [])) <= 1 and len((lay.get("water") or {}).get("lakes", [])) <= 1
+                 and not (lay.get("terrain") or {}).get("features"))
+        size = "3x3" if small else "4x4"
+    m = re.fullmatch(r"(\d)x(\d)", str(size))
     if not m:
         _err("size must be like '4x4'")
     w, h = int(m.group(1)), int(m.group(2))
@@ -256,9 +310,50 @@ def compile_layout(lay):
                   "octaves": ch["octaves"], "persistence": ch["persistence"]}
     t["max_play_slope_deg"] = ch["max_slope"]
     t["min_connected_fraction"] = 0.95
+    if lt.get("cliff_material"):
+        s["paint"]["cliff"]["material"] = _one_of(lt["cliff_material"], ["auto", "grass", "rock", "earth"],
+                                                  "cliff material")
+    shape = _one_of(lt.get("shape", "organic"), SHAPES, "map shape")
     border = lt.get("border", "cliffs")
     edges = list(terrain.EDGES)
     sea = (lay.get("water") or {}).get("sea")
+    if shape != "square":
+        play = lt.get("play", "medium")
+        share = PLAY[_one_of(play, list(PLAY), "play area size")] if isinstance(play, str) else float(play)
+        bd = lt.get("border", "mountains")
+        if bd == "cliffs":
+            bd = "mountains"            # "ringed by cliffs": a retail-like range is that ring
+        if not lt.get("cliffs") and (isinstance(bd, dict) or bd in ("mountains", "fence")):
+            kind_b = bd if isinstance(bd, str) else bd.get("kind", "mountains")
+            kind_b = _one_of(kind_b, ["mountains", "fence"], "border")
+            if kind_b == "fence":
+                # a fence line alone (villages, cities): natural ground outside
+                t["shape"] = {"kind": shape, "share": share, "open": [sea["edge"]] if sea else [],
+                              "wall_m": 0, "wall_cm": 0, "highland_cm": 0, "edge": "fence"}
+            else:
+                h = _one_of(bd.get("height", "medium") if isinstance(bd, dict) else "medium", list(MOUNTAINS),
+                            "mountain height")
+                face_cm, face_m, body_cm, ridge_m = MOUNTAINS[h]
+                top = _one_of(bd.get("top", "plateau") if isinstance(bd, dict) else "plateau", list(TOPS),
+                              "mountain top")
+                t["shape"] = {"kind": shape, "share": share, "open": [sea["edge"]] if sea else [],
+                              "profile": "range", "wall_m": face_m, "wall_cm": face_cm,
+                              "body_cm": TOPS[top] or body_cm, "top": top,
+                              "range_wavelength_m": ridge_m, "edge": "none"}
+            intent.append({"check": "border_like_retail",
+                           "label": "%s border as steep as retail's (El Verloon, Adventurer's Plain ...)" % kind_b})
+        else:
+            # the phase 7b first-round cliffs, kept for comparison
+            cl = lt.get("cliffs", "low")
+            height = _one_of(cl.get("height", "low") if isinstance(cl, dict) else cl, list(CLIFFS), "cliff height")
+            rim_default = "fence" if height == "none" else "rocks" if height in ("low", "medium") else "none"
+            rim = _one_of((cl.get("rim") if isinstance(cl, dict) else None) or rim_default, RIMS, "cliff rim")
+            wall_cm, wall_m = CLIFFS[height]
+            t["shape"] = {"kind": shape, "share": share, "open": [sea["edge"]] if sea else [],
+                          "wall_m": wall_m, "wall_cm": wall_cm, "highland_cm": 2500 if wall_cm else 0, "edge": rim}
+        border = "none"                          # the shape's own cliffs replace the ring
+        intent.append({"check": "play_share", "target": share, "tol": 0.12,
+                       "label": "%s play area, about %d%% of the map" % (shape, round(share * 100))})
     if isinstance(border, dict):
         edges = [_one_of(e, list(terrain.EDGES), "cliff edge") for e in border.get("cliffs", [])]
     elif border == "none":
@@ -332,7 +427,10 @@ def compile_layout(lay):
         share = float(flood["share"])
         if not 0.02 <= share <= 0.8:
             _err("water share %.2f: 0.02 to 0.8" % share)
-        wtr["flood"] = {"name": "sea" if sea else "water", "fraction": share}
+        # compact basins (water.flood_compact): retail water is seas and big
+        # lakes, not the maze of inlets raw hilly terrain floods into (90 m:
+        # at 60 m the half-water map still had paint broken by shore rings)
+        wtr["flood"] = {"name": "sea" if sea else "water", "fraction": share, "compact_m": 90}
         intent.append({"check": "water_share", "target": share, "tol": 0.06,
                        "label": "%d%% water" % round(share * 100)})
         if sea:
@@ -372,6 +470,13 @@ def compile_layout(lay):
                                "label": label})
             else:
                 intent.append({"check": "inside", "feature": name, "area": out["where"], "label": label})
+        if _prefab(v["prefab"]).get("water") and not out.get("near_water") and not v.get("pond"):
+            land = [f[:-5] for f in sorted(os.listdir(os.path.join(HERE, "prefabs")))
+                    if f.endswith(".json") and not _prefab(f[:-5]).get("water")]
+            _err("village %s: %s stands on stilts over water (DESIGN.md, Villages). Put it 'near' a lake or "
+                 "the sea, ask for \"pond\": true, or use a land village: %s" % (name, v["prefab"], ", ".join(land)))
+        if v.get("pond"):
+            out["pond"] = True
         if "connect" in v:
             out["connect"] = bool(v["connect"])
         if v.get("skirt_m"):

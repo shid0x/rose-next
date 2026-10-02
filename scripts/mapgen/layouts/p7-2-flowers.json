@@ -4,7 +4,8 @@
  "notes": [
   "'Along water': a shoreline along the south edge (20% of the map is sea); the flower field runs along it across the south half.",
   "Mountains: two large, high massifs in the north-west and north-east, too steep to climb, like the border cliffs.",
-  "No village, no road: the description asks for none."
+  "No village, no road: the description asks for none.",
+  "Phase 7b: low cliffs (25 m) with a boulder rim around an organic play area (the defaults)."
  ],
  "name": "Mapgen Flowers",
  "folder": "MAPGEN03",
@@ -14,13 +15,37 @@
   "character": "gentle",
   "border": "cliffs",
   "features": [
-   {"name": "nw_peaks", "kind": "mountains", "where": "north-west", "size": "large", "height": "high"},
-   {"name": "ne_peaks", "kind": "mountains", "where": "north-east", "size": "large", "height": "high"}
+   {
+    "name": "nw_peaks",
+    "kind": "mountains",
+    "where": "north-west",
+    "size": "large",
+    "height": "high"
+   },
+   {
+    "name": "ne_peaks",
+    "kind": "mountains",
+    "where": "north-east",
+    "size": "large",
+    "height": "high"
+   }
   ]
  },
- "water": {"sea": {"edge": "south", "share": 0.2}},
+ "water": {
+  "sea": {
+   "edge": "south",
+   "share": 0.2
+  }
+ },
  "cover": [
-  {"where": "south half", "is": "flowers", "density": "dense"},
-  {"where": "north half", "is": "meadow"}
+  {
+   "where": "south half",
+   "is": "flowers",
+   "density": "dense"
+  },
+  {
+   "where": "north half",
+   "is": "meadow"
+  }
  ]
 }

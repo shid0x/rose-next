@@ -60,8 +60,8 @@ def render_tiles(field, lattice, colours, analysis, out_path, px_per_tile=8, exa
         for q in objects:
             x, y = q["x"] * px_per_cm, q["y"] * px_per_cm
             col = {"TREE": (20, 70, 25), "STONE": (150, 150, 145),
-                   "VILLAGE": (150, 60, 30)}.get(q["category"], (215, 230, 140))
-            big = q["category"] in ("TREE", "STONE", "VILLAGE")
+                   "VILLAGE": (150, 60, 30), "BARRIER": (235, 120, 20)}.get(q["category"], (215, 230, 140))
+            big = q["category"] in ("TREE", "STONE", "VILLAGE", "BARRIER")
             rad = max(1, int((q["rc"] or 40) * px_per_cm)) if big else 1
             ys, xs = np.mgrid[int(y) - rad:int(y) + rad + 1, int(x) - rad:int(x) + rad + 1]
             keep = ((ys - y) ** 2 + (xs - x) ** 2 <= rad * rad) & (ys >= 0) & (ys < out.shape[0]) \

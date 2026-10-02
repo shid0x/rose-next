@@ -146,7 +146,137 @@ def bump(shape, centre, radius_m, height_cm, top_m=0.0, rng=None, roughness=0.0)
     return out
 
 
-def generate(chunks_x, chunks_y, t, seed, features=()):
+def _components(mask):
+    """4-connected components of a vertex mask (list of index arrays)."""
+    seen = np.zeros_like(mask, bool)
+    rows, cols = mask.shape
+    out = []
+    for r0, c0 in zip(*np.nonzero(mask)):
+        if seen[r0, c0]:
+            continue
+        stack, comp = [(r0, c0)], []
+        seen[r0, c0] = True
+        while stack:
+            r, c = stack.pop()
+            comp.append((r, c))
+            for rr, cc in ((r + 1, c), (r - 1, c), (r, c + 1), (r, c - 1)):
+                if 0 <= rr < rows and 0 <= cc < cols and mask[rr, cc] and not seen[rr, cc]:
+                    seen[rr, cc] = True
+                    stack.append((rr, cc))
+        a = np.array(comp)
+        out.append((a[:, 0], a[:, 1]))
+    return out
+
+
+def play_shape(shape, cfg, rng):
+    """The walkable region of a map: one organic vertex mask covering
+    `share` of it. Retail keeps only 24-55% of a zone walkable and dry; the
+    rest is cliffs, highlands and sea reaching in deep and unevenly from the
+    edges (phase 7b survey; DESIGN.md, Map shape).
+
+    kind: "organic" (a blob), "basin" (rounder), "valley <a>-<b>" (long
+    along that axis), "winding" (a blob with deep bays). `open`: edges the
+    region must reach (a coast). Elsewhere it keeps `wall_m` + 10 m off the
+    map edge so its cliff fits inside the map."""
+    h, w = shape
+    yy, xx = np.mgrid[0:h, 0:w]
+    ux, uy = xx / (w - 1) * 2 - 1, yy / (h - 1) * 2 - 1
+    kind = cfg.get("kind", "organic")
+    amp = {"organic": 0.55, "basin": 0.3, "winding": 1.1}.get(kind.split()[0], 0.55)
+    if kind.startswith("valley"):
+        axis = kind.split()[1] if len(kind.split()) > 1 else "north-south"
+        base = -(ux ** 2) * 1.6 if axis.startswith("north") else -(uy ** 2) * 1.6
+        base -= 0.25 * ((uy if axis.startswith("north") else ux) ** 2)
+        amp = 0.45
+    else:
+        base = -(ux ** 2 + uy ** 2)
+    side_m = min(h, w) * GRID_CM / 100.0
+    score = base + amp * fbm(shape, side_m * 0.5, 3, 0.5, rng)
+    keep_off = (cfg.get("wall_m", 36.0) + 10.0) * 100 / GRID_CM
+    for e in EDGES:
+        d = edge_distance(shape, (e,))
+        if e in cfg.get("open", []):
+            # pull the region out to this edge (a coast): the bonus decays over
+            # half the map, so the corridor from the centre to the edge stays
+            # above the threshold and connected (a strip along the edge alone
+            # came out as a separate, smaller piece and was dropped)
+            score = score + 1.6 * np.clip(1 - d / (0.5 * min(h, w)), 0, 1)
+        else:
+            score = np.where(d < keep_off, -10.0, score)
+    t = np.quantile(score, 1.0 - cfg.get("share", 0.45))
+    m = score > t
+    comps = _components(m)
+    main = np.zeros_like(m)
+    if comps:
+        big = max(comps, key=lambda c: len(c[0]))
+        main[big] = True
+    # fill holes: blocked pockets the outside cannot reach
+    outside = np.zeros_like(main)
+    for rr, cc in _components(~main):
+        if rr.min() == 0 or cc.min() == 0 or rr.max() == h - 1 or cc.max() == w - 1:
+            outside[rr, cc] = True
+    return ~outside
+
+
+def shape_walls(field, mask, cfg, rng):
+    """The ground outside the play region, rebuilt from its rim: the height
+    of the nearest rim vertex, plus a cliff of `wall_cm` over `wall_m`
+    (steep enough in its middle that nobody climbs it), plus highlands
+    roughened by noise beyond. Building from the rim, not on top of the
+    terrain, keeps the cliff at its designed slope on hilly ground, where
+    terrain falling away outward used to cancel it into a ramp."""
+    from .areas import nearest
+    from .water import lowpass
+    d, nr, nc = nearest(mask)
+    rim = field[nr, nc]
+    wall_m, wall_cm = cfg.get("wall_m", 36.0), cfg.get("wall_cm", 5000.0)
+    # Exact rim height in the cliff (its steepness depends on it); further
+    # out, a smoothed rim: the nearest-point copy smears the rim's bumps
+    # outward along straight lines, which read as streaks on the highlands.
+    u = np.clip((d - wall_m) / (2.0 * wall_m), 0.0, 1.0)
+    rim = rim + (lowpass(rim, 40.0) - rim) * (u * u * (3 - 2 * u))
+    t = np.clip(d / wall_m, 0.0, 1.0)
+    if cfg.get("profile") == "range":
+        # A mountain range, as retail borders are (phase 7b survey of eight
+        # zones): a steep face rising `wall_cm` over `wall_m` (79-92% of the
+        # cells 5-10 m out are steep in retail, ~13 m up), then a body of
+        # ridged noise, sharp peaks and saddles, `body_cm` tall on average
+        # (retail 26-34 m above the edge; El Verloon's irregular range).
+        face = rim + wall_cm * t * t * (3 - 2 * t)
+        # the body starts right behind the face, on short sharp ridges, so
+        # 10-20 m out stays as steep as retail's (41-64% of cells)
+        u = np.clip((d - 0.6 * wall_m) / wall_m, 0.0, 1.0)
+        if cfg.get("top", "plateau") == "plateau":
+            # a highground top, gently varied (user, third phase 7b review:
+            # the ridged top was "wavy terrain you don't need"; a plateau can
+            # later be made walkable highground)
+            var = 0.5 + 0.5 * fbm(field.shape, cfg.get("top_wavelength_m", 160.0), 3, 0.45, rng)
+            body = cfg.get("body_cm", 400.0) * var * (u * u * (3 - 2 * u))
+        else:
+            ridged = 1.0 - np.abs(fbm(field.shape, cfg.get("range_wavelength_m", 45.0), 4, 0.55, rng))
+            body = cfg.get("body_cm", 1500.0) * (ridged * 1.4 - 0.2) * (u * u * (3 - 2 * u))
+        return np.where(mask, field, face + body)
+    if cfg.get("profile", "smooth") == "linear":
+        # constant slope over the whole face: every cell of a low cliff is
+        # steep (a smoothstep is steep only in its middle, and a 25 m wall
+        # had too few such cells to hold)
+        out = rim + wall_cm * t
+    else:
+        out = rim + wall_cm * t * t * (3 - 2 * t)
+    hi = np.clip((d - wall_m) / wall_m, 0.0, 1.0)
+    out += cfg.get("highland_cm", 2500.0) * hi * (0.5 + 0.5 * fbm(field.shape, 120.0, 3, 0.5, rng))
+    return np.where(mask, field, out)
+
+
+def shape_mask(chunks_x, chunks_y, t, seed):
+    """The play region for a spec's terrain.shape (None without one)."""
+    cfg = t.get("shape")
+    if not cfg:
+        return None
+    return play_shape(field_shape(chunks_x, chunks_y), cfg, np.random.default_rng(seed + 60))
+
+
+def generate(chunks_x, chunks_y, t, seed, features=(), play=None, walls=True):
     """Global heightfield (row 0 = south) from the spec's "terrain" section.
 
     `features` are resolved terrain features: dicts with "kind" ("hill":
@@ -176,6 +306,10 @@ def generate(chunks_x, chunks_y, t, seed, features=()):
         if f["kind"] == "mountains":
             field = field + bump(shape, f["centre"], f["radius_m"], f["height_cm"], f.get("top_m", 0.0),
                                  frng, f.get("roughness", 0.3))
+    if walls and play is not None and t["shape"].get("wall_cm", 5000.0) > 0:
+        # no cliff ("height": "none"): the ground outside keeps its own shape
+        # and a fence line alone closes the play area (add_barrier)
+        field = shape_walls(field, play, t["shape"], np.random.default_rng(seed + 61))
     r = t.get("ridge")
     if r and r.get("height_cm", 0):
         field = field + ridge(shape, r["height_cm"], r.get("width_m", 40.0), tuple(r.get("edges", EDGES)))

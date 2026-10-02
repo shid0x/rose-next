@@ -131,9 +131,94 @@ def extract(data_dir, zone_dir, deco_zsc, cnst_zsc, deco_cat, centre_world, radi
     for mb in members:
         mb["dx"] = round(mb["dx"] + cx - centre_snap[0], 1)
         mb["dy"] = round(mb["dy"] + cy - centre_snap[1], 1)
-    return {"radius_m": radius_m, "members": members, "brushes": brushes,
-            "ground_relief_cm": round(float(vals.max() - vals.min()), 1) if len(vals) else 0.0,
-            "ground_mean_cm": round(float(vals.mean()), 1) if len(vals) else 0.0}
+    out = {"radius_m": radius_m, "members": members, "brushes": brushes,
+           "ground_relief_cm": round(float(vals.max() - vals.min()), 1) if len(vals) else 0.0,
+           "ground_mean_cm": round(float(vals.mean()), 1) if len(vals) else 0.0}
+    wat = _source_water(zone_dir, field, x0, y0, centre_snap, brushes)
+    if wat:
+        wat["landings"] = _landings(data_dir, dm, do, members, field, x0, y0, centre_snap, wat["level_cm"])
+        # A harbour village: part of it stood over the water on stilts.
+        # Members keep their height above the WATER, which is what a deck on
+        # stilts is built to (their height above the seabed is incidental).
+        out["water"] = wat
+        for mb in members:
+            mb["above_water_cm"] = round(mb["above_ground_cm"] + _height(field, x0, y0, centre_snap[0] + mb["dx"],
+                                                                        centre_snap[1] + mb["dy"]) - wat["level_cm"], 1)
+    return out
+
+
+def _landings(data_dir, meshes, objs, members, field, x0, y0, centre_snap, level):
+    """Where a stilt village's ramps come down to the shore: the feet of
+    sloped walking faces near the waterline (within 1.5 m of it) whose
+    source ground stood above the water. Other feet near the waterline
+    (steps down into the water) stood over water and are not landings.
+    Offsets from the prefab centre, cm."""
+    out = []
+    for m in members:
+        if m["lump"] != "OBJECT" or not 0 <= m["id"] < len(objs):
+            continue
+        tris = []
+        parts = objs[m["id"]]["parts"]
+        for i, part in enumerate(parts):
+            if not 0 <= part["mesh"] < len(meshes):
+                continue
+            t = catalogue.mesh_triangles(data_dir, meshes[part["mesh"]])
+            if t is not None and len(t):
+                tris.append(catalogue._to_model(parts, i, t.reshape(-1, 3)))
+        if not tris:
+            continue
+        aw = m["above_ground_cm"] + _height(field, x0, y0, centre_snap[0] + m["dx"], centre_snap[1] + m["dy"]) - level
+        w = ((np.concatenate(tris) * np.array(m["scale"])) @ catalogue._quat(m["rot"])
+             + np.array([m["dx"], m["dy"], aw])).reshape(-1, 3, 3)
+        nrm = np.cross(w[:, 1] - w[:, 0], w[:, 2] - w[:, 0])
+        ln = np.linalg.norm(nrm, axis=1)
+        ok = ln > 1e-6
+        nz = np.abs(np.where(ok, nrm[:, 2] / np.where(ok, ln, 1.0), 0.0))
+        low = w[:, :, 2].min(1)
+        foot = ok & (nz > 0.5) & (nz < 0.97) & (low > -150) & (low < 150)
+        if not foot.any():
+            continue
+        pts = w[foot].reshape(-1, 3)
+        pts = pts[pts[:, 2] < 150]
+        fx, fy = float(pts[:, 0].mean()), float(pts[:, 1].mean())
+        if _height(field, x0, y0, centre_snap[0] + fx, centre_snap[1] + fy) > level:
+            out.append([round(fx, 1), round(fy, 1)])
+    return out
+
+
+def _source_water(zone_dir, field, x0, y0, centre_snap, brushes):
+    """The retail water under a prefab: which of its brush corners were wet
+    (ground below a covering water rectangle), the waterline, and how far
+    its dry ground stood above it and its wet ground below. None if dry."""
+    level = np.full(field.shape, np.nan)
+    for f in os.listdir(zone_dir):
+        if not f.lower().endswith(".ifo"):
+            continue
+        with open(os.path.join(zone_dir, f), "rb") as fh:
+            o = ifo.parse(fh.read()).lump(ifo.OCEAN)
+        for sx, sz, sy, ex, ez, ey in (o.rects if o is not None else []):
+            c0 = int(round((min(sx, ex) + ORIGIN_CM) / terrain.GRID_CM)) - x0 * 64
+            c1 = int(round((max(sx, ex) + ORIGIN_CM) / terrain.GRID_CM)) - x0 * 64
+            r0 = int(round((min(sy, ey) + ORIGIN_CM) / terrain.GRID_CM)) - y0 * 64
+            r1 = int(round((max(sy, ey) + ORIGIN_CM) / terrain.GRID_CM)) - y0 * 64
+            level[max(0, r0):r1 + 1, max(0, c0):c1 + 1] = sz
+    wet, dry, levels = [], [], []
+    for dr, dc, _b in brushes:
+        wx, wy = centre_snap[0] + dc * 1000.0, centre_snap[1] + dr * 1000.0
+        vr, vc = int(round(wy / terrain.GRID_CM)) - y0 * 64, int(round(wx / terrain.GRID_CM)) - x0 * 64
+        if not (0 <= vr < field.shape[0] and 0 <= vc < field.shape[1]) or np.isnan(field[vr, vc]):
+            continue
+        if not np.isnan(level[vr, vc]) and field[vr, vc] < level[vr, vc]:
+            wet.append((dr, dc, float(field[vr, vc])))
+            levels.append(float(level[vr, vc]))
+        else:
+            dry.append(float(field[vr, vc]))
+    if len(wet) < 3:
+        return None
+    L = float(np.median(levels))
+    return {"level_cm": round(L, 1), "wet_corners": [[dr, dc] for dr, dc, _ in wet],
+            "wet_ground_below_water_cm": round(L - float(np.median([h for _, _, h in wet])), 1),
+            "dry_ground_above_water_cm": round(float(np.median(dry)) - L, 1) if dry else 100.0}
 
 
 def save(path, prefab):
@@ -167,6 +252,18 @@ def rotate(prefab, quarter_turns):
             dr, dc = dc, -dr                         # (row=y, col=x): (x, y) -> (-y, x)
         br.append([dr, dc, b])
     out["members"], out["brushes"] = mem, br
+    if prefab.get("water"):
+        wc = []
+        for dr, dc in prefab["water"]["wet_corners"]:
+            for _ in range(k):
+                dr, dc = dc, -dr
+            wc.append([dr, dc])
+        lands = []
+        for x, y in prefab["water"].get("landings", []):
+            for _ in range(k):
+                x, y = -y, x
+            lands.append([x, y])
+        out["water"] = dict(prefab["water"], wet_corners=wc, landings=lands)
     return out
 
 
@@ -243,6 +340,139 @@ def flatten(field, centre, pad_m, skirt_m, min_height=None):
     w = 1.0 - t * t * (3 - 2 * t)
     out = field + (pad - field) * w
     return np.round(out.astype("<f4"), 1).astype("<f4"), pad
+
+
+DECK_OBJECTS = ("pad01", "pad02", "pad03", "pad04", "pad06", "padplan")
+
+
+def land_variant(pf, land_prefabs, stack_m=0.8):
+    """A stilt village rebuilt on dry ground (DESIGN.md, Villages): the deck
+    and stilt objects (DECK_OBJECTS) are dropped; every other member stands
+    on the ground at the height retail gives that object on land (median
+    above-ground of the same object in `land_prefabs`, e.g. Sunshine Coast's
+    huts at -9 to -26 cm; 0 if never seen on land). A member stacked on
+    another (within `stack_m` horizontally and higher, as crates on crates)
+    keeps its height over the one beneath."""
+    land = {}
+    for lp in land_prefabs:
+        if lp.get("water"):
+            continue
+        for m in lp["members"]:
+            land.setdefault((m["lump"], m["id"]), []).append(m["above_ground_cm"])
+    cnst_default = float(np.median([v for (lump, _), vs in land.items() if lump == "CNST" for v in vs] or [-15.0]))
+    keep = [m for m in pf["members"] if m["name"] not in DECK_OBJECTS]
+    keep.sort(key=lambda m: m["above_water_cm"])
+    out = []
+    for m in keep:
+        base = land.get((m["lump"], m["id"]))
+        h = float(np.median(base)) if base else (cnst_default if m["lump"] == "CNST" else 0.0)
+        under = [q for q in out if math.hypot(q["dx"] - m["dx"], q["dy"] - m["dy"]) <= stack_m * 100
+                 and m["above_water_cm"] - q["_aw"] > 30]
+        if under:
+            q = max(under, key=lambda q: q["_aw"])
+            h = q["above_ground_cm"] + (m["above_water_cm"] - q["_aw"])
+        n = {k: v for k, v in m.items() if k != "above_water_cm"}
+        n["above_ground_cm"] = round(h, 1)
+        n["_aw"] = m["above_water_cm"]
+        out.append(n)
+    for n in out:
+        del n["_aw"]
+    res = {k: v for k, v in pf.items() if k not in ("water", "members")}
+    res["members"] = out
+    return res
+
+
+def harbour_score(field, pfr, centre, level):
+    """How well a stilt prefab (turned) fits at `centre` against water at
+    `level`: the share of its corners whose ground already agrees (wet
+    corners low, at most 1.5 m above the water; dry corners above it)."""
+    cr, cc = centre[0] // 4, centre[1] // 4
+    wet = {(dr, dc) for dr, dc in pfr["water"]["wet_corners"]}
+    ok = n = 0
+    for dr, dc, _b in pfr["brushes"]:
+        r, c = (cr + dr) * 4, (cc + dc) * 4
+        if not (0 <= r < field.shape[0] and 0 <= c < field.shape[1]):
+            return -1.0
+        h = field[r, c]
+        ok += (h < level + 150) if (dr, dc) in wet else (h > level)
+        n += 1
+    score = ok / max(1, n)
+    # Each ramp must come down on land (user, phase 7b review: the ramp
+    # ended in the water). A landing over water halves the score.
+    g = terrain.GRID_CM
+    for x, y in pfr["water"].get("landings", []):
+        r, c = int(round(centre[0] + y / g)), int(round(centre[1] + x / g))
+        if not (0 <= r < field.shape[0] and 0 <= c < field.shape[1]) or field[r, c] <= level + 30:
+            score *= 0.5
+    return score
+
+
+def pick_harbour(field, pf, level, allow, avoid, border_m, taken=(), target=None):
+    """(centre vertex, quarter turns, score): the shore site and rotation
+    where a stilt prefab's wet part lies over the water and its dry corners
+    (the ramp) on land. Tie-break: nearer `target`."""
+    rows, cols = field.shape
+    pad = int(math.ceil((pf["radius_m"] + border_m) * 100 / terrain.GRID_CM))
+    best = None
+    turned = [rotate(pf, k) for k in range(4)]
+    for r in range(pad - pad % 4, rows - pad, 4):
+        for c in range(pad - pad % 4, cols - pad, 4):
+            if not allow[r, c] or avoid[r, c]:
+                continue
+            if any(math.hypot(r - tr, c - tc) * terrain.GRID_CM / 100 < tm for tr, tc, tm in taken):
+                continue
+            for k, pfr in enumerate(turned):
+                sc = harbour_score(field, pfr, (r, c), level)
+                key = (round(sc, 3), -(math.hypot(r - target[0], c - target[1]) if target is not None else 0))
+                if best is None or key > best[0]:
+                    best = (key, (r, c), k, sc)
+    if best is None:
+        raise ValueError("no shore site for a stilt village")
+    return best[1], best[2], best[3]
+
+
+def shape_harbour(field, pfr, centre, level, skirt_m):
+    """Ground for a stilt village: under its wet corners a shelf
+    `wet_ground_below_water_cm` below the water, as in the source,
+    its dry corners (the ramp landing) at `dry_ground_above_water_cm` above
+    it, as in the source zone; blended back to the original ground over
+    `skirt_m` beyond the prefab's radius. Returns the new field."""
+    w = pfr["water"]
+    wet = {(dr, dc) for dr, dc in w["wet_corners"]}
+    depth = max(100.0, w["wet_ground_below_water_cm"])
+    dry_h = level + max(50.0, w["dry_ground_above_water_cm"])
+    rows, cols = field.shape
+    lat = field[::4, ::4].astype(float).copy()
+    cr, cc = centre[0] // 4, centre[1] // 4
+    g = terrain.GRID_CM
+    land = []
+    for x, y in w.get("landings", []):
+        land.append(((centre[0] + y / g) / 4.0, (centre[1] + x / g) / 4.0))
+    for dr, dc, _b in pfr["brushes"]:
+        r, c = cr + dr, cc + dc
+        if 0 <= r < lat.shape[0] and 0 <= c < lat.shape[1]:
+            near_landing = any(math.hypot(r - lr, c - lc) <= 1.0 for lr, lc in land)   # within 10 m
+            # a shelf at the source's depth (retail: ~1 m), not the seabed
+            # wherever it was deeper: a deep pit beside the raised ramp
+            # landing made a step nobody could climb back up
+            lat[r, c] = dry_h if near_landing or (dr, dc) not in wet else level - depth
+    for lr, lc in land:                      # landings beyond the prefab's corners
+        for r in range(int(lr) - 1, int(lr) + 3):
+            for c in range(int(lc) - 1, int(lc) + 3):
+                if 0 <= r < lat.shape[0] and 0 <= c < lat.shape[1] and math.hypot(r - lr, c - lc) <= 1.0:
+                    lat[r, c] = max(lat[r, c], dry_h)
+    # bilinear up to vertices
+    yy, xx = np.mgrid[0:rows, 0:cols] / 4.0
+    y0, x0 = np.minimum(yy.astype(int), lat.shape[0] - 2), np.minimum(xx.astype(int), lat.shape[1] - 2)
+    fy, fx = yy - y0, xx - x0
+    up = (lat[y0, x0] * (1 - fx) * (1 - fy) + lat[y0, x0 + 1] * fx * (1 - fy)
+          + lat[y0 + 1, x0] * (1 - fx) * fy + lat[y0 + 1, x0 + 1] * fx * fy)
+    d = np.hypot(np.mgrid[0:rows, 0:cols][0] - centre[0], np.mgrid[0:rows, 0:cols][1] - centre[1]) \
+        * terrain.GRID_CM / 100.0
+    t = np.clip((d - pfr["radius_m"]) / max(1e-6, skirt_m), 0.0, 1.0)
+    wgt = 1.0 - t * t * (3 - 2 * t)
+    out = field + (up - field) * wgt
+    return np.round(out.astype("<f4"), 1).astype("<f4")
 
 
 def instantiate(pf, centre, pad_height):

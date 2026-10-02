@@ -682,6 +682,136 @@ Description → layout file → spec → zone. Design agreed with the user
     cover areas fill the map, and retail's flat average is unfair to steep
     ground.
 
+### Phase 7b — review fixes: paint, stilt villages, map shape
+
+The user's review of the phase 7 maps (DESIGN.md) found three things; the
+user asked for all three fixed before any new maps.
+
+- **Status:** INSTALLED 2026-10-02 over the same zones (13, 30, 38, 39, 40;
+  new warps: `/mm 13 490 493`, `/mm 30 511 511`, `/mm 38 515 508`,
+  `/mm 39 500 498`, `/mm 40 518 508`); all five pass every check from disk;
+  regressions pass (selftests, oracle, round-trip 9,617 / 9,617, phase 5/6
+  specs unchanged, zone 12 verifies, byte-identical double build, editor
+  readers). In-game review handed to the user. Not committed.
+- **1. Paint in retail-sized patches** (`paint.py`; layout defaults in
+  `layout.base_spec`):
+  - Measured first. Retail corners agree with their neighbours 75.5% (all),
+    83.6% (>= 45°), 88.8% (>= 60°); ours 65-72%. Cliffs carried 24-35%
+    soil against retail's 11-12%.
+  - Cause: `legalize` always converts the lower-priority corner and bright
+    grass ranks lowest, so one speckled bright-soil corner turns up to eight
+    grass neighbours into dark soil. The noise *picked* the right mix; the
+    in-between rules quadrupled the soil on cliffs.
+  - Fix: `despeckle` (lone corners take their neighbourhood's brush) before
+    legalize; longer patches (90 m); 16 calibration rounds; a **cliff
+    palette** above 40° (bright grass 50%, dark grass 35%, rock 15%, 200 m
+    patches, out of the calibration). Result over the five maps: 74.5 /
+    80.1 / 83.8% agreement, cliff soil 10-14%, rock 10-12%.
+  - Check: `coherence_check` (within 6 points of retail) in preview and verify.
+  - Flooded water re-done as **compact basins** (`water.flood_compact`):
+    flooding raw hilly terrain made a maze where 62% of the land was within
+    30 m of a shore (retail 5-11%); choosing the water on a 60 m low-passed
+    copy and shaping the ground to agree brings it to 29%.
+  - Decoration capped at 250 per chunk (retail max 278), thinning small
+    non-colliding objects evenly.
+- **2. Stilt villages stand over water** (`prefab.py`):
+  - `prefab-extract` now records the source water: Adventurer's Plain's
+    village had 67 of 69 corners under 1 m of water, decks at 4.6-5.0 m
+    above it; Kenji Beach 65 of 81. Members store `above_water_cm`.
+  - By the water, `pick_harbour` chooses the shore site **and rotation**
+    where the wet part lies over water and the ramp corners on land (97%
+    of the ground already fits in map 4); `shape_harbour` sets the ground
+    as in the source; members stand at their height above the water.
+  - The compiler refuses a stilt village away from water unless the layout
+    asks for `"pond": true` (the pond option works on flat ground; on jagged
+    ground it dug pits with traps, so it is opt-in).
+  - `prefab-land` derives dry-ground variants (`adventurer_houses`,
+    `kenji_houses_land`): decks and stilts dropped, members at retail's land
+    heights, stacked crates kept stacked. Used for the hill village (#5)
+    and the inland quarters (#3).
+- **3. Map shape** (`terrain.play_shape`, `shape_walls`; layout `shape`,
+  `play`):
+  - Measured first. Retail chunk sets are full rectangles (3 of 57 maps
+    miss a chunk), but only 24-55% of a Junon map is walkable dry land; the
+    blocked ground reaches in from the edges unevenly (median 8-50% of the
+    side). Ours were 62-90% walkable behind an even 36 m band.
+  - The play region is an organic mask (`organic`, `basin`, `winding`,
+    `valley north-south / east-west`; `square` = the old ring) covering
+    `play` small / medium / large = 30 / 45 / 60% of the map; an `open`
+    edge (a coast) is reached through a decaying bonus.
+  - Outside it the ground is **rebuilt from the rim**: nearest rim height +
+    an 80 m cliff over 24 m + highlands; beyond the cliff the rim is
+    smoothed (no streaks). Built on top of the terrain instead, hilly ground
+    falling away outward turned the cliff into ramps.
+  - Compass words mean the play area's own north, south-west …:
+    `areas._radial` maps them onto the region (corners ~63% of the way out).
+    Lakes keep radius + 40 m inside it.
+  - `areas.distance_m` / `areas.nearest` are now exact Euclidean (feature
+    transform); the L1 approximation left gaps in cliffs.
+  - Check: `play_share` (walkable share within 12 points of the target).
+    The five maps measure 47-49%.
+- **Second review round** (user, 2026-10-02: ramp in the water, cliff
+  stripes, cliffs too high, maps too big, use fences). INSTALLED over the
+  same zones; new warps `/mm 13 529 511` (now 3x3), `/mm 30 511 511`,
+  `/mm 38 515 508`, `/mm 39 499 514`, `/mm 40 518 508`; all five pass
+  56-73 checks from disk, regressions pass (round-trip 9,575 / 9,575).
+  - **Ramp on land:** `prefab._landings` records the ramp foot that stood on
+    dry ground (one per stilt village); `pick_harbour` halves a site's score
+    per landing over water; `shape_harbour` makes shore under it and a
+    uniform 1 m shelf under the decks (a deeper seabed beside the raised
+    landing made an unclimbable step). Check: ramp on dry ground.
+  - **Cliff material:** one per stretch (grass / rock / earth) from the
+    cover within ~40 m (`paint.cliff.materials`, `material: auto`); cliff
+    corners agree 98%.
+  - **Cliff height** `low` 25 m (default) / `medium` 45 m / `high` 80 m /
+    `none`, and **rims** (`mapgen/barrier.py`): boulders (default) or a
+    fence along the cliff top, or a fence line alone. The client tests the
+    cell a step lands in (now settled from code, FORMATS.md), so a low
+    curved cliff can be climbed sideways; the rim seals it. Tested on all
+    five maps with every height and rim: 44-50% walkable, 0-1 trap cells.
+  - On the way: compact flooding no longer carves through the cliffs and
+    lifts every outside vertex above the waterline (water had spilled over
+    low cliffs); water keeps 12 m off the play edge; a stilt village keeps
+    its whole shelf inside the play area (it had cut a channel through the
+    cliff); the per-chunk cap thins grass before trees; density intent
+    judges what each area asked (mean multiplier, fades included) on ground
+    decoration may use.
+  - **Size by content:** one village, at most one lake and no mountains
+    give a 3x3 map unless the layout says otherwise (map 1 is now 3x3).
+- **Third review round** (user, 2026-10-02: ramp OK; cliffs should follow
+  the map theme; no boulder rims, fences only for villages and cities;
+  borders like El Verloon's, low but unclimbable). INSTALLED; warps
+  `/mm 13 528 508`, `/mm 30 511 511`, `/mm 38 515 508`, `/mm 39 503 498`,
+  `/mm 40 518 508`; all five pass 57-74 checks from disk; regressions pass.
+  - **Walk standard (user's decision, "match retail"):** the cell model
+    finds retail maps 87-100% reachable with up to 24% trap cells, so traps
+    count inside the play area only (`walk.analyse(trap_scope=...)`), and
+    borders must match retail's measured steepness (`border_like_retail`:
+    >= 75% of cells steep 5-10 m out, >= 35% at 10-20 m, >= 15 m up).
+    Play-area size is measured as the retail walk region.
+  - **Mountain border** (`terrain.shape_walls` profile `range`): rim + a
+    30 m face over 10 m + a body of ridged noise (45 m ridges, 15 m body);
+    `high` = 38 m / 12 m / 26 m. Built *after* the water, from the final
+    rim (built before, a compact flood flattened the face foot and opened
+    the flooded map). No rim; `border: fence` for villages and cities.
+  - Cliff material: one per map, from the theme (grass by default).
+  - Compact flooding at 90 m (60 m left the half-water map's paint short).
+- **Fourth review round** (user, 2026-10-02: ranges natural and
+  unclimbable; grass props on faces; tops don't need to be wavy and could
+  be highground). INSTALLED; warps unchanged (`/mm 13 528 508`,
+  `/mm 30 511 511`, `/mm 38 515 508`, `/mm 39 503 498`, `/mm 40 518 508`);
+  all five pass 58-75 checks from disk; regressions pass.
+  - Plateau tops (`top: plateau`, 4 m of gentle variation).
+  - Decoration: only rocks on slopes over 45° (`decorate.max_slope_deg`).
+  - Border check: steep face + rise as before, the 10-20 m steepness
+    dropped (a flat top is intended), and a closed-ring test: gentle ground
+    reachable from the start (8-way) ends within 6 m of the play area.
+  - `close_ring` closes the NE-corner blind spot (FORMATS.md) by lifting
+    face corners after the start is chosen (2-1,928 corners per map).
+  - The compact flood lifts every dry play vertex above the waterline
+    (`dry=`): the 12 m edge strip had stayed 28 m under it on hilly ground
+    and the border was built from it.
+
 ### Phase 8 — polish (optional)
 
 Baked terrain lightmap, generated `.MOV`, minimap.
@@ -782,3 +912,22 @@ can be added without rewriting it.
   beach_hut). The user's five descriptions installed as zones 13, 30, 38,
   39, 40; all checks pass; in-game review handed to the user. "City" and
   "ruins" are not possible with the Junon grassland set.
+- 2026-10-02 — Phase 7 reviewed and committed (`29d83240`). Phase 7b: the
+  three review findings fixed, each measured against retail first (paint
+  coherence, stilt villages over water, organic play-area shapes); the five
+  maps reinstalled; all checks pass. In-game review handed to the user.
+- 2026-10-02 — Phase 7b second round after the user's review: ramp lands on
+  shore, one cliff material per stretch, low cliffs with boulder or fence
+  rims (and fence-only edges), size by content. Next (user): bridges and
+  pitfalls, from new descriptions.
+- 2026-10-02 — Third round: the user chose to match retail's walk standard
+  (traps inside the play area; borders judged by steepness against retail);
+  El Verloon-style mountain ranges replace cliffs and rims; one cliff
+  material per map. All five reinstalled and passing.
+- 2026-10-02 — Fourth round: plateau tops, no props on faces, closed-ring
+  border check, the client's NE-corner blind spot closed on faces. All
+  five reinstalled and passing. Next: commit phase 7b (user), then bridges,
+  pitfalls and walkable highground.
+- 2026-10-02 — Fourth round confirmed by the user in the editor (bare faces,
+  plateau tops read as highground); phase 7b committed. Next: bridges,
+  pitfalls and walkable highground, from the user's descriptions.

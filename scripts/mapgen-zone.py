@@ -57,7 +57,7 @@ BUILD = os.path.join(REPO, "build", "mapgen")
 sys.path.insert(0, HERE)
 
 import mapgen  # noqa: E402
-from mapgen import areas, catalogue, chunk, decorate, ifo, layout, paint, prefab, preview, terrain, tiles, walk, water, zon  # noqa: E402
+from mapgen import areas, barrier, catalogue, chunk, decorate, ifo, layout, paint, prefab, preview, terrain, tiles, walk, water, zon  # noqa: E402
 from mapgen.zone import (CHUNK_CM, EventPoint, Tile, ZoneParams, build_zone,  # noqa: E402
                          centre_world, chunk_stem)
 
@@ -143,18 +143,44 @@ def params_from_spec(s):
                    events=[])
     t = s.get("terrain")
     p.lakes, p.avoid, p.features = [], None, {}
+    p.play_v, p.frame = None, None
     if t:
-        p.field = terrain.generate(p.width, p.height, t, t["seed"], terrain_features(s, p))
+        # The play region first (terrain.shape): features, compass words and
+        # every placement live inside it; outside it is cliffs and highlands.
+        p.play_v = terrain.shape_mask(p.width, p.height, t, t["seed"])
+        if p.play_v is not None:
+            rr, cc = np.nonzero(p.play_v)
+            p.frame = (int(rr.min()), int(rr.max()), int(cc.min()), int(cc.max()))
+        # the border (mountains) is built after the water, from the final rim
+        p.shape_cfg = t.get("shape")
+        p.field = terrain.generate(p.width, p.height, t, t["seed"], terrain_features(s, p), play=p.play_v,
+                                   walls=not s.get("water"))
+        if p.play_v is not None:
+            # nothing may be placed within 15 m of the cliff foot
+            p.avoid = areas.distance_m(~p.play_v) < 15.0
     if s.get("water"):
         if p.field is None:
             raise SystemExit("'water' needs a 'terrain' section")
         add_lakes(s, p)
+        if p.play_v is not None and t["shape"].get("wall_cm", 5000.0) > 0:
+            # the mountains rise from the shore the water left (the flood
+            # keeps 12 m off the play edge, so the rim is dry); built before
+            # the water, a low face could sit under the waterline
+            p.field = np.round(terrain.shape_walls(p.field, p.play_v, t["shape"],
+                                                   np.random.default_rng(t["seed"] + 61)).astype("<f4"), 1).astype("<f4")
+            refresh_water(s, p)
     p.villages = []
     if s.get("villages"):
         if p.field is None:
             raise SystemExit("'villages' needs a 'terrain' section")
         add_villages(s, p)
+    p.barrier = add_barrier(s, p)
     p.start_v = pick_start_vertex(s, p)
+    if p.play_v is not None and t["shape"].get("wall_cm", 5000.0) > 0:
+        # after the start exists: the border is closed for the ground a
+        # player can actually reach from it (lifts only corners outside the
+        # play area, which nothing placed later depends on)
+        p.ring_fixes = close_ring(p)
     anchor = p.start_v
     for e in s["events"]:
         dc, dr = (int(round(v / terrain.GRID_CM)) for v in e.get("offset_cm", [0, 0]))
@@ -237,12 +263,13 @@ def params_from_spec(s):
         if p.lattice is None:
             raise SystemExit("'decorate' needs a 'paint' section")
         cat = catalogue.load(os.path.join(STATS_DIR, dcfg["catalogue"]))
-        avoid = water_margin(s, p, dcfg) | village_mask(p, dcfg.get("village_clear_m", 4.0))
+        avoid = water_margin(s, p, dcfg) | village_mask(p, dcfg.get("village_clear_m", 4.0)) | barrier_mask(p)
         _, placed = decorate.place(p.field, p.lattice, p.x0, p.y0, cat, dcfg,
                                    dcfg.get("seed", t["seed"] + 7), avoid, p.path_corners, anchor,
                                    area_mult=cover_mult, kind_of=kind_of(s))
         placed, p.deco_removed = decorate.repair(placed, p.field, anchor, play_mask(s, p),
-                                                 fixed=village_members(p), footprints=footprints(s))
+                                                 fixed=village_members(p) + p.barrier, footprints=footprints(s),
+                                                 trap_scope=trap_scope(s, p))
         p.placed = placed
         p.objects = decorate.records_by_chunk(placed, p.x0, p.y0)
     members = village_members(p)
@@ -252,6 +279,10 @@ def params_from_spec(s):
         for k, recs in vdeco.items():
             p.objects[k] = list(p.objects.get(k, [])) + recs
         p.cnst = vcnst
+    if p.barrier:
+        p.objects = dict(p.objects or {})
+        for k, recs in decorate.records_by_chunk(p.barrier, p.x0, p.y0).items():
+            p.objects[k] = list(p.objects.get(k, [])) + recs
     if p.objects or getattr(p, "cnst", None):
         separate_coplanar(s, p)
     return p
@@ -317,7 +348,7 @@ def terrain_features(s, p):
     """Resolve terrain.features (hills, mountains) to vertex centres; register them."""
     out = []
     for f in (s.get("terrain") or {}).get("features", []):
-        _, target, _ = areas.resolve(f["area"], field_shape(p), {})
+        _, target, _ = areas.resolve(f["area"], field_shape(p), {}, frame=getattr(p, "frame", None), play=getattr(p, "play_v", None))
         centre = snap4(target)
         f = dict(f)
         for v in s.get("villages", []):
@@ -339,7 +370,7 @@ def terrain_features(s, p):
 def area_allow(desc, p, core=0.5, fallback=0.15):
     """(allowed vertex mask, target vertex) for placing one thing in an area:
     the area's core, or its fuzzy edge if the core is too strict."""
-    w, target, _ = areas.resolve(desc, p.field.shape, p.features)
+    w, target, _ = areas.resolve(desc, p.field.shape, p.features, frame=getattr(p, 'frame', None), play=getattr(p, 'play_v', None))
     return w >= core, w >= fallback, target
 
 
@@ -368,7 +399,7 @@ def cover_fields(s, p):
     p.cover_mult = mult
     p.cover_weights = []
     for e in cover:
-        w, _, _ = areas.resolve(e["area"], shape, p.features)
+        w, _, _ = areas.resolve(e["area"], shape, p.features, frame=getattr(p, 'frame', None), play=getattr(p, 'play_v', None))
         if e.get("fade"):
             w = areas.fade(w, shape, e["fade"]["toward"], e["fade"].get("to", 0.3))
         wl = w[::4, ::4]
@@ -417,11 +448,197 @@ def path_land(s, p, extra_block=None):
     return labels, sizes
 
 
+def ground_at(field, x, y):
+    """Bilinear terrain height (cm) at field-local x, y (cm)."""
+    g = terrain.GRID_CM
+    vx, vy = x / g, y / g
+    ix, iy = min(max(int(vx), 0), field.shape[1] - 2), min(max(int(vy), 0), field.shape[0] - 2)
+    fx, fy = vx - ix, vy - iy
+    return float(field[iy, ix] * (1 - fx) * (1 - fy) + field[iy, ix + 1] * fx * (1 - fy)
+                 + field[iy + 1, ix] * (1 - fx) * fy + field[iy + 1, ix + 1] * fx * fy)
+
+
+def place_stilts(s, p, v, pf, name, skirt, band_m, taken, k_default):
+    """Place a stilt village (a prefab with "water": it stood over water in
+    retail; DESIGN.md, Villages). By the water (near_water and the map has
+    water): the shore site and rotation where its wet corners lie over the
+    water and its dry ones (the ramp) on land (prefab.pick_harbour), at that
+    water's level. Otherwise it brings its own shallow pond, at its site's
+    ground level. The ground is shaped as in the source (prefab.
+    shape_harbour) and members stand at their height above the water.
+    Returns (centre, turns, turned prefab, water level, placed, brushes, how)."""
+    others = getattr(p, "pads", np.zeros(p.field.shape, bool))
+    near = bool(v.get("near_water")) and bool(p.lakes)
+    if near:
+        where = v.get("where") or {"all": True}
+        if "near" in where:
+            where = dict(where, extra_m=where.get("extra_m", 40.0) + pf["radius_m"])
+        wgt, target, _ = areas.resolve(where, p.field.shape, p.features, frame=getattr(p, 'frame', None), play=getattr(p, 'play_v', None))
+        wet_all = np.zeros(p.field.shape, bool)
+        for lk in p.lakes:
+            wet_all |= lk["mask"]
+        dist = areas.distance_m(wet_all)
+        lake = min(p.lakes, key=lambda lk: float(areas.distance_m(lk["mask"])[int(target[0]), int(target[1])]))
+        level = lake["level"]
+        allow = (wgt >= 0.15) & (dist <= pf["radius_m"] * 0.6)
+        if getattr(p, "play_v", None) is not None:
+            # the whole village and its shaped shelf stay inside the play
+            # area: placed by the play edge, the shelf carved a channel
+            # through the cliff and opened the map
+            allow &= areas.distance_m(~p.play_v) >= pf["radius_m"] + skirt + 5.0
+        try:
+            centre, k, score = prefab.pick_harbour(p.field, pf, level, allow, others, band_m + 10, taken, target)
+        except ValueError:
+            raise SystemExit("village %s: no shore in its area for a stilt village" % name)
+        how = "over the water's edge (%.0f%% of its ground already fits)" % (100 * score)
+    else:
+        k = k_default
+        if v.get("on"):
+            centre = snap4(p.features[v["on"]]["centre"])
+        elif v.get("where"):
+            core, edge, target = area_allow(v["where"], p)
+            centre = None
+            for allow in (core, edge):
+                try:
+                    centre = prefab.pick_site(p.field, pf["radius_m"], skirt, p.avoid, band_m + 10, taken,
+                                              allow=allow, target=target)
+                    break
+                except ValueError:
+                    continue
+            if centre is None:
+                raise SystemExit("village %s: no site in its area" % name)
+        else:
+            centre = prefab.pick_site(p.field, pf["radius_m"], skirt, p.avoid, band_m + 10, taken)
+        # the pond's level sits below the lowest ground in a ring around it
+        # (as water.carve does), or on uneven ground it leaks down the valleys
+        yy, xx = np.mgrid[0:p.field.shape[0], 0:p.field.shape[1]]
+        dd = np.hypot(yy - centre[0], xx - centre[1]) * terrain.GRID_CM / 100
+        ring = (dd > pf["radius_m"]) & (dd <= pf["radius_m"] + skirt)
+        level = float(np.floor(p.field[ring].min() - 30.0))
+        how = "over a pond of its own (no water near)"
+    pfr = prefab.rotate(pf, k)
+    p.field = prefab.shape_harbour(p.field, pfr, centre, level, skirt)
+    placed, brushes = prefab.instantiate(pfr, centre, 0.0)
+    for q, m in zip(placed, pfr["members"]):
+        q["z"] = level + m["above_water_cm"]
+        q["sink"] = q["z"] - ground_at(p.field, q["x"], q["y"])
+        q["stilts"] = True
+    if not near:
+        yy, xx = np.mgrid[0:p.field.shape[0], 0:p.field.shape[1]]
+        inside = np.hypot(yy - centre[0], xx - centre[1]) * terrain.GRID_CM / 100 <= pf["radius_m"]
+        deep = np.unravel_index(np.argmin(np.where(inside, p.field, np.inf)), p.field.shape)
+        mask = water.lake_mask(p.field, level, deep)
+        p.lakes.append({"centre": deep, "level": level, "mask": mask, "banks": {}})
+        p.features[name + "_pond"] = {"kind": "lake", "centre": deep, "radius_m": pf["radius_m"], "mask": mask}
+    refresh_water(s, p)
+    wet = np.zeros(p.field.shape, bool)
+    for lk in p.lakes:
+        wet |= lk["mask"]
+    p.avoid |= wet
+    return centre, k, pfr, level, placed, brushes, how
+
+
+def add_barrier(s, p):
+    """A fence or boulder line along the edge of the play area (terrain.shape
+    "edge"): on the cliff's top lip, or just outside the play area when the
+    shape has no cliff. See mapgen/barrier.py. Returns placed objects."""
+    cfg = ((s.get("terrain") or {}).get("shape") or {})
+    kind = cfg.get("edge", "none")
+    if kind == "none" or getattr(p, "play_v", None) is None:
+        return []
+    offset = cfg.get("edge_offset_m", (cfg.get("wall_m", 0.0) + 1.5) if cfg.get("wall_cm", 0) else 2.0)
+    wet = np.zeros(p.field.shape, bool)
+    for lk in p.lakes or []:
+        wet |= lk["mask"]
+    rng = np.random.default_rng(s["terrain"]["seed"] + 400)
+    placed = barrier.place(p.field, p.play_v, offset, kind, rng, skip=wet)
+    cells = (p.field.shape[0] - 1, p.field.shape[1] - 1)
+    fp = footprints(s)
+    for q in placed:
+        q["rc"] = prefab.footprint_radius(fp, q, cells)
+    return placed
+
+
+def barrier_mask(p):
+    """Vertices within 4 m of a barrier object: decoration keeps off."""
+    m = np.zeros(p.field.shape, bool)
+    g = terrain.GRID_CM
+    for q in getattr(p, "barrier", None) or []:
+        r, c = int(round(q["y"] / g)), int(round(q["x"] / g))
+        k = int((q["rc"] + 400) / g) + 1
+        m[max(0, r - k):r + k + 1, max(0, c - k):c + k + 1] = True
+    return m
+
+
+def close_ring(p, rounds=40):
+    """Make sure no gentle ground leads out of the play area through the
+    border. The client takes a cell's slope from its SW, SE and NW corners
+    only (io_terrain.cpp:2038-2048): on a face rising toward the north-east
+    those three sit on one contour and the cell reads flat while its NE
+    corner is metres higher, so the face can be walked up diagonally (the
+    NE-corner blind spot, FORMATS.md; seen on map 2: 28.1 / 27.0 / 28.8 m
+    with the NE corner at 39.1 m). Each round finds the gentle cells in the
+    face band (outside the play area, within the face's width) that a
+    player can reach from the start, 8-way, and lifts their NW and SE
+    corners to the steep slope measured from the ORIGINAL ground, once per
+    corner: lifting from already-lifted corners compounded into a runaway.
+    Returns the number of corners lifted; p.ring_open is True if a leak
+    remains (reported by the border check)."""
+    g = terrain.GRID_CM
+    play = p.play_v
+    f0 = p.field.astype(float).copy()
+    band_m = ((p.shape_cfg or {}).get("wall_m", 10.0) if getattr(p, "shape_cfg", None) else 10.0) + 6.0
+    dist = areas.distance_m(play)
+    need = walk.BLOCK_SLOPE * 1.15 * g          # a margin over 54 degrees, cm per cell
+    done = np.zeros(play.shape, bool)
+    lifted = 0
+    p.ring_open = False
+    for _ in range(rounds):
+        f = p.field.astype(float)
+        gx, gy = terrain.gradient(f)
+        gentle = np.hypot(gx, gy) < walk.BLOCK_SLOPE
+        h, w = gentle.shape
+        s0 = (min(p.start_v[0], h - 1), min(p.start_v[1], w - 1))
+        if not gentle[s0]:
+            return lifted
+        seen = np.zeros_like(gentle)
+        seen[s0] = True
+        stack = [s0]
+        while stack:
+            r, c = stack.pop()
+            for dr in (-1, 0, 1):
+                for dc in (-1, 0, 1):
+                    rr, cc = r + dr, c + dc
+                    if 0 <= rr < h and 0 <= cc < w and gentle[rr, cc] and not seen[rr, cc]:
+                        seen[rr, cc] = True
+                        stack.append((rr, cc))
+        leak = seen & ~play[:-1, :-1] & (dist[:-1, :-1] > 0)
+        if not leak.any():
+            return lifted
+        front = leak & (dist[:-1, :-1] <= band_m)
+        moved = 0
+        for r, c in zip(*np.nonzero(front)):
+            for rr, cc in ((r + 1, c), (r, c + 1)):                # NW and SE corners
+                if rr < f.shape[0] and cc < f.shape[1] and not play[rr, cc] and not done[rr, cc]:
+                    want = f0[r, c] + need
+                    if f[rr, cc] < want:
+                        f[rr, cc] = want
+                        moved += 1
+                    done[rr, cc] = True
+        lifted += moved
+        p.field = np.round(f.astype("<f4"), 1).astype("<f4")
+        if not moved:
+            p.ring_open = True
+            return lifted
+    p.ring_open = True
+    return lifted
+
+
 def refresh_water(s, p):
     """Re-derive every water outline after the ground changed near it (a
     village pad flattened by the shore): carved lakes keep their level and
     centre, the flood keeps its level and is re-filtered."""
-    w = s["water"]
+    w = s.get("water") or {}
     fl = w.get("flood")
     kept_lakes = [lk for lk in p.lakes if not lk.get("flood")]
     p.lakes = []
@@ -487,7 +704,7 @@ def partner_point(s, p, name):
             if v.get("on") in p.features:
                 return p.features[v["on"]]["centre"]
             if v.get("where"):
-                return areas.resolve(v["where"], p.field.shape, p.features)[1]
+                return areas.resolve(v["where"], p.field.shape, p.features, frame=getattr(p, 'frame', None), play=getattr(p, 'play_v', None))[1]
     st = s.get("start") or {}
     if name == "start" and st.get("near"):
         return partner_point(s, p, st["near"]) if st["near"] != "start" else None
@@ -527,29 +744,38 @@ def add_villages(s, p):
             for lk in p.lakes:
                 hard |= lk["mask"]
             hard |= getattr(p, "pads", hard)
-        if v.get("on"):
-            centre = snap4(p.features[v["on"]]["centre"])
-        elif v.get("where"):
-            where = v["where"]
-            if "near" in where:      # "near the sea" is about the village's edge, not its centre
-                where = dict(where, extra_m=where.get("extra_m", 40.0) + pad_m + 8.0)
-            core, edge, target = area_allow(where, p)
-            centre = None
-            for allow in (core, edge):
-                try:
-                    centre = prefab.pick_site(p.field, pad_m, skirt, hard, band_m + 10, taken,
-                                              allow=allow, target=target, avoid_reach_m=reach)
-                    break
-                except ValueError:
-                    continue
-            if centre is None:
-                raise SystemExit("village %s: no flat enough site in its area" % name)
+        stilts = bool(pf.get("water"))
+        if stilts:
+            # A harbour village on stilts (it stood over water in retail):
+            # over the water's edge, or over a pond of its own (place_stilts).
+            centre, k, pfr, height, placed, brushes, site_how = place_stilts(s, p, v, pf, name, skirt, band_m,
+                                                                             taken, k)
+            near_water = True                # keeps its own (seabed, sand) paint
         else:
-            centre = prefab.pick_site(p.field, pad_m, skirt, p.avoid, band_m + 10, taken)
-        p.field, height = prefab.flatten(p.field, centre, pad_m, skirt, min_height=min_h)
-        if near_water:
-            refresh_water(s, p)
-        placed, brushes = prefab.instantiate(pfr, centre, height)
+            site_how = None
+            if v.get("on"):
+                centre = snap4(p.features[v["on"]]["centre"])
+            elif v.get("where"):
+                where = v["where"]
+                if "near" in where:      # "near the sea" is about the village's edge, not its centre
+                    where = dict(where, extra_m=where.get("extra_m", 40.0) + pad_m + 8.0)
+                core, edge, target = area_allow(where, p)
+                centre = None
+                for allow in (core, edge):
+                    try:
+                        centre = prefab.pick_site(p.field, pad_m, skirt, hard, band_m + 10, taken,
+                                                  allow=allow, target=target, avoid_reach_m=reach)
+                        break
+                    except ValueError:
+                        continue
+                if centre is None:
+                    raise SystemExit("village %s: no flat enough site in its area" % name)
+            else:
+                centre = prefab.pick_site(p.field, pad_m, skirt, p.avoid, band_m + 10, taken)
+            p.field, height = prefab.flatten(p.field, centre, pad_m, skirt, min_height=min_h)
+            if near_water:
+                refresh_water(s, p)
+            placed, brushes = prefab.instantiate(pfr, centre, height)
         cells = (p.field.shape[0] - 1, p.field.shape[1] - 1)
         fp = footprints(s)
         for q in placed:
@@ -635,7 +861,10 @@ def add_villages(s, p):
                            "corner_block": cb, "gate": inner[-1], "inner_path": inner, "route": route,
                            "entrance_deg": bearing, "entrance_how": how, "openings": arcs,
                            "connect": connect, "has_path": connect or bool(partners) or starts_here,
-                           "near_water": near_water})
+                           "near_water": near_water, "stilts": stilts, "site_how": site_how,
+                           "water_level": height if stilts else None,
+                           "landings": [(centre[1] * terrain.GRID_CM + x, centre[0] * terrain.GRID_CM + y)
+                                        for x, y in (pfr.get("water") or {}).get("landings", [])] if stilts else []})
         p.features[name] = {"kind": "village", "centre": centre, "radius_m": pad_m}
 
 
@@ -685,9 +914,10 @@ def village_checks(s, p, members, field, start, check):
     check(not missing, "every mesh of every village object exists on disk %s" % (sorted(missing)[:3] or ""))
     g = terrain.GRID_CM
     rough, unreachable = [], []
-    blocked = decorate.blocked_cells(members + (p.placed or []), (field.shape[0] - 1, field.shape[1] - 1),
+    blocked = decorate.blocked_cells(members + (p.placed or []) + (getattr(p, "barrier", None) or []),
+                                     (field.shape[0] - 1, field.shape[1] - 1),
                                      footprints(s))
-    a = walk.analyse(field, start, play_mask(s, p), blocked)
+    a = walk.analyse(field, start, play_mask(s, p), blocked, trap_scope=trap_scope(s, p))
     fp = footprints(s)
     for q in members:
         if not q["rc"]:
@@ -702,7 +932,7 @@ def village_checks(s, p, members, field, start, check):
         vr = np.concatenate([orr, orr, orr + 1, orr + 1])
         vc = np.concatenate([occ, occ + 1, occ, occ + 1])
         hts = field[vr, vc]
-        if float(hts.max() - hts.min()) > 5.0:
+        if float(hts.max() - hts.min()) > 5.0 and not q.get("stilts"):    # stilts stand in the seabed
             rough.append("%s#%d (%.0f cm)" % (q["name"], q["id"], float(hts.max() - hts.min())))
         reach = q["rc"] + 300
         cr0, cr1 = int((q["y"] - reach) // g), int((q["y"] + reach) // g) + 1
@@ -711,6 +941,11 @@ def village_checks(s, p, members, field, start, check):
         if not home.any():
             unreachable.append("%s#%d" % (q["name"], q["id"]))
     check(not rough, "ground under every village building is flat within 5 cm %s" % (rough[:3] or ""))
+    wet_ramps = ["%s (%.1f m)" % (v["name"], (ground_at(field, x, y) - v["water_level"]) / 100)
+                 for v in getattr(p, "villages", []) or [] if v.get("stilts")
+                 for x, y in v["landings"] if ground_at(field, x, y) <= v["water_level"] + 30]
+    if any(v.get("stilts") for v in getattr(p, "villages", []) or []):
+        check(not wet_ramps, "every stilt village's ramp comes down on dry ground %s" % (wet_ramps or ""))
     check(not unreachable, "every village building can be reached from the start %s" % (unreachable[:3] or ""))
     check(a["trap_cells"] == 0, "with village and decoration collision: no trap (%d cells)" % a["trap_cells"])
     lat = getattr(p, "lattice", None)
@@ -744,6 +979,76 @@ def village_checks(s, p, members, field, start, check):
               "entrance %.0f deg (%s), path in %d corners"
               % (v["prefab"], len(v["members"]), sum(1 for q in v["members"] if q["rc"]), v["pad_m"],
                  v["height"] / 100, v["turns"] * 90, v["entrance_deg"], v["entrance_how"], len(v["inner_path"])))
+        if v.get("site_how"):
+            print("          on stilts, %s" % v["site_how"])
+
+
+# Retail borders, measured outside the walk region of eight zones (JG01-05,
+# JD01-03, phase 7b): 5-10 m out 79-92% steep, 10-20 m out 41-64% (Gorge of
+# Silence 28%), 18-30 m above the edge at 10-20 m (Kenji Beach 18). A
+# generated border must be at least as closed as the more open retail ones.
+RETAIL_BORDER = {"steep_5_10": 0.75, "steep_10_20": 0.35, "rise_10_20": 15.0}
+# (steep_10_20 is no longer required since the third phase 7b review: a
+# plateau top is flat on purpose; the closed-ring test replaces it.)
+
+
+def gentle_escape_m(field, start, play):
+    """How far (m) outside the play area gentle ground (< 54 deg, 8-connected,
+    so diagonal steps between two steep cells count) reaches from `start`."""
+    if play is None:
+        return 0.0
+    gx, gy = terrain.gradient(field)
+    gentle = np.hypot(gx, gy) < walk.BLOCK_SLOPE
+    h, w = gentle.shape
+    seen = np.zeros_like(gentle)
+    s0 = (min(start[0], h - 1), min(start[1], w - 1))
+    stack = [s0]
+    seen[s0] = True
+    while stack:
+        r, c = stack.pop()
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                rr, cc = r + dr, c + dc
+                if 0 <= rr < h and 0 <= cc < w and gentle[rr, cc] and not seen[rr, cc]:
+                    seen[rr, cc] = True
+                    stack.append((rr, cc))
+    d = areas.distance_m(play)[:-1, :-1]
+    return float(d[seen].max()) if seen.any() else 0.0
+
+
+def border_profile(field, start, wet=None):
+    """The walk region (gentle cells joined to `start`, water counted as
+    walkable, inner steep spots filled) and, outside it, the share of steep
+    cells and the median rise above its edge at 0-5, 5-10, 10-20 and 20-40 m.
+    The same measure as the retail survey."""
+    gx, gy = terrain.gradient(field)
+    steep = np.hypot(gx, gy) >= walk.BLOCK_SLOPE
+    gentle = ~steep
+    if wet is not None:
+        gentle |= wet[:-1, :-1]
+    s0 = (min(start[0], gentle.shape[0] - 1), min(start[1], gentle.shape[1] - 1))
+    region = np.zeros_like(gentle)
+    for rr, cc in water.components(gentle):
+        m = np.zeros_like(gentle)
+        m[rr, cc] = True
+        if m[s0]:
+            region = m
+            break
+    outside = np.zeros_like(region)
+    for rr, cc in water.components(~region):
+        if rr.min() == 0 or cc.min() == 0 or rr.max() == region.shape[0] - 1 or cc.max() == region.shape[1] - 1:
+            outside[rr, cc] = True
+    region = ~outside
+    d, nr, nc = areas.nearest(region)
+    cellf = field[:-1, :-1]
+    rise = (cellf - cellf[nr, nc]) / 100.0
+    out = {"share": float(region.mean())}
+    for a, b in ((0, 5), (5, 10), (10, 20), (20, 40)):
+        sel = (d > a) & (d <= b)
+        out["steep_%d_%d" % (a, b)] = float(steep[sel].mean()) if sel.any() else 1.0
+        out["rise_%d_%d" % (a, b)] = float(np.median(rise[sel])) if sel.any() else 99.0
+    return out, region
+
 
 _jg_cache = {}
 
@@ -800,6 +1105,9 @@ def print_features(s, p, zone=None):
         print("     %-12s %-20s %s" % (name, mm(f["centre"]), extra))
     if getattr(p, "start_v", None):
         print("     %-12s %-20s" % ("start", mm(p.start_v)))
+    if getattr(p, "ring_fixes", 0):
+        print("  border: %d face corners lifted where the client would read the face as walkable "
+              "(NE-corner blind spot)" % p.ring_fixes)
     if getattr(p, "coplanar_moved", 0) or getattr(p, "coplanar_left", 0):
         print("  coplanar faces: %d placement(s) moved 0.5-6 cm apart, %d pair(s) left"
               % (p.coplanar_moved, p.coplanar_left))
@@ -825,6 +1133,15 @@ def intent_checks(s, p, field, placed, lattice, check):
     land = play & ~wet & ~pads
     kof = kind_of(s) or (lambda o: o["category"])
     pb = (s.get("paint") or {}).get("path_brush", 0)
+    deco_off = np.zeros(field.shape, bool)
+    if s.get("decorate"):
+        dcfg = s["decorate"]
+        deco_off = water_margin(s, p, dcfg) | village_mask(p, dcfg.get("village_clear_m", 4.0)) | barrier_mask(p)
+        if getattr(p, "path_corners", None) is not None:
+            pr, pc = np.nonzero(p.path_corners)
+            k = int(dcfg.get("path_clear_m", 4.0) * 100 / terrain.GRID_CM) + 1
+            for r, c in zip(pr * 4, pc * 4):
+                deco_off[max(0, r - k):r + k + 1, max(0, c - k):c + k + 1] = True
     for it in intents:
         kind, label = it["check"], it.get("label", "")
         if kind == "tilt":
@@ -832,12 +1149,15 @@ def intent_checks(s, p, field, placed, lattice, check):
             h, w = field.shape
             yy, xx = np.mgrid[0:h, 0:w]
             u = (xx / (w - 1) - 0.5) * dx + (yy / (h - 1) - 0.5) * dy
-            hi_side, lo_side = play & (u > 0.2), play & (u < -0.2)
-            rise = float(np.median(field[hi_side]) - np.median(field[lo_side]))
-            check(rise >= it["min_rise_cm"], "%s: ground rises %.1f m toward the %s (want >= %.1f m)"
-                  % (label, rise / 100, it["toward"], it["min_rise_cm"] / 100))
+            span = abs(dx) * 0.5 + abs(dy) * 0.5
+            # fit the ground's rise per unit of the map's span over the play
+            # area (a shaped map's play area spans only part of the rectangle)
+            sel = play & ~wet
+            b = float(np.polyfit(u[sel] / (2 * span), field[sel], 1)[0]) if sel.any() else 0.0
+            check(b >= it["min_rise_cm"], "%s: ground rises at %.1f m per map width toward the %s (want >= %.1f m)"
+                  % (label, b / 100, it["toward"], it["min_rise_cm"] / 100))
         elif kind == "higher":
-            wgt = areas.resolve(it["area"], field.shape, p.features)[0]
+            wgt = areas.resolve(it["area"], field.shape, p.features, frame=getattr(p, 'frame', None), play=getattr(p, 'play_v', None))[0]
             inner, rest = (wgt >= 0.5) & ~wet, play & (wgt < 0.1) & ~wet
             diff = float(np.median(field[inner]) - np.median(field[rest]))
             check(diff >= it["min_cm"], "%s: %.1f m above the rest of the map (want >= %.1f m)"
@@ -846,21 +1166,47 @@ def intent_checks(s, p, field, placed, lattice, check):
             share = float((wet & play).sum()) / float(play.sum())
             check(abs(share - it["target"]) <= it.get("tol", 0.05), "%s: %.0f%% of the map is water (want %.0f%% +/- %.0f)"
                   % (label, 100 * share, 100 * it["target"], 100 * it.get("tol", 0.05)))
+        elif kind == "play_share":
+            # the region a player can actually walk (slopes under 54 deg,
+            # connected to the start, water included) as a share of the map
+            # with every object's walls in place: the rim of boulders or the
+            # fence line is what closes a low cliff
+            # the region a player walks, measured as for retail: gentle cells
+            # (water included) joined to the start, inner steep spots filled
+            _, region = border_profile(field, p.start_v, wet)
+            share = float(region.mean())
+            check(abs(share - it["target"]) <= it.get("tol", 0.12),
+                  "%s: %.0f%% of the map is walkable (want %.0f%% +/- %.0f; retail 24-55%% dry)"
+                  % (label, 100 * share, 100 * it["target"], 100 * it.get("tol", 0.12)))
+        elif kind == "border_like_retail":
+            prof, _ = border_profile(field, p.start_v, wet)
+            ok = prof["steep_5_10"] >= RETAIL_BORDER["steep_5_10"] and prof["rise_10_20"] >= RETAIL_BORDER["rise_10_20"]
+            check(ok, "%s: outside the walk region %.0f%% of cells 5-10 m out are too steep to climb, %.1f m up at "
+                      "10-20 m (want >= %.0f%%, %.0f m; retail 79-92%%, 18-30 m)"
+                  % (label, 100 * prof["steep_5_10"], prof["rise_10_20"],
+                     100 * RETAIL_BORDER["steep_5_10"], RETAIL_BORDER["rise_10_20"]))
+            # and the ring is closed: gentle ground reachable from the start
+            # (diagonal steps between corners included) stays in the play area
+            esc = gentle_escape_m(field, p.start_v, getattr(p, "play_v", None))
+            check(esc <= 6.0, "%s: walkable ground ends within %.1f m of the play area's edge (want <= 6 m)"
+                  % (label, esc))
         elif kind == "wet_in":
-            wgt = areas.resolve(it["area"], field.shape, p.features)[0]
-            sel = wgt >= 0.5
+            wgt = areas.resolve(it["area"], field.shape, p.features, frame=getattr(p, 'frame', None), play=getattr(p, 'play_v', None))[0]
+            sel = (wgt >= 0.5) & play                     # the strip's playable part, not its cliffs
             share = float((wet & sel).sum()) / max(1, int(sel.sum()))
             check(share >= it["min"], "%s: %.0f%% of that strip is water (want >= %.0f%%)"
                   % (label, 100 * share, 100 * it["min"]))
         elif kind == "inside":
-            wgt = areas.resolve(it["area"], field.shape, p.features)[0]
+            wgt = areas.resolve(it["area"], field.shape, p.features, frame=getattr(p, 'frame', None), play=getattr(p, 'play_v', None))[0]
             f = p.features.get(it["feature"])
             ok = f is not None and float(wgt[f["centre"]]) >= it.get("min_weight", 0.3)
             check(ok, "%s: %s is where the description put it (area weight %.2f)"
                   % (label, it["feature"], float(wgt[f["centre"]]) if f else -1))
         elif kind == "density":
-            wgt = areas.resolve(it["area"], field.shape, p.features)[0]
-            inner, outer = land & (wgt >= 0.8), land & (wgt < 0.1)
+            wgt = areas.resolve(it["area"], field.shape, p.features, frame=getattr(p, 'frame', None), play=getattr(p, 'play_v', None))[0]
+            # only ground decoration may use (not pads, paths, water margins,
+            # barriers): a village in the forest is not a thin forest
+            inner, outer = land & (wgt >= 0.8) & ~deco_off, land & (wgt < 0.1) & ~deco_off
             km = (getattr(p, "cover_mult", None) or {}).get(it["kind"])
             if km is not None:
                 # compare with ground no cover area changed for this kind
@@ -884,17 +1230,19 @@ def intent_checks(s, p, field, placed, lattice, check):
             core_t = inner[:-1:4, :-1:4] & inner[4::4, 4::4]
             expected = float(exp.get(it["kind"], np.zeros(core_t.shape))[core_t].sum())
             ratio = n_in / max(1e-6, expected)
-            want = it["ratio"]
-            # Counts are Poisson: allow 2 sigma around the wanted count, so a
-            # small area is judged by what chance permits ("2 trees where 4
-            # were due" proves nothing either way).
+            # What the area asked for there: its mean multiplier over the core
+            # (fades and later areas included). At least half of that change
+            # must show; counts are Poisson, so 2 sigma of slack ("2 trees
+            # where 4 were due" proves nothing either way).
+            mbar = float(km[:-1, :-1][core_t].mean()) if km is not None and core_t.any() else it["ratio"]
+            want = 1 + 0.5 * (mbar - 1) if mbar >= 1 else mbar + 0.5 * (1 - mbar)
             due = want * expected
             slack = 2.0 * math.sqrt(max(due, 1.0))
-            ok = n_in >= due - slack if want >= 1 else n_in <= due + slack
-            check(ok, "%s: %d %s there = x%.2f what that ground gets by default (%.0f; want %s x%.2f, i.e. %s %.0f "
-                      "with 2-sigma noise); %.1f/ha"
-                  % (label, n_in, it["kind"].lower(), ratio, expected, ">=" if want >= 1 else "<=", want,
-                     ">=" if want >= 1 else "<=", due - slack if want >= 1 else due + slack, d_in))
+            ok = n_in >= due - slack if mbar >= 1 else n_in <= due + slack
+            check(ok, "%s: %d %s there = x%.2f what that ground gets by default (%.0f); the area asked x%.2f, want %s "
+                      "x%.2f (%s %.0f with 2-sigma noise); %.1f/ha"
+                  % (label, n_in, it["kind"].lower(), ratio, expected, mbar, ">=" if mbar >= 1 else "<=", want,
+                     ">=" if mbar >= 1 else "<=", due - slack if mbar >= 1 else due + slack, d_in))
         elif kind == "road":
             ends = []
             for name in (it["from"], it["to"]):
@@ -1024,9 +1372,10 @@ def deco_checks(s, p, placed, field, start, check, zdir=None):
                     tight += 1
     check(tight == 0, "colliding objects keep a %.0f m walkable gap (%d pairs closer)" % (gap / 100, tight))
 
-    blocked = decorate.blocked_cells(placed + village_members(p), (field.shape[0] - 1, field.shape[1] - 1),
+    blocked = decorate.blocked_cells(placed + village_members(p) + (getattr(p, "barrier", None) or []),
+                                     (field.shape[0] - 1, field.shape[1] - 1),
                                      footprints(s))
-    a = walk.analyse(field, start, play_mask(s, p), blocked)
+    a = walk.analyse(field, start, play_mask(s, p), blocked, trap_scope=trap_scope(s, p))
     need = (s.get("terrain") or {}).get("min_connected_fraction", 0.95)
     check(a["trap_cells"] == 0,
           "with object collision: no area you can walk into but not out of (%d)" % a["trap_cells"])
@@ -1108,7 +1457,7 @@ def pick_start_vertex(s, p):
         else:
             raise SystemExit("start.near %r is not a village or feature" % st["near"])
     elif st.get("area"):
-        target = areas.resolve(st["area"], p.field.shape, p.features)[1]
+        target = areas.resolve(st["area"], p.field.shape, p.features, frame=getattr(p, 'frame', None), play=getattr(p, 'play_v', None))[1]
     avoid = getattr(p, "avoid", None)
     if allow is not None:
         avoid = (~allow) if avoid is None else (avoid | ~allow)
@@ -1130,7 +1479,8 @@ def add_lakes(s, p):
     w = s["water"]
     band_m = ((s.get("terrain") or {}).get("ridge") or {}).get("width_m", 0)
     rows, cols = p.field.shape
-    p.avoid = np.zeros(p.field.shape, bool)
+    if p.avoid is None:
+        p.avoid = np.zeros(p.field.shape, bool)
     clear = int(w.get("keep_clear_m", 15) * 100 / terrain.GRID_CM)
 
     def keep_clear(mask):
@@ -1143,13 +1493,17 @@ def add_lakes(s, p):
 
     for i, lake in enumerate(w.get("lakes", [])):
         rng = np.random.default_rng(s["terrain"]["seed"] + 100 + i)
+        lake_avoid = p.avoid
+        if getattr(p, "play_v", None) is not None:
+            # a lake and its ring stay inside the play area, off the cliffs
+            lake_avoid = p.avoid | (areas.distance_m(~p.play_v) < lake["radius_m"] + lake.get("ring_m", 25.0) + 15.0)
         if lake.get("where"):
             core, edge, target = area_allow(lake["where"], p)
             centre = None
             for allow in (core, edge):
                 try:
                     centre = water.pick_centre(p.field, lake["radius_m"], band_m + 10, lake.get("ring_m", 25.0),
-                                               p.avoid, allow=allow, target=target)
+                                               lake_avoid, allow=allow, target=target)
                     break
                 except ValueError:
                     continue
@@ -1170,9 +1524,18 @@ def add_lakes(s, p):
     fl = w.get("flood")
     if fl:
         region = play_vertices(s, p)
-        p.field, level, kept = water.flood(p.field, region, fraction=fl.get("fraction"), level=fl.get("level_cm"),
-                                           min_depth_cm=fl.get("min_depth_cm", 80.0),
-                                           min_m2=fl.get("min_m2", 1200.0))
+        if getattr(p, "play_v", None) is not None:
+            # water keeps a shore strip off the play area's edge, where the
+            # cliff foot and any fence line stand on dry ground (an open
+            # coastal edge is the map border, which this leaves alone)
+            region = region & (areas.distance_m(~p.play_v) >= fl.get("edge_clear_m", 12.0))
+        if fl.get("compact_m"):
+            p.field, level, kept = water.flood_compact(p.field, region, fl["fraction"], smooth_m=fl["compact_m"],
+                                                       dry=getattr(p, "play_v", None))
+        else:
+            p.field, level, kept = water.flood(p.field, region, fraction=fl.get("fraction"), level=fl.get("level_cm"),
+                                               min_depth_cm=fl.get("min_depth_cm", 80.0),
+                                               min_m2=fl.get("min_m2", 1200.0))
         union = np.zeros(p.field.shape, bool)
         p.flood_level = level
         for kb in kept:
@@ -1190,7 +1553,9 @@ def add_lakes(s, p):
 
 
 def play_vertices(s, p):
-    """Vertices inside the ridge band (the ridge edges only)."""
+    """Vertices of the play region: the terrain shape, else inside the ridge band."""
+    if getattr(p, "play_v", None) is not None:
+        return p.play_v
     r = (s.get("terrain") or {}).get("ridge") or {}
     m = np.ones(p.field.shape, bool)
     if r.get("height_cm"):
@@ -1244,8 +1609,18 @@ def free_corner(pt, blocked):
     return tuple(int(v) for v in free[np.argmin(d)])
 
 
+def trap_scope(s, p):
+    """Where traps are looked for: the play area on a shaped map (mountains
+    are judged by steepness, border_like_retail), everywhere otherwise."""
+    return play_mask(s, p) if getattr(p, "play_v", None) is not None else None
+
+
 def play_mask(s, p):
-    """Cells inside the ridge band: the area the connectivity check is about."""
+    """Cells inside the play region (the terrain shape, else the ridge band):
+    the area the connectivity check is about."""
+    pv = getattr(p, "play_v", None)
+    if pv is not None:
+        return pv[:-1, :-1] & pv[1:, 1:] & pv[1:, :-1] & pv[:-1, 1:]
     rows, cols = p.height * 64, p.width * 64
     r = (s.get("terrain") or {}).get("ridge") or {}
     band = int(r.get("width_m", 0) * 100 / terrain.GRID_CM) if r.get("height_cm") else 0
@@ -1256,7 +1631,7 @@ def play_mask(s, p):
 
 def terrain_checks(s, p, field, start, check):
     """The phase 2 terrain checks; `field` may come from the spec or from disk."""
-    a = walk.analyse(field, start, play_mask(s, p))
+    a = walk.analyse(field, start, play_mask(s, p), trap_scope=trap_scope(s, p))
     need = (s.get("terrain") or {}).get("min_connected_fraction", 0.95)
     check(a["trap_cells"] == 0,
           "no area the player can walk into but not climb out of (%d trap cells)" % a["trap_cells"])
@@ -1292,6 +1667,33 @@ def water_from_disk(zdir, p):
         if o is not None and o.rects:
             out[(x, y)] = [tuple(r) for r in o.rects]
     return out
+
+
+def paint_coherence(lattice, field):
+    """% of 4-neighbour corner pairs on the same brush: all land, and >= 45 deg."""
+    sl = paint.corner_slopes(field)
+    rows, cols = lattice.shape
+    out = []
+    for lo in (0.0, 45.0):
+        st = (sl >= lo) & (lattice >= 0) & ~np.isin(lattice, (6, 7, 8))
+        same = tot = 0
+        for dr, dc in ((0, 1), (1, 0)):
+            a = st[:rows - dr, :cols - dc] & st[dr:, dc:]
+            same += int((lattice[:rows - dr, :cols - dc][a] == lattice[dr:, dc:][a]).sum())
+            tot += int(a.sum())
+        out.append(100.0 * same / max(1, tot))
+    return out
+
+
+def coherence_check(s, lattice, field, check):
+    tgt = (s.get("paint") or {}).get("coherence_target")
+    if not tgt or lattice is None:
+        return
+    a, b = paint_coherence(lattice, field)
+    tol = tgt.get("tolerance", 6.0)
+    check(a >= tgt["all"] - tol and b >= tgt["steep"] - tol,
+          "paint in retail-sized patches: neighbouring corners agree %.1f%% (retail %.1f), %.1f%% on slopes >= 45 deg "
+          "(retail %.1f; allow -%.0f)" % (a, tgt["all"], b, tgt["steep"], tol))
 
 
 def tile_checks(ts, grid, have, check):
@@ -1552,7 +1954,7 @@ def cmd_preview(s):
         colours = brush_colours(ts, template_zon(s, zstb))
         out2 = preview.render_tiles(p.field, p.lattice, colours, a,
                                     os.path.join(BUILD, "preview-%s-tiles.png" % s["folder"]), wet=wet,
-                                    objects=(p.placed or []) + village_members(p))
+                                    objects=(p.placed or []) + village_members(p) + (p.barrier or []))
         share = np.bincount(p.lattice.ravel(), minlength=ts.brushes) / p.lattice.size
         # Retail target for THIS terrain: the table's per-band mix weighted by
         # how many of our corners fall in each slope band.
@@ -1567,6 +1969,7 @@ def cmd_preview(s):
             print("     %-14s %5.1f%%  (retail %5.1f%%)" % (ts.brush_names[b], 100 * share[b], 100 * target[i]))
         print("  tile preview %s" % out2)
         tile_checks(ts, p.tile_grid, np.ones(p.tile_grid.shape, bool), check)
+        coherence_check(s, p.lattice, p.field, check)
     again = params_from_spec(s)
     same = np.array_equal(again.field.view("u4"), p.field.view("u4")) and again.water == p.water
     if p.tile_grid is not None:
@@ -1818,7 +2221,11 @@ def cmd_verify(s):
         g = terrain.GRID_CM
         in_village = [bool(vm[min(int(round(q["y"] / g)), vm.shape[0] - 1), min(int(round(q["x"] / g)), vm.shape[1] - 1)])
                       for q in placed_disk]
-        deco_disk = [q for q, iv in zip(placed_disk, in_village) if not iv]
+        bkeys = {(round(q["x"] / 100), round(q["y"] / 100)) for q in (p.barrier or [])}
+        is_barrier = [(round(q["x"] / 100), round(q["y"] / 100)) in bkeys for q in placed_disk]
+        check(sum(is_barrier) == len(p.barrier or []), "barrier objects on disk = the spec's (%d)" % sum(is_barrier))
+        deco_disk = [q for q, iv, ib in zip(placed_disk, in_village, is_barrier) if not iv and not ib]
+        placed_disk = [q for q, ib in zip(placed_disk, is_barrier) if not ib]
         n_vdeco = sum(1 for q in village_members(p) if q["lump"] == "OBJECT")
         check(len(deco_disk) == len(p.placed or []) and len(placed_disk) - len(deco_disk) == n_vdeco,
               "objects on disk = the spec's (%d decorations + %d village decorations)"
@@ -1840,8 +2247,9 @@ def cmd_verify(s):
               "ZON zone type selects the %s tileset in ZONETYPEINFO (editor brushes match)" % s["paint"]["tileset"])
         grid, have, _ = tiles.load_zone_tiles(zdir)
         tile_checks(ts, grid, have, check)
+        lat_disk, _ = tiles.lattice_votes(grid, ts, have)
+        coherence_check(s, lat_disk, field, check)
         if s.get("intent"):
-            lat_disk, _ = tiles.lattice_votes(grid, ts, have)
             deco_now = deco_disk if s.get("decorate") else None
             intent_checks(s, p, field, deco_now, lat_disk, check)
 
@@ -2005,6 +2413,9 @@ def main():
     pe.add_argument("--centre", type=float, nargs=2, required=True, help="world position in /mm units (10 m)")
     pe.add_argument("--radius", type=float, required=True, help="metres")
     pe.add_argument("--template-row", type=int, default=22, help="the zone row whose ZSCs the prefab must match")
+    pl = sub.add_parser("prefab-land", help="derive a dry-ground variant of a stilt village prefab")
+    pl.add_argument("name")
+    pl.add_argument("--from", dest="src", required=True)
     pv = sub.add_parser("preview")
     pv.add_argument("spec")
     cp = sub.add_parser("compile", help="show the spec a layout file compiles to")
@@ -2032,6 +2443,22 @@ def main():
         return cmd_stats()
     if a.cmd == "prefab-extract":
         return cmd_prefab_extract(a)
+    if a.cmd == "prefab-land":
+        src = prefab.load(os.path.join(PREFAB_DIR, a.src + ".json"))
+        if not src.get("water"):
+            raise SystemExit("%s does not stand on stilts" % a.src)
+        lands = [prefab.load(os.path.join(PREFAB_DIR, f)) for f in sorted(os.listdir(PREFAB_DIR))
+                 if f.endswith(".json") and f[:-5] != a.src]
+        out = prefab.land_variant(src, lands)
+        out["name"] = a.name
+        out["_comment"] = ("Dry-ground variant of %s (stilt village) made by `mapgen-zone.py prefab-land`: deck "
+                           "and stilt objects dropped, members at retail's land heights (prefab.land_variant)."
+                           % a.src)
+        prefab.save(os.path.join(PREFAB_DIR, a.name + ".json"), out)
+        from collections import Counter
+        print("wrote %s: %d of %d members kept; %s" % (a.name, len(out["members"]), len(src["members"]),
+              ", ".join("%s x%d" % kv for kv in Counter(m["name"] for m in out["members"]).most_common())))
+        return 0
     if a.cmd == "walk-selftest":
         print("Walkability checker on synthetic terrain with known answers:")
         fails = walk.selftest()

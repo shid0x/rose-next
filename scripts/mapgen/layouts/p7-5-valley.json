@@ -2,11 +2,13 @@
  "layout": 1,
  "description": "A 4x4 Junon grassland valley ringed by cliffs, rising gently from south to north. A lake fills the low south-west corner, with a rocky west bank and gentle shores elsewhere. A village of five houses sits on a broad hill north-east of the centre, overlooking the lake. Dense forest runs along the north edge and thins out toward the south. The north-west is rocky ground with boulders and few trees. The centre and east are open meadow. A farm lies in the south-east, where the player starts. A dirt road runs from the farm up the hill to the village, and a path continues west from the village down to a hut on the lake's north shore.",
  "notes": [
-  "Village of five houses: adventurer_village, lifted from Adventurer's Plain (five small houses plus one larger, crates and barrels).",
+  "Village of five houses: the cluster from Adventurer's Plain (five small houses plus one larger, crates and barrels).",
   "Farm: breezy_farm; its path leaves through the archway (farmgate).",
   "Hut: beach_hut, a single Sunshine Coast hut, on the lake's north shore.",
   "'Thins out toward the south': the forest covers the north half, fading to 30% of its strength at its southern end.",
-  "Later cover areas override earlier ones: rocky north-west over the forest, meadows over the rest."
+  "Later cover areas override earlier ones: rocky north-west over the forest, meadows over the rest.",
+  "Phase 7b: the five-house village is adventurer_houses, the dry-ground variant of Adventurer's Plain's stilt village (same houses, no decks), since it stands on a hill.",
+  "Phase 7b: low cliffs (25 m) with a boulder rim around an organic play area (the defaults)."
  ],
  "name": "Mapgen Valley",
  "folder": "MAPGEN06",
@@ -15,30 +17,83 @@
  "terrain": {
   "character": "gentle",
   "border": "cliffs",
-  "tilt": {"toward": "north", "rise": "gentle"},
+  "tilt": {
+   "toward": "north",
+   "rise": "gentle"
+  },
   "features": [
-   {"name": "hill", "kind": "broad hill", "where": "north-east of centre", "size": "medium", "height": "medium"}
+   {
+    "name": "hill",
+    "kind": "broad hill",
+    "where": "north-east of centre",
+    "size": "medium",
+    "height": "medium"
+   }
   ]
  },
  "water": {
   "lakes": [
-   {"name": "lake", "where": "south-west", "size": "medium", "banks": {"west": "rocky"}}
+   {
+    "name": "lake",
+    "where": "south-west",
+    "size": "medium",
+    "banks": {
+     "west": "rocky"
+    }
+   }
   ]
  },
  "villages": [
-  {"name": "village", "prefab": "adventurer_village", "on": "hill"},
-  {"name": "farm", "prefab": "breezy_farm", "where": "south-east", "entrance": "farmgate"},
-  {"name": "hut", "prefab": "beach_hut", "where": "lake north shore"}
+  {
+   "name": "village",
+   "prefab": "adventurer_houses",
+   "on": "hill"
+  },
+  {
+   "name": "farm",
+   "prefab": "breezy_farm",
+   "where": "south-east",
+   "entrance": "farmgate"
+  },
+  {
+   "name": "hut",
+   "prefab": "beach_hut",
+   "where": "lake north shore"
+  }
  ],
  "roads": [
-  {"from": "farm", "to": "village", "style": "road"},
-  {"from": "village", "to": "hut", "style": "path"}
+  {
+   "from": "farm",
+   "to": "village",
+   "style": "road"
+  },
+  {
+   "from": "village",
+   "to": "hut",
+   "style": "path"
+  }
  ],
- "start": {"near": "farm"},
+ "start": {
+  "near": "farm"
+ },
  "cover": [
-  {"where": "north half", "is": "forest", "density": "dense", "fade": "toward south"},
-  {"where": "north-west", "is": "rocky"},
-  {"where": "centre", "is": "meadow"},
-  {"where": "east", "is": "meadow"}
+  {
+   "where": "north half",
+   "is": "forest",
+   "density": "dense",
+   "fade": "toward south"
+  },
+  {
+   "where": "north-west",
+   "is": "rocky"
+  },
+  {
+   "where": "centre",
+   "is": "meadow"
+  },
+  {
+   "where": "east",
+   "is": "meadow"
+  }
  ]
 }
