@@ -573,6 +573,9 @@ Description → spec → zone.
 
 Baked terrain lightmap, generated `.MOV`, minimap.
 
+Lightmaps (user, 2026-10-02): either the user gets an existing baking
+script shared by someone, or we write our own later. Ask before starting.
+
 - **Check:** visual comparison with a retail zone.
 - **Status:** NOT STARTED.
 
