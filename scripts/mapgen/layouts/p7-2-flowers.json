@@ -1,0 +1,26 @@
+{
+ "layout": 1,
+ "description": "A flower field along water, surrounded by mountains to the north west and north east",
+ "notes": [
+  "'Along water': a shoreline along the south edge (20% of the map is sea); the flower field runs along it across the south half.",
+  "Mountains: two large, high massifs in the north-west and north-east, too steep to climb, like the border cliffs.",
+  "No village, no road: the description asks for none."
+ ],
+ "name": "Mapgen Flowers",
+ "folder": "MAPGEN03",
+ "size": "4x4",
+ "seed": 7002,
+ "terrain": {
+  "character": "gentle",
+  "border": "cliffs",
+  "features": [
+   {"name": "nw_peaks", "kind": "mountains", "where": "north-west", "size": "large", "height": "high"},
+   {"name": "ne_peaks", "kind": "mountains", "where": "north-east", "size": "large", "height": "high"}
+  ]
+ },
+ "water": {"sea": {"edge": "south", "share": 0.2}},
+ "cover": [
+  {"where": "south half", "is": "flowers", "density": "dense"},
+  {"where": "north half", "is": "meadow"}
+ ]
+}

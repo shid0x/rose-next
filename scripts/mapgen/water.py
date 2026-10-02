@@ -45,13 +45,16 @@ CELL_VERTS = int(CELL_CM / terrain.GRID_CM)   # 8 vertices per 20 m cell
 ORIGIN_CM = 520000                  # zone-relative origin of IFO/ZON coordinates
 
 
-def pick_centre(field, radius_m, border_m, ring_m=25.0, avoid=None):
+def pick_centre(field, radius_m, border_m, ring_m=25.0, avoid=None, allow=None, target=None,
+                target_cm_per_m=3.0):
     """The flattest low site for a lake: the smallest height range within
     radius + ring of the centre, ties broken by lower ground.
 
     Choosing the merely lowest spot put the first lake at the foot of 30-40 m
     hills, and shaping its shore carved a crater over a quarter of the map.
-    Searched on the 10 m corner lattice; returns a vertex (row, col).
+    Searched on the 10 m corner lattice; returns a vertex (row, col). With
+    `allow` (vertex mask) the centre must lie in it; with `target` (vertex),
+    each metre away from it costs `target_cm_per_m` of height range.
     """
     lat = field[::4, ::4]
     rows, cols = lat.shape
@@ -62,8 +65,12 @@ def pick_centre(field, radius_m, border_m, ring_m=25.0, avoid=None):
         for c in range(pad, cols - pad):
             if avoid is not None and avoid[r * 4, c * 4]:
                 continue
+            if allow is not None and not allow[r * 4, c * 4]:
+                continue
             w = lat[max(0, r - win):r + win + 1, max(0, c - win):c + win + 1]
             score = (float(w.max() - w.min()) + 0.05 * float(w.mean())) / 100.0
+            if target is not None:
+                score += target_cm_per_m * math.hypot(r * 4 - target[0], c * 4 - target[1])                     * terrain.GRID_CM / 100 / 100.0
             if best_score is None or score < best_score:
                 best, best_score = (r * 4, c * 4), score
     if best is None:
@@ -129,6 +136,71 @@ def lake_mask(field, level, centre):
                 mask[rr, cc] = True
                 stack.append((rr, cc))
     return mask
+
+
+def components(mask):
+    """4-connected components of a vertex mask: list of index arrays (rows, cols)."""
+    seen = np.zeros_like(mask, bool)
+    rows, cols = mask.shape
+    out = []
+    for r0, c0 in zip(*np.nonzero(mask)):
+        if seen[r0, c0]:
+            continue
+        stack, comp = [(r0, c0)], []
+        seen[r0, c0] = True
+        while stack:
+            r, c = stack.pop()
+            comp.append((r, c))
+            for rr, cc in ((r + 1, c), (r - 1, c), (r, c + 1), (r, c - 1)):
+                if 0 <= rr < rows and 0 <= cc < cols and mask[rr, cc] and not seen[rr, cc]:
+                    seen[rr, cc] = True
+                    stack.append((rr, cc))
+        a = np.array(comp)
+        out.append((a[:, 0], a[:, 1]))
+    return out
+
+
+def flood(field, region, fraction=None, level=None, min_depth_cm=80.0, min_m2=1200.0, fill_above_cm=20.0):
+    """Water by level instead of by carving: everything below one level is
+    water ("half the map is water", a coast below a tilted land).
+
+    The level is the one that puts `fraction` of the `region` vertices under
+    water (bisection; filling changes the share), or `level` as given.
+    Basins shallower than `min_depth_cm` or smaller than `min_m2` are filled
+    to `fill_above_cm` over the level instead: puddles read as mistakes, and
+    a basin with no point 50 cm deep breaks the waterline check's seeding.
+    Returns (field, level, [{"centre", "mask"}] per kept basin).
+    """
+    vert_m2 = (terrain.GRID_CM / 100.0) ** 2
+
+    def apply(L):
+        f = field.copy()
+        kept = []
+        for rr, cc in components(field < L):
+            depth = L - float(field[rr, cc].min())
+            if depth < min_depth_cm or len(rr) * vert_m2 < min_m2:
+                f[rr, cc] = L + fill_above_cm
+                continue
+            m = np.zeros(field.shape, bool)
+            m[rr, cc] = True
+            i = int(np.argmin(field[rr, cc]))
+            kept.append({"centre": (int(rr[i]), int(cc[i])), "mask": m})
+        return f, kept
+
+    if level is None:
+        vals = np.sort(field[region])
+        lo, hi = float(vals[0]), float(vals[-1])
+        for _ in range(18):                            # ~0.01% of the height range
+            mid = (lo + hi) / 2.0
+            f, kept = apply(mid)
+            wet = sum(int(k["mask"][region].sum()) for k in kept) / float(region.sum())
+            if wet < fraction:
+                lo = mid
+            else:
+                hi = mid
+        level = float(np.floor(hi))
+    f, kept = apply(level)
+    return np.round(f.astype("<f4"), 1).astype("<f4"), level, kept
 
 
 def rects_for(mask, level, x0, y0, chunks_x, chunks_y):

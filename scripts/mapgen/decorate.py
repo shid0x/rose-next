@@ -74,11 +74,15 @@ def _sample(qs, rng, default):
     return float(rng.uniform(qs[1], qs[3])) if qs else default
 
 
-def place(field, lattice, x0, y0, cat, cfg, seed, avoid_vertices, path_corners, start_vertex):
+def place(field, lattice, x0, y0, cat, cfg, seed, avoid_vertices, path_corners, start_vertex,
+          area_mult=None, kind_of=None):
     """Return (records by chunk slot, placed list).
 
     avoid_vertices: vertex mask where nothing may stand (water + margin).
     path_corners: lattice mask of path corners. start_vertex: (row, col).
+    area_mult: {kind: lattice-shaped multiplier} from the layout's cover
+    areas (forest = more TREE there); kind_of(object) names an object's
+    kind (catalogue category, or a finer one such as FLOWER).
     """
     rng = np.random.default_rng(seed)
     objs = eligible(cat, cfg)
@@ -89,6 +93,12 @@ def place(field, lattice, x0, y0, cat, cfg, seed, avoid_vertices, path_corners, 
     cluster = terrain.fbm((rows, cols), cfg.get("cluster_wavelength_m", 80.0) / 4.0, 3, 0.5, rng)
     cluster = np.clip(1.0 + cfg.get("cluster_strength", 0.8) * cluster / max(1e-6, np.abs(cluster).max()), 0.0, None)
     mult = cfg.get("density", 1.0)
+    kmult = np.ones((len(objs), rows, cols))
+    if area_mult:
+        for i, o in enumerate(objs):
+            m = area_mult.get(kind_of(o) if kind_of else o["category"])
+            if m is not None:
+                kmult[i] = m
 
     grid_cm = terrain.GRID_CM
     W, H = (cols - 1) * 4 * grid_cm, (rows - 1) * 4 * grid_cm         # map size, cm
@@ -121,7 +131,7 @@ def place(field, lattice, x0, y0, cat, cfg, seed, avoid_vertices, path_corners, 
     for r in range(rows - 1):
         for c in range(cols - 1):
             b, k = bands[r, c], lattice[r, c]
-            lam_o = dens[:, b, k] * cluster[r, c] * mult
+            lam_o = dens[:, b, k] * cluster[r, c] * mult * kmult[:, r, c]
             lam = float(lam_o.sum())
             if lam <= 0:
                 continue

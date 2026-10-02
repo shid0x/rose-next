@@ -1,0 +1,23 @@
+{
+ "layout": 1,
+ "description": "A small coastal village",
+ "notes": [
+  "'Small' read as the village, not the map: a 4x4 map with one fishing hamlet.",
+  "Hamlet: sunshine_cove (two Sunshine Coast beach houses, three boats, barrels, a whale bone).",
+  "Coast: the sea fills the south (30% of the map); the land rises from it to cliffs on the other three sides.",
+  "The player starts at the hamlet."
+ ],
+ "name": "Mapgen Coast",
+ "folder": "MAPGEN02",
+ "size": "4x4",
+ "seed": 7001,
+ "terrain": {"character": "gentle", "border": "cliffs"},
+ "water": {"sea": {"edge": "south", "share": 0.3}},
+ "villages": [
+  {"name": "hamlet", "prefab": "sunshine_cove", "where": "near sea"}
+ ],
+ "start": {"near": "hamlet"},
+ "cover": [
+  {"where": "near sea", "is": "meadow", "density": "light"}
+ ]
+}

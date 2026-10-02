@@ -1,0 +1,204 @@
+{
+ "_comment": "Retail JG zones measured by `mapgen-zone.py profiles` for layout files' \"like\". character = the layout terrain character whose generated median slope is closest; density_vs_jg = per-hectare density over all JG zones together.",
+ "character_median_slope_deg": {
+  "flat": 1.69,
+  "gentle": 5.28,
+  "rolling": 12.61,
+  "hilly": 27.45,
+  "rugged": 27.94
+ },
+ "jg_per_ha": {
+  "TREE": 4.86,
+  "STONE": 2.069,
+  "GRASS": 11.856,
+  "FLOWER": 7.275,
+  "PLANT": 0.721,
+  "MUSHROOM": 0.227
+ },
+ "zones": {
+  "JG01": {
+   "zone_row": 22,
+   "name": "Adventurer's Plain",
+   "median_slope_deg": 22.01,
+   "character": "hilly",
+   "water_share": 0.373,
+   "per_ha": {
+    "TREE": 5.48,
+    "STONE": 2.65,
+    "GRASS": 15.99,
+    "FLOWER": 4.22,
+    "PLANT": 1.7,
+    "MUSHROOM": 0.31
+   },
+   "density_vs_jg": {
+    "TREE": 1.128,
+    "STONE": 1.281,
+    "GRASS": 1.349,
+    "FLOWER": 0.58,
+    "PLANT": 2.358,
+    "MUSHROOM": 1.364
+   }
+  },
+  "JG02": {
+   "zone_row": 23,
+   "name": "Breezy Hills",
+   "median_slope_deg": 14.99,
+   "character": "rolling",
+   "water_share": 0.208,
+   "per_ha": {
+    "TREE": 6.51,
+    "STONE": 2.3,
+    "GRASS": 17.01,
+    "FLOWER": 5.46,
+    "PLANT": 0.0,
+    "MUSHROOM": 0.0
+   },
+   "density_vs_jg": {
+    "TREE": 1.34,
+    "STONE": 1.111,
+    "GRASS": 1.435,
+    "FLOWER": 0.751,
+    "PLANT": 0.0,
+    "MUSHROOM": 0.0
+   }
+  },
+  "JG03": {
+   "zone_row": 25,
+   "name": "Anima Lake",
+   "median_slope_deg": 12.82,
+   "character": "rolling",
+   "water_share": 0.138,
+   "per_ha": {
+    "TREE": 3.03,
+    "STONE": 1.91,
+    "GRASS": 9.21,
+    "FLOWER": 6.25,
+    "PLANT": 2.9,
+    "MUSHROOM": 0.0
+   },
+   "density_vs_jg": {
+    "TREE": 0.623,
+    "STONE": 0.923,
+    "GRASS": 0.777,
+    "FLOWER": 0.859,
+    "PLANT": 4.022,
+    "MUSHROOM": 0.0
+   }
+  },
+  "JG04": {
+   "zone_row": 26,
+   "name": "Forest of Wisdom",
+   "median_slope_deg": 13.83,
+   "character": "rolling",
+   "water_share": 0.082,
+   "per_ha": {
+    "TREE": 5.75,
+    "STONE": 2.66,
+    "GRASS": 13.8,
+    "FLOWER": 11.16,
+    "PLANT": 0.0,
+    "MUSHROOM": 1.03
+   },
+   "density_vs_jg": {
+    "TREE": 1.183,
+    "STONE": 1.285,
+    "GRASS": 1.164,
+    "FLOWER": 1.534,
+    "PLANT": 0.0,
+    "MUSHROOM": 4.533
+   }
+  },
+  "JG05": {
+   "zone_row": 27,
+   "name": "Kenji Beach",
+   "median_slope_deg": 11.0,
+   "character": "rolling",
+   "water_share": 0.415,
+   "per_ha": {
+    "TREE": 3.56,
+    "STONE": 1.59,
+    "GRASS": 8.88,
+    "FLOWER": 11.6,
+    "PLANT": 0.0,
+    "MUSHROOM": 0.0
+   },
+   "density_vs_jg": {
+    "TREE": 0.733,
+    "STONE": 0.768,
+    "GRASS": 0.749,
+    "FLOWER": 1.595,
+    "PLANT": 0.0,
+    "MUSHROOM": 0.0
+   }
+  },
+  "JG06": {
+   "zone_row": 3,
+   "name": "Dolphin Island",
+   "median_slope_deg": 22.96,
+   "character": "hilly",
+   "water_share": 0.754,
+   "per_ha": {
+    "TREE": 8.44,
+    "STONE": 0.11,
+    "GRASS": 5.33,
+    "FLOWER": 0.0,
+    "PLANT": 0.0,
+    "MUSHROOM": 0.0
+   },
+   "density_vs_jg": {
+    "TREE": 1.737,
+    "STONE": 0.053,
+    "GRASS": 0.45,
+    "FLOWER": 0.0,
+    "PLANT": 0.0,
+    "MUSHROOM": 0.0
+   }
+  },
+  "JG07": {
+   "zone_row": 20,
+   "name": "Birth Island",
+   "median_slope_deg": 17.58,
+   "character": "rolling",
+   "water_share": 0.754,
+   "per_ha": {
+    "TREE": 5.61,
+    "STONE": 3.52,
+    "GRASS": 10.49,
+    "FLOWER": 14.71,
+    "PLANT": 0.0,
+    "MUSHROOM": 0.0
+   },
+   "density_vs_jg": {
+    "TREE": 1.154,
+    "STONE": 1.701,
+    "GRASS": 0.885,
+    "FLOWER": 2.022,
+    "PLANT": 0.0,
+    "MUSHROOM": 0.0
+   }
+  },
+  "JG08": {
+   "zone_row": 11,
+   "name": "Junon Clan Field",
+   "median_slope_deg": 9.38,
+   "character": "rolling",
+   "water_share": 0.728,
+   "per_ha": {
+    "TREE": 2.54,
+    "STONE": 0.67,
+    "GRASS": 9.96,
+    "FLOWER": 0.0,
+    "PLANT": 0.0,
+    "MUSHROOM": 0.0
+   },
+   "density_vs_jg": {
+    "TREE": 0.523,
+    "STONE": 0.324,
+    "GRASS": 0.84,
+    "FLOWER": 0.0,
+    "PLANT": 0.0,
+    "MUSHROOM": 0.0
+   }
+  }
+ }
+}

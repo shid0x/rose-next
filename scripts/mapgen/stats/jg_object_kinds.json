@@ -1,0 +1,16 @@
+{
+ "_comment": "Finer kinds for LIST_DECO_JG objects than the editor's source folders, so a layout can ask for 'flowers' rather than 'grass'. Classified by eye from each object's textures (2026-10-02, phase 7): the GRASS folder holds flowers, mushrooms, grass tufts and leafy plants under names like grass001..grass026 that say nothing. Objects not listed keep their catalogue category (TREE, STONE, GRASS, VILLAGE, ETC).",
+ "zone_type": "JG",
+ "kinds": {
+  "FLOWER": [114, 133, 134, 135, 136, 137, 138, 139],
+  "MUSHROOM": [115, 116],
+  "PLANT": [120, 121],
+  "GRASS": [117, 118, 119, 122, 123, 124, 131, 132]
+ },
+ "_kinds": {
+  "FLOWER": "sunflower 114/133, geranium 134/138, gerbera 135, black-eyed susan 136/139, daisy 137",
+  "MUSHROOM": "the orange spotted mushrooms",
+  "PLANT": "broad-leaf ground plants",
+  "GRASS": "grass tufts and foxtail"
+ }
+}

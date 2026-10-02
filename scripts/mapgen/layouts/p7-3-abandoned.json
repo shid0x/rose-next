@@ -1,0 +1,24 @@
+{
+ "layout": 1,
+ "description": "An abandoned city, jagged terrain.",
+ "notes": [
+  "UNSUPPORTED: 'city'. The Junon grassland set has no city buildings, walls, gates or ruins, and no lifted prefab is bigger than a hamlet. Closest possible: three village clusters scattered over the map.",
+  "UNSUPPORTED: 'abandoned' as broken or ruined buildings: every Junon building model is intact. Expressed instead as no roads between the clusters and overgrown ground around and between them.",
+  "Jagged terrain: the 'rugged' character (short, high hills; play slopes up to 45 degrees).",
+  "A real abandoned city needs another tileset's buildings and ruins: see PLAN.md, Beyond v1."
+ ],
+ "name": "Mapgen Ruins",
+ "folder": "MAPGEN04",
+ "size": "4x4",
+ "seed": 7003,
+ "terrain": {"character": "rugged", "border": "cliffs"},
+ "villages": [
+  {"name": "quarter_a", "prefab": "adventurer_village", "where": "north-west", "connect": false},
+  {"name": "quarter_b", "prefab": "kenji_houses", "where": "east", "connect": false},
+  {"name": "quarter_c", "prefab": "anima_camp", "where": "south-west", "connect": false}
+ ],
+ "start": {"where": "centre"},
+ "cover": [
+  {"where": "everywhere", "is": "overgrown", "density": "dense"}
+ ]
+}

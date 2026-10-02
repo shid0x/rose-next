@@ -89,20 +89,71 @@ def slope_cap(h, max_slope_deg):
     return _cone_1d(out, step, 0)
 
 
-def ridge(shape, height_cm, width_m):
-    """Border rise: 0 inside, `height_cm` at the edge, smoothstep over `width_m`.
-    The peak slope is 1.5 * height / width (smoothstep's derivative)."""
+EDGES = ("north", "south", "east", "west")
+
+
+def edge_distance(shape, edges=EDGES):
+    """Distance in vertices to the nearest of the given map edges."""
     h, w = shape
+    yy = np.arange(h)[:, None] + np.zeros((1, w))
+    xx = np.arange(w)[None, :] + np.zeros((h, 1))
+    d = np.full(shape, np.inf)
+    for e, v in (("south", yy), ("north", h - 1 - yy), ("west", xx), ("east", w - 1 - xx)):
+        if e in edges:
+            d = np.minimum(d, v)
+    return d
+
+
+def ridge(shape, height_cm, width_m, edges=EDGES):
+    """Border rise along the given edges: 0 inside, `height_cm` at the edge,
+    smoothstep over `width_m`. The peak slope is 1.5 * height / width
+    (smoothstep's derivative). A coast leaves its sea edge out."""
     wv = width_m * 100.0 / GRID_CM
-    yy = np.arange(h)[:, None]
-    xx = np.arange(w)[None, :]
-    d = np.minimum(np.minimum(xx, w - 1 - xx), np.minimum(yy, h - 1 - yy)).astype(float)
-    t = np.clip(1.0 - d / wv, 0.0, 1.0)
+    t = np.clip(1.0 - edge_distance(shape, edges) / wv, 0.0, 1.0)
     return height_cm * t * t * (3 - 2 * t)
 
 
-def generate(chunks_x, chunks_y, t, seed):
-    """Global heightfield (row 0 = south) from the spec's "terrain" section."""
+def direction(name):
+    """Unit (dx east, dy north) for a compass name: north, south-east, ..."""
+    v = {"north": (0, 1), "south": (0, -1), "east": (1, 0), "west": (-1, 0)}
+    dx = sum(v[p][0] for p in name.split("-"))
+    dy = sum(v[p][1] for p in name.split("-"))
+    n = math.hypot(dx, dy)
+    return dx / n, dy / n
+
+
+def tilt(shape, rise_cm, toward):
+    """A plane rising by `rise_cm` across the map toward a compass direction."""
+    h, w = shape
+    dx, dy = direction(toward)
+    yy, xx = np.mgrid[0:h, 0:w]
+    u = (xx / (w - 1) - 0.5) * dx + (yy / (h - 1) - 0.5) * dy        # -0.5..0.5 on an axis
+    span = abs(dx) * 0.5 + abs(dy) * 0.5
+    return rise_cm * (u / (2 * span) + 0.5)
+
+
+def bump(shape, centre, radius_m, height_cm, top_m=0.0, rng=None, roughness=0.0):
+    """A rise of `height_cm` around `centre` (vertex row, col): flat within
+    `top_m`, falling to 0 at `radius_m` along a smoothstep. With `roughness`,
+    fractal noise scales it (mountains), so peaks are not perfect domes."""
+    h, w = shape
+    yy, xx = np.mgrid[0:h, 0:w]
+    d = np.hypot(yy - centre[0], xx - centre[1]) * GRID_CM / 100.0
+    t = np.clip((radius_m - d) / max(1e-6, radius_m - top_m), 0.0, 1.0)
+    out = height_cm * t * t * (3 - 2 * t)
+    if roughness and rng is not None:
+        out *= 1.0 + roughness * fbm(shape, max(30.0, radius_m / 2.0), 3, 0.5, rng)
+    return out
+
+
+def generate(chunks_x, chunks_y, t, seed, features=()):
+    """Global heightfield (row 0 = south) from the spec's "terrain" section.
+
+    `features` are resolved terrain features: dicts with "kind" ("hill":
+    walkable, added before the slope cap; "mountains": scenery, added after
+    it like the ridge, so their flanks can be too steep to climb), "centre"
+    (vertex), "radius_m", "height_cm", "top_m", "roughness".
+    """
     shape = field_shape(chunks_x, chunks_y)
     rng = np.random.default_rng(seed)
     hills = t.get("hills", {})
@@ -111,11 +162,23 @@ def generate(chunks_x, chunks_y, t, seed):
         field += hills["amplitude_cm"] * fbm(shape, hills.get("wavelength_m", 200.0),
                                              hills.get("octaves", 4),
                                              hills.get("persistence", 0.45), rng)
+    tl = t.get("tilt")
+    if tl and tl.get("rise_cm"):
+        field += tilt(shape, tl["rise_cm"], tl["toward"])
+    frng = np.random.default_rng(seed + 50)
+    for f in features:
+        if f["kind"] == "hill":
+            field += bump(shape, f["centre"], f["radius_m"], f["height_cm"], f.get("top_m", 0.0),
+                          frng, f.get("roughness", 0.0))
     if "max_play_slope_deg" in t:
         field = slope_cap(field, t["max_play_slope_deg"])
+    for f in features:
+        if f["kind"] == "mountains":
+            field = field + bump(shape, f["centre"], f["radius_m"], f["height_cm"], f.get("top_m", 0.0),
+                                 frng, f.get("roughness", 0.3))
     r = t.get("ridge")
     if r and r.get("height_cm", 0):
-        field = field + ridge(shape, r["height_cm"], r.get("width_m", 40.0))
+        field = field + ridge(shape, r["height_cm"], r.get("width_m", 40.0), tuple(r.get("edges", EDGES)))
     return np.round(field.astype("<f4"), 1).astype("<f4")   # 1 mm steps: stable bytes
 
 
@@ -135,14 +198,14 @@ def gradient(field):
     return gx, gy
 
 
-def pick_start(field, max_slope_deg=10.0, radius_cells=2, avoid=None):
-    """The vertex nearest the field's centre whose surrounding cells are all
-    gentler than `max_slope_deg` and not in `avoid` (a vertex mask, e.g.
-    water and its shore). Returns (row, col) of a vertex."""
+def pick_start(field, max_slope_deg=10.0, radius_cells=2, avoid=None, target=None):
+    """The vertex nearest `target` (default: the field's centre) whose
+    surrounding cells are all gentler than `max_slope_deg` and not in `avoid`
+    (a vertex mask, e.g. water and its shore). Returns (row, col) of a vertex."""
     gx, gy = gradient(field)
     steep = np.hypot(gx, gy) > math.tan(math.radians(max_slope_deg))
     h, w = field.shape
-    cy, cx = (h - 1) / 2.0, (w - 1) / 2.0
+    cy, cx = ((h - 1) / 2.0, (w - 1) / 2.0) if target is None else target
     best, best_d = None, None
     for r in range(radius_cells, h - 1 - radius_cells):
         for c in range(radius_cells, w - 1 - radius_cells):

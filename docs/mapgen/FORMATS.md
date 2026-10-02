@@ -608,6 +608,17 @@ Collision has no file of its own:
   - col 0 = name in UTF-8 Korean;
   - col 1 = source path, whose folder is the category (TREE, STONE, GRASS,
     VILLAGE, ETC, SPECIAL).
+  - **The GRASS folder is not all grass** (phase 7, classified by eye from
+    the textures): flowers (114, 133-139), mushrooms (115, 116), leafy
+    plants (120, 121) and grass tufts / foxtail (117-119, 122-124, 131,
+    132), all named `grassNNN`. `scripts/mapgen/stats/jg_object_kinds.json`
+    holds the split.
+- Each ZSC part stores a material index into the file's material list,
+  whose entries begin with the texture path (`catalogue.read_zsc` keeps it
+  as the part's `texture`).
+- Lifted village paint can be water paint: Adventurer's Plain's harbour
+  village and Kenji Beach's houses stand on seabed (7) and sand (6)
+  brushes in retail.
 - Terrain collides through the heightfield (`src/client/cobjchar_collision.cpp`).
 
 ## Not verified

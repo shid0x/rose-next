@@ -184,10 +184,15 @@ def blocking_radius_of(member):
     return catalogue.blocking_radius(member["collision_profile"], member["scale"][0], member["above_ground_cm"])
 
 
-def pick_site(field, pad_m, skirt_m, avoid, border_m, taken=()):
+def pick_site(field, pad_m, skirt_m, avoid, border_m, taken=(), allow=None, target=None, target_cm_per_m=3.0,
+              avoid_reach_m=None):
     """Corner-aligned centre vertex for a prefab: the lowest ground relief
     within pad + skirt, clear of `avoid` (vertex mask) and of `taken`
-    (earlier sites as (row, col, reach_m)), inside `border_m`."""
+    (earlier sites as (row, col, reach_m)), inside `border_m`. With `allow`
+    (vertex mask) the centre must lie in it; with `target` (vertex), each
+    metre away from it costs `target_cm_per_m` of relief. `avoid_reach_m`
+    (default: pad + skirt) is how far from the centre `avoid` must be clear:
+    a village by the water keeps only its pad off the shore."""
     reach = (pad_m + skirt_m) * 100 / terrain.GRID_CM
     pad = int(math.ceil(reach + border_m * 100 / terrain.GRID_CM))
     rows, cols = field.shape
@@ -195,6 +200,8 @@ def pick_site(field, pad_m, skirt_m, avoid, border_m, taken=()):
     step = 4                                          # tile corners: brushes stay aligned
     for r in range(pad - pad % step, rows - pad, step):
         for c in range(pad - pad % step, cols - pad, step):
+            if allow is not None and not allow[r, c]:
+                continue
             if any(math.hypot(r - tr, c - tc) * terrain.GRID_CM / 100 < reach * terrain.GRID_CM / 100 + tm
                    for tr, tc, tm in taken):
                 continue
@@ -202,10 +209,18 @@ def pick_site(field, pad_m, skirt_m, avoid, border_m, taken=()):
             win = field[r - k:r + k + 1:2, c - k:c + k + 1:2]
             yy, xx = np.mgrid[-k:k + 1:2, -k:k + 1:2]
             disc = np.hypot(yy, xx) <= reach
-            if avoid[r - k:r + k + 1:2, c - k:c + k + 1:2][disc].any():
-                continue
+            if avoid_reach_m is None:
+                if avoid[r - k:r + k + 1:2, c - k:c + k + 1:2][disc].any():
+                    continue
+            else:
+                ka = int(avoid_reach_m * 100 / terrain.GRID_CM)
+                yy2, xx2 = np.mgrid[-ka:ka + 1, -ka:ka + 1]
+                if avoid[r - ka:r + ka + 1, c - ka:c + ka + 1][np.hypot(yy2, xx2) <= ka].any():
+                    continue
             vals = win[disc]
             score = float(vals.max() - vals.min())
+            if target is not None:
+                score += target_cm_per_m * math.hypot(r - target[0], c - target[1]) * terrain.GRID_CM / 100
             if best_score is None or score < best_score:
                 best, best_score = (r, c), score
     if best is None:
@@ -213,14 +228,17 @@ def pick_site(field, pad_m, skirt_m, avoid, border_m, taken=()):
     return best
 
 
-def flatten(field, centre, pad_m, skirt_m):
-    """Ground inside pad_m set to one height (the mean there), blended back to
-    the original over skirt_m with a smoothstep. Returns (field, pad height)."""
+def flatten(field, centre, pad_m, skirt_m, min_height=None):
+    """Ground inside pad_m set to one height (the mean there, at least
+    `min_height`: a pad by the water stays dry), blended back to the
+    original over skirt_m with a smoothstep. Returns (field, pad height)."""
     rows, cols = field.shape
     yy, xx = np.mgrid[0:rows, 0:cols]
     d = np.hypot(yy - centre[0], xx - centre[1]) * terrain.GRID_CM / 100.0
     inside = d <= pad_m
     pad = float(np.round(field[inside].mean(), 1))
+    if min_height is not None:
+        pad = max(pad, float(np.round(min_height, 1)))
     t = np.clip((d - pad_m) / max(1e-6, skirt_m), 0.0, 1.0)
     w = 1.0 - t * t * (3 - 2 * t)
     out = field + (pad - field) * w
@@ -242,6 +260,22 @@ def instantiate(pf, centre, pad_height):
     cr, cc = centre[0] // 4, centre[1] // 4
     brushes = [(cr + dr, cc + dc, b) for dr, dc, b in pf["brushes"]]
     return placed, brushes
+
+
+def wall_extent_m(pf, footprints, cells_shape):
+    """How far (m) from the prefab centre any member's walls reach: the pad
+    must cover them all, or a wide member (Adventurer's Plain's wooden
+    platforms) stands half on the skirt slope."""
+    g = terrain.GRID_CM
+    centre = (cells_shape[0] // 2 // 4 * 4, cells_shape[1] // 2 // 4 * 4)
+    placed, _ = instantiate(pf, centre, 0.0)
+    local = np.zeros(cells_shape, bool)
+    for q in placed:
+        footprints.mark(local, q)
+    rr, cc = np.nonzero(local)
+    if not len(rr):
+        return 0.0
+    return float(np.max(np.hypot((cc + 0.5) * g - centre[1] * g, (rr + 0.5) * g - centre[0] * g))) / 100.0
 
 
 def footprint_radius(footprints, q, cells_shape):
@@ -297,6 +331,28 @@ def openings(blocked, centre, pad_m, step_deg=1):
 def arc_middle(run):
     a, b = run
     return (a + ((b - a) % 360) / 2.0) % 360
+
+
+def arc_toward(arcs, bearing, min_width_deg=12, margin_deg=6):
+    """The bearing to leave by when a road heads toward `bearing`: inside the
+    open arc nearest that direction (at least `min_width_deg` wide), as
+    close to `bearing` as the arc allows. None if no arc is wide enough."""
+    best, best_d = None, None
+    for a, b in arcs:
+        width = (b - a) % 360 + 1
+        if width < min_width_deg:
+            continue
+        lo, hi = a + margin_deg, a + width - 1 - margin_deg      # unwrapped
+        if lo > hi:
+            lo = hi = a + (width - 1) / 2.0
+        x = (bearing - a) % 360 + a                               # bearing unwrapped into [a, a+360)
+        if lo <= x <= hi:
+            return bearing % 360
+        for edge in (lo, hi):
+            d = min(abs((bearing - edge) % 360), abs((edge - bearing) % 360))
+            if best_d is None or d < best_d:
+                best, best_d = edge % 360, d
+    return best
 
 
 def inner_route(blocked, centre, bearing_deg, pad_m):

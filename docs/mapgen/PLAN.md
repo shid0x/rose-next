@@ -29,7 +29,7 @@ Output: a complete zone folder plus the table rows that register it.
 | Decision | Choice | Why |
 |---|---|---|
 | Approach | Hybrid: a structured spec drives deterministic procedural code; parameters and village prefabs come from the original maps | 62 zones / 1,538 chunks is far too little to train a generative model, and tiles follow a deterministic autotile rule (nothing to learn). Statistics and lifted set-pieces are what the corpus can actually give. |
-| LLM step | **Spec file for now.** The LLM writes or helps write the spec; the tool never calls an API | Keeps every phase reproducible from a file; the API step is phase 7 at the earliest. |
+| LLM step | **The AI is Claude in the chat (Claude Code), never an API call** (user, 2026-10-02). The user describes a map; Claude writes the layout file and runs the tool | The user has a Claude subscription and will not pay for API use, and expects every user of the tool to be in the same case. Also keeps every build reproducible from a file. |
 | Biome for v1 | **Junon grassland only** (zone type 0, `Table_Tileset_JG.STB`) | Best-covered tileset: JG01-JG08 + JPVP04 + SUM_EVENT, 289 chunks, and the autotile rule held for 100% of their tiles (FORMATS.md, TIL). |
 | Lighting | **Flat-lit is acceptable for v1** | Object lightmaps cannot be baked by us yet; terrain falls back to `default_light.dds`. A terrain lightmap is optional phase 8. |
 | Language / home | **Python**, package `scripts/mapgen/` | The editor's C# classes convert units on load/save (positions `/100 + 5200`, heights `/100`) and `HIM.Save` replaces the stored height bounds, so they cannot round-trip byte-exactly without a rewrite. Our STB/STL/ZSC/mesh tooling, numpy and Pillow are already Python. The editor stays an *independent oracle* for loading. |
@@ -563,11 +563,124 @@ and joined by paths.
 
 ### Phase 7 — text input
 
-Description → spec → zone.
+Description → layout file → spec → zone. Design agreed with the user
+2026-10-02:
 
-- **Checks:** the same spec and seed give byte-identical files; five prompts
-  pass every validator unattended.
-- **Status:** NOT STARTED.
+- **The AI decides layout and intent only, never details.** Claude (in the
+  chat) turns the user's description into a short **layout file** in a
+  closed vocabulary (terrain flat / rolling / hilly; sizes small / medium /
+  large; cover forest / meadow / rocky / bare; places as compass areas,
+  "near X" or map fractions). Unknown words are rejected.
+- **A deterministic compiler** (Python, no AI) turns the layout into the full
+  spec, mapping each word to retail-calibrated numbers.
+- The existing generator and checks run unchanged. A failure is reported in
+  plain words ("no flat site for the farm near lake 1"); Claude adjusts the
+  layout or asks the user.
+- **Generator work it needs:** density per area (user chose this, "option
+  2", over one global knob); placing lakes / villages / start inside a named
+  area; roads between named features; optionally terrain character per
+  area; **intent checks** (the lake really is in the south-west, the forest
+  really is denser).
+- **Checks:** the same layout and seed give byte-identical files; five
+  descriptions **written by the user** pass every validator and intent check
+  with no hand fixes.
+- **Status:** INSTALLED 2026-10-02; all automated checks pass. Reviewed by
+  the user in the editor (2026-10-02): flower density right; three things
+  to improve, recorded in [DESIGN.md](DESIGN.md) (the new level-design
+  guide): stripes of mixed tiles on mountains (measured: patches too small
+  vs retail), harbour villages on stilts placed on dry land, and maps that
+  are all square where ROSE bends the play area. Not committed.
+  - **The user's five descriptions**, as layouts in
+    `scripts/mapgen/layouts/`, each installed as its own zone:
+
+    | # | Description (short) | Layout | Zone | Warp |
+    |---|---|---|---|---|
+    | 1 | a small coastal village | `p7-1-coastal.json` | 13 | `/mm 13 515 501` |
+    | 2 | flower field along water, mountains NW and NE | `p7-2-flowers.json` | 30 | `/mm 30 512 512` |
+    | 3 | an abandoned city, jagged terrain | `p7-3-abandoned.json` | 38 | `/mm 38 516 510` |
+    | 4 | like Adventure Plain but 50% water | `p7-4-adventure-water.json` | 39 | `/mm 39 531 520` |
+    | 5 | the detailed valley (lake, hill village, farm, roads, hut) | `p7-5-valley.json` | 40 | `/mm 40 530 498` |
+
+    Zone 12 still holds phase 6. Each layout's `notes` record what Claude
+    chose, substituted or could not do. **#3 is only partly possible:** the
+    Junon grassland set has no city buildings, walls or ruins, and every
+    building is intact, so "city" became three unconnected village clusters
+    on overgrown ground.
+  - **Every description passes, preview and verify from disk:** 51-68 checks
+    each, 0 failures, including its intent checks.
+  - **Also:** walk / tile selftests and the editor oracle pass; the
+    round-trip covers 9,617 files; the editor's readers load the new zones;
+    `fix-coplanar-object-overlaps.py` finds 0 pairs (now a `verify` check);
+    two builds of a layout are byte-identical; phase 5 and 6 specs build
+    unchanged (zone 12 still verifies).
+- **How to make a map from a description (for Claude):**
+  1. Read `scripts/mapgen/layout.py`'s docstring (the vocabulary) and the
+     prefab list (`scripts/mapgen/prefabs/`). Lift a new prefab with
+     `prefab-extract` if none fits (survey retail clusters first).
+  2. Write `scripts/mapgen/layouts/<name>.json`: the description verbatim,
+     `notes` for every choice or substitution, a new `folder` (MAPGENnn).
+  3. `mapgen-zone.py preview <layout>`: every check plus the intent checks
+     and a "placed:" list. Look at `build/mapgen/preview-<folder>-tiles.png`.
+     A failure comes back in plain words; change the layout (and say why in
+     `notes`), or fix the generator if the failure is the tool's.
+  4. `mapgen-zone.py install <layout>` picks a free zone row and verifies;
+     the user bakes (`scripts/pack.ps1`) and restarts the servers.
+  `mapgen-zone.py compile <layout>` shows the spec a layout becomes.
+- **How (the generator):**
+  - `scripts/mapgen/layout.py` compiles a layout to a spec. Words map to
+    numbers in its tables: terrain `CHARACTER` (flat … rugged), `RISE_CM`,
+    `FEATURE` (hill / broad hill / mountains), `LAKE` sizes, `COVER` (forest,
+    woods, meadow, flowers, rocky, bare, overgrown: per-kind multipliers and
+    brush biases), `DENSITY` (a power on the multipliers, so "dense meadow"
+    means even fewer trees). Places compile to `areas.py` descriptors. Each
+    claim also becomes an intent check, labelled with the layout's words.
+  - `scripts/mapgen/areas.py` resolves a place on the built map to a soft
+    weight per vertex, a target point and a radius; "near X" / "X north
+    shore" refer to features placed earlier in the build.
+  - New spec sections, all optional (phase 1-6 specs build unchanged):
+    `terrain.tilt`, `terrain.features` (hills before the slope cap,
+    mountains after it), `terrain.ridge.edges`, `water.flood` (one level for
+    a share of the map; puddles filled), lake `where` / `banks`, village
+    `where` / `on` / `near_water` / `pad_from_walls`, `roads`, `start`,
+    `cover`, `intent`, `decorate.kinds`.
+  - Build order (`params_from_spec`): terrain + features → lakes, flood →
+    villages → start → events → cover → paint (+ roads) → decoration →
+    records → coplanar separation.
+  - `mapgen-zone.py profiles` measures the retail JG zones (slope, water,
+    decoration per kind) into `stats/jg_zone_profiles.json`, for "like JG01".
+  - `stats/jg_object_kinds.json`: the GRASS folder split by eye from the
+    textures into flowers, mushrooms, grass tufts and leafy plants.
+- **Changes from the plan / decisions made:**
+  - **Villages by the water** (coast, lake shore) keep only their pad off the
+    water, sit 1.5 m above the waterline, and re-derive the water outlines
+    after flattening. Before this, every village kept pad + skirt + 15 m
+    from water, so "a coastal village" could not be placed.
+  - **Entrances and the start follow the paths.** A village with roads leaves
+    through the opening nearest its first road partner. One by the water
+    with no road leaves onto the largest stretch of ground a path can cross
+    ("away from the nearest water" points at more water on a peninsula).
+    "The player starts at X" puts the start inside village X, on its walk
+    route 10 m in from the entrance: flat, free of walls, on the path.
+  - **The flat pad is sized from the prefab's walls**, not its extraction
+    radius, and a hill a village sits on gets a top that size. Adventurer's
+    Plain's wooden platforms reached past the old pad onto the skirt slope.
+  - **Harbour prefabs inland are repainted:** sand / seabed → bright soil,
+    stream gravel → dark soil (`paint.inland_remap`). Adventurer's Plain and
+    Kenji Beach houses stood on seabed paint.
+  - **Coplanar faces are separated during the build** with
+    `fix-coplanar-object-overlaps.py`'s own solver: a prefab lifted from 5.8 m
+    of relief onto a flat pad brought two platforms' faces within 0.06 cm. A
+    hand nudge of one member just created a fight with another; the solver
+    plans them together.
+  - **"Rugged" was re-tuned:** at 55 m amplitude over 120 m the slope cap
+    rewrote 83% of the map into planar cone facets (it looked like
+    pyramids). Each character now keeps its noise mostly under its own cap
+    (rugged 15%, hilly 19%, rolling 0%).
+  - **Density intent is judged against the same ground's default:** the
+    catalogue's retail density for each tile's slope band and brush, with
+    2-sigma Poisson slack. Comparing with "the rest of the map" fails when
+    cover areas fill the map, and retail's flat average is unfair to steep
+    ground.
 
 ### Phase 8 — polish (optional)
 
@@ -578,6 +691,29 @@ script shared by someone, or we write our own later. Ask before starting.
 
 - **Check:** visual comparison with a retail zone.
 - **Status:** NOT STARTED.
+
+### Beyond v1 — level design (user, 2026-10-02)
+
+The user expects v1 not to give the best results as is: ROSE has big cities,
+countryside towns, green plains, canyons, forests, beaches, jungle and
+wastelands, and the tool needs a real grasp of level design for each.
+"Training" here cannot mean training a model (Claude is used through the
+chat). It means teaching the pipeline from the retail maps:
+
+- **Per-biome statistics and catalogues** (tileset, decoration, brush mix,
+  water habits) — the phase 3-5 measurements repeated per biome.
+- **New landform generators** that noise alone cannot make: canyons (carved
+  channels, terraces), coasts, plateaus, city grounds.
+- **More and larger prefabs**: city blocks, plazas, walls, gates, ruins.
+- **Retail maps described in the layout vocabulary** — worked examples
+  Claude reads before writing a layout, and a test of whether the
+  vocabulary can express real ROSE maps at all.
+- **A level-design guide** (`docs/mapgen/DESIGN.md`, to write): measured
+  patterns from retail (road widths, how towns sit against hills, where
+  forests stop) plus the user's review notes from each generated map.
+
+Phase 7 keeps to Junon grassland but shapes the layout vocabulary so these
+can be added without rewriting it.
 
 ## Change log
 
@@ -636,3 +772,13 @@ script shared by someone, or we write our own later. Ask before starting.
   automated checks pass; path re-test handed to the user.
 - 2026-10-02 — Entrance fix confirmed by the user in the editor; phase 6
   committed. Next: phase 7 (text → spec).
+- 2026-10-02 — Phase 7 design agreed: Claude in the chat is the AI (no
+  API); layout file in a closed vocabulary, compiled deterministically;
+  density per area. "Beyond v1 — level design" added for the user's
+  concern that every ROSE landscape type needs its own design knowledge.
+- 2026-10-02 — Phase 7 built: layout vocabulary + compiler, area resolver,
+  flood water, terrain features and tilt, cover areas, roads, start, intent
+  checks, retail zone profiles, two new prefabs (adventurer_village,
+  beach_hut). The user's five descriptions installed as zones 13, 30, 38,
+  39, 40; all checks pass; in-game review handed to the user. "City" and
+  "ruins" are not possible with the Junon grassland set.

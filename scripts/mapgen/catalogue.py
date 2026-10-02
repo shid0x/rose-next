@@ -49,8 +49,9 @@ def read_zsc(path):
         return s
 
     meshes = [cstr() for _ in range(take("<h"))]
-    for _ in range(take("<h")):                       # materials
-        cstr()
+    materials = []
+    for _ in range(take("<h")):                       # materials: texture path + flags
+        materials.append(cstr())
         p[0] += 9 * 2 + 4 + 2 + 12
     for _ in range(take("<h")):                       # effects
         cstr()
@@ -63,7 +64,8 @@ def read_zsc(path):
             for _ in range(n):
                 part = {"mesh": take("<h"), "pos": (0.0, 0.0, 0.0), "rot": (0.0, 0.0, 0.0, 1.0),
                         "scale": (1.0, 1.0, 1.0), "parent": -1, "collision": 0}
-                take("<h")                            # material
+                mat = take("<h")
+                part["texture"] = materials[mat] if 0 <= mat < len(materials) else ""
                 while True:
                     tag = take("<B")
                     if tag == 0:

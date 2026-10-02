@@ -130,7 +130,7 @@ def astar(cost, a, b):
     return path[::-1]
 
 
-def paint(field, ts, stats, cfg, seed, waypoints, forced=None, path_block=None):
+def paint(field, ts, stats, cfg, seed, waypoints, forced=None, path_block=None, area_bias=None):
     """(Corner lattice (row 0 = south) of brush ids, path-corner mask) for a heightfield.
 
     cfg is the spec's "paint" section. waypoints is a list of paths, each a
@@ -138,7 +138,9 @@ def paint(field, ts, stats, cfg, seed, waypoints, forced=None, path_block=None):
     pins corners to a brush: lakes' seabed and sand, villages' lifted
     paint. Forced corners are kept by legalize and left out of the
     calibration. Paths route around `path_block` (lattice mask; default:
-    every forced corner).
+    every forced corner). `area_bias` (lattice rows x cols x brushes) is
+    added to the scores after calibration, so a layout's "rocky here" is
+    not calibrated away: it shifts the mix on purpose.
     """
     counts, bands = stats
     slopes = corner_slopes(field)
@@ -188,8 +190,11 @@ def paint(field, ts, stats, cfg, seed, waypoints, forced=None, path_block=None):
     if forced is not None:
         fixed |= forced >= 0
 
-    def realise(bias):
-        lattice = np.array(land)[np.argmax(bias[band].transpose(2, 0, 1) + noise, axis=0)]
+    def realise(bias, extra=None):
+        score = bias[band].transpose(2, 0, 1) + noise
+        if extra is not None:
+            score = score + extra[:, :, land].transpose(2, 0, 1)
+        lattice = np.array(land)[np.argmax(score, axis=0)]
         lattice[on_path] = path_brush
         if forced is not None:
             lattice[forced >= 0] = forced[forced >= 0]
@@ -211,4 +216,4 @@ def paint(field, ts, stats, cfg, seed, waypoints, forced=None, path_block=None):
                 continue
             got = np.bincount([index.get(b, 0) for b in lattice[sel]], minlength=len(land)) / sel.sum()
             bias[k] += np.clip(np.log((probs[k] + 1e-3) / (got + 1e-3)), -1.0, 1.0)
-    return realise(bias), on_path
+    return realise(bias, area_bias), on_path

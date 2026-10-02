@@ -43,6 +43,7 @@ import importlib.util
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -56,7 +57,7 @@ BUILD = os.path.join(REPO, "build", "mapgen")
 sys.path.insert(0, HERE)
 
 import mapgen  # noqa: E402
-from mapgen import catalogue, chunk, decorate, ifo, paint, prefab, preview, terrain, tiles, walk, water, zon  # noqa: E402
+from mapgen import areas, catalogue, chunk, decorate, ifo, layout, paint, prefab, preview, terrain, tiles, walk, water, zon  # noqa: E402
 from mapgen.zone import (CHUNK_CM, EventPoint, Tile, ZoneParams, build_zone,  # noqa: E402
                          centre_world, chunk_stem)
 
@@ -103,8 +104,14 @@ def sha(b):
 
 
 def load_spec(path):
+    """A spec file, or a layout file ("layout": 1) compiled to a spec."""
     with open(path, encoding="utf-8") as f:
         s = json.load(f)
+    if s.get("layout") == 1:
+        try:
+            s = layout.compile_layout(s)
+        except layout.LayoutError as e:
+            raise SystemExit("layout %s: %s" % (path, e))
     s["_path"] = os.path.abspath(path)
     return s
 
@@ -124,15 +131,20 @@ def template_zon(s, zstb):
 
 
 def params_from_spec(s):
+    """Build everything a zone needs from a spec, in dependency order:
+    terrain (+ features) -> water -> villages -> start -> events -> cover
+    areas -> paint (+ roads) -> decoration -> records. Every phase 7 key
+    (terrain features / tilt / ridge edges, flood, lake and village "where",
+    roads, start, cover) is optional, so earlier specs build unchanged."""
     c = s["chunks"]
     p = ZoneParams(folder=s["folder"], x0=c["x0"], y0=c["y0"], width=c["width"],
                    height=c["height"], ground_cm=float(s.get("ground_cm", 0)),
                    tile=Tile(**{k: v for k, v in s["tile"].items() if not k.startswith("_")}),
                    events=[])
     t = s.get("terrain")
-    p.lakes, p.avoid = [], None
+    p.lakes, p.avoid, p.features = [], None, {}
     if t:
-        p.field = terrain.generate(p.width, p.height, t, t["seed"])
+        p.field = terrain.generate(p.width, p.height, t, t["seed"], terrain_features(s, p))
     if s.get("water"):
         if p.field is None:
             raise SystemExit("'water' needs a 'terrain' section")
@@ -142,7 +154,8 @@ def params_from_spec(s):
         if p.field is None:
             raise SystemExit("'villages' needs a 'terrain' section")
         add_villages(s, p)
-    anchor = start_vertex(s, p)
+    p.start_v = pick_start_vertex(s, p)
+    anchor = p.start_v
     for e in s["events"]:
         dc, dr = (int(round(v / terrain.GRID_CM)) for v in e.get("offset_cm", [0, 0]))
         if e.get("at") == "centre":
@@ -157,6 +170,7 @@ def params_from_spec(s):
                                    p.y0 * CHUNK_CM + r * terrain.GRID_CM, z))
     p.start_chunk = (c["x0"] + c["width"] // 2, c["y0"] + c["height"] // 2)
     p.lattice = None
+    cover_mult, cover_bias = cover_fields(s, p)
     cfg = s.get("paint")
     if cfg:
         if p.field is None:
@@ -176,20 +190,27 @@ def params_from_spec(s):
         forced = lake_brushes(s, p, (rows, cols))
         path_block = forced >= 0
         start_corner = (int(round(anchor[0] / 4)), int(round(anchor[1] / 4)))
+        # A harbour village lifted from the coast (Adventurer's Plain, Kenji
+        # Beach) is painted with sand and seabed; placed inland, those become
+        # land brushes so no seabed shows on a hilltop. By the water it keeps
+        # its own paint.
+        inland = {int(k): b for k, b in cfg.get("inland_remap", {"6": 5, "7": 5, "8": 0}).items()}
         for v in p.villages:
             for r, c, b in v["brushes"]:
+                if not v.get("near_water"):
+                    b = inland.get(b, b)
                 if 0 <= r < rows and 0 <= c < cols and forced[r, c] < 0:
                     forced[r, c] = b
                     path_block[r, c] = True     # a path through the village would be painted over
             path_block |= v["corner_block"]
         pb = cfg.get("path_brush", 0)
         for v in p.villages:
-            if not v["connect"]:
+            if not v["has_path"]:
                 continue
             # The route in from the entrance paints over the village's own
             # brushes, from the gate inwards until it meets ground the
             # village already paints with the path brush.
-            own = {(r, c): b for r, c, b in v["brushes"]}
+            own = {(r, c): (b if v.get("near_water") else inland.get(b, b)) for r, c, b in v["brushes"]}
             for corner in reversed(v["inner_path"]):
                 if not (0 <= corner[0] < rows and 0 <= corner[1] < cols):
                     continue
@@ -200,8 +221,15 @@ def params_from_spec(s):
         for v in p.villages:
             if v["connect"]:
                 paths.append([free_corner(v["gate"], path_block), free_corner(start_corner, path_block)])
+        for road in s.get("roads", []):
+            paths.append([road_end(p, road["from"], path_block), road_end(p, road["to"], path_block)])
         seed = cfg.get("seed", t["seed"] + 1)
-        p.lattice, p.path_corners = paint.paint(p.field, ts, stats, cfg, seed, paths, forced, path_block)
+        try:
+            p.lattice, p.path_corners = paint.paint(p.field, ts, stats, cfg, seed, paths, forced, path_block,
+                                                    area_bias=cover_bias)
+        except ValueError as e:
+            raise SystemExit("paths: %s (lattice corners row, col; water, beaches, villages and slopes over "
+                             "max_path_slope_deg block them)" % e)
         p.tile_grid = tiles.tiles_from_lattice(p.lattice, ts, np.random.default_rng(seed + 1))
     p.placed = None
     dcfg = s.get("decorate")
@@ -211,7 +239,8 @@ def params_from_spec(s):
         cat = catalogue.load(os.path.join(STATS_DIR, dcfg["catalogue"]))
         avoid = water_margin(s, p, dcfg) | village_mask(p, dcfg.get("village_clear_m", 4.0))
         _, placed = decorate.place(p.field, p.lattice, p.x0, p.y0, cat, dcfg,
-                                   dcfg.get("seed", t["seed"] + 7), avoid, p.path_corners, anchor)
+                                   dcfg.get("seed", t["seed"] + 7), avoid, p.path_corners, anchor,
+                                   area_mult=cover_mult, kind_of=kind_of(s))
         placed, p.deco_removed = decorate.repair(placed, p.field, anchor, play_mask(s, p),
                                                  fixed=village_members(p), footprints=footprints(s))
         p.placed = placed
@@ -223,12 +252,253 @@ def params_from_spec(s):
         for k, recs in vdeco.items():
             p.objects[k] = list(p.objects.get(k, [])) + recs
         p.cnst = vcnst
+    if p.objects or getattr(p, "cnst", None):
+        separate_coplanar(s, p)
     return p
 
 
+_cop = {}
+
+
+def separate_coplanar(s, p):
+    """Run fix-coplanar-object-overlaps.py's solver on the records before they
+    are written: placements whose faces share a plane flicker (CLAUDE.md,
+    "Coplanar Placements Flicker"). A prefab lifted from sloped ground and
+    set on a flat pad can bring two faces together that retail kept apart
+    (Adventurer's Plain's wooden platforms). Same detection, plan and
+    thresholds as the tool, so `verify`'s run of it finds nothing. Only the
+    positions of the moved records change (a centimetre or two)."""
+    import argparse as _ap
+    import dataclasses
+    if "mod" not in _cop:
+        spec = importlib.util.spec_from_file_location("fix_coplanar", os.path.join(HERE, "fix-coplanar-object-overlaps.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _cop["mod"] = mod
+    cop = _cop["mod"]
+    zstb, _, _ = tables()
+    rel = lambda col: zstb.get(s["template_zone_row"], col).decode("latin-1").replace("\\\\", "\\")
+    tabs = {cop.LUMP_OBJECT: cop.load_zsc(rel(COL_DECO)), cop.LUMP_CNST: cop.load_zsc(rel(COL_CNST))}
+    placements, refs = [], []
+    for code, recs_by in ((cop.LUMP_OBJECT, p.objects or {}), (cop.LUMP_CNST, getattr(p, "cnst", None) or {})):
+        for key in sorted(recs_by):
+            for i, r in enumerate(recs_by[key]):
+                tab = tabs[code]
+                if not tab or not 0 <= r.obj_id < len(tab["objects"]):
+                    continue
+                raw = tuple(cop.f32(v) for v in r.pos)
+                o = {"path": "", "file": "%d_%d" % key, "lump": code, "ordinal": i, "id": r.obj_id,
+                     "rot": tuple(cop.f32(v) for v in r.rot), "scale": tuple(cop.f32(v) for v in r.scale),
+                     "raw_pos": raw, "orig_raw": raw, "zsc": tab}
+                o["pos"] = cop.world_pos(raw)
+                o["tris"] = cop.placement_triangles(tab, o, o["pos"])
+                placements.append(o)
+                refs.append((recs_by, key, i))
+    args = _ap.Namespace(min_sep=1.0, step=0.5, sink=10000.0, min_area=400.0, only=[])
+    left = cop.solve_zone(placements, args, verbose=False)
+    moved = 0
+    for o, (recs_by, key, i) in zip(placements, refs):
+        if o["raw_pos"] != o["orig_raw"]:
+            recs_by[key][i] = dataclasses.replace(recs_by[key][i], pos=o["raw_pos"])
+            moved += 1
+    p.coplanar_moved, p.coplanar_left = moved, len(left)
+
+
+def field_shape(p):
+    return terrain.field_shape(p.width, p.height)
+
+
+def snap4(rc):
+    """Nearest tile-corner vertex (multiple of 4): prefab brushes stay aligned."""
+    return (int(round(rc[0] / 4.0)) * 4, int(round(rc[1] / 4.0)) * 4)
+
+
+def terrain_features(s, p):
+    """Resolve terrain.features (hills, mountains) to vertex centres; register them."""
+    out = []
+    for f in (s.get("terrain") or {}).get("features", []):
+        _, target, _ = areas.resolve(f["area"], field_shape(p), {})
+        centre = snap4(target)
+        f = dict(f)
+        for v in s.get("villages", []):
+            if v.get("on") == f["name"] and v.get("pad_from_walls"):
+                # the hill's flat top must hold the whole pad, which is sized
+                # from the prefab's walls (add_villages), not its radius
+                pf = prefab.load(os.path.join(PREFAB_DIR, v["prefab"] + ".json"))
+                cells0 = (field_shape(p)[0] - 1, field_shape(p)[1] - 1)
+                pad_m = max(pf["radius_m"] + v.get("pad_margin_m", 6.0),
+                            prefab.wall_extent_m(pf, footprints(s), cells0) + 4.0)
+                f["top_m"] = max(f.get("top_m", 0.0), pad_m + 2.0)
+                f["radius_m"] = max(f["radius_m"], f["top_m"] + 35.0)
+        out.append(dict(f, centre=centre))
+        p.features[f["name"]] = {"kind": f["kind"], "centre": centre, "radius_m": f["radius_m"],
+                                 "height_cm": f["height_cm"], "top_m": f.get("top_m", 0.0)}
+    return out
+
+
+def area_allow(desc, p, core=0.5, fallback=0.15):
+    """(allowed vertex mask, target vertex) for placing one thing in an area:
+    the area's core, or its fuzzy edge if the core is too strict."""
+    w, target, _ = areas.resolve(desc, p.field.shape, p.features)
+    return w >= core, w >= fallback, target
+
+
+def kind_of(s):
+    """Object -> kind: the kinds table (FLOWER, MUSHROOM, ...) or its category."""
+    name = (s.get("decorate") or {}).get("kinds")
+    if not name:
+        return None
+    with open(os.path.join(STATS_DIR, name), encoding="utf-8") as f:
+        table = json.load(f)["kinds"]
+    by_id = {i: k for k, ids in table.items() for i in ids}
+    return lambda o: by_id.get(o["id"], o["category"])
+
+
+def cover_fields(s, p):
+    """Lattice-shaped decoration multipliers per kind and brush biases from
+    the spec's "cover" areas. Later areas paint over earlier ones where they
+    overlap (blend by weight), so "rocky north-west" can override "forest
+    along the north edge"."""
+    cover = s.get("cover")
+    if not cover or p.field is None:
+        return None, None
+    shape = p.field.shape
+    rows, cols = (shape[0] - 1) // 4 + 1, (shape[1] - 1) // 4 + 1
+    mult, bias = {}, np.zeros((rows, cols, 16))
+    p.cover_mult = mult
+    p.cover_weights = []
+    for e in cover:
+        w, _, _ = areas.resolve(e["area"], shape, p.features)
+        if e.get("fade"):
+            w = areas.fade(w, shape, e["fade"]["toward"], e["fade"].get("to", 0.3))
+        wl = w[::4, ::4]
+        p.cover_weights.append(w)
+        for kind, x in e.get("mult", {}).items():
+            m = mult.setdefault(kind, np.ones((rows, cols)))
+            mult[kind] = m * (1 - wl) + x * wl
+        for b, x in e.get("brush_bias", {}).items():
+            bias[:, :, int(b)] = bias[:, :, int(b)] * (1 - wl) + x * wl
+    return mult, bias
+
+
+def path_land(s, p, extra_block=None):
+    """Label lattice corners a path may cross (dry, not beach, not village
+    paint, no steeper than paint.max_path_slope_deg) into connected
+    components. Returns (labels: -1 = blocked, sizes by label)."""
+    rows, cols = 16 * p.height + 1, 16 * p.width + 1
+    cfg = s.get("paint") or {}
+    block = paint.corner_slopes(p.field) > cfg.get("max_path_slope_deg", 30.0)
+    if s.get("water") and p.lakes:
+        block |= lake_brushes(s, p, (rows, cols)) >= 0
+    for v in p.villages:
+        for r, c, b in v["brushes"]:
+            if 0 <= r < rows and 0 <= c < cols:
+                block[r, c] = True
+        block |= v["corner_block"]
+    if extra_block is not None:
+        block |= extra_block
+    labels = np.full((rows, cols), -1, int)
+    sizes = []
+    for r0, c0 in zip(*np.nonzero(~block)):
+        if labels[r0, c0] >= 0:
+            continue
+        lab, stack, n = len(sizes), [(r0, c0)], 0
+        labels[r0, c0] = lab
+        while stack:
+            r, c = stack.pop()
+            n += 1
+            for dr in (-1, 0, 1):
+                for dc in (-1, 0, 1):
+                    rr, cc = r + dr, c + dc
+                    if 0 <= rr < rows and 0 <= cc < cols and not block[rr, cc] and labels[rr, cc] < 0:
+                        labels[rr, cc] = lab
+                        stack.append((rr, cc))
+        sizes.append(n)
+    return labels, sizes
+
+
+def refresh_water(s, p):
+    """Re-derive every water outline after the ground changed near it (a
+    village pad flattened by the shore): carved lakes keep their level and
+    centre, the flood keeps its level and is re-filtered."""
+    w = s["water"]
+    fl = w.get("flood")
+    kept_lakes = [lk for lk in p.lakes if not lk.get("flood")]
+    p.lakes = []
+    for lk in kept_lakes:
+        lk = dict(lk, mask=water.lake_mask(p.field, lk["level"], lk["centre"]))
+        p.lakes.append(lk)
+        for name, f in p.features.items():
+            if f["kind"] == "lake" and f["centre"] == lk["centre"]:
+                f["mask"] = lk["mask"]
+    if fl and getattr(p, "flood_level", None) is not None:
+        region = play_vertices(s, p)
+        p.field, level, kept = water.flood(p.field, region, level=p.flood_level,
+                                           min_depth_cm=fl.get("min_depth_cm", 80.0),
+                                           min_m2=fl.get("min_m2", 1200.0))
+        union = np.zeros(p.field.shape, bool)
+        for kb in kept:
+            p.lakes.append({"centre": kb["centre"], "level": level, "mask": kb["mask"], "banks": {}, "flood": True})
+            union |= kb["mask"]
+        name = fl.get("name", "water")
+        if name in p.features:
+            p.features[name]["mask"] = union
+    p.water = {}
+    for lk in p.lakes:
+        for key, rects in water.rects_for(lk["mask"], lk["level"], p.x0, p.y0, p.width, p.height).items():
+            p.water.setdefault(key, []).extend(rects)
+
+
+def road_end(p, name, path_block):
+    """Lattice corner a road starts or ends at: a village's gate, the start
+    spot, or a feature's centre."""
+    for v in p.villages:
+        if v["name"] == name:
+            return free_corner(v["gate"], path_block)
+    if name == "start":
+        return free_corner((int(round(p.start_v[0] / 4)), int(round(p.start_v[1] / 4))), path_block)
+    if name in p.features:
+        r, c = p.features[name]["centre"]
+        return free_corner((int(round(r / 4)), int(round(c / 4))), path_block)
+    raise SystemExit("road end %r is neither a village, 'start' nor a feature (%s)"
+                     % (name, ", ".join(sorted(p.features))))
+
+
+def road_partners(s, name):
+    out = []
+    for road in s.get("roads", []):
+        if road["from"] == name:
+            out.append(road["to"])
+        elif road["to"] == name:
+            out.append(road["from"])
+    return out
+
+
+def partner_point(s, p, name):
+    """Where a road partner is or will be (vertex), to aim a village's
+    entrance at it before the partner is placed."""
+    for v in p.villages:
+        if v["name"] == name:
+            return v["centre"]
+    if name in p.features:
+        return p.features[name]["centre"]
+    for v in s.get("villages", []):
+        if v.get("name", v["prefab"]) == name:
+            if v.get("on") in p.features:
+                return p.features[v["on"]]["centre"]
+            if v.get("where"):
+                return areas.resolve(v["where"], p.field.shape, p.features)[1]
+    st = s.get("start") or {}
+    if name == "start" and st.get("near"):
+        return partner_point(s, p, st["near"]) if st["near"] != "start" else None
+    return ((p.field.shape[0] - 1) / 2.0, (p.field.shape[1] - 1) / 2.0)
+
+
 def add_villages(s, p):
-    """Place each spec village: pick a flat corner-aligned site, flatten a pad,
-    instantiate the (turned) prefab. Fills p.villages; widens p.avoid."""
+    """Place each spec village: a flat corner-aligned site (inside its
+    "where" area, or on its "on" hill), a flattened pad, the (turned)
+    prefab, an entrance and a walk-grid route out through it. Fills
+    p.villages and p.features; widens p.avoid."""
     rng = np.random.default_rng(s["terrain"]["seed"] + 300)
     band_m = ((s.get("terrain") or {}).get("ridge") or {}).get("width_m", 0)
     taken = []
@@ -236,13 +506,49 @@ def add_villages(s, p):
     if p.avoid is None:
         p.avoid = np.zeros(p.field.shape, bool)
     for v in s["villages"]:
+        name = v.get("name", v["prefab"])
         pf = prefab.load(os.path.join(PREFAB_DIR, v["prefab"] + ".json"))
         k = int(rng.integers(4)) if v.get("rotation", "auto") == "auto" else int(v["rotation"]) // 90
         pfr = prefab.rotate(pf, k)
         pad_m = pf["radius_m"] + v.get("pad_margin_m", 6.0)
+        if v.get("pad_from_walls"):
+            cells0 = (p.field.shape[0] - 1, p.field.shape[1] - 1)
+            pad_m = max(pad_m, prefab.wall_extent_m(pfr, footprints(s), cells0) + 4.0)
         skirt = v.get("skirt_m", 30.0)
-        centre = prefab.pick_site(p.field, pad_m, skirt, p.avoid, band_m + 10, taken)
-        p.field, height = prefab.flatten(p.field, centre, pad_m, skirt)
+        # By the water: only the pad keeps off the shore, and the pad stays
+        # 1.5 m above the highest waterline (water is re-derived afterwards).
+        near_water = bool(v.get("near_water")) and bool(p.lakes)
+        reach = pad_m + 8.0 if near_water else None
+        min_h = max(lk["level"] for lk in p.lakes) + 150.0 if near_water else None
+        hard = p.avoid
+        if near_water:
+            # the water itself and other pads, not the start's keep-clear band
+            hard = np.zeros(p.field.shape, bool)
+            for lk in p.lakes:
+                hard |= lk["mask"]
+            hard |= getattr(p, "pads", hard)
+        if v.get("on"):
+            centre = snap4(p.features[v["on"]]["centre"])
+        elif v.get("where"):
+            where = v["where"]
+            if "near" in where:      # "near the sea" is about the village's edge, not its centre
+                where = dict(where, extra_m=where.get("extra_m", 40.0) + pad_m + 8.0)
+            core, edge, target = area_allow(where, p)
+            centre = None
+            for allow in (core, edge):
+                try:
+                    centre = prefab.pick_site(p.field, pad_m, skirt, hard, band_m + 10, taken,
+                                              allow=allow, target=target, avoid_reach_m=reach)
+                    break
+                except ValueError:
+                    continue
+            if centre is None:
+                raise SystemExit("village %s: no flat enough site in its area" % name)
+        else:
+            centre = prefab.pick_site(p.field, pad_m, skirt, p.avoid, band_m + 10, taken)
+        p.field, height = prefab.flatten(p.field, centre, pad_m, skirt, min_height=min_h)
+        if near_water:
+            refresh_water(s, p)
         placed, brushes = prefab.instantiate(pfr, centre, height)
         cells = (p.field.shape[0] - 1, p.field.shape[1] - 1)
         fp = footprints(s)
@@ -253,6 +559,7 @@ def add_villages(s, p):
         yy, xx = np.mgrid[0:p.field.shape[0], 0:p.field.shape[1]]
         pad_mask = np.hypot(yy - centre[0], xx - centre[1]) <= grow
         p.avoid |= pad_mask
+        p.pads = pad_mask | getattr(p, "pads", np.zeros(p.field.shape, bool))
         # corners paths may not cross: under any blocking member
         cb = np.zeros((rows, cols), bool)
         for q in placed:
@@ -263,33 +570,73 @@ def add_villages(s, p):
                     for c in range(int(qc) - rr, int(qc) + rr + 2):
                         if 0 <= r < rows and 0 <= c < cols and math.hypot(c - qc, r - qr) * 1000 <= q["rc"] + 150:
                             cb[r, c] = True
-        # Entrance: the named member's bearing (spec "entrance"), else the
-        # middle of the widest open arc in the village's walls, else the
-        # side facing the map centre. The path then runs on the walk grid
-        # from the centre out through it, and on to the start from there.
+        # Entrance: the named member's bearing (spec "entrance"); else, when
+        # roads lead here, the open arc nearest the first road partner; else
+        # the middle of the widest open arc; else the side facing the map
+        # centre. The path runs on the walk grid from the centre out through
+        # it, and on along the roads (or to the start) from there.
         blocked = decorate.blocked_cells(placed, cells, fp)
         cr, cc = centre[0] // 4, centre[1] // 4
         arcs = prefab.openings(blocked, centre, pad_m)
+        partners = road_partners(s, name)
+        bearing = None
         if v.get("entrance"):
             named = [q for q in placed if q["name"] == v["entrance"]]
             if not named:
-                raise SystemExit("village %s has no member named %r" % (v["prefab"], v["entrance"]))
+                raise SystemExit("village %s has no member named %r" % (name, v["entrance"]))
             g = terrain.GRID_CM
             bearing = math.degrees(math.atan2(np.mean([q["y"] for q in named]) - centre[0] * g,
                                               np.mean([q["x"] for q in named]) - centre[1] * g)) % 360
             how = "member %s" % v["entrance"]
-        elif arcs:
+        elif partners and arcs:
+            pt = partner_point(s, p, partners[0])
+            if pt is not None:
+                want = math.degrees(math.atan2(pt[0] - centre[0], pt[1] - centre[1])) % 360
+                bearing = prefab.arc_toward(arcs, want)
+                how = "toward %s (%.0f deg)" % (partners[0], want)
+        if bearing is None and near_water and arcs:
+            # By the water and no road: leave through the opening onto the
+            # largest stretch of ground a path can cross, so the way in (and
+            # the start beside it) is on the mainland, not on a beach or a
+            # steep-sided knoll. "Away from the nearest water" fails on a
+            # peninsula.
+            mine = {"brushes": brushes, "corner_block": cb}
+            labels, sizes = path_land(s, p, extra_block=None)
+            own = np.zeros_like(labels, bool)
+            for r, c, b in brushes:
+                if 0 <= r < own.shape[0] and 0 <= c < own.shape[1]:
+                    own[r, c] = True
+            best = None
+            for a0, a1 in arcs:
+                for step in range(0, (a1 - a0) % 360 + 1, 5):
+                    bb = (a0 + step) % 360
+                    d = (pad_m + 12.0) / 10.0
+                    oc = (int(round(cr + math.sin(math.radians(bb)) * d)), int(round(cc + math.cos(math.radians(bb)) * d)))
+                    if not (0 <= oc[0] < labels.shape[0] and 0 <= oc[1] < labels.shape[1]):
+                        continue
+                    lab = labels[oc] if not own[oc] and not cb[oc] else -1
+                    size = sizes[lab] if lab >= 0 else 0
+                    if best is None or size > best[0]:
+                        best = (size, bb)
+            if best and best[0] > 0:
+                bearing, how = float(best[1]), "onto the mainland (%d path corners)" % best[0]
+        if bearing is None and arcs:
             bearing, how = prefab.arc_middle(arcs[0]), "widest opening %d-%d deg" % arcs[0]
-        else:
+        elif bearing is None:
             bearing, how = math.degrees(math.atan2(rows / 2 - cr, cols / 2 - cc)) % 360, "facing the map centre"
         route = prefab.inner_route(blocked, centre, bearing, pad_m)
         if route is None:
-            raise SystemExit("village %s: no walkable way out of the centre" % v["prefab"])
+            raise SystemExit("village %s: no walkable way out of the centre" % name)
         inner = prefab.route_corners(route)
-        p.villages.append({"prefab": v["prefab"], "centre": centre, "height": height, "pad_m": pad_m,
-                           "turns": k, "members": placed, "brushes": brushes, "corner_block": cb,
-                           "gate": inner[-1], "inner_path": inner, "entrance_deg": bearing,
-                           "entrance_how": how, "openings": arcs, "connect": v.get("connect", True)})
+        starts_here = (s.get("start") or {}).get("near") == name
+        connect = v.get("connect", not partners and not starts_here)
+        p.villages.append({"name": name, "prefab": v["prefab"], "centre": centre, "height": height,
+                           "pad_m": pad_m, "turns": k, "members": placed, "brushes": brushes,
+                           "corner_block": cb, "gate": inner[-1], "inner_path": inner, "route": route,
+                           "entrance_deg": bearing, "entrance_how": how, "openings": arcs,
+                           "connect": connect, "has_path": connect or bool(partners) or starts_here,
+                           "near_water": near_water})
+        p.features[name] = {"kind": "village", "centre": centre, "radius_m": pad_m}
 
 
 _fp_cache = {}
@@ -397,6 +744,213 @@ def village_checks(s, p, members, field, start, check):
               "entrance %.0f deg (%s), path in %d corners"
               % (v["prefab"], len(v["members"]), sum(1 for q in v["members"] if q["rc"]), v["pad_m"],
                  v["height"] / 100, v["turns"] * 90, v["entrance_deg"], v["entrance_how"], len(v["inner_path"])))
+
+_jg_cache = {}
+
+
+def expected_by_kind(s, field, lattice):
+    """{kind: (tiles) expected objects per 10 m tile with no cover area},
+    from the catalogue's retail densities for each tile's slope band and
+    brush, times the spec's global density (decorate.place without cover)."""
+    dcfg = s.get("decorate") or {}
+    if not dcfg:
+        return {}
+    cat = catalogue.load(os.path.join(STATS_DIR, dcfg["catalogue"]))
+    objs = decorate.eligible(cat, dcfg)
+    dens = decorate.densities(cat, objs)
+    bands = np.clip(np.digitize(paint.corner_slopes(field), paint.SLOPE_BANDS) - 1, 0, len(paint.SLOPE_BANDS) - 2)
+    kof = kind_of(s) or (lambda o: o["category"])
+    rows, cols = lattice.shape
+    out = {}
+    b, k = bands[:rows - 1, :cols - 1], lattice[:rows - 1, :cols - 1]
+    for i, o in enumerate(objs):
+        out.setdefault(kof(o), np.zeros((rows - 1, cols - 1)))
+        out[kof(o)] += dens[i][b, np.clip(k, 0, dens.shape[2] - 1)] * dcfg.get("density", 1.0)
+    return out
+
+
+def jg_per_ha():
+    """Decoration per hectare of dry land, all retail JG zones together (profiles)."""
+    if "v" not in _jg_cache:
+        path = os.path.join(STATS_DIR, "jg_zone_profiles.json")
+        with open(path, encoding="utf-8") as f:
+            _jg_cache["v"] = json.load(f).get("jg_per_ha", {})
+    return _jg_cache["v"]
+
+
+def print_features(s, p, zone=None):
+    """Where everything named ended up, with GM warp coordinates."""
+    def mm(rc):
+        return "/mm %s %d %d" % (zone if zone is not None else "<zone>",
+                                 round((p.x0 * CHUNK_CM + rc[1] * terrain.GRID_CM) / 1000),
+                                 round((p.y0 * CHUNK_CM + rc[0] * terrain.GRID_CM) / 1000))
+    if not p.features and not getattr(p, "start_v", None):
+        return
+    print("  placed:")
+    for name, f in sorted(p.features.items()):
+        extra = ""
+        if f["kind"] in ("lake", "water"):
+            extra = "%d m2 of water" % int(f["mask"].sum() * (terrain.GRID_CM / 100) ** 2)
+        elif f["kind"] == "village":
+            v = next(v for v in p.villages if v["name"] == name)
+            extra = "%s, pad %.1f m, entrance %.0f deg (%s)" % (v["prefab"], v["height"] / 100, v["entrance_deg"],
+                                                                 v["entrance_how"])
+        else:
+            extra = "%s, %.0f m across, %.0f m high" % (f["kind"], 2 * f["radius_m"], f.get("height_cm", 0) / 100)
+        print("     %-12s %-20s %s" % (name, mm(f["centre"]), extra))
+    if getattr(p, "start_v", None):
+        print("     %-12s %-20s" % ("start", mm(p.start_v)))
+    if getattr(p, "coplanar_moved", 0) or getattr(p, "coplanar_left", 0):
+        print("  coplanar faces: %d placement(s) moved 0.5-6 cm apart, %d pair(s) left"
+              % (p.coplanar_moved, p.coplanar_left))
+
+
+def intent_checks(s, p, field, placed, lattice, check):
+    """Does the map do what the description asked? (phase 7)
+
+    The spec's "intent" list comes from the layout compiler, one entry per
+    claim the description made, each with the description's own words as
+    its label. Run on the spec's build (preview) and on the files on disk
+    (verify: field, decorations and tiles read back).
+    """
+    intents = s.get("intent") or []
+    if not intents:
+        return
+    g2 = (terrain.GRID_CM / 100.0) ** 2
+    play = play_vertices(s, p)
+    wet = np.zeros(field.shape, bool)
+    for lk in p.lakes or []:
+        wet |= lk["mask"]
+    pads = village_mask(p, 0.0)
+    land = play & ~wet & ~pads
+    kof = kind_of(s) or (lambda o: o["category"])
+    pb = (s.get("paint") or {}).get("path_brush", 0)
+    for it in intents:
+        kind, label = it["check"], it.get("label", "")
+        if kind == "tilt":
+            dx, dy = terrain.direction(it["toward"])
+            h, w = field.shape
+            yy, xx = np.mgrid[0:h, 0:w]
+            u = (xx / (w - 1) - 0.5) * dx + (yy / (h - 1) - 0.5) * dy
+            hi_side, lo_side = play & (u > 0.2), play & (u < -0.2)
+            rise = float(np.median(field[hi_side]) - np.median(field[lo_side]))
+            check(rise >= it["min_rise_cm"], "%s: ground rises %.1f m toward the %s (want >= %.1f m)"
+                  % (label, rise / 100, it["toward"], it["min_rise_cm"] / 100))
+        elif kind == "higher":
+            wgt = areas.resolve(it["area"], field.shape, p.features)[0]
+            inner, rest = (wgt >= 0.5) & ~wet, play & (wgt < 0.1) & ~wet
+            diff = float(np.median(field[inner]) - np.median(field[rest]))
+            check(diff >= it["min_cm"], "%s: %.1f m above the rest of the map (want >= %.1f m)"
+                  % (label, diff / 100, it["min_cm"] / 100))
+        elif kind == "water_share":
+            share = float((wet & play).sum()) / float(play.sum())
+            check(abs(share - it["target"]) <= it.get("tol", 0.05), "%s: %.0f%% of the map is water (want %.0f%% +/- %.0f)"
+                  % (label, 100 * share, 100 * it["target"], 100 * it.get("tol", 0.05)))
+        elif kind == "wet_in":
+            wgt = areas.resolve(it["area"], field.shape, p.features)[0]
+            sel = wgt >= 0.5
+            share = float((wet & sel).sum()) / max(1, int(sel.sum()))
+            check(share >= it["min"], "%s: %.0f%% of that strip is water (want >= %.0f%%)"
+                  % (label, 100 * share, 100 * it["min"]))
+        elif kind == "inside":
+            wgt = areas.resolve(it["area"], field.shape, p.features)[0]
+            f = p.features.get(it["feature"])
+            ok = f is not None and float(wgt[f["centre"]]) >= it.get("min_weight", 0.3)
+            check(ok, "%s: %s is where the description put it (area weight %.2f)"
+                  % (label, it["feature"], float(wgt[f["centre"]]) if f else -1))
+        elif kind == "density":
+            wgt = areas.resolve(it["area"], field.shape, p.features)[0]
+            inner, outer = land & (wgt >= 0.8), land & (wgt < 0.1)
+            km = (getattr(p, "cover_mult", None) or {}).get(it["kind"])
+            if km is not None:
+                # compare with ground no cover area changed for this kind
+                plain = np.kron(np.abs(km - 1.0) < 0.15, np.ones((4, 4), bool))[:field.shape[0], :field.shape[1]]
+                if (outer & plain).sum() > 400:
+                    outer = outer & plain
+            n_in = n_out = 0
+            for q in placed or []:
+                if kof(q) != it["kind"]:
+                    continue
+                r = min(int(round(q["y"] / terrain.GRID_CM)), field.shape[0] - 1)
+                c = min(int(round(q["x"] / terrain.GRID_CM)), field.shape[1] - 1)
+                n_in += bool(inner[r, c])
+                n_out += bool(outer[r, c])
+            d_in = n_in / max(1e-6, inner.sum() * g2 / 1e4)          # per hectare
+            # Reference: what this same ground would get with no cover area,
+            # from retail's density per slope band and brush (decorate.densities)
+            # over the area's core tiles. Retail's flat average would be unfair
+            # to steep ground, where retail itself puts little grass.
+            exp = expected_by_kind(s, field, lattice)
+            core_t = inner[:-1:4, :-1:4] & inner[4::4, 4::4]
+            expected = float(exp.get(it["kind"], np.zeros(core_t.shape))[core_t].sum())
+            ratio = n_in / max(1e-6, expected)
+            want = it["ratio"]
+            # Counts are Poisson: allow 2 sigma around the wanted count, so a
+            # small area is judged by what chance permits ("2 trees where 4
+            # were due" proves nothing either way).
+            due = want * expected
+            slack = 2.0 * math.sqrt(max(due, 1.0))
+            ok = n_in >= due - slack if want >= 1 else n_in <= due + slack
+            check(ok, "%s: %d %s there = x%.2f what that ground gets by default (%.0f; want %s x%.2f, i.e. %s %.0f "
+                      "with 2-sigma noise); %.1f/ha"
+                  % (label, n_in, it["kind"].lower(), ratio, expected, ">=" if want >= 1 else "<=", want,
+                     ">=" if want >= 1 else "<=", due - slack if want >= 1 else due + slack, d_in))
+        elif kind == "road":
+            ends = []
+            for name in (it["from"], it["to"]):
+                v = next((v for v in p.villages if v["name"] == name), None)
+                if v is not None:
+                    ends.append(v["gate"])
+                elif name == "start":
+                    ends.append((int(round(p.start_v[0] / 4)), int(round(p.start_v[1] / 4))))
+                else:
+                    r, c = p.features[name]["centre"]
+                    ends.append((int(round(r / 4)), int(round(c / 4))))
+            near = lambda q, e: max(abs(q[0] - e[0]), abs(q[1] - e[1])) <= 2
+            todo = [tuple(q) for q in np.argwhere(lattice == pb) if near(tuple(q), ends[0])]
+            seen = set()
+            while todo:
+                q = todo.pop()
+                if q in seen:
+                    continue
+                seen.add(q)
+                for d in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    n = (q[0] + d[0], q[1] + d[1])
+                    if 0 <= n[0] < lattice.shape[0] and 0 <= n[1] < lattice.shape[1] and lattice[n] == pb:
+                        todo.append(n)
+            check(any(near(q, ends[1]) for q in seen), "%s: a path runs from %s to %s" % (label, it["from"], it["to"]))
+        elif kind == "shore":
+            f, lk = p.features[it["feature"]], p.features[it["lake"]]
+            d = float(areas.distance_m(lk["mask"])[f["centre"]])
+            bear = math.degrees(math.atan2(f["centre"][0] - lk["centre"][0], f["centre"][1] - lk["centre"][1]))
+            dx, dy = terrain.direction(it["side"])
+            off = abs((bear - math.degrees(math.atan2(dy, dx)) + 180) % 360 - 180)
+            check(d <= it["max_m"] and off <= 60, "%s: %s is %.0f m from the water, %.0f deg off due %s of %s"
+                  % (label, it["feature"], d, off, it["side"], it["lake"]))
+        elif kind == "near":
+            a = p.start_v if it["feature"] == "start" else p.features[it["feature"]]["centre"]
+            own = 0.0 if it["feature"] == "start" else p.features[it["feature"]].get("radius_m", 0.0)
+            bf = p.features[it["to"]]
+            if "mask" in bf:                                  # water: distance to its edge
+                d = float(areas.distance_m(bf["mask"])[tuple(int(v) for v in a)])
+            else:
+                d = math.hypot(a[0] - bf["centre"][0], a[1] - bf["centre"][1]) * terrain.GRID_CM / 100 \
+                    - bf.get("radius_m", 0)
+            d -= own                                          # from the feature's own edge
+            check(d <= it["max_m"], "%s: %s is %.0f m from %s's edge (want <= %.0f m)"
+                  % (label, it["feature"], max(0.0, d), it["to"], it["max_m"]))
+        elif kind == "raised":
+            f = p.features[it["feature"]]
+            h, w = field.shape
+            yy, xx = np.mgrid[0:h, 0:w]
+            d = np.hypot(yy - f["centre"][0], xx - f["centre"][1]) * terrain.GRID_CM / 100 - f.get("radius_m", 0)
+            ring = play & ~wet & (d >= 30) & (d <= 90)
+            diff = float(field[f["centre"]] - np.median(field[ring]))
+            check(diff >= it["min_cm"], "%s: %s stands %.1f m above its surroundings (want >= %.1f m)"
+                  % (label, it["feature"], diff / 100, it["min_cm"] / 100))
+        else:
+            check(False, "unknown intent check %r" % kind)
+
 
 def water_margin(s, p, dcfg):
     """Vertices where no decoration may stand: lakes plus `water_clear_m`."""
@@ -523,28 +1077,85 @@ def brush_colours(ts, template):
 
 
 def start_vertex(s, p):
-    """(row, col) of the start point in the field: the gentle spot nearest the
-    centre (terrain.pick_start) away from water, or the centre for flat ground."""
+    """(row, col) of the start point in the field (computed once per build)."""
+    v = getattr(p, "start_v", None)
+    return v if v is not None else pick_start_vertex(s, p)
+
+
+def pick_start_vertex(s, p):
+    """The gentle spot nearest the start target, away from water and village
+    pads: the spec's start.near (a village: just outside its entrance; any
+    other feature: its centre) or start.area, else the map centre. Flat
+    ground without terrain: the centre."""
     if p.field is None:
         return (p.height * 32, p.width * 32)
-    return terrain.pick_start(p.field, avoid=getattr(p, "avoid", None))
+    st = s.get("start") or {}
+    target = None
+    allow = None
+    if st.get("near"):
+        v = next((v for v in p.villages if v["name"] == st["near"]), None)
+        if v is not None:
+            # In the village, on its walk route ~10 m in from the entrance:
+            # flat (the pad), free of walls (the route avoids them), and
+            # joined to the outside by the route's painted path. Retail
+            # spawns players in towns too.
+            want = max(0.0, v["pad_m"] - 10.0) * 100 / terrain.GRID_CM
+            cr, cc = v["centre"]
+            cell = min(v["route"], key=lambda q: abs(math.hypot(q[0] + 0.5 - cr, q[1] + 0.5 - cc) - want))
+            return (int(cell[0]), int(cell[1]))
+        elif st["near"] in p.features:
+            target = p.features[st["near"]]["centre"]
+        else:
+            raise SystemExit("start.near %r is not a village or feature" % st["near"])
+    elif st.get("area"):
+        target = areas.resolve(st["area"], p.field.shape, p.features)[1]
+    avoid = getattr(p, "avoid", None)
+    if allow is not None:
+        avoid = (~allow) if avoid is None else (avoid | ~allow)
+    return terrain.pick_start(p.field, avoid=avoid, target=target)
 
 
 def add_lakes(s, p):
-    """Carve the spec's lakes into p.field; fill p.lakes and p.water.
+    """Carve the spec's lakes into p.field, then flood (if asked); fill
+    p.lakes, p.water and p.features.
 
-    Each lake: {"centre": "auto" | [fx, fy] (fractions of the map, x east,
-    y north), "radius_m", "depth_cm", "shore_m", "shore_slope_deg",
-    "irregularity", "ring_m", "margin_cm"}. p.avoid marks the water and a
-    `keep_clear_m` band around it, where the start may not go.
+    Each lake: {"name", "centre": "auto" | [fx, fy] (fractions of the map, x
+    east, y north), or "where": area descriptor, "radius_m", "depth_cm",
+    "shore_m", "shore_slope_deg", "irregularity", "ring_m", "margin_cm",
+    "banks": {"west": "rocky", ...}}. "flood": {"name", "fraction" or
+    "level_cm", ...} puts everything below one level under water
+    (water.flood). p.avoid marks the water and a `keep_clear_m` band around
+    it, where the start may not go.
     """
     w = s["water"]
     band_m = ((s.get("terrain") or {}).get("ridge") or {}).get("width_m", 0)
     rows, cols = p.field.shape
     p.avoid = np.zeros(p.field.shape, bool)
+    clear = int(w.get("keep_clear_m", 15) * 100 / terrain.GRID_CM)
+
+    def keep_clear(mask):
+        grown = mask.copy()
+        for _ in range(clear):
+            g = grown.copy()
+            g[1:] |= grown[:-1]; g[:-1] |= grown[1:]; g[:, 1:] |= grown[:, :-1]; g[:, :-1] |= grown[:, 1:]
+            grown = g
+        p.avoid |= grown
+
     for i, lake in enumerate(w.get("lakes", [])):
         rng = np.random.default_rng(s["terrain"]["seed"] + 100 + i)
-        if lake.get("centre", "auto") == "auto":
+        if lake.get("where"):
+            core, edge, target = area_allow(lake["where"], p)
+            centre = None
+            for allow in (core, edge):
+                try:
+                    centre = water.pick_centre(p.field, lake["radius_m"], band_m + 10, lake.get("ring_m", 25.0),
+                                               p.avoid, allow=allow, target=target)
+                    break
+                except ValueError:
+                    continue
+            if centre is None:
+                raise SystemExit("lake %s: no room in its area" % lake.get("name", i + 1))
+        elif lake.get("centre", "auto") == "auto":
             centre = water.pick_centre(p.field, lake["radius_m"], band_m + 10,
                                        lake.get("ring_m", 25.0), p.avoid)
         else:
@@ -552,18 +1163,40 @@ def add_lakes(s, p):
             centre = (int(round(fy * (rows - 1))), int(round(fx * (cols - 1))))
         p.field, level = water.carve(p.field, lake, rng, centre)
         mask = water.lake_mask(p.field, level, centre)
-        p.lakes.append({"centre": centre, "level": level, "mask": mask})
-        clear = int(w.get("keep_clear_m", 15) * 100 / terrain.GRID_CM)
-        grown = mask.copy()
-        for _ in range(clear):
-            g = grown.copy()
-            g[1:] |= grown[:-1]; g[:-1] |= grown[1:]; g[:, 1:] |= grown[:, :-1]; g[:, :-1] |= grown[:, 1:]
-            grown = g
-        p.avoid |= grown
+        p.lakes.append({"centre": centre, "level": level, "mask": mask, "banks": lake.get("banks", {})})
+        p.features[lake.get("name", "lake%d" % (i + 1))] = {"kind": "lake", "centre": centre,
+                                                           "radius_m": lake["radius_m"], "mask": mask}
+        keep_clear(mask)
+    fl = w.get("flood")
+    if fl:
+        region = play_vertices(s, p)
+        p.field, level, kept = water.flood(p.field, region, fraction=fl.get("fraction"), level=fl.get("level_cm"),
+                                           min_depth_cm=fl.get("min_depth_cm", 80.0),
+                                           min_m2=fl.get("min_m2", 1200.0))
+        union = np.zeros(p.field.shape, bool)
+        p.flood_level = level
+        for kb in kept:
+            p.lakes.append({"centre": kb["centre"], "level": level, "mask": kb["mask"], "banks": {}, "flood": True})
+            union |= kb["mask"]
+        if kept:
+            big = max(kept, key=lambda kb: int(kb["mask"].sum()))
+            p.features[fl.get("name", "water")] = {"kind": "water", "centre": big["centre"], "radius_m": 0.0,
+                                                    "mask": union}
+        keep_clear(union)
     p.water = {}
     for lk in p.lakes:
         for key, rects in water.rects_for(lk["mask"], lk["level"], p.x0, p.y0, p.width, p.height).items():
             p.water.setdefault(key, []).extend(rects)
+
+
+def play_vertices(s, p):
+    """Vertices inside the ridge band (the ridge edges only)."""
+    r = (s.get("terrain") or {}).get("ridge") or {}
+    m = np.ones(p.field.shape, bool)
+    if r.get("height_cm"):
+        band = r.get("width_m", 0) * 100 / terrain.GRID_CM
+        m &= terrain.edge_distance(p.field.shape, tuple(r.get("edges", terrain.EDGES))) >= band
+    return m
 
 
 def lake_brushes(s, p, shape):
@@ -583,7 +1216,18 @@ def lake_brushes(s, p, shape):
             g = near.copy()
             g[1:] |= near[:-1]; g[:-1] |= near[1:]; g[:, 1:] |= near[:, :-1]; g[:, :-1] |= near[:, 1:]
             near = g
-        forced[near & (corners < L + w.get("beach_above_cm", 150))] = sand
+        beach = near & (corners < L + w.get("beach_above_cm", 150))
+        forced[beach] = sand
+        # "a rocky west bank": rock instead of sand on that side of the lake
+        rr, cc = np.mgrid[0:forced.shape[0], 0:forced.shape[1]]
+        bear = np.degrees(np.arctan2(rr - lk["centre"][0] / 4.0, cc - lk["centre"][1] / 4.0))
+        for side, style in (lk.get("banks") or {}).items():
+            if style != "rocky":
+                continue
+            dx, dy = terrain.direction(side)
+            want = math.degrees(math.atan2(dy, dx))
+            off = np.abs((bear - want + 180) % 360 - 180)
+            forced[beach & ~wet & (off <= w.get("bank_half_angle_deg", 50))] = w.get("rock_brush", 4)
         forced[wet & (corners < L - w.get("seabed_below_cm", 50))] = seabed
     return forced
 
@@ -896,6 +1540,8 @@ def cmd_preview(s):
     wet = water_checks(p, p.field, p.water, check)
     deco_checks(s, p, p.placed, p.field, start_vertex(s, p), check)
     village_checks(s, p, village_members(p), p.field, start_vertex(s, p), check)
+    intent_checks(s, p, p.field, p.placed, p.lattice, check)
+    print_features(s, p)
     os.makedirs(BUILD, exist_ok=True)
     out = preview.render(p.field, a, os.path.join(BUILD, "preview-%s.png" % s["folder"]), wet=wet)
     lo, hi = float(p.field.min()), float(p.field.max())
@@ -1194,7 +1840,20 @@ def cmd_verify(s):
               "ZON zone type selects the %s tileset in ZONETYPEINFO (editor brushes match)" % s["paint"]["tileset"])
         grid, have, _ = tiles.load_zone_tiles(zdir)
         tile_checks(ts, grid, have, check)
+        if s.get("intent"):
+            lat_disk, _ = tiles.lattice_votes(grid, ts, have)
+            deco_now = deco_disk if s.get("decorate") else None
+            intent_checks(s, p, field, deco_now, lat_disk, check)
 
+    if s.get("decorate") or s.get("villages"):
+        # Coplanar placements flicker (CLAUDE.md, "Coplanar Placements
+        # Flicker"); a lifted prefab on a flattened pad can create one.
+        out = subprocess.run([sys.executable, os.path.join(HERE, "fix-coplanar-object-overlaps.py"),
+                              "--zone", str(n), "--dry-run"], capture_output=True, text=True)
+        mt = re.search(r"fighting-pairs=\s*(\d+)", out.stdout)
+        pairs = int(mt.group(1)) if mt else -1
+        check(pairs == 0, "no coplanar (flickering) object pairs (fix-coplanar-object-overlaps.py: %s)"
+              % (pairs if pairs >= 0 else "did not run: " + (out.stderr.strip().splitlines() or ["?"])[-1]))
     print("\n  GM warp: /mm %d %d %d" % (n, round((start.x + 520000) / 1000), round((start.y + 520000) / 1000)))
     print("  %s" % ("ALL CHECKS PASSED" if not check.failed else "%d CHECK(S) FAILED" % check.failed))
     return 1 if check.failed else 0
@@ -1244,6 +1903,95 @@ def cmd_oracle():
     return 0 if ok else 1
 
 
+PROFILE_ZONES = {"JG01": 22, "JG02": 23, "JG03": 25, "JG04": 26, "JG05": 27, "JG06": 3, "JG07": 20, "JG08": 11}
+
+
+def cmd_profiles():
+    """Measure each retail JG zone for a layout's "like": median slope (and
+    the terrain character whose generated slopes come closest), water
+    share, and decoration per hectare of dry land by kind, also as a ratio
+    to all JG zones together. Writes stats/jg_zone_profiles.json."""
+    zstb, zstl, _ = tables()
+    kinds_path = os.path.join(STATS_DIR, "jg_object_kinds.json")
+    with open(kinds_path, encoding="utf-8") as f:
+        kt = json.load(f)["kinds"]
+    by_id = {i: k for k, ids in kt.items() for i in ids}
+    cat = catalogue.load(os.path.join(STATS_DIR, "jg_decoration.json"))
+    cat_of = {o["id"]: o["category"] for o in cat["objects"]}
+    kinds = ["TREE", "STONE", "GRASS", "FLOWER", "PLANT", "MUSHROOM"]
+
+    # what each terrain character's slopes look like once generated
+    char_slope = {}
+    for name, ch in layout.CHARACTER.items():
+        t = {"seed": 1, "base_cm": 1000, "max_play_slope_deg": ch["max_slope"],
+             "hills": {k: ch[k] for k in ("amplitude_cm", "wavelength_m", "octaves", "persistence")}}
+        f = terrain.generate(4, 4, t, 1)
+        gx, gy = terrain.gradient(f)
+        char_slope[name] = float(np.median(np.degrees(np.arctan(np.hypot(gx, gy)))))
+
+    out, totals = {}, {"ha": 0.0, **{k: 0 for k in kinds}}
+    for folder, row in PROFILE_ZONES.items():
+        zdir = os.path.dirname(P(zstb.get(row, COL_ZON).decode("latin-1")))
+        field, (x0, y0) = prefab._zone_field(zdir)
+        wet = np.zeros(field.shape, bool)
+        counts = {k: 0 for k in kinds}
+        objs = []
+        for fn in os.listdir(zdir):
+            if not fn.lower().endswith(".ifo"):
+                continue
+            with open(os.path.join(zdir, fn), "rb") as fh:
+                m = ifo.parse(fh.read())
+            o = m.lump(ifo.OCEAN)
+            for sx, sz, sy, ex, ez, ey in (o.rects if o is not None else []):
+                c0 = int(round((min(sx, ex) + 520000) / terrain.GRID_CM)) - x0 * 64
+                c1 = int(round((max(sx, ex) + 520000) / terrain.GRID_CM)) - x0 * 64
+                r0 = int(round((min(sy, ey) + 520000) / terrain.GRID_CM)) - y0 * 64
+                r1 = int(round((max(sy, ey) + 520000) / terrain.GRID_CM)) - y0 * 64
+                sub = field[max(0, r0):r1 + 1, max(0, c0):c1 + 1]
+                with np.errstate(invalid="ignore"):
+                    wet[max(0, r0):r1 + 1, max(0, c0):c1 + 1] |= sub < sz
+            objs += m.lump(ifo.OBJECT) or []
+        have = ~np.isnan(field)
+        land = have & ~wet
+        with np.errstate(invalid="ignore"):
+            gx, gy = terrain.gradient(field)
+            deg = np.degrees(np.arctan(np.hypot(gx, gy)))
+        cell_land = land[:-1, :-1] & land[1:, :-1] & land[:-1, 1:] & ~np.isnan(deg)
+        med = float(np.median(deg[cell_land]))
+        for r in objs:
+            k = by_id.get(r.obj_id, cat_of.get(r.obj_id))
+            if k not in counts:
+                continue
+            vr = int(round((r.pos[1] + 520000) / terrain.GRID_CM)) - y0 * 64
+            vc = int(round((r.pos[0] + 520000) / terrain.GRID_CM)) - x0 * 64
+            if 0 <= vr < field.shape[0] and 0 <= vc < field.shape[1] and land[vr, vc]:
+                counts[k] += 1
+        ha = float(land.sum()) * (terrain.GRID_CM / 100) ** 2 / 1e4
+        totals["ha"] += ha
+        for k in kinds:
+            totals[k] += counts[k]
+        name = zstl.name(zstb.get(row, COL_STL).decode("latin-1")) if zstb.get(row, COL_STL) else folder
+        out[folder] = {"zone_row": row, "name": name, "median_slope_deg": round(med, 2),
+                       "character": min(char_slope, key=lambda c: abs(char_slope[c] - med)),
+                       "water_share": round(float(wet.sum()) / float(have.sum()), 3),
+                       "per_ha": {k: round(counts[k] / ha, 2) for k in kinds}}
+    for folder, z in out.items():
+        z["density_vs_jg"] = {k: round(z["per_ha"][k] / max(1e-6, totals[k] / totals["ha"]), 3) for k in kinds}
+        print("  %-5s %-22s slope %4.1f deg -> %-7s water %4.1f%%  trees %.1f/ha (x%.2f) rocks %.1f/ha flowers %.1f/ha"
+              % (folder, z["name"][:22], z["median_slope_deg"], z["character"], 100 * z["water_share"],
+                 z["per_ha"]["TREE"], z["density_vs_jg"]["TREE"], z["per_ha"]["STONE"], z["per_ha"]["FLOWER"]))
+    path = os.path.join(STATS_DIR, "jg_zone_profiles.json")
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        json.dump({"_comment": "Retail JG zones measured by `mapgen-zone.py profiles` for layout files' \"like\". "
+                               "character = the layout terrain character whose generated median slope is "
+                               "closest; density_vs_jg = per-hectare density over all JG zones together.",
+                   "character_median_slope_deg": {k: round(v, 2) for k, v in char_slope.items()},
+                   "jg_per_ha": {k: round(totals[k] / totals["ha"], 3) for k in kinds},
+                   "zones": out}, f, indent=1, ensure_ascii=False)
+    print("wrote %s" % path)
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1259,6 +2007,10 @@ def main():
     pe.add_argument("--template-row", type=int, default=22, help="the zone row whose ZSCs the prefab must match")
     pv = sub.add_parser("preview")
     pv.add_argument("spec")
+    cp = sub.add_parser("compile", help="show the spec a layout file compiles to")
+    cp.add_argument("layout")
+    cp.add_argument("--out")
+    sub.add_parser("profiles", help="measure retail JG zones for layouts' \"like\"")
     b = sub.add_parser("build")
     b.add_argument("spec")
     b.add_argument("--out", required=True)
@@ -1285,6 +2037,19 @@ def main():
         fails = walk.selftest()
         print("  %s" % ("ALL PASSED" if not fails else "FAILED: %s" % fails))
         return 1 if fails else 0
+    if a.cmd == "profiles":
+        return cmd_profiles()
+    if a.cmd == "compile":
+        sp = load_spec(a.layout)
+        sp.pop("_path", None)
+        text = json.dumps(sp, indent=1, ensure_ascii=False) + "\n"
+        if a.out:
+            with open(a.out, "w", encoding="utf-8", newline="\n") as f:
+                f.write(text)
+            print("wrote %s" % a.out)
+        else:
+            sys.stdout.write(text)
+        return 0
     s = load_spec(a.spec)
     if a.cmd == "preview":
         return cmd_preview(s)
