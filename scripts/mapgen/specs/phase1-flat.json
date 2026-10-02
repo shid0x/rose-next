@@ -1,0 +1,16 @@
+{
+  "_comment": "Phase 1: a flat 2x2-chunk Junon grassland test zone. See docs/mapgen/PLAN.md.",
+  "name": "Mapgen Test",
+  "folder": "MAPGEN01",
+  "planet_dir": "JUNON",
+  "template_zone_row": 22,
+  "chunks": {"x0": 32, "y0": 32, "width": 2, "height": 2},
+  "ground_cm": 0,
+  "tile": {"brush": 1, "tile_set": 1, "tile_index": 15, "tile_id": 5,
+           "_comment": "JG bright grass (Table_Tileset_JG game row 2, full tile = TileNumberF 5 = T002_01.dds)"},
+  "events": [
+    {"name": "start", "at": "centre", "offset_cm": [0, 0]},
+    {"name": "restore", "at": "centre", "offset_cm": [300, 0]}
+  ],
+  "minimap": "NOMAP"
+}

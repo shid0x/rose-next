@@ -1,0 +1,167 @@
+"""Build a complete zone folder in memory from parameters (phase 1: flat).
+
+`build_zone(params, template_zon)` returns {relative path: bytes} for the
+folder: the .ZON plus, per chunk, .HIM/.TIL/.IFO/.MOV and the two empty LIT
+files. It is pure: no file system access, so `scripts/mapgen-zone.py` can
+write the result anywhere, diff it against the editor's output, or install it.
+
+Chunk addressing (docs/mapgen/FORMATS.md, "Units and coordinates"):
+
+* a chunk slot (x, y) has y growing north;
+* its files are named "<x>_<64-y>";
+* positions in the ZON/IFO are relative to the centre of slot (32, 32),
+  i.e. world - 520000 cm.
+
+No per-chunk ground lightmap is written: the client falls back to
+3DDATA\\TERRAIN\\default_light.dds, a uniform grey (132,125,132) close to a
+retail JG chunk's mean (137,134,119).
+"""
+
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple
+
+import numpy as np
+
+from . import chunk, ifo, lit, zon
+from .container import Container, Region
+
+CHUNK_CM = 16000            # 16 patches x 4 grids x 250 cm
+ZONE_ORIGIN_CM = 32 * CHUNK_CM + CHUNK_CM // 2   # 520000: IFO/ZON origin
+FLT_MAX = np.float32(3.4028234663852886e+38)
+
+
+@dataclass
+class Tile:
+    """One TIL record. tile_id indexes the ZON tile table; the other three are
+    the editor's autotile state (FORMATS.md, TIL)."""
+    brush: int
+    tile_set: int
+    tile_index: int
+    tile_id: int
+
+
+@dataclass
+class EventPoint:
+    name: str
+    world_x: float          # absolute world cm
+    world_y: float
+    height: float           # cm
+
+
+@dataclass
+class ZoneParams:
+    folder: str                              # e.g. "MAPGEN01"; the ZON is <folder>.ZON
+    x0: int                                  # south-west chunk slot
+    y0: int
+    width: int                               # chunks, east
+    height: int                              # chunks, north
+    ground_cm: float
+    tile: Tile
+    events: List[EventPoint]
+    zone_type: int = 0                       # editor brush palette: 0 = JG
+    start_chunk: Optional[Tuple[int, int]] = None   # ZON lump 0; client overwrites it
+    economy: Optional[zon.Economy] = None    # None = copy the template's
+    file_case_upper: bool = True             # chunk extensions, as retail/editor write them
+
+    def chunks(self):
+        for y in range(self.y0, self.y0 + self.height):
+            for x in range(self.x0, self.x0 + self.width):
+                yield x, y
+
+
+def chunk_stem(x, y):
+    """File stem of chunk slot (x, y): '<x>_<64-y>'."""
+    return "%d_%d" % (x, 64 - y)
+
+
+def centre_world(p):
+    """World (x, y) cm of the centre of the chunk rectangle."""
+    return ((p.x0 + p.width / 2.0) * CHUNK_CM, (p.y0 + p.height / 2.0) * CHUNK_CM)
+
+
+# --------------------------------------------------------------------- files
+
+
+def make_him(ground_cm):
+    heights = np.full((65, 65), ground_cm, dtype="<f4")
+    # Culling bounds: the editor's +/-FLT_MAX placeholders (875 retail HIMs).
+    # Real values wait for the trailer indexing to be verified (phase 2).
+    pair = np.array([FLT_MAX, -FLT_MAX], dtype="<f4")
+    bounds = chunk.HimBounds(b"quad", np.tile(pair, (256, 1)), np.tile(pair, (85, 1)))
+    return chunk.Him(65, 65, 4, 250.0, heights, bounds)
+
+
+def make_til(t):
+    tiles = np.zeros((16, 16), dtype=chunk.TILE_DTYPE)
+    tiles["brush"], tiles["tile_set"] = t.brush, t.tile_set
+    tiles["tile_index"], tiles["tile_id"] = t.tile_index, t.tile_id
+    return chunk.Til(16, 16, tiles)
+
+
+def make_mov():
+    return chunk.Mov(32, 32, np.zeros((32, 32), dtype="u1"))   # 0 = AI may move
+
+
+def make_ifo(stem_x, stem_y):
+    """An empty chunk IFO laid out exactly as the editor's File > New writes it:
+    all 13 lumps in enum order (editor/IFO.cs:1202-1500, New.xaml.cs:266-301)."""
+    water = np.zeros(256, dtype=ifo.WATER_CELL)
+    water["type"] = 1
+    lumps = [
+        (ifo.MAPINFO, ifo.MapInfo(16, 16, stem_x, stem_y, (0.0,) * 16,
+                                  ("%d_%d" % (stem_x, stem_y)).encode())),
+        (ifo.OBJECT, []), (ifo.MOB, []), (ifo.CNST, []), (ifo.SOUND, []),
+        (ifo.EFFECT, []), (ifo.MORPH, []),
+        (ifo.WATER, ifo.WideWater(16, 16, water)),
+        (ifo.REGEN, []),
+        (ifo.OCEAN, ifo.Ocean(2000.0, [])),        # the editor's tessellation size
+        (ifo.WARP, []), (ifo.COLLISION, []), (ifo.EVENT_OBJECT, []),
+    ]
+    c = Container()
+    for i, (t, body) in enumerate(lumps):
+        c.entries.append((t, i))
+        c.regions.append(Region(t, body))
+    return c
+
+
+def make_zon(p, template):
+    """ZON from parameters; textures, tile table and (by default) economy come
+    from the template ZON, as the editor's File > New copies them."""
+    sx, sy = p.start_chunk or (p.x0, p.y0)
+    info = zon.ZoneInfo(p.zone_type, 64, 64, 4, 250.0, sx, sy,
+                        np.zeros(64 * 64, dtype=zon.CELL_DTYPE))
+    events = [zon.EventPos(e.world_x - ZONE_ORIGIN_CM, e.height, e.world_y - ZONE_ORIGIN_CM,
+                           e.name.encode("ascii")) for e in p.events]
+    textures = list(template.lump(zon.TEXTURES))
+    tiles = np.array(template.lump(zon.TILES), copy=True)
+    economy = p.economy or template.lump(zon.ECONOMY)
+    c = Container()
+    for i, (t, body) in enumerate([(zon.INFO, info), (zon.EVENTS, events),
+                                   (zon.TEXTURES, textures), (zon.TILES, tiles),
+                                   (zon.ECONOMY, economy)]):
+        c.entries.append((t, i))
+        c.regions.append(Region(t, body))
+    return c
+
+
+def build_zone(p, template_zon):
+    """Return {relative path within the zone folder: bytes}."""
+    tiles = template_zon.lump(zon.TILES)
+    if not 0 <= p.tile.tile_id < len(tiles):
+        raise ValueError("tile id %d is not in the template's %d-row tile table"
+                         % (p.tile.tile_id, len(tiles)))
+    ext = (lambda e: e.upper()) if p.file_case_upper else (lambda e: e)
+    files = {p.folder + ext(".zon"): zon.build(make_zon(p, template_zon))}
+    him = chunk.build_him(make_him(p.ground_cm))
+    til = chunk.build_til(make_til(p.tile))
+    mov = chunk.build_mov(make_mov())
+    empty_lit = lit.build_lit(lit.Lit(objects=[], dds_list=[]))
+    for x, y in p.chunks():
+        stem = chunk_stem(x, y)
+        files[stem + ext(".him")] = him
+        files[stem + ext(".til")] = til
+        files[stem + ext(".mov")] = mov
+        files[stem + ext(".ifo")] = ifo.build(make_ifo(x, 64 - y))
+        files["%s/LIGHTMAP/BUILDINGLIGHTMAPDATA.LIT" % stem] = empty_lit
+        files["%s/LIGHTMAP/OBJECTLIGHTMAPDATA.LIT" % stem] = empty_lit
+    return files

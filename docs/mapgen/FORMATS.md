@@ -65,6 +65,33 @@ Server zone validity: a `LIST_ZONE` row is served if its ZON file exists
 (`src/sho_gameserver/src/zonelist.cpp:82-89`) and the row number is < 250
 (`src/sho_gameserver/src/lib_gsmain.cpp:38`, `:563-565`).
 
+The GM command `/mm <zone> <x> <y>` warps to absolute world coordinates in
+10 m units (`src/sho_gameserver/src/cheatcmd.cpp:327-342`, x/y × 1000 cm).
+
+`LIST_ZONE` row rules learned in phase 1:
+
+- **Editor visibility.** The editor's Open dialog lists a row only if game
+  columns 1 (ZON), 2 (start), 3 (revive), 9 and 10 (minimap origin), 11 and
+  12 (DECO/CNST ZSC) are non-blank (`xadet/.../MapManager.cs:647-682`; it
+  labels 9/10 "IFO", they are the minimap origin).
+- **No minimap.** `NOMAP` in col 8 gives an empty panel, as row 134 already
+  does. A blank cell makes `SetMinimap` return before freeing, so the previous
+  zone's minimap would stay up (`cminimapdlg.cpp:124-127`).
+- **Triggers.** Cols 22-24 are QSD trigger names; JG01's col 22 is
+  `PvP1301-340`. Never inherit them from a template row.
+- **Revive.** Cols 31-33 (revive zone/x/y) are unused; revive goes through the
+  ZON `restore` event.
+
+**Proven end to end (phase 1, 2026-10-02).** A zone built entirely by mapgen
+works everywhere:
+
+- it loads in the editor GUI, the gameserver and the client (`/mm` teleport,
+  clean logs);
+- the row it needs is listed above;
+- the files are exactly what the editor's File > New writes, with no
+  per-chunk plane lightmap: the client's `default_light.dds` fallback is
+  confirmed working.
+
 ## ZON (one per zone)
 
 Container: `i32 count`, then `count x (i32 type, i32 offset)`. Each lump
@@ -76,7 +103,9 @@ starts at its absolute offset. Lump types are `io_terrain.h:324-331`:
   - `i32 width`, `i32 height` — unused;
   - `i32 grid_per_patch`;
   - `f32 grid_size`;
-  - `i32 start_x`, `i32 start_y` — the centre chunk.
+  - `i32 start_x`, `i32 start_y` — the centre chunk. Effectively unused:
+    `CTERRAIN::InitZONE` overwrites both from the player's position before any
+    use (`io_terrain.cpp:3637-3660`).
 
   Classic files then carry a `width x height` table of `(u8 used, f32 x, f32 y)`
   cells (36,892 bytes in all; `editor/ZON.cs:522-534`) that the game never
@@ -162,7 +191,12 @@ Read at `io_terrain.cpp:2602-2648`; editor `editor/TIL.cs:81-138`.
   (`:2638`, `SetMATERIAL`). The other three bytes are editor state for the
   autotile brush (`xadet/.../ToolManager/Tools/Terrain/Brush.cs:173-200`):
   - `tile_index` = 4-bit corner mask (15 = full);
-  - `tile_set` = row of the zone type's `Table_Tileset_*.STB`;
+  - `tile_set` = k selects **game row k+1** of the zone type's
+    `Table_Tileset_*.STB`. Row 0 is the `MAX_TILE_SET` header
+    (`xadet/.../Data/TileSet.cs:48-65`; editor col = game col + 1);
+  - `brush` = the brush the tile shows. A full tile (mask 15) shows the set's
+    `MinimumBrush` and uses `TileNumberF`; mask 0 shows `MaximumBrush` and
+    uses `TileNumber0`;
   - `tile_id` is derived from them:
     - mask 15 → `TileNumberF`;
     - mask 0 → `TileNumber0`;
@@ -173,6 +207,28 @@ Read at `io_terrain.cpp:2602-2648`; editor `editor/TIL.cs:81-138`.
     JZ, LP, LZ, ODG and JZP families;
   - 85-96% in port towns (JPT/JPTBG; hand-painted special tiles);
   - ~0% in Karkia, Skaaj and Shibuya, whose tilesets have no `Table_Tileset`.
+
+**Junon grassland (JG) brushes**, from `Table_Tileset_JG.STB` game row 17,
+decoded as CP949:
+
+| # | Brush |
+|---|---|
+| 0 | dark soil |
+| 1 | bright grass |
+| 2 | dark grass |
+| 3 | sparse grass |
+| 4 | meadow cliff |
+| 5 | bright soil |
+| 6 | beach sand |
+| 7 | **seabed** |
+| 8 | stream gravel |
+
+- **Plain grass** is brush 1, `tile_set` 1, `tile_index` 15, ids 5-9
+  (`T002_01..05.dds`).
+- JG01's most common full tile is set 13 / brush 7 (ids 35-39, `T008`), which
+  is the *seabed* under its sea — **not** a ground tile.
+- The editor's File > New writes brush 1 / set 1 / index 15 but `tile_id` 1,
+  which draws *dark soil* (`T001_02.dds`). Its four bytes disagree; ours do not.
 
 ## IFO (one per chunk) — placed things
 
@@ -249,6 +305,9 @@ What retail files contain (phase 0 corpus scan, 1,538 IFOs):
   This is exactly what the editor's File > New writes.
 - **Lump 0 (MAPINFO):** always `16, 16, cell_x = x, cell_y = y`, with name
   `"x_y"` of the file (two files carry a neighbour's name).
+  - The world matrix is a Y/Z axis swap plus a translation of ±16,000 cm per
+    chunk away from the zone centre: an exporter artefact.
+  - The editor's File > New writes zeros, and the game ignores the lump.
 - **Stale data:** some IFOs carry dead bytes past the end of a lump (see
   "Codec status").
 
@@ -335,7 +394,7 @@ What the generator should write in each:
 | IFO record `name` | nothing | empty |
 | IFO record `obj_type` | log only | the per-lump value in the IFO section |
 | IFO record `map_x` / `map_y` | log only | the 2.5 m grid cell (exact orientation not settled; 0 is also retail-valid) |
-| IFO lump 0 MAPINFO | nothing | `16, 16, x, y`, name `"x_y"`, matrix not yet checked |
+| IFO lump 0 MAPINFO | nothing | `16, 16, x, y`, name `"x_y"`, zero matrix (as the editor) |
 | IFO lump 7 WATER | nothing; the client misparses and discards it | 16x16, `type = 1`, rest 0 — or omit the lump |
 | LIT `tga_name`, `lightmap_index`, DDS catalogue | nothing | not written in v1 (no object lightmaps): empty LIT files as File > New writes, or none |
 
@@ -369,12 +428,8 @@ Collision has no file of its own:
   (`cobjchar_collision.cpp:1104-1180`). Not yet traced through every caller.
 - **Map edge:** what happens when a player walks off the last chunk.
 - **Water:** whether anything stops a player walking into water.
-- **Editor output in our client:** whether the editor's File > New output loads
-  in our client unchanged.
 - **IFO lump 7:** whether the client's misparse of it is always harmless, or
   just harmless on the data we have. Retail only ever holds the 16x16
   default, so copying that is safe.
 - **IFO `map_x` / `map_y`:** which of the four grid-cell orientations is the
   convention; about 17% of records match none.
-- **IFO lump 0 world matrix:** what retail writes in it (not inspected; the
-  game ignores the lump).

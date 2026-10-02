@@ -42,6 +42,8 @@ Output: a complete zone folder plus the table rows that register it.
 
 ## Working rules
 
+- **All work for this project is committed on the `mapgen` branch**, not
+  `master` (user, 2026-10-02). Merging back is the user's call.
 - `data/` is gitignored: **the scripts and these docs are the only committed
   record** of any data change. Put reasoning in script docstrings.
 - Anything that writes into `data/` must be reversible (cell-level sidecar or
@@ -102,7 +104,59 @@ number. Installed and uninstalled by script.
   inputs (modulo documented differences); editor log reaches "Loading
   Completed"; gameserver logs `Adding zone: #N`; `/mm N` in game; walk across
   every chunk seam with no new lines in `error.txt` / `client.log`.
-- **Status:** NOT STARTED.
+- **Status:** DONE 2026-10-02. The user confirmed:
+  - the editor GUI loads map 12;
+  - the gameserver loads zone #12;
+  - after a bake, `/mm 12` teleports into the zone in the client with no
+    errors in the logs.
+
+  Walking the seams and the outer-edge behaviour were not reported
+  separately; the edge stays in FORMATS.md "Not verified".
+  - **Installed as zone 12, "Mapgen Test"**, folder
+    `data/3DDATA/MAPS/JUNON/MAPGEN01/`:
+    - chunk slots x 32-33, y 32-33 (files `32_31`, `32_32`, `33_31`, `33_32`);
+    - flat at 0 cm, JG bright grass (tile 5);
+    - `start` at world (528000, 528000), `restore` 3 m east;
+    - `LIST_ZONE_S` key `LZON012`.
+    - Warp: `/mm 12 528 528`.
+  - **Done:**
+    - `mapgen-zone.py oracle` — with File > New's own inputs (2x2, JG01 tile
+      file), all 25 files are **byte-identical** to what the editor's writers
+      produce.
+    - `mapgen-zone.py verify` — all checks pass: tables, references, files,
+      chunk set, tile ids and textures, events inside chunks, editor
+      `IsValidMap`.
+    - `Run-NewZoneOracle.ps1 -LoadDir <folder>` — every file loads through the
+      editor's own readers.
+    - Full round-trip with the new zone included: 9,060 / 9,060.
+    - `uninstall` tested: both tables returned to their exact pre-install bytes.
+  - **Confirmed in the real programs (user):** editor GUI load; gameserver
+    zone load; client teleport with clean logs.
+- **How:**
+  - Spec: `scripts/mapgen/specs/phase1-flat.json`.
+  - Builder: `scripts/mapgen/zone.py` (pure: params → {path: bytes}).
+  - CLI: `scripts/mapgen-zone.py {oracle,build,install,verify,uninstall}`.
+  - Oracle: `scripts/mapgen/oracle/` (C# against `data/Map Editor.exe`).
+  - Manifest with every overwritten cell: `build/mapgen/installed/MAPGEN01.json`.
+  - Emergency table copies: `build/mapgen/backup/<stamp>/`.
+- **Changes from the plan / decisions made:**
+  - Zone 12 = lowest row free in `LIST_ZONE` and `ITEM_DROP` with no `LZONnnn`
+    key. The installer refuses a row past the table's end rather than grow it.
+  - The `LIST_ZONE` row is copied from JG01 (row 22). These columns are
+    overridden:
+    - name, ZON path, start/revive names;
+    - minimap → `NOMAP`, minimap origin → NW chunk;
+    - triggers 22-24 → blank (JG01 has a PvP trigger);
+    - STL key;
+    - revive 31-33 → blank.
+  - Tiles, textures and economy come from JG01.ZON, as File > New copies them
+    (JG01's economy block *is* the editor's default block).
+  - No per-chunk plane lightmap: the client falls back to `default_light.dds`,
+    a uniform (132,125,132) grey close to a retail JG chunk's mean.
+  - HIM culling bounds are the editor's placeholders, which suit flat ground.
+    Real bounds come in phase 2.
+  - First install left minimap cols 9/10 blank; the editor would then hide the
+    map. Caught by reading `IsValidMap`, fixed, reinstalled; verify now checks it.
 
 ### Phase 2 — terrain
 
@@ -180,3 +234,9 @@ Baked terrain lightmap, generated `.MOV`, minimap.
   that no `ITEM_DROP` table uses; template the tile table, textures and
   economy from JG01.ZON the way the editor's File > New copies them). Nothing
   committed yet; the user decides when.
+- 2026-10-02 — Phase 0 committed on the new `mapgen` branch (`d34c0011`).
+  Phase 1 built and installed as zone 12; automated checks pass; editor GUI /
+  server / in-game checks handed to the user.
+- 2026-10-02 — Phase 1 confirmed by the user (editor, server, client) and
+  committed. Next: phase 2 (terrain). Its first job is to settle the HIM
+  trailer indexing (FORMATS.md, "Not verified") before writing real bounds.
