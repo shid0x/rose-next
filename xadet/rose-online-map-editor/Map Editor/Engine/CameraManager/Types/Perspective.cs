@@ -58,6 +58,12 @@ namespace Map_Editor.Engine.Types
         /// <value>The position.</value>
         public Vector3 Position { get; private set; }
 
+        /// <summary>
+        /// Gets whether the camera is held by a script (ShotRunner): mouse and
+        /// keyboard no longer move it.
+        /// </summary>
+        public bool Scripted { get; private set; }
+
         #endregion
 
         /// <summary>
@@ -102,6 +108,9 @@ namespace Map_Editor.Engine.Types
         /// <param name="gameTime">Time passed since the last call to Update.</param>
         public void Update(GameTime gameTime)
         {
+            if (Scripted)
+                return;
+
             MouseState mouseState = Mouse.GetState();
 
             Vector2 mouseMoved = new Vector2(lastMouseLocation.X - mouseState.X, lastMouseLocation.Y - mouseState.Y);
@@ -183,6 +192,17 @@ namespace Map_Editor.Engine.Types
             viewport.MaxDepth = 50000.0f;
 
             Projection = Matrix.CreatePerspectiveFieldOfView(MathHelper.PiOver4, viewport.AspectRatio, viewport.MinDepth, viewport.MaxDepth);
+        }
+
+        /// <summary>
+        /// Holds the camera at `eye`, looking at `target` (Z up), until the
+        /// program ends: used by ShotRunner.
+        /// </summary>
+        public void SetLookAt(Vector3 eye, Vector3 target)
+        {
+            Scripted = true;
+            Position = eye;
+            View = Matrix.CreateLookAt(eye, target, Vector3.UnitZ);
         }
 
         /// <summary>

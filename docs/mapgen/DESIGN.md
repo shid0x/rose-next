@@ -123,6 +123,36 @@ up one over 54°.
   meadow). It is also the most detailed description: specific places,
   relations and routes. Short descriptions should be filled out along
   those lines, not left to defaults.
+- **Design to the four goals, and state them as checks** (phase 7d). A
+  layout written "at best" names, for each map:
+  - **Route hierarchy:** one main road between the start and the goal
+    (`style: road`), a secondary route that is longer, narrower or higher
+    (`path`, a footbridge, a ledge path), and ground with no route at all.
+    A level forces the hierarchy: a ravine admits roads only at bridges,
+    ledges only at ramps.
+  - **Landmarks:** something tall or singular at each decision point: a
+    village on a hill, a bridge, a tower on a ledge, a forest, the ravine.
+  - **Sightline control** (`sightlines`, checked): show the goal from the
+    start to pull the player (Riverwatch's village across the ravine);
+    hide the reward behind a forest or a rise (its outpost, Ledgewood's
+    east end); give the high ground the view (Ledgewood's tower sees both
+    settlements over the forest). A forest hides only if the line really
+    crosses it: put it *between*, not near; three canopies make a wall.
+  - **Combat spaces:** contrasting covers along the routes: open meadow
+    (exposed), boulder fields (broken cover), dense forest on a path (close
+    quarters), pits with tall grass at the rim (a hazard), an open ledge
+    against a wooded one.
+  Worked examples: `layouts/p7d-1-riverwatch.json`, `p7d-2-ledgewood.json`
+  (their `notes` say which element serves which goal).
+- **Look at the map, not only the numbers** (phase 7d). After installing,
+  run `mapgen-zone.py shots SPEC` and read the contact sheet and the views:
+  the checks passed Ledgewood while two of its pits were invisible. Judge
+  each view by the description: is the landmark legible, does the hidden
+  thing stay hidden, does a level read as a level.
+- **A level must read in its paint** (phase 7d). Terrain gets little
+  shading, so a pit painted like the meadow around it looks flat even 8 m
+  deep. Pits and gullies are bare earth; ravine walls already show sand and
+  soil from the river. Keep any new level's faces in a contrasting brush.
 
 ## Ground paint
 

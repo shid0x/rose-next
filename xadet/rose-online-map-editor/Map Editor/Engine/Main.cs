@@ -154,6 +154,7 @@ namespace Map_Editor.Engine
         {
             CameraManager.Update(gameTime);
             ToolManager.Update(gameTime);
+            ShotRunner.Update();
 
             switch (MainState)
             {
@@ -183,8 +184,11 @@ namespace Map_Editor.Engine
                             App.Form.WindowState = System.Windows.WindowState.Maximized;
                             App.Form.Topmost = false;
 
+                            if (ShotRunner.Active)
+                                ShotRunner.Begin();
 #if DEBUG
-                            MapManager.Load(4);
+                            else
+                                MapManager.Load(4);
 #endif
                         }
                     }
@@ -204,6 +208,13 @@ namespace Map_Editor.Engine
                 return;
 
             base.Draw(gameTime);
+
+            if (ShotRunner.Active)
+            {
+                // the world only: no gizmos, tooltips or preview panel
+                ShotRunner.AfterWorldDraw(device);
+                return;
+            }
 
             Map_Editor.Engine.Tools.Movement movement = ToolManager.Tool as Map_Editor.Engine.Tools.Movement;
             if (movement != null) movement.Draw();

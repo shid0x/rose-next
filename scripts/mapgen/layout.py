@@ -133,6 +133,11 @@ COVER = {
                   "bias": {"0": 0.8, "5": 0.6, "3": 0.5}, "intent": ("GRASS", 0.5)},
     "overgrown": {"mult": {"GRASS": 2.5, "PLANT": 2.5, "TREE": 1.5, "FLOWER": 1.0, "MUSHROOM": 2.0},
                   "bias": {"2": 0.5}, "intent": ("GRASS", 1.5)},
+    # a screen of tall grass and bushes on a small patch (a pit's rim): the
+    # base density of grass is a few clumps per hectare, so "overgrown"
+    # left a 9 m rim ring with one clump
+    "tall grass": {"mult": {"GRASS": 10.0, "PLANT": 8.0, "TREE": 0.3, "FLOWER": 1.0},
+                   "bias": {"2": 0.6}, "intent": ("GRASS", 4.0)},
 }
 COVER_SYNONYMS = {"open meadow": "meadow", "grassland": "meadow", "flower field": "flowers", "boulders": "rocky",
                   "rocks": "rocky", "dense forest": "forest", "trees": "woods", "wasteland": "bare"}
@@ -637,6 +642,15 @@ def compile_layout(lay):
         levels["landmarks"] = lms
     if levels:
         s["levels"] = levels
+
+    # --- sightlines: what the player should and should not see from where
+    for sl in lay.get("sightlines", []):
+        for end in (sl["from"], sl["to"]):
+            if end != "start" and end not in names:
+                _err("sightline end %r: not 'start', a village or a feature (known: %s)" % (end, ", ".join(names)))
+        intent.append({"check": "sightline", "from": sl["from"], "to": sl["to"],
+                       "is": _one_of(sl.get("is", "visible"), ["visible", "hidden"], "sightline"),
+                       "label": sl.get("why", "%s %s from %s" % (sl["to"], sl.get("is", "visible"), sl["from"]))})
 
     # --- cover
     cover = []

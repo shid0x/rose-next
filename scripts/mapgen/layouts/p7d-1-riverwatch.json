@@ -1,0 +1,136 @@
+{
+ "layout": 1,
+ "description": "A 4x4 Junon grassland basin cut in two by a deep ravine running north to south, a river at its bottom. The player starts at a camp in the south-west, among a field of boulders. From the camp a road runs east to a wooden bridge at the centre of the ravine and on to a village of five houses on a low hill east of the river, in plain view from the camp: the goal of the map. A footpath climbs north from the camp to a farm, then into the dense forest that fills the north of the map, to a rope footbridge far to the north, and across it to a small outpost of huts in the north-east, in a clearing that cannot be seen from the camp. Light woods cover the south-east below the village hill; open meadow everywhere else. Anyone who falls into the ravine climbs out on the west bank.",
+ "notes": [
+  "Route hierarchy: the main road (camp -> main bridge -> village) is the obvious way; the footpath (camp -> farm -> footbridge -> outpost) is the secondary route, narrower and hidden; the ravine forces both through their bridge.",
+  "Landmarks: the village on its hill (seen from the camp, across the ravine), the wooden bridge, the rope footbridge, the ravine itself.",
+  "Sightline control: the village is shown from the start to pull the player east; the outpost is hidden behind the northern forest and found by following the path.",
+  "Combat spaces: the boulder field round the camp (broken cover), the open meadows round the village hill (fight in the open), the northern forest (close quarters on the path), the light woods south-east (skirmish).",
+  "Ravine: deep, 40 m wide, climb-out gullies on the west bank only; the bridges are the only ways east."
+ ],
+ "name": "Mapgen Riverwatch",
+ "folder": "MAPGEN10",
+ "size": "4x4",
+ "seed": 7201,
+ "terrain": {
+  "character": "gentle",
+  "shape": "basin",
+  "play": "large",
+  "border": "mountains",
+  "features": [
+   {
+    "name": "hill",
+    "kind": "broad hill",
+    "where": "east",
+    "size": "small",
+    "height": "low"
+   }
+  ]
+ },
+ "levels": {
+  "ravine": {
+   "axis": "north-south",
+   "depth": "deep",
+   "width": "medium",
+   "river": true,
+   "climb_out": "west",
+   "crossings": [
+    {
+     "name": "main_bridge",
+     "kind": "bridge",
+     "at": "centre"
+    },
+    {
+     "name": "footbridge",
+     "kind": "footbridge",
+     "at": "far north"
+    }
+   ]
+  }
+ },
+ "villages": [
+  {
+   "name": "camp",
+   "prefab": "anima_camp",
+   "where": "south-west"
+  },
+  {
+   "name": "farm",
+   "prefab": "breezy_farm",
+   "where": "north-west",
+   "entrance": "farmgate"
+  },
+  {
+   "name": "village",
+   "prefab": "adventurer_houses",
+   "on": "hill"
+  },
+  {
+   "name": "outpost",
+   "prefab": "sunshine_huts",
+   "where": "north-east",
+   "skirt_m": 12
+  }
+ ],
+ "roads": [
+  {
+   "from": "camp",
+   "to": "village",
+   "via": "main_bridge",
+   "style": "road"
+  },
+  {
+   "from": "camp",
+   "to": "farm",
+   "style": "path"
+  },
+  {
+   "from": "farm",
+   "to": "outpost",
+   "via": "footbridge",
+   "style": "path"
+  }
+ ],
+ "start": {
+  "near": "camp"
+ },
+ "sightlines": [
+  {
+   "from": "camp",
+   "to": "village",
+   "is": "visible",
+   "why": "the village on its hill is in view from the camp, across the ravine"
+  },
+  {
+   "from": "camp",
+   "to": "outpost",
+   "is": "hidden",
+   "why": "the outpost is hidden from the camp behind the northern forest"
+  }
+ ],
+ "cover": [
+  {
+   "where": "everywhere",
+   "is": "meadow"
+  },
+  {
+   "where": "north half",
+   "is": "forest",
+   "density": "dense"
+  },
+  {
+   "where": "south-west",
+   "is": "rocky",
+   "density": "dense"
+  },
+  {
+   "where": "south-east",
+   "is": "woods",
+   "density": "light"
+  },
+  {
+   "where": "near village",
+   "is": "meadow"
+  }
+ ]
+}

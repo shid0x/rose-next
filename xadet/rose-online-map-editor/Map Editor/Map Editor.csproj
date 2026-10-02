@@ -294,6 +294,7 @@
     <Compile Include="Engine\FileManager\Models\ZMS.cs" />
     <Compile Include="Engine\FileManager\Models\ZSC.cs" />
     <Compile Include="Engine\Main.cs" />
+    <Compile Include="Engine\ShotRunner.cs" />
     <Compile Include="Engine\MapManager\Characters\Monsters.cs" />
     <Compile Include="Engine\MapManager\Characters\NPCs.cs" />
     <Compile Include="Engine\MapManager\Events\SpawnPoints.cs" />

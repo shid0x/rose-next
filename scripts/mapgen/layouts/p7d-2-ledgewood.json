@@ -1,0 +1,51 @@
+{
+ "layout": 1,
+ "description": "A 4x4 Junon grassland valley running from a west exit to an east exit, walled by 12 m cliffs whose tops are wide walkable ledges, reached by a ramp at each end of each ledge; invisible walls stop anyone dropping off a ledge except at its ramps. The player starts at a farm in the open west end of the valley floor. The main road runs along the floor from exit to exit, through a dense forest in the middle of the valley that hides the east end, past three pits dug beside it, one half-hidden in tall grass. A small camp of huts sits in the rocky east end. A lookout tower stands in the middle of the north ledge, with a path along the ledge from ramp to tower to ramp: from the tower you see both the farm and the huts over the forest. The south ledge is wooded.",
+ "notes": [
+  "Route hierarchy: the main road on the valley floor (exit to exit) is the fast way; the ledge path (ramp -> tower -> ramp) is the high road, longer, with the view; the south ledge has no path at all, only woods.",
+  "Landmarks: the lookout tower on the north ledge, the forest in the middle of the valley, the pits, the cliffs themselves.",
+  "Sightline control: the forest hides the east end (the huts) from the farm; the tower sees over it, which is the reason to climb up.",
+  "Combat spaces: the open farm fields (west), the forest on the road (close quarters, pits beside the road), the rocky east end around the huts, the open north ledge (exposed) against the wooded south ledge (cover).",
+  "Pits: three, beside the main road, each with one gully out; the second has overgrown rims."
+ ],
+ "name": "Mapgen Ledgewood",
+ "folder": "MAPGEN11",
+ "size": "4x4",
+ "seed": 7202,
+ "terrain": {
+  "character": "gentle",
+  "shape": "valley east-west",
+  "play": "small",
+  "exits": ["west", "east"],
+  "border": "mountains"
+ },
+ "levels": {
+  "ledges": {"height": "medium", "width": "wide", "drop": "ramps only"},
+  "pits": {"count": 3, "size": "medium", "depth": "deep", "near": "road 1"}
+ },
+ "landmarks": [
+  {"name": "tower", "kind": "lookout tower", "on": "north ledge", "at": "middle"}
+ ],
+ "villages": [
+  {"name": "farm", "prefab": "breezy_farm", "where": "west", "entrance": "farmgate", "skirt_m": 15},
+  {"name": "huts", "prefab": "sunshine_huts", "where": "east", "skirt_m": 12}
+ ],
+ "roads": [
+  {"from": "exit:west", "to": "exit:east", "style": "road"},
+  {"from": "ramp_north_west", "to": "tower", "style": "path"},
+  {"from": "tower", "to": "ramp_north_east", "style": "path"}
+ ],
+ "start": {"near": "farm"},
+ "sightlines": [
+  {"from": "farm", "to": "huts", "is": "hidden", "why": "the forest in the middle of the valley hides the huts from the farm"},
+  {"from": "tower", "to": "farm", "is": "visible", "why": "from the tower you see the farm"},
+  {"from": "tower", "to": "huts", "is": "visible", "why": "from the tower you see the huts over the forest"}
+ ],
+ "cover": [
+  {"where": "everywhere", "is": "meadow"},
+  {"where": "centre", "is": "forest", "density": "very dense"},
+  {"where": "east", "is": "rocky", "density": "dense"},
+  {"where": "south edge", "is": "woods", "density": "dense"},
+  {"where": "rim of pit2", "is": "tall grass", "density": "dense"}
+ ]
+}

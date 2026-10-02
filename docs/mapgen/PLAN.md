@@ -869,6 +869,55 @@ uninstalled first at the user's request (zone 12 kept).
   `guardpost01`, the editor table's "coastal village guard tower") was
   first missed, then found in game at `/mm 38 512 527`. Phase 7c committed.
 
+### Phase 7d — two maps designed for level-design goals
+
+User (2026-10-03): delete the test zones, make two maps "at your best",
+aiming at sightline control, route hierarchy, memorable landmarks and
+combat spaces. Zones 12, 13, 30 and 38 uninstalled first.
+
+- **Status:** INSTALLED 2026-10-03: zone 12 `MAPGEN10` "Mapgen Riverwatch"
+  (`/mm 12 496 507`, the camp), zone 13 `MAPGEN11` "Mapgen Ledgewood"
+  (`/mm 13 491 512`, the farm). Both pass every check from disk (81 / 72),
+  including their sightlines. Walk selftest and round-trip (9,229 / 9,229)
+  pass. In-game review handed to the user. Not committed.
+- **Sightlines are now a check** (`sightlines` in a layout; `sight_blockers`
+  in `mapgen-zone.py`): the line from an eye (1.7 m; a landmark's top at
+  9 m) to a target (a village's roofs at 5 m) is sampled every metre against
+  the terrain, and against tree canopies (a cylinder of 0.6 x the tree's
+  visual radius, 1.5 m to 2.2 x that radius high). "visible" = no ground
+  and at most one canopy; "hidden" = ground, or at least three canopies.
+- **Riverwatch** (DESIGN.md, worked examples): a ravine splits a basin;
+  the main road leads from the start camp over the wooden bridge to the
+  village on a hill, visible from the camp (the goal shown); a footpath
+  leads north through a dense forest to the farm, the rope footbridge and a
+  hidden outpost (5 canopies).
+- **Ledgewood:** a ledged valley; the main road on the floor passes three
+  pits and a forest that hides the east end (4 canopies); the high road
+  along the north ledge reaches a tower that sees both settlements over
+  it.
+- **Visual review without the user: `mapgen-zone.py shots SPEC`.** The map
+  editor gained an unattended mode (`"Map Editor.exe" --shots job.txt`,
+  `xadet/.../Engine/ShotRunner.cs`; documented in the editor's CLAUDE.md):
+  it loads the installed zone, renders it from named views with the real
+  models and textures and no editing helpers, and saves a PNG per view.
+  The command picks the views from the spec (overview, top, the start's
+  follow camera, one per sightline from its eye, one orbit per village,
+  landmark, bridge and pit, turned to the clearest of eight directions),
+  writes `build/mapgen/shots/<folder>/` plus a contact sheet, in ~15 s.
+  Claude reads the PNGs. It needs an unlocked desktop (the editor opens its
+  window); walking and collision still need the game.
+- **What the shots caught that the checks passed:** Ledgewood's pits 1-2
+  were 7.7 m deep but read as flat patches of grass: painted like the
+  meadow, with the flat shading the editor and the game give terrain. Pits
+  and gullies are now painted earth (`level_brush`, default dark soil). The
+  first framings also aimed bridge views into the river and put the
+  sightline eye inside the camp's wagon; both fixed.
+- **Fixes on the way:** `ravine_sealed` floods inside the play area only
+  (it had walked round the ravine through the mountains, which the cell
+  model over-climbs); pits keep clear of ledge cliffs (one had its rim on a
+  cliff and came out 3 m deep); `tall grass` cover for screening a small
+  patch (`overgrown` gave one clump on a pit rim).
+
 ### Phase 8 — polish (optional)
 
 Baked terrain lightmap, generated `.MOV`, minimap.
@@ -995,3 +1044,9 @@ can be added without rewriting it.
   the user. Not committed.
 - 2026-10-03 — Phase 7c confirmed in game by the user (invisible walls,
   bridges, gullies, pit walls, tower) and committed.
+- 2026-10-03 — Phase 7d: test zones removed; two maps designed for
+  sightlines, route hierarchy, landmarks and combat spaces (Riverwatch,
+  Ledgewood) installed as zones 12 and 13; sightlines became a check. All
+  checks pass from disk. Then visual review without the user: the map
+  editor renders named views on command (`mapgen-zone.py shots`); it caught
+  two invisible pits, now painted earth. In-game review handed to the user.

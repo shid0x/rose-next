@@ -47,6 +47,26 @@ Copy-Item 'Map Editor\bin\x86\Release\Map Editor.pdb' '..\..\data\Map Editor.pdb
 The editor's working directory is `../../data`. ROSE data paths come from the
 STB/ZON/ZSC/IFO files and often use legacy mixed-case paths like `3Ddata`.
 
+## Unattended screenshots (`--shots`)
+
+`"Map Editor.exe" --shots job.txt` (run with `data` as the working directory)
+loads one zone, renders it from each view in the job, saves the back buffer
+as `<view>.png`, writes `shots.txt` (one line per view, then `done`) and
+exits. It is driven by the map generator (`scripts/mapgen-zone.py shots
+SPEC`, which writes the job and a contact sheet), so a generated map can be
+looked at with no one at the editor. Code: `Engine/ShotRunner.cs`, hooked
+into `Engine/Main.cs` (begin after the splash, update every frame, capture
+right after the world is drawn, before gizmos and tooltips) and
+`Perspective.SetLookAt` (a scripted camera that ignores mouse and keyboard).
+
+Job directives: `zone N`, `out <folder>`, `hide <Draw settings...>` (editing
+helpers such as Collision, SpawnPoints, GridOutline; set in memory only, the
+config file is not saved), `settle <frames>`, and
+`view <name> ex ey ez tx ty tz` (eye and target in editor metres: world cm
+/ 100, Z up). The run gives up after 5 minutes (a failed map load opens a
+message box) and exits 1. It needs an unlocked desktop session: the editor
+opens its window as usual. Captures are the render panel's size.
+
 ## Architecture
 
 Entry flow:

@@ -48,6 +48,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 import numpy as np
 
@@ -227,6 +228,15 @@ def params_from_spec(s):
                     pts.append((int(round(pt[1] * (rows - 1))), int(round(pt[0] * (cols - 1)))))
             paths.append(pts)
         forced = lake_brushes(s, p, (rows, cols))
+        # Pits and their gullies are bare earth (phase 7d shots: painted like
+        # the meadow around them, an 8 m pit read as a flat patch of grass;
+        # the editor and the game shade terrain too little for the slope
+        # alone to show it)
+        for key in ("pits", "gullies"):
+            m = (getattr(p, "level_masks", None) or {}).get(key)
+            if m is not None and m.any():
+                near = (areas.distance_m(m) <= 3.0)[::4, ::4][:rows, :cols]
+                forced[near & (forced < 0)] = cfg.get("level_brush", 0)
         path_block = forced >= 0
         start_corner = (int(round(anchor[0] / 4)), int(round(anchor[1] / 4)))
         # A harbour village lifted from the coast (Adventurer's Plain, Kenji
@@ -910,7 +920,10 @@ def add_pits(s, p, cfg, rng):
     g = terrain.GRID_CM
     inside_all = np.zeros(p.field.shape, bool)
     gullies = np.zeros(p.field.shape, bool)
-    edge = areas.distance_m(~p.play_v)
+    # away from the border, and from any level's face (a pit beside a ledge
+    # cliff had its rim on the cliff and came out 3 m deep)
+    ground = p.level_masks.get("floor", p.play_v)
+    edge = areas.distance_m(~ground)
     road_v = np.zeros(p.field.shape, bool)
     for q in route:
         road_v[min(q[0] * 4, road_v.shape[0] - 1), min(q[1] * 4, road_v.shape[1] - 1)] = True
@@ -1859,10 +1872,86 @@ def intent_checks(s, p, field, placed, lattice, check):
             diff = float(field[f["centre"]] - np.median(field[ring]))
             check(diff >= it["min_cm"], "%s: %s stands %.1f m above its surroundings (want >= %.1f m)"
                   % (label, it["feature"], diff / 100, it["min_cm"] / 100))
+        elif kind == "sightline":
+            sightline_check(it, s, p, field, placed, check, label)
         elif kind in LEVEL_CHECKS:
             level_check(kind, it, s, p, field, placed, check, label, lw)
         else:
             check(False, "unknown intent check %r" % kind)
+
+
+def sight_point(s, p, name):
+    """(row, col) vertex and the height above ground (cm) a sightline aims
+    at: eye height for the start and for small places, a roof for a
+    village, the top of a landmark."""
+    if name == "start":
+        return p.start_v, 170.0
+    v = next((v for v in p.villages if v["name"] == name), None)
+    if v is not None:
+        return tuple(int(x) for x in v["centre"]), 500.0
+    f = p.features.get(name)
+    if f is None:
+        raise SystemExit("sightline place %r: not 'start', a village or a feature (%s)"
+                         % (name, ", ".join(sorted(p.features))))
+    return tuple(int(x) for x in f["centre"]), 900.0 if f["kind"] == "landmark" else 170.0
+
+
+def sight_blockers(field, a, ha, b, hb, trees):
+    """What stands between eye `a` (vertex, cm above ground) and target `b`:
+    (terrain samples above the line, tree canopies the line passes
+    through). Terrain is sampled every metre, bilinear; a canopy is a
+    cylinder of 0.6 x a tree's visual radius from 1.5 m to 2.2 x that
+    radius above its foot (Junon trees stand about as tall as twice
+    their spread)."""
+    g = terrain.GRID_CM
+    (ra, ca), (rb, cb) = a, b
+    za = float(field[ra, ca]) + ha
+    zb = float(field[rb, cb]) + hb
+    L = math.hypot(rb - ra, cb - ca) * g / 100.0
+    n = max(2, int(L))
+    t = np.linspace(0.0, 1.0, n + 1)[1:-1]
+    rr, cc = ra + (rb - ra) * t, ca + (cb - ca) * t
+    r0 = np.clip(np.floor(rr).astype(int), 0, field.shape[0] - 2)
+    c0 = np.clip(np.floor(cc).astype(int), 0, field.shape[1] - 2)
+    fr, fc = rr - r0, cc - c0
+    ground = (field[r0, c0] * (1 - fr) * (1 - fc) + field[r0 + 1, c0] * fr * (1 - fc)
+              + field[r0, c0 + 1] * (1 - fr) * fc + field[r0 + 1, c0 + 1] * fr * fc)
+    line = za + (zb - za) * t
+    terrain_hits = int((ground > line + 30.0).sum())
+    canopies = 0
+    ax, ay, bx, by = ca * g, ra * g, cb * g, rb * g
+    dx, dy = bx - ax, by - ay
+    LL = dx * dx + dy * dy
+    for q in trees:
+        u = ((q["x"] - ax) * dx + (q["y"] - ay) * dy) / max(1.0, LL)
+        if not 0.02 < u < 0.98:
+            continue
+        px, py = ax + u * dx, ay + u * dy
+        if math.hypot(q["x"] - px, q["y"] - py) > 0.6 * q["rv"]:
+            continue
+        foot = q["z"] - q.get("sink", 0.0)
+        h = za + (zb - za) * u
+        if foot + 150.0 < h < foot + 2.2 * q["rv"]:
+            canopies += 1
+    return terrain_hits, canopies
+
+
+def sightline_check(it, s, p, field, placed, check, label):
+    """"visible": nothing in the way (no ground over the line, at most one
+    canopy, which a player sees past by moving a step). "hidden": the
+    ground hides it, or at least three canopies do (a wall of trees)."""
+    kof = kind_of(s) or (lambda o: o["category"])
+    trees = [q for q in (placed or []) if kof(q) == "TREE" or q.get("category") == "TREE"]
+    a, ha = sight_point(s, p, it["from"])
+    b, hb = sight_point(s, p, it["to"])
+    ground, canopies = sight_blockers(field, a, ha, b, hb, trees)
+    dist = math.hypot(a[0] - b[0], a[1] - b[1]) * terrain.GRID_CM / 100.0
+    if it["is"] == "visible":
+        ok = ground == 0 and canopies <= 1
+    else:
+        ok = ground > 0 or canopies >= 3
+    why = "ground over the line for %d m, %d tree canopies across it, %.0f m apart" % (ground, canopies, dist)
+    check(ok, "%s: %s %s from %s (%s)" % (label, it["to"], it["is"], it["from"], why))
 
 
 LEVEL_CHECKS = ("ravine_sealed", "bridge", "pits", "ledges", "ledges_no_drop", "on_level")
@@ -1886,7 +1975,11 @@ def level_check(kind, it, s, p, field, placed, check, label, lw):
         side = rv["side"][:-1, :-1]
         far_sign = -rv["side"][p.start_v]
         far = cellm(p.play_v & ~rv["inside"]) & (side == far_sign) & ~base["steep"]
-        alone = walk.analyse(field, p.start_v, play_mask(s, p), blocked, trap_scope=trap_scope(s, p))
+        # inside the play area: the cell model walks round anything through
+        # the mountains (FORMATS.md, "the cell model over-states climbing"),
+        # which are judged by border_like_retail instead
+        alone = walk.analyse(field, p.start_v, play_mask(s, p), blocked | ~play_mask(s, p),
+                             trap_scope=trap_scope(s, p))
         leak = int((alone["reach"] & far).sum())
         check(leak == 0, "%s: without the bridges, the far bank is out of reach (%d of its %d cells reached)"
               % (label, leak, int(far.sum())))
@@ -2448,6 +2541,194 @@ def stl_remove(stl, key):
 
 def manifest_path(s):
     return os.path.join(BUILD, "installed", s["folder"] + ".json")
+
+
+# ----------------------------------------------------------------- shots
+
+EDITOR_EXE = os.path.join(DATA, "Map Editor.exe")
+# editor layers that are editing aids, not part of the map as players see it
+SHOT_HIDE = "Collision SpawnPoints WarpGates Sounds Effects EventTriggers GridOutline GridNumbers"
+
+
+def shot_views(s, p):
+    """Named camera views of a generated map, in the editor's units (metres,
+    world coordinates, Z up): (name, eye, target).
+
+    - overview: high and oblique from the south; top: nearly straight down;
+    - start: the game's follow camera behind the start, facing the first
+      place a road leads to (else the map centre);
+    - sight-<from>-<to>: from each sightline's eye towards its target, so
+      "hidden" and "visible" can be judged by eye;
+    - one orbit view of each village, landmark, bridge and pit, from the
+      south-west, at a distance that fits its size.
+    """
+    g = terrain.GRID_CM
+    rows, cols = p.field.shape
+
+    def at(rc, up=0.0):
+        r, c = min(int(round(rc[0])), rows - 1), min(int(round(rc[1])), cols - 1)
+        return [(p.x0 * CHUNK_CM + c * g) / 100.0, (p.y0 * CHUNK_CM + r * g) / 100.0,
+                float(p.field[r, c]) / 100.0 + up]
+
+    def ground_m(x, y):
+        c = (x * 100.0 - p.x0 * CHUNK_CM) / g
+        r = (y * 100.0 - p.y0 * CHUNK_CM) / g
+        r, c = min(max(int(round(r)), 0), rows - 1), min(max(int(round(c)), 0), cols - 1)
+        return float(p.field[r, c]) / 100.0
+
+    def lift(eye, clear=2.0):
+        eye = list(eye)
+        eye[2] = max(eye[2], ground_m(eye[0], eye[1]) + clear)
+        return eye
+
+    def toward(a, b, back_m, up_m, ahead_m, look_up_m=1.5):
+        """A follow camera at `a` facing `b`: back_m behind, up_m above."""
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        n = math.hypot(dx, dy) or 1.0
+        ux, uy = dx / n, dy / n
+        eye = lift([a[0] - ux * back_m, a[1] - uy * back_m, a[2] + up_m])
+        tgt = [a[0] + ux * ahead_m, a[1] + uy * ahead_m, a[2] + look_up_m]
+        return eye, tgt
+
+    def rc_of(pt):
+        c = (pt[0] * 100.0 - p.x0 * CHUNK_CM) / g
+        r = (pt[1] * 100.0 - p.y0 * CHUNK_CM) / g
+        return min(max(int(round(r)), 0), rows - 1), min(max(int(round(c)), 0), cols - 1)
+
+    kof = kind_of(s) or (lambda o: o["category"])
+    trees = [q for q in (p.placed or []) if kof(q) == "TREE" or q.get("category") == "TREE"]
+
+    views = []
+    centre = at(((rows - 1) / 2.0, (cols - 1) / 2.0))
+    span = (cols - 1) * g / 100.0
+    views.append(("overview", lift([centre[0], centre[1] - 0.62 * span, centre[2] + 0.26 * span]),
+                  [centre[0], centre[1] + 0.08 * span, centre[2]]))
+    views.append(("top", [centre[0], centre[1] - 0.05 * span, centre[2] + 1.05 * span], centre))
+
+    named = {}
+    for v in p.villages:
+        named[v["name"]] = (v["centre"], v.get("pad_m", 30.0), 5.0)
+    for name, f in p.features.items():
+        if f["kind"] in ("landmark", "crossing", "pit", "lake", "water"):
+            named.setdefault(name, (f["centre"], max(8.0, f.get("radius_m", 0.0)), 9.0 if f["kind"] == "landmark" else 1.5))
+
+    # the start, facing where the first road from it (or its village) goes
+    st = at(p.start_v, 1.7)
+    goal = None
+    start_near = (s.get("start") or {}).get("near")
+    for road in s.get("roads", []):
+        for a_, b_ in ((road["from"], road["to"]), (road["to"], road["from"])):
+            if a_ in ("start", start_near) and b_ in named and goal is None:
+                goal = at(named[b_][0])
+    eye, tgt = toward(st, goal or centre, 12.0, 6.0, 40.0)
+    views.append(("start", eye, tgt))
+
+    for it in s.get("intent") or []:
+        if it["check"] != "sightline":
+            continue
+        a_rc, ha = sight_point(s, p, it["from"])
+        b_rc, hb = sight_point(s, p, it["to"])
+        a, b = at(a_rc, ha / 100.0), at(b_rc, hb / 100.0)
+        v = next((v for v in p.villages if v["name"] == it["from"]), None)
+        if v is not None:
+            # stand at the village's edge facing the target, not among its props
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            n = math.hypot(dx, dy) or 1.0
+            step = min(v.get("pad_m", 20.0), n / 3.0) * 100.0 / g
+            a = at((a_rc[0] + dy / n * step, a_rc[1] + dx / n * step), 1.7)
+        eye, _ = toward(a, b, 3.0, 1.0, 0.0)
+        views.append(("sight-%s-%s" % (it["from"], it["to"]), eye, b))
+
+    decks = {q["name"]: q for q in (getattr(p, "bridges", None) or []) if q.get("category") == "BRIDGE"}
+    for name, (rc, radius_m, look_up) in sorted(named.items()):
+        if name.endswith(("_a", "_b")) or name == "river":
+            continue
+        tgt = at(rc, look_up * 0.5)
+        if name in decks:
+            # a crossing's own point is down in the ravine: aim at the deck
+            q = decks[name]
+            tgt = [(p.x0 * CHUNK_CM + q["x"]) / 100.0, (p.y0 * CHUNK_CM + q["y"]) / 100.0, q["z"] / 100.0 + 3.0]
+            radius_m = 2 * levels.BRIDGES[next(k for k, b in levels.BRIDGES.items() if b["id"] == q["id"])]["half_cm"]                 * q["scale"][0] / 100.0 * 0.6
+        d = max(30.0, radius_m * 1.7)
+        # from the south-west by default; else whichever of eight directions
+        # has the clearest line (a palm in front of the lens hid a pit)
+        best = None
+        for k, ang in enumerate((233.0, 270.0, 198.0, 315.0, 180.0, 135.0, 90.0, 0.0)):
+            ux, uy = math.cos(math.radians(ang)), math.sin(math.radians(ang))
+            eye = lift([tgt[0] + ux * d, tgt[1] + uy * d, tgt[2] + 0.55 * d], 4.0)
+            hit = sum(sight_blockers(p.field, rc_of(eye), (eye[2] - ground_m(eye[0], eye[1])) * 100.0,
+                                     rc_of(tgt), (tgt[2] - ground_m(tgt[0], tgt[1])) * 100.0, trees))
+            if best is None or hit < best[0]:
+                best = (hit, eye)
+            if hit == 0:
+                break
+        views.append(("place-%s" % name, best[1], tgt))
+    return [(re.sub(r"[^A-Za-z0-9_.-]+", "_", n), e, t) for n, e, t in views]
+
+
+def contact_sheet(out_dir, names, path, thumb_w=480):
+    """All shots on one page, labelled, for a quick look."""
+    from PIL import Image, ImageDraw
+    ims = [(n, Image.open(os.path.join(out_dir, n + ".png")).convert("RGB")) for n in names
+           if os.path.exists(os.path.join(out_dir, n + ".png"))]
+    if not ims:
+        return None
+    w0, h0 = ims[0][1].size
+    th = int(thumb_w * h0 / w0)
+    cols = 3
+    rows = (len(ims) + cols - 1) // cols
+    sheet = Image.new("RGB", (cols * thumb_w, rows * (th + 18)), (20, 20, 20))
+    draw = ImageDraw.Draw(sheet)
+    for i, (n, im) in enumerate(ims):
+        x, y = (i % cols) * thumb_w, (i // cols) * (th + 18)
+        sheet.paste(im.resize((thumb_w, th)), (x, y + 18))
+        draw.text((x + 4, y + 3), n, fill=(230, 230, 230))
+    sheet.save(path)
+    return path
+
+
+def cmd_shots(s, only=None):
+    """Render the installed zone from named views with the map editor
+    (`Map Editor.exe --shots`, Engine/ShotRunner.cs) and write PNGs plus a
+    contact sheet to build/mapgen/shots/<folder>/. Needs a desktop session
+    (the editor opens a window); nothing is installed or changed."""
+    mpath = manifest_path(s)
+    if not os.path.exists(mpath):
+        raise SystemExit("%s is not installed (run install first)" % s["folder"])
+    with open(mpath, encoding="utf-8") as f:
+        zone = json.load(f)["zone"]
+    p = params_from_spec(s)
+    views = shot_views(s, p)
+    if only:
+        views = [v for v in views if any(o in v[0] for o in only)]
+    out_dir = os.path.join(BUILD, "shots", s["folder"])
+    os.makedirs(out_dir, exist_ok=True)
+    for f in os.listdir(out_dir):
+        if f.endswith(".png") or f == "shots.txt":
+            os.remove(os.path.join(out_dir, f))
+    job = os.path.join(out_dir, "job.txt")
+    with open(job, "w", encoding="utf-8", newline="\n") as f:
+        f.write("# written by mapgen-zone.py shots %s\n" % s["folder"])
+        f.write("zone %d\nout %s\nhide %s\nsettle 90\n" % (zone, out_dir, SHOT_HIDE))
+        for name, eye, tgt in views:
+            f.write("view %s %s\n" % (name, " ".join("%.2f" % v for v in list(eye) + list(tgt))))
+    print("shots of zone %d (%s): %d views -> %s" % (zone, s["folder"], len(views), out_dir))
+    t0 = time.time()
+    try:
+        rc = subprocess.run([EDITOR_EXE, "--shots", job], cwd=DATA, timeout=420).returncode
+    except subprocess.TimeoutExpired:
+        raise SystemExit("the editor did not finish within 7 minutes (see data/Map Editor.log)")
+    done = os.path.join(out_dir, "shots.txt")
+    lines = open(done, encoding="utf-8").read().split() if os.path.exists(done) else []
+    if rc != 0 or not lines or lines[-1] != "done":
+        raise SystemExit("the editor stopped early (exit %d; %s; see data/Map Editor.log)"
+                         % (rc, " ".join(lines[-3:]) or "no shots.txt"))
+    names = [v[0] for v in views]
+    sheet = contact_sheet(out_dir, names, os.path.join(out_dir, "sheet.png"))
+    print("  %d PNGs in %.0f s; contact sheet %s" % (len(names), time.time() - t0, sheet))
+    for n in names:
+        print("    %s" % os.path.join(out_dir, n + ".png"))
+    return 0
 
 
 # ----------------------------------------------------------------- commands
@@ -3098,6 +3379,9 @@ def main():
     u = sub.add_parser("uninstall")
     u.add_argument("spec")
     u.add_argument("--dry-run", action="store_true")
+    sh = sub.add_parser("shots", help="render the installed zone from named views with the map editor")
+    sh.add_argument("spec")
+    sh.add_argument("--only", nargs="*", help="views whose name contains one of these")
     a = ap.parse_args()
     if a.cmd == "oracle":
         return cmd_oracle()
@@ -3150,6 +3434,8 @@ def main():
         return cmd_install(s, a.zone, a.dry_run)
     if a.cmd == "verify":
         return cmd_verify(s)
+    if a.cmd == "shots":
+        return cmd_shots(s, a.only)
     return cmd_uninstall(s, a.dry_run)
 
 

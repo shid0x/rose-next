@@ -42,6 +42,8 @@ namespace Map_Editor
             ConfigurationManager.LoadConfig();
             ConfigurationManager.CheckConfig();
 
+            Map_Editor.Engine.ShotRunner.Parse(Environment.GetCommandLineArgs());
+
             System.Windows.Forms.Application.EnableVisualStyles();
 
             Form = new Main();
