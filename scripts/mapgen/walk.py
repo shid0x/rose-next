@@ -67,23 +67,31 @@ def _shift(a, dr, dc):
     return out
 
 
-def _flood(seed, step_ok):
+def _flood(seed, step_ok, links=()):
     """Fixed point of: cell is set if it is the seed or a neighbour stepping into it is.
 
     step_ok[(dr, dc)][r, c] says the move from (r, c) to (r + dr, c + dc) is
-    possible, indexed by the SOURCE cell.
+    possible, indexed by the SOURCE cell. `links` are extra two-way
+    connections ((r, c), (r, c)) that ignore slope: a bridge deck between
+    its two banks (the client skips its slope rule on an object,
+    cobjchar_collision.cpp:1110: "if not on the terrain, do nothing").
     """
     cur = seed.copy()
     while True:
         nxt = cur.copy()
         for (dr, dc), ok in step_ok.items():
             nxt |= _shift(cur & ok, dr, dc)
+        for a, b in links:
+            if nxt[a] and not nxt[b]:
+                nxt[b] = True
+            elif nxt[b] and not nxt[a]:
+                nxt[a] = True
         if np.array_equal(nxt, cur):
             return cur
         cur = nxt
 
 
-def analyse(field, start_vertex, play_mask=None, blocked=None, trap_scope=None):
+def analyse(field, start_vertex, play_mask=None, blocked=None, trap_scope=None, links=()):
     """Return a dict of masks over cells (rows-1, cols-1) plus summary numbers.
 
     start_vertex is (row, col) in the field; the start cell is the one to its
@@ -122,8 +130,8 @@ def analyse(field, start_vertex, play_mask=None, blocked=None, trap_scope=None):
 
     seed = np.zeros((h, w), bool)
     seed[sr, sc] = True
-    reach = _flood(seed, liberal)
-    can_return = _flood(seed, strict_rev)
+    reach = _flood(seed, liberal, links)
+    can_return = _flood(seed, strict_rev, links)
     traps = reach & ~can_return
     if blocked is not None:
         traps &= ~blocked
@@ -232,4 +240,28 @@ def selftest():
     pit = flat.copy()
     pit[9:16, 9:16] = -1500.0               # the pocket's floor 15 m down
     expect_blocked("rock ring with a gap into a 15 m pit: trap", gap, traps=True, field=pit)
+
+    # a 15 m deep ravine across the map, its floor climbing out to the west
+    # only: the east bank is out of reach except over a bridge (a link)
+    # (walls three cells wide, as the generator builds them: the liberal
+    # reach climbs any wall one cell wide, by design)
+    rav = flat.copy()
+    rav[:, 38:48] = [-500.0, -1000.0] + [-1500.0] * 6 + [-1000.0, -500.0]
+    for i in range(30, 40):                 # gully up the west wall (~31 deg)
+        rav[20:24, i] = -1500.0 + (40 - i) * 150.0
+    rav[20:24, 30] = 0.0
+    a = analyse(rav, centre)
+    east = a["reach"][:, 49:].any()
+    ok = not east and a["trap_cells"] == 0
+    print("  %s %-58s east bank reached %s, traps %d" % ("ok  " if ok else "FAIL",
+          "ravine without a bridge: floor climbs out west, east unreached", east, a["trap_cells"]))
+    if not ok:
+        fails.append("ravine without a bridge")
+    b = analyse(rav, centre, links=[((50, 36), (50, 49))])
+    home_east = b["home"][:, 49:].mean()
+    ok = home_east > 0.95 and b["trap_cells"] == 0
+    print("  %s %-58s east bank home %.0f%%, traps %d" % ("ok  " if ok else "FAIL",
+          "same ravine with a bridge: east bank both ways", 100 * home_east, b["trap_cells"]))
+    if not ok:
+        fails.append("ravine with a bridge")
     return fails

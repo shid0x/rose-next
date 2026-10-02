@@ -207,6 +207,10 @@ def mesh_triangles(data_dir, rel):
     return verts[faces]
 
 
+SPECIAL_ZSC = os.path.join("3DDATA", "SPECIAL", "LIST_DECO_SPECIAL.ZSC")
+COLLISION_BOX = 2                                    # object index used for every lump 11 record
+
+
 class Footprints:
     """Walls of placed objects on the 2.5 m walk grid, from real geometry.
 
@@ -226,7 +230,11 @@ class Footprints:
     def __init__(self, data_dir, deco_zsc, cnst_zsc):
         self.data_dir = data_dir
         self.zsc = {"OBJECT": read_zsc(os.path.join(data_dir, deco_zsc)),
-                    "CNST": read_zsc(os.path.join(data_dir, cnst_zsc))}
+                    "CNST": read_zsc(os.path.join(data_dir, cnst_zsc)),
+                    # IFO lump 11 collision boxes: the client always draws
+                    # LIST_DECO_SPECIAL.ZSC object 2 (object.cpp:635), an
+                    # invisible 1.2 x 0.1 x 2.5 m panel, scaled
+                    "COLLISION": read_zsc(os.path.join(data_dir, SPECIAL_ZSC))}
         self.cache = {}
 
     def triangles(self, lump, oid):

@@ -812,6 +812,63 @@ user asked for all three fixed before any new maps.
     (`dry=`): the 12 m edge strip had stayed 28 m under it on hilly ground
     and the border was built from it.
 
+### Phase 7c — levels: bridges, pits, walkable highground
+
+Three new descriptions from the user (2026-10-02); the five phase 7 maps
+uninstalled first at the user's request (zone 12 kept).
+
+- **Status:** DONE, confirmed in game 2026-10-03. Installed 2026-10-02: zone 13 `MAPGEN07` "Mapgen Ravine"
+  (`/mm 13 496 504`, the camp), zone 30 `MAPGEN08` "Mapgen Pits"
+  (`/mm 30 512 484`, the south exit), zone 38 `MAPGEN09` "Mapgen
+  Highground" (`/mm 38 484 512`, the west exit). All pass every check from
+  disk (72 / 54 / 56). Regressions pass: walk selftest (two new bridge
+  cases), tiles selftest, oracle, round-trip 9,423 / 9,423, phase 5 spec
+  and phase 7 layouts unchanged, zone 12 verifies, byte-identical double
+  build. In-game review handed to the user. Not committed.
+- **Retail first:** bridge placements (`field-bridge02` over 3-9 m streams,
+  `guroomdari` over 19-40 m gaps), bridge deck profiles, the 2,889 retail
+  collision boxes (FORMATS.md, IFO), `guardpost01` as the tower.
+- **New module `mapgen/levels.py`:** `pit`, `ravine` (one floor level,
+  narrowed at crossings), `gully` (level across the floor, then 26°),
+  `bridge` + `deck_link`, `wall_line` (collision panels), `polyline_distance`.
+- **Generator** (`mapgen-zone.py`): a levels stage before water
+  (`add_ledges`, `add_ravine` + river, planned roads, `add_pits`,
+  landmarks) and one after the border (`add_levels_objects`: bridges with
+  levelled banks, invisible walls); `seal_levels` after the start;
+  `exits` corridors in `terrain.play_shape`; IFO lump 11 written by
+  `zone.make_ifo`; collision panels' footprints from
+  `LIST_DECO_SPECIAL.ZSC`.
+- **Walk model:** `walk.analyse(links=...)` (a deck joins its banks both
+  ways); every flood that decides reachability follows links
+  (`close_ring`, `gentle_flood`, `border_profile`, `repair`); invisible
+  walls and landmarks count as walls.
+- **Layout vocabulary** (`layout.py`): `levels.ravine` (axis, depth,
+  width, river, `climb_out`, crossings `bridge` / `footbridge` at
+  centre / north / far north ...), `levels.pits` (count, size, depth,
+  `near: road 1`), `levels.ledges` (height, width, `drop: ramps only`),
+  `landmarks` (`lookout tower` on `<side> ledge`), `terrain.exits`, roads
+  `from/to exit:<edge>` and `via` a bridge, cover `rim of <pit>`.
+- **Intent checks:** `ravine_sealed` (far bank unreachable without the
+  bridges, reachable both ways with them; the floor has a way back up),
+  `bridge` (both ends reachable, deck ends within 1 m of the ground),
+  `pits` (each >= 4 m deep, walled in without its gully, all out with it),
+  `ledges` (reachable both ways), `ledges_no_drop` (from each ledge, with
+  the walls and without the ramps, the floor is out of reach), `on_level`.
+- **Found on the way** (FORMATS.md, slope rule): a face one cell wide leaks
+  at its corners (the seal then lifted the ledge's edge into a 4 m lip);
+  a trench one cell wide reads steep; a gully rising from a pit's centre
+  leaves a step at the floor's edge; the river level must be whole cm to
+  survive the IFO's float32.
+- **To check in game:** the invisible walls hold and do not show; both
+  decks line up with their banks; falling into the ravine, the only way up
+  is west; each pit's walls cannot be climbed and its gully can; the
+  ledges' ramps and tower.
+- **User review (2026-10-03):** invisible walls stop the player and stay
+  invisible; both bridges work; the ravine's gullies lead out; pit walls
+  cannot be climbed and the gullies can. The lookout tower (object 200
+  `guardpost01`, the editor table's "coastal village guard tower") was
+  first missed, then found in game at `/mm 38 512 527`. Phase 7c committed.
+
 ### Phase 8 — polish (optional)
 
 Baked terrain lightmap, generated `.MOV`, minimap.
@@ -931,3 +988,10 @@ can be added without rewriting it.
 - 2026-10-02 — Fourth round confirmed by the user in the editor (bare faces,
   plateau tops read as highground); phase 7b committed. Next: bridges,
   pitfalls and walkable highground, from the user's descriptions.
+- 2026-10-02 — Phase 7c built: the phase 7 maps uninstalled (user); levels
+  (ravine + river + two retail bridges, five pits with gullies, valley
+  ledges with ramps, invisible walls and a lookout tower) installed as
+  zones 13, 30 and 38; all checks pass from disk. In-game review handed to
+  the user. Not committed.
+- 2026-10-03 — Phase 7c confirmed in game by the user (invisible walls,
+  bridges, gullies, pit walls, tower) and committed.

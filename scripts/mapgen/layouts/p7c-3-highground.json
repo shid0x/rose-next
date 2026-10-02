@@ -1,0 +1,38 @@
+{
+ "layout": 1,
+ "description": "A 4x4 Junon grassland valley with a road along the valley floor from the west exit to the east exit. Cliffs line both sides, and the clifftops are wide walkable ledges reached by a ramp at each end of the valley. A path runs along the northern clifftop past a lookout tower, and players on the ledges can see the road below but cannot drop down except at the ramps.",
+ "notes": [
+  "Cliffs: 12 m at 72 degrees; ledges 38 m wide, part of the play area, the mountains rise behind them.",
+  "Ramps: 22 degrees along the cliff foot, one at each end of each ledge (four).",
+  "'Cannot drop down except at the ramps': invisible walls (IFO collision boxes, as retail uses) along the ledge edge, open at the ramps.",
+  "Lookout tower: guardpost01 (Junon decoration 200), in the middle of the north ledge."
+ ],
+ "name": "Mapgen Highground",
+ "folder": "MAPGEN09",
+ "size": "4x4",
+ "seed": 7103,
+ "terrain": {
+  "character": "gentle",
+  "shape": "valley east-west",
+  "play": "small",
+  "exits": ["west", "east"],
+  "border": "mountains"
+ },
+ "levels": {
+  "ledges": {"height": "medium", "width": "wide", "drop": "ramps only"}
+ },
+ "landmarks": [
+  {"name": "tower", "kind": "lookout tower", "on": "north ledge", "at": "middle"}
+ ],
+ "roads": [
+  {"from": "exit:west", "to": "exit:east", "style": "road"},
+  {"from": "ramp_north_west", "to": "tower", "style": "path"},
+  {"from": "tower", "to": "ramp_north_east", "style": "path"}
+ ],
+ "start": {"near": "exit:west"},
+ "cover": [
+  {"where": "everywhere", "is": "meadow"},
+  {"where": "north edge", "is": "woods", "density": "light"},
+  {"where": "south edge", "is": "woods"}
+ ]
+}

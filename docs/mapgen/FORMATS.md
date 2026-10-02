@@ -295,7 +295,7 @@ Each lump is `i32 count` + `count` records, plus per-type extras:
 | 8 | REGEN | `bstr name`, `i32 nb` + `nb x (bstr, i32 mob, i32 count)`, `i32 nt` + same, `i32 interval_s, limit, range_m, tactic_point` (`src/sho_gameserver/src/common/cregenarea.cpp:52-135`) | server |
 | 9 | OCEAN (editor `Water`) | not a record list: `f32 size`, `i32 count`, `count x (f32 x, z, y start; f32 x, z, y end)` (`io_terrain.cpp:2077-2129`) | flat water rectangles |
 | 10 | WARP | — | `warp_id` → `WARP.STB` |
-| 11 | COLLISION | — | `event_id` used (`:2345-2352`) |
+| 11 | COLLISION | — | `event_id` used (`:2345-2352`); invisible walls, see below |
 | 12 | EVENT_OBJECT | `pstr trigger`, `pstr con_file` (`:2355-2381`) | |
 
 Lightmap linkage:
@@ -360,6 +360,29 @@ What retail files contain (phase 0 corpus scan, 1,538 IFOs):
   - The editor's File > New writes zeros, and the game ignores the lump.
 - **Stale data:** some IFOs carry dead bytes past the end of a lump (see
   "Codec status").
+- **Lump 11 (COLLISION) is retail's invisible wall** (phase 7c survey).
+  - The client draws every record as `LIST_DECO_SPECIAL.ZSC` object 2
+    whatever its `obj_id` (`Add_CollisionBox`, `object.cpp:635`):
+    `Collision01`, a panel 1.2 m long (local X) x 0.06 m x 2.52 m tall,
+    collision flag 4, texture `chake01.dds`. It is not drawn.
+  - Retail has 2,889 of them. In JG they are uniformly scaled 14-31
+    (17-37 m long, 35-77 m tall), yawed freely, standing on gentle ground:
+    they close what slopes do not.
+  - Records use the generic header with `obj_type = 11`, `obj_id = 11`.
+    mapgen writes them along ledge edges (`levels.wall_line`: scale 8,
+    9.6 m panels overlapping 1 m, sunk 1.5 m so no gap opens on a slope).
+  - **Not yet confirmed in game:** that a generated panel blocks the
+    player exactly like a retail one (phase 7c, handed to the user).
+- **Bridges are ordinary decorations** (lump 1). JG has two kinds:
+  - `field-bridge02` (id 175): deck along local X, ±8.84 m, arched from
+    2.5 m at the ends to 4.1 m mid-span; retail scales 1.5-2.2, over
+    streams 3-9 m below.
+  - `guroomdari` (id 193): a suspension bridge, deck ±23.1 m, ends at
+    0.1 m, sagging to -2.2 m; retail scale 0.7-1.1, over deep gaps (Anima
+    Lake 40 m, Kenji Beach 29 m).
+  - The slope rule does not apply on an object ("if not on the terrain, do
+    nothing", `cobjchar_collision.cpp:1110`), so a deck is a link between
+    its banks; `walk.analyse(links=...)` models it as a two-way connection.
 
 ## Water
 
@@ -597,6 +620,25 @@ diagonally, and the walk check found a way up. 80 m over 24 m (designed
 any cliff that leaks. A low cliff (25-45 m) only seals with a barrier along
 its top (boulders or a fence, `mapgen/barrier.py`): its steep band is two or
 three cells, and the slide-along-the-face path above gets over it.
+
+**A face one cell wide leaks at every corner; a trench one cell wide is
+a wall** (phase 7c). A cell takes its slope from its corners, so:
+
+- A 12 m step over one cell is steep along a straight edge, but where the
+  outline turns, cells straddling the face pick up corners from both
+  levels and read gentle: the first ledge leaked at every bend. Level
+  faces are at least two cells (5 m) wide, and `seal` lifts only face
+  vertices, capped at the face's own top.
+- A gully or ramp needs two whole cells of floor (7 m): a 4 m trench is
+  one vertex across, every cell in it touches a wall, and it reads steep
+  end to end.
+- A way out of a pit must start rising where the pit's floor ends, not at
+  its centre: rising from the centre left a 1-4 m step at the floor's edge
+  (`levels.gully(flat_m=...)`, measured along the bearing for a ravine,
+  whose floor is wider than designed where its banks stand high).
+- The liberal reach climbs any face one cell wide (the flat cell below
+  "allows leaving" upward). `ravine_sealed` uses it as an over-estimate,
+  which holds because a ravine's walls are about three cells wide.
 
 ## How the files reference each other
 

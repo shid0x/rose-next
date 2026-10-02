@@ -29,10 +29,8 @@ evidence, and what the generator does about it (or "open").
   (user, 2026-10-02). **Fences done:** `rim`: rocks (default on low and
   medium cliffs) or fence along the cliff top, or a fence line alone
   (`cliffs: none`). A low cliff needs its rim to seal (FORMATS.md, slope
-  rule). Bridges and pitfalls: open, next (the user will send
-  descriptions); they need the walk check to treat object floors as ground
-  (a bridge deck is an object, not terrain), and a pitfall must not be
-  enterable (it would be a trap).
+  rule). Bridges, pitfalls and walkable highground: done in phase 7c, see
+  "Levels" below.
 - **No boulder rims; fences belong to villages and cities** (user,
   2026-10-02, second phase 7b review). Mountains need no rim: "mountains
   cannot be climbed after a certain slope anyways".
@@ -51,8 +49,8 @@ evidence, and what the generator does about it (or "open").
 - **Range tops are highground, not wavy terrain** (user, 2026-10-02,
   fourth review: "the ranges look natural, steep, you can't climb that";
   the ridged top was unneeded). **Done:** a plateau top with 4 m of gentle
-  variation (`top`: plateau, default; ridges still available). Some maps
-  will want walkable highground: open, with bridges and pitfalls.
+  variation (`top`: plateau, default; ridges still available). Walkable
+  highground inside the play area: ledges (phase 7c, "Levels").
 - **No grass or shrubs on cliff faces** (user, 2026-10-02). **Done:** only
   rocks on slopes over 45°.
 - **The walk check was stricter than the game** (user's choice 2026-10-02:
@@ -60,6 +58,51 @@ evidence, and what the generator does about it (or "open").
   with up to 24% "trap" cells (Gorge of Silence), while players cannot
   climb them in game. Traps are now looked for inside the play area only,
   and the border is judged by steepness against retail.
+
+## Levels: ravines, pits, ledges (phase 7c)
+
+The user's three descriptions of 2026-10-02 (bridges, pitfalls, walkable
+highground). One rule set covers all three, read from the client first
+(FORMATS.md, slope rule): a player can always walk *down* a slope, never
+up one over 54°.
+
+- **A level the player may fall into needs a way out, or it is a trap.**
+  Pits and ravines each get a gully: a trench at 26°, 7 m wide (two whole
+  cells), level across the floor and rising from its edge. Its side
+  decides which way the player comes out: the ravine's gullies climb to
+  the west bank only, so the east bank is reached by the bridges alone.
+- **A level the player may not leave by dropping needs an invisible
+  wall.** A ledge edge is a cliff the player could step off; retail closes
+  such edges with collision boxes (IFO lump 11, 2,889 of them in retail),
+  and so does `levels.wall_line`, open only at the ramps. "Players on the
+  ledges can see the road below" is why it is a wall, not a fence or
+  rocks.
+- **Walls not to be climbed are sealed** (`seal`), the NE-corner blind spot
+  included, and checked from the low ground: pit walls, the ravine's east
+  wall, the ledge cliffs.
+- **Bridges are retail objects, sized to retail.** `bridge` (wooden,
+  `field-bridge02`, scaled 1.5-2.2) on the main road, `footbridge` (rope,
+  `guroomdari`, 0.7-1.1) for a narrow crossing. The ravine narrows under
+  each to what the deck spans at retail's largest scale (~29 m and ~43 m),
+  and both banks are levelled to the deck ends. A road `via` a bridge is
+  painted to each end of the deck.
+- **Pits sit beside a road that is laid first**, alternating sides, ~7 m
+  off it, with the gully leading away from the road. "Partly hidden":
+  overgrown cover on the rim (`rim of pit1`). Nothing tall on faces, so a
+  pit's own walls stay bare and readable.
+- **Ledges come from a valley shape**: the floor is the play area, cliffs
+  (12 m, two cells wide) rise from its rim to ledges 20-38 m wide, then the
+  mountains. One ramp at each end of each ledge, along the cliff foot,
+  where the valley proper starts (not in the exit corridors). A landmark
+  (`lookout tower`, Junon's unused `guardpost01`) can stand on a ledge,
+  and a path can run along it from ramp to landmark to ramp.
+- **Exits:** `exits: [south, north]` opens a corridor through the border to
+  the middle of each edge (a road leaves the map there; warps are not
+  generated). Roads may start or end at `exit:<edge>`.
+- **Open:** in-game confirmation of the invisible walls and the bridge
+  decks; ravines along other axes than north-south with bends; pits
+  without a road; tunnels (the description's "tunnel-like" gully is an
+  open-topped trench: the terrain is a heightfield).
 
 ## Cliff and mountain material
 

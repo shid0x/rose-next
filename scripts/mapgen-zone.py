@@ -37,6 +37,7 @@ them).
 """
 
 import argparse
+import dataclasses
 import datetime
 import hashlib
 import importlib.util
@@ -57,7 +58,7 @@ BUILD = os.path.join(REPO, "build", "mapgen")
 sys.path.insert(0, HERE)
 
 import mapgen  # noqa: E402
-from mapgen import areas, barrier, catalogue, chunk, decorate, ifo, layout, paint, prefab, preview, terrain, tiles, walk, water, zon  # noqa: E402
+from mapgen import areas, barrier, levels, catalogue, chunk, decorate, ifo, layout, paint, prefab, preview, terrain, tiles, walk, water, zon  # noqa: E402
 from mapgen.zone import (CHUNK_CM, EventPoint, Tile, ZoneParams, build_zone,  # noqa: E402
                          centre_world, chunk_stem)
 
@@ -151,17 +152,25 @@ def params_from_spec(s):
         if p.play_v is not None:
             rr, cc = np.nonzero(p.play_v)
             p.frame = (int(rr.min()), int(rr.max()), int(cc.min()), int(cc.max()))
+            for e in (t.get("shape") or {}).get("exits", []):
+                p.features["exit:" + e] = {"kind": "exit", "centre": exit_vertex(p, e), "radius_m": 0.0}
         # the border (mountains) is built after the water, from the final rim
         p.shape_cfg = t.get("shape")
         p.field = terrain.generate(p.width, p.height, t, t["seed"], terrain_features(s, p), play=p.play_v,
-                                   walls=not s.get("water"))
+                                   walls=not s.get("water") and not s.get("levels"))
         if p.play_v is not None:
             # nothing may be placed within 15 m of the cliff foot
             p.avoid = areas.distance_m(~p.play_v) < 15.0
+    p.links, p.walls, p.bridges, p.road_routes, p.level_masks, p.landmarks = [], [], [], [], {}, []
+    if s.get("levels"):
+        add_levels_terrain(s, p)
     if s.get("water"):
         if p.field is None:
             raise SystemExit("'water' needs a 'terrain' section")
         add_lakes(s, p)
+    if p.lakes and not s.get("water"):
+        refresh_water(s, p)
+    if s.get("water") or s.get("levels"):
         if p.play_v is not None and t["shape"].get("wall_cm", 5000.0) > 0:
             # the mountains rise from the shore the water left (the flood
             # keeps 12 m off the play edge, so the rim is dry); built before
@@ -169,6 +178,8 @@ def params_from_spec(s):
             p.field = np.round(terrain.shape_walls(p.field, p.play_v, t["shape"],
                                                    np.random.default_rng(t["seed"] + 61)).astype("<f4"), 1).astype("<f4")
             refresh_water(s, p)
+    if s.get("levels"):
+        add_levels_objects(s, p)
     p.villages = []
     if s.get("villages"):
         if p.field is None:
@@ -181,6 +192,8 @@ def params_from_spec(s):
         # player can actually reach from it (lifts only corners outside the
         # play area, which nothing placed later depends on)
         p.ring_fixes = close_ring(p)
+    if s.get("levels"):
+        p.seal_fixes = seal_levels(s, p)
     anchor = p.start_v
     for e in s["events"]:
         dc, dr = (int(round(v / terrain.GRID_CM)) for v in e.get("offset_cm", [0, 0]))
@@ -244,11 +257,24 @@ def params_from_spec(s):
                     break
                 forced[corner] = pb
         paths = [[free_corner(pt, path_block) for pt in pts] for pts in paths]
+        p.corner_steep = paint.corner_slopes(p.field) > cfg.get("max_path_slope_deg", 30.0) - 4.0
         for v in p.villages:
             if v["connect"]:
                 paths.append([free_corner(v["gate"], path_block), free_corner(start_corner, path_block)])
         for road in s.get("roads", []):
-            paths.append([road_end(p, road["from"], path_block), road_end(p, road["to"], path_block)])
+            if road.get("planned"):
+                continue
+            a, b = road_end(p, road["from"], path_block), road_end(p, road["to"], path_block)
+            if road.get("via"):
+                ea, eb = (road_end(p, road["via"] + "_" + k, path_block) for k in "ab")
+                if math.hypot(ea[0] - a[0], ea[1] - a[1]) > math.hypot(eb[0] - a[0], eb[1] - a[1]):
+                    ea, eb = eb, ea
+                paths += [[a, ea], [eb, b]]
+            else:
+                paths.append([a, b])
+        for route in p.road_routes:
+            paths.append([free_corner(route[0], path_block)] + [q for q in route[1:-1] if not path_block[q]]
+                         + [free_corner(route[-1], path_block)])
         seed = cfg.get("seed", t["seed"] + 1)
         try:
             p.lattice, p.path_corners = paint.paint(p.field, ts, stats, cfg, seed, paths, forced, path_block,
@@ -263,13 +289,14 @@ def params_from_spec(s):
         if p.lattice is None:
             raise SystemExit("'decorate' needs a 'paint' section")
         cat = catalogue.load(os.path.join(STATS_DIR, dcfg["catalogue"]))
-        avoid = water_margin(s, p, dcfg) | village_mask(p, dcfg.get("village_clear_m", 4.0)) | barrier_mask(p)
+        avoid = water_margin(s, p, dcfg) | village_mask(p, dcfg.get("village_clear_m", 4.0)) | barrier_mask(p) \
+            | level_avoid(p)
         _, placed = decorate.place(p.field, p.lattice, p.x0, p.y0, cat, dcfg,
                                    dcfg.get("seed", t["seed"] + 7), avoid, p.path_corners, anchor,
                                    area_mult=cover_mult, kind_of=kind_of(s))
         placed, p.deco_removed = decorate.repair(placed, p.field, anchor, play_mask(s, p),
-                                                 fixed=village_members(p) + p.barrier, footprints=footprints(s),
-                                                 trap_scope=trap_scope(s, p))
+                                                 fixed=village_members(p) + p.barrier + p.walls + p.landmarks, footprints=footprints(s),
+                                                 trap_scope=trap_scope(s, p), links=p.links)
         p.placed = placed
         p.objects = decorate.records_by_chunk(placed, p.x0, p.y0)
     members = village_members(p)
@@ -283,6 +310,14 @@ def params_from_spec(s):
         p.objects = dict(p.objects or {})
         for k, recs in decorate.records_by_chunk(p.barrier, p.x0, p.y0).items():
             p.objects[k] = list(p.objects.get(k, [])) + recs
+    if p.bridges:
+        p.objects = dict(p.objects or {})
+        for k, recs in decorate.records_by_chunk(p.bridges, p.x0, p.y0).items():
+            p.objects[k] = list(p.objects.get(k, [])) + recs
+    if p.walls:
+        p.collision = {}
+        for k, recs in decorate.records_by_chunk(p.walls, p.x0, p.y0).items():
+            p.collision[k] = [dataclasses.replace(r, obj_type=11, obj_id=11) for r in recs]
     if p.objects or getattr(p, "cnst", None):
         separate_coplanar(s, p)
     return p
@@ -601,17 +636,7 @@ def close_ring(p, rounds=40):
         s0 = (min(p.start_v[0], h - 1), min(p.start_v[1], w - 1))
         if not gentle[s0]:
             return lifted
-        seen = np.zeros_like(gentle)
-        seen[s0] = True
-        stack = [s0]
-        while stack:
-            r, c = stack.pop()
-            for dr in (-1, 0, 1):
-                for dc in (-1, 0, 1):
-                    rr, cc = r + dr, c + dc
-                    if 0 <= rr < h and 0 <= cc < w and gentle[rr, cc] and not seen[rr, cc]:
-                        seen[rr, cc] = True
-                        stack.append((rr, cc))
+        seen = gentle_flood(gentle, s0, getattr(p, "links", ()))
         leak = seen & ~play[:-1, :-1] & (dist[:-1, :-1] > 0)
         if not leak.any():
             return lifted
@@ -631,6 +656,502 @@ def close_ring(p, rounds=40):
             p.ring_open = True
             return lifted
     p.ring_open = True
+    return lifted
+
+
+def exit_vertex(p, edge):
+    """The middle of the play area where it meets a map edge (an exit)."""
+    h, w = p.play_v.shape
+    line = {"south": (0, slice(None)), "north": (h - 1, slice(None)),
+            "west": (slice(None), 0), "east": (slice(None), w - 1)}[edge]
+    idx = np.nonzero(p.play_v[line])[0]
+    if not len(idx):
+        raise SystemExit("exit %s: the play area does not reach that edge (add it to terrain.shape.exits)" % edge)
+    mid = int(idx[len(idx) // 2])
+    return {"south": (0, mid), "north": (h - 1, mid), "west": (mid, 0), "east": (mid, w - 1)}[edge]
+
+
+def plan_road(s, p, a, b):
+    """A road's route over the current terrain, as tile corners: the same
+    least-cost rule as paint (slope cost, refused above max_path_slope_deg),
+    computed early so features can be placed beside it."""
+    cfg = s.get("paint") or {}
+    slopes = paint.corner_slopes(p.field)
+    cost = 1.0 + (slopes / cfg.get("path_slope_scale_deg", 12.0)) ** 2
+    cost[slopes > cfg.get("max_path_slope_deg", 30.0)] = np.inf
+    cost[~p.play_v[::4, ::4]] = np.inf
+    ca = (int(round(a[0] / 4)), int(round(a[1] / 4)))
+    cb = (int(round(b[0] / 4)), int(round(b[1] / 4)))
+    blk = ~np.isfinite(cost)
+    ca, cb = free_corner(ca, blk), free_corner(cb, blk)
+    return paint.astar(cost, ca, cb)
+
+
+def named_point(s, p, name):
+    """A vertex for a level name: a placed feature (exits are features)."""
+    if name in p.features:
+        return p.features[name]["centre"]
+    raise SystemExit("unknown place %r (exit:<edge> or a feature: %s)" % (name, ", ".join(sorted(p.features))))
+
+
+def add_levels_terrain(s, p):
+    """Ledges, a ravine, planned roads and pits: everything that reshapes the
+    terrain before water and the border (mapgen/levels.py)."""
+    lv = s["levels"]
+    rng = np.random.default_rng(s["terrain"]["seed"] + 500)
+    g = terrain.GRID_CM
+    if lv.get("ledges"):
+        add_ledges(s, p, lv["ledges"], rng)
+    if lv.get("ravine"):
+        add_ravine(s, p, lv["ravine"], rng)
+    p.landmarks = []
+    for lm in lv.get("landmarks", []):
+        add_landmark(s, p, lm)
+    for road in s.get("roads", []):
+        if road.get("planned"):
+            route = plan_road(s, p, named_point(s, p, road["from"]), named_point(s, p, road["to"]))
+            p.road_routes.append(route)
+    if lv.get("pits"):
+        add_pits(s, p, lv["pits"], rng)
+    keep = np.zeros(p.field.shape, bool)
+    for key in ("ravine", "ravine_exits", "pits", "gullies", "cliff", "ramps"):
+        if key in p.level_masks:
+            keep |= p.level_masks[key]
+    if keep.any():
+        near = areas.distance_m(keep) < 12.0
+        p.avoid = near if p.avoid is None else (p.avoid | near)
+
+
+def add_ledges(s, p, cfg, rng):
+    """Cliffs both sides of the play area's floor rising `cliff_cm` to wide
+    walkable ledges (`width_m`), part of the play area; a ramp at each end
+    of each ledge climbs from the floor along the cliff."""
+    floor = p.play_v.copy()
+    d, nr, nc = areas.nearest(floor)
+    rim = p.field[nr, nc].astype(float)
+    H = cfg.get("cliff_cm", 1200.0)
+    # at least two cells wide: a face one cell wide leaks at every corner
+    cw = max(5.0, H / 100.0 / math.tan(math.radians(cfg.get("cliff_deg", 66.0))))
+    width = cfg.get("width_m", 36.0)
+    rim_s = water.lowpass(rim, 25.0)
+    var = 60.0 * terrain.fbm(p.field.shape, 120.0, 3, 0.45, rng)
+    f = p.field.astype(float)
+    cliff = (d > 0) & (d <= cw)
+    ledge = (d > cw) & (d <= cw + width)
+    f = np.where(cliff, rim + H * d / cw, f)
+    # the ledge starts at the cliff's exact top and eases to a smoothed,
+    # gently varied surface 15 m back (a step at the top read as a lip)
+    u = np.clip((d - cw) / 15.0, 0.0, 1.0)
+    u = u * u * (3 - 2 * u)
+    f = np.where(ledge, rim + (rim_s - rim) * u + H + var * u, f)
+    p.field = np.round(f.astype("<f4"), 1).astype("<f4")
+    yy, xx = np.mgrid[0:floor.shape[0], 0:floor.shape[1]]
+    # the valley's long axis: ledges lie either side of it
+    rr, cc = np.nonzero(floor)
+    ew = (cc.max() - cc.min()) >= (rr.max() - rr.min())
+    alg, across = (xx, yy) if ew else (yy, xx)
+    mid = (rr if ew else cc).mean()
+    sides = (("north", across > mid), ("south", across <= mid)) if ew else \
+        (("east", across > mid), ("west", across <= mid))
+    p.level_masks.update({"floor": floor, "cliff": cliff, "ledge": ledge})
+    for name, sel in sides:
+        p.level_masks["ledge_" + name] = ledge & sel
+    p.play_v = floor | cliff | ledge
+    rr, cc = np.nonzero(p.play_v)
+    p.frame = (int(rr.min()), int(rr.max()), int(cc.min()), int(cc.max()))
+    p.avoid = areas.distance_m(~p.play_v) < 15.0
+    # Ramps: one at each end of each ledge, along the cliff foot, rising
+    # toward the valley's middle. "The ends" are where the valley proper
+    # starts, not its exit corridors: the first and last stretch where the
+    # floor is at least 60% of its median width (straight cliffs there).
+    ramp_len = H / 100.0 / math.tan(math.radians(cfg.get("ramp_deg", 22.0)))
+    rw = cfg.get("ramp_width_m", 7.0)
+    signed = np.where(floor, -areas.distance_m(~floor), d)
+    ramps = np.zeros(floor.shape, bool)
+    n_al = floor.shape[1] if ew else floor.shape[0]
+    widths = np.array([int((floor[:, k] if ew else floor[k, :]).sum()) for k in range(n_al)])
+    wide = np.nonzero(widths >= 0.6 * np.median(widths[widths > 0]))[0]
+    c_lo, c_hi = int(wide.min()), int(wide.max())
+    margin = int(cfg.get("ramp_margin_m", 12.0) * 100 / terrain.GRID_CM)
+    L = int(math.ceil(ramp_len * 100 / terrain.GRID_CM))
+    f = p.field.astype(float)
+    ends = (("west", "east") if ew else ("south", "north"))
+    for side, sel in sides:
+        for end, (c0, step) in ((ends[0], (c_lo + margin, 1)), (ends[1], (c_hi - margin, -1))):
+            c1 = c0 + step * L
+            lo, hi = min(c0, c1), max(c0, c1)
+            corr = sel & (signed >= -rw) & (signed <= cw + 1.0) & (alg >= lo) & (alg <= hi)
+            u = np.clip((alg - c0) * step / max(1, L), 0.0, 1.0)
+            h = rim + H * u
+            f = np.where(corr, np.where(ledge, np.maximum(f, h), h), f)
+            ramps |= corr
+            # its top: on the ledge just past the ramp's end, 5 m in from the edge
+            cand = np.argwhere(sel & ledge & (np.abs(alg - (c1 + step * 2)) <= 1))
+            if len(cand):
+                k = int(np.argmin(np.abs(d[cand[:, 0], cand[:, 1]] - (cw + 5.0))))
+                p.features["ramp_%s_%s" % (side, end)] = {"kind": "ramp", "radius_m": 4.0,
+                                                           "centre": tuple(int(v) for v in cand[k])}
+    p.field = np.round(f.astype("<f4"), 1).astype("<f4")
+    p.level_masks["ramps"] = ramps
+    p.ledge_cliff_w = cw
+
+
+def add_ravine(s, p, cfg, rng):
+    """A ravine across the play area along `axis`, narrowed at its bridge
+    crossings, a river on its floor, and gullies up to the `exits` side (a
+    player who falls in climbs out onto that side only). Crossing and exit
+    positions `at` are 0..1 along the ravine's stretch inside the play
+    area, south to north (west to east)."""
+    fr0, fr1, fc0, fc1 = p.frame
+    h, w = p.field.shape
+    ns = cfg.get("axis", "north-south") == "north-south"
+    n = 9
+    if ns:
+        cc = (fc0 + fc1) / 2.0
+        amp = 0.04 * (fc1 - fc0)
+        ph = rng.uniform(0, 6)
+        rows = np.linspace(max(0, fr0 - 30), min(h - 1, fr1 + 30), n)
+        axis = [(float(r), float(cc + amp * math.sin(i * 1.1 + ph))) for i, r in enumerate(rows)]
+    else:
+        rc = (fr0 + fr1) / 2.0
+        amp = 0.04 * (fr1 - fr0)
+        ph = rng.uniform(0, 6)
+        cols = np.linspace(max(0, fc0 - 30), min(w - 1, fc1 + 30), n)
+        axis = [(float(rc + amp * math.sin(i * 1.1 + ph)), float(c)) for i, c in enumerate(cols)]
+    width = cfg.get("width_m", 44.0)
+    lat, along, side = levels.polyline_distance(p.field.shape, axis)
+    core = (lat < 1.0) & p.play_v
+    a_lo, a_hi = float(along[core].min()), float(along[core].max())
+    to_along = lambda t: a_lo + t * (a_hi - a_lo)
+
+    def banks_ok(at, gap):
+        """Both banks of a crossing at `at` (axis along) are play ground."""
+        sel = (np.abs(along - at) < 0.004)
+        for sgn in (-1, 1):
+            band = sel & (side == sgn) & (lat >= gap / 2.0 + 6.0) & (lat <= gap / 2.0 + 16.0)
+            if not band.any() or p.play_v[band].mean() < 0.9:
+                return False
+        return True
+
+    narrow, crossings = [], []
+    for cr in cfg.get("crossings", []):
+        b = levels.BRIDGES[cr["kind"]]
+        gap = min(width, 2 * b["half_cm"] * b["scales"][1] / 100.0 - 8.0)   # what a retail-scaled deck spans
+        want = to_along(cr["at"])
+        best = None
+        for k in range(0, 60):
+            for sgn in ((1,) if k == 0 else (-1, 1)):
+                at = want + sgn * k * 0.004
+                if a_lo <= at <= a_hi and banks_ok(at, gap):
+                    best = at
+                    break
+            if best is not None:
+                break
+        if best is None:
+            raise SystemExit("crossing %s: no place near %.2f where both banks are play ground" % (cr["name"], cr["at"]))
+        narrow.append((best, gap))
+        crossings.append(dict(cr, along=best, gap_m=gap))
+    p.field, floor_h, inside, lat, along, side = levels.ravine(
+        p.field, axis, width, cfg.get("depth_cm", 1800.0), floor_m=cfg.get("floor_m", 12.0), narrow=narrow)
+    p.ravine = {"axis": axis, "floor_h": floor_h, "inside": inside, "lat": lat, "along": along, "side": side,
+                "crossings": crossings, "cfg": cfg}
+    p.level_masks["ravine"] = inside
+    # exits: gullies from the floor up to the named side
+    exits = np.zeros(inside.shape, bool)
+    p.ravine["exit_ends"] = []
+    for ex in cfg.get("exits", []):
+        at = to_along(ex["at"])
+        sel = inside & (np.abs(along - at) < 0.006) & (lat <= 1.5)
+        if not sel.any():
+            continue
+        rr, cc_ = np.nonzero(sel)
+        k = int(np.argmin(lat[rr, cc_]))
+        start = (int(rr[k]), int(cc_[k]))
+        bearing = {"west": 180.0, "east": 0.0, "north": 90.0, "south": 270.0}[ex["side"]]
+        # level to where the floor really ends that way (it is wider than
+        # floor_m where the banks stand above the lowest one)
+        ux, uy = math.cos(math.radians(bearing)), math.sin(math.radians(bearing))
+        flat = 0.0
+        while flat < 60.0:
+            r = int(round(start[0] + uy * (flat + 0.5) * 100 / terrain.GRID_CM))
+            c = int(round(start[1] + ux * (flat + 0.5) * 100 / terrain.GRID_CM))
+            if not (0 <= r < h and 0 <= c < w) or p.field[r, c] > floor_h + 30.0:
+                break
+            flat += 0.5
+        p.field, trench, end = levels.gully(p.field, start, bearing, floor_h, cfg.get("exit_slope_deg", 26.0),
+                                            cfg.get("exit_width_m", 8.0), flat_m=max(0.0, flat - 1.0))
+        exits |= trench
+        p.ravine["exit_ends"].append(end)
+    p.level_masks["ravine_exits"] = exits
+    # the river: one level along the whole floor
+    if cfg.get("river_cm", 150.0) > 0:
+        level = float(round(floor_h + cfg.get("river_cm", 150.0)))   # whole cm: exact as the IFO's float32
+        fl = np.argwhere(inside & (lat <= 1.0) & p.play_v)
+        centre = tuple(int(v) for v in fl[len(fl) // 2])
+        mask = water.lake_mask(p.field, level, centre)
+        p.lakes.append({"centre": centre, "level": level, "mask": mask, "banks": {}})
+        p.features["river"] = {"kind": "lake", "centre": centre, "radius_m": 0.0, "mask": mask}
+    for cr in crossings:
+        pts = np.argwhere((np.abs(along - cr["along"]) < 0.004) & (lat < 1.0))
+        if len(pts):
+            p.features[cr["name"]] = {"kind": "crossing", "centre": tuple(int(v) for v in pts[len(pts) // 2]),
+                                      "radius_m": 0.0}
+
+
+def add_pits(s, p, cfg, rng):
+    """`count` pits beside the planned road, alternating sides, each with one
+    gully back up to the plateau."""
+    route = p.road_routes[0] if p.road_routes else None
+    if route is None:
+        raise SystemExit("pits near the road need a planned road (roads: [{... \"planned\": true}])")
+    n = cfg.get("count", 5)
+    r_m = cfg.get("radius_m", 11.0)
+    off = cfg.get("offset_m", 8.0)
+    g = terrain.GRID_CM
+    inside_all = np.zeros(p.field.shape, bool)
+    gullies = np.zeros(p.field.shape, bool)
+    edge = areas.distance_m(~p.play_v)
+    road_v = np.zeros(p.field.shape, bool)
+    for q in route:
+        road_v[min(q[0] * 4, road_v.shape[0] - 1), min(q[1] * 4, road_v.shape[1] - 1)] = True
+    road_d = areas.distance_m(road_v)
+    p.pits = []
+    dist_v = (r_m + off) * 100.0 / g
+    need_edge = r_m + 25.0                    # its rim and gully stay clear of the border
+
+    def spot(k, sgn):
+        a, b = route[max(0, k - 2)], route[min(len(route) - 1, k + 2)]
+        dr, dc = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(dr, dc) or 1.0
+        nr_, nc_ = -dc / L, dr / L                                    # left normal
+        c = (int(round(route[k][0] * 4 + sgn * nr_ * dist_v)), int(round(route[k][1] * 4 + sgn * nc_ * dist_v)))
+        if not (0 <= c[0] < p.field.shape[0] and 0 <= c[1] < p.field.shape[1]) or edge[c] < need_edge:
+            return None
+        if any(math.hypot(c[0] - q["centre"][0], c[1] - q["centre"][1]) * g / 100.0 < 2 * r_m + 25.0 for q in p.pits):
+            return None
+        return c, (sgn * nr_, sgn * nc_)
+
+    # the stretch of road in the open (not the exit corridors)
+    ok_k = [k for k in range(len(route)) if edge[min(route[k][0] * 4, edge.shape[0] - 1),
+                                                   min(route[k][1] * 4, edge.shape[1] - 1)] >= need_edge + r_m]
+    k0, k1 = (min(ok_k), max(ok_k)) if ok_k else (0, len(route) - 1)
+    for i in range(n):
+        want = k0 + (i + 0.5) / n * (k1 - k0)
+        got = None
+        for step in range(0, len(route)):
+            for k in ({int(round(want + step)), int(round(want - step))}):
+                if not 0 <= k < len(route):
+                    continue
+                for sgn in ((1, -1) if i % 2 == 0 else (-1, 1)):
+                    got = spot(k, sgn)
+                    if got:
+                        break
+                if got:
+                    break
+            if got:
+                break
+        if got is None:
+            continue
+        centre, (nr_, nc_) = got
+        sgn = 1
+        p.field, floor_h, inside = levels.pit(p.field, centre, r_m, cfg.get("depth_cm", 900.0))
+        # the gully leaves away from the road, turned a little
+        away = math.degrees(math.atan2(sgn * nr_, sgn * nc_)) + float(rng.uniform(-50, 50))
+        wall_w = cfg.get("depth_cm", 900.0) / 100.0 / math.tan(math.radians(68.0))
+        p.field, trench, end = levels.gully(p.field, centre, away, floor_h, cfg.get("gully_slope_deg", 26.0),
+                                            cfg.get("gully_width_m", 7.0), flat_m=max(0.0, r_m - wall_w - 1.0))
+        inside_all |= inside
+        gullies |= trench
+        name = "pit%d" % (len(p.pits) + 1)
+        p.features[name] = {"kind": "pit", "centre": centre, "radius_m": r_m}
+        p.pits.append({"name": name, "centre": centre, "inside": inside, "gully": trench, "floor_h": floor_h})
+    p.level_masks["pits"] = inside_all
+    p.level_masks["gullies"] = gullies
+
+
+def add_levels_objects(s, p):
+    """After the terrain is final: bridges over the ravine (and their walk
+    links), invisible walls along ledge edges, landmarks."""
+    lv = s["levels"]
+    g = terrain.GRID_CM
+    ground = lambda x, y: ground_at(p.field, x, y)
+    if lv.get("ravine") and getattr(p, "ravine", None):
+        rv = p.ravine
+        yy, xx = np.mgrid[0:p.field.shape[0], 0:p.field.shape[1]]
+        for cr in rv["crossings"]:
+            r0, c0 = p.features[cr["name"]]["centre"]
+            # across the axis: the local axis direction from the along field
+            k = 3
+            ra, ca = max(0, r0 - k), max(0, c0 - k)
+            rb, cb = min(p.field.shape[0] - 1, r0 + k), min(p.field.shape[1] - 1, c0 + k)
+            ga = np.array([rv["along"][rb, c0] - rv["along"][ra, c0], rv["along"][r0, cb] - rv["along"][r0, ca]])
+            bearing = math.degrees(math.atan2(ga[0], ga[1])) + 90.0
+            gap = cr["gap_m"]
+            ux, uy = math.cos(math.radians(bearing)), math.sin(math.radians(bearing))
+            cx, cy = c0 * g, r0 * g
+            banks = [(cx - ux * (gap / 2 + 4) * 100, cy - uy * (gap / 2 + 4) * 100),
+                     (cx + ux * (gap / 2 + 4) * 100, cy + uy * (gap / 2 + 4) * 100)]
+            bank_cm = max(ground(*banks[0]), ground(*banks[1]))
+            # both banks raised to the deck ends' height on a small pad
+            f = p.field.astype(float)
+            for bx, by in banks:
+                dd = np.hypot(xx * g - bx, yy * g - by) / 100.0
+                wgt = np.clip(1.0 - (dd - 6.0) / 10.0, 0.0, 1.0)
+                pad = (dd <= 16.0) & ~rv["inside"] & p.play_v
+                f = np.where(pad, f + (bank_cm - f) * wgt, f)
+            p.field = np.round(f.astype("<f4"), 1).astype("<f4")
+            q, ends, sc = levels.bridge(cr["kind"], (cx, cy), bearing, gap, bank_cm)
+            q["name"] = cr["name"]
+            p.bridges.append(q)
+            p.links.append(levels.deck_link(ends, (p.field.shape[0] - 1, p.field.shape[1] - 1)))
+            for j, (ex, ey) in enumerate(ends):
+                p.features["%s_%s" % (cr["name"], "ab"[j])] = {"kind": "bridge_end", "radius_m": 0.0,
+                                                                "centre": (int(round(ey / g)), int(round(ex / g)))}
+    if lv.get("ledges") and lv["ledges"].get("walls", True):
+        cw = p.ledge_cliff_w
+        d = areas.distance_m(p.level_masks["floor"])
+        lines = barrier.contour(d, cw + 0.8)
+        ramps = p.level_masks["ramps"]
+        ramp_near = areas.distance_m(ramps) < 3.0
+        for line in lines:
+            piece = []
+            for r, c in line:
+                ri, ci = min(int(round(r)), ramps.shape[0] - 1), min(int(round(c)), ramps.shape[1] - 1)
+                if ramp_near[ri, ci]:
+                    if len(piece) >= 2:
+                        p.walls.extend(levels.wall_line(piece, ground))
+                    piece = []
+                    continue
+                piece.append((c * g, r * g))
+            if len(piece) >= 2:
+                p.walls.extend(levels.wall_line(piece, ground))
+
+
+def add_landmark(s, p, lm):
+    """A single object (a lookout tower) on a ledge, at `at` 0..1 along it."""
+    mask = p.level_masks.get(lm["on"].replace(" ", "_"))
+    if mask is None:
+        raise SystemExit("landmark on %r: no such level (%s)" % (lm["on"], ", ".join(sorted(p.level_masks))))
+    inner = mask & (areas.distance_m(~mask) > lm.get("clear_m", 8.0))
+    rr, cc = np.nonzero(inner)
+    if not len(rr):
+        raise SystemExit("landmark %s: no room on %s" % (lm["name"], lm["on"]))
+    target_c = cc.min() + lm.get("at", 0.5) * (cc.max() - cc.min())
+    k = int(np.argmin(np.abs(cc - target_c) * 10 + np.abs(rr - np.median(rr[np.abs(cc - target_c) < 3]))))
+    r, c = int(rr[k]), int(cc[k])
+    g = terrain.GRID_CM
+    h = float(p.field[r, c])
+    yy, xx = np.mgrid[0:p.field.shape[0], 0:p.field.shape[1]]
+    dd = np.hypot(yy - r, xx - c) * g / 100.0
+    wgt = np.clip(1.0 - (dd - 5.0) / 6.0, 0.0, 1.0)
+    f = p.field.astype(float)
+    p.field = np.round((f + (h - f) * np.where(mask, wgt, 0.0)).astype("<f4"), 1).astype("<f4")
+    yaw = 0.0
+    q = {"lump": "OBJECT", "id": lm.get("object_id", 200), "name": lm["name"], "x": c * g, "y": r * g,
+         "z": h - 20.0, "rot": (0.0, 0.0, 0.0, 1.0), "scale": (lm.get("scale", 1.3),) * 3, "sink": -20.0,
+         "rc": 0.0, "rv": 0.0, "category": "LANDMARK"}
+    cells = (p.field.shape[0] - 1, p.field.shape[1] - 1)
+    q["rc"] = prefab.footprint_radius(footprints(s), q, cells)
+    p.bridges.append(q)
+    p.landmarks.append(q)
+    p.features[lm["name"]] = {"kind": "landmark", "centre": (r, c), "radius_m": 4.0}
+
+
+def level_avoid(p):
+    """Vertices decoration keeps off: ramps, gully floors, bridge ends and
+    river (+2 m), and the landmark."""
+    m = np.zeros(p.field.shape, bool)
+    for key in ("ramps", "gullies", "ravine_exits"):
+        if key in p.level_masks:
+            m |= areas.distance_m(p.level_masks[key]) < 2.0
+    g = terrain.GRID_CM
+    for q in (p.bridges or []) + (getattr(p, "landmarks", None) or []):
+        r, c = int(round(q["y"] / g)), int(round(q["x"] / g))
+        k = int(((q["scale"][0] * 900.0) if q["category"] == "BRIDGE" else 600.0) / g)
+        m[max(0, r - k):r + k + 1, max(0, c - k):c + k + 1] = True
+    return m
+
+
+def seal_levels(s, p):
+    """Walls that must not be climbed: pit sides (except the gully), ravine
+    walls (except the exit gullies), ledge cliffs (except the ramps). Each
+    level is (low ground, its face, its way out); see seal()."""
+    jobs = []
+    f = p.field
+    for pt in getattr(p, "pits", []) or []:
+        low = pt["inside"] & (f <= pt["floor_h"] + 30.0)
+        jobs.append((low, pt["inside"] & ~low, pt["gully"]))
+    rv = getattr(p, "ravine", None)
+    if rv is not None:
+        low = rv["inside"] & p.play_v & (f <= rv["floor_h"] + 30.0)
+        jobs.append((low, rv["inside"] & p.play_v & ~low, p.level_masks.get("ravine_exits", np.zeros_like(low))))
+    if "floor" in p.level_masks:
+        jobs.append((p.level_masks["floor"], p.level_masks["cliff"], p.level_masks["ramps"]))
+    lifted = 0
+    for low, face, allowed in jobs:
+        lifted += seal(p, low, face, allowed)
+    return lifted
+
+
+def seal(p, low, face, allowed, rounds=40):
+    """Make a level's face unclimbable from its low ground except through
+    `allowed` (its ramp or gully). Same rule as close_ring: gentle cells
+    joined to the low ground, 8-way (the client steps diagonally), that
+    reach past the face are a leak; each round lifts the NW and SE corners
+    of the leaking cells on the face (the NE-corner blind spot: a cell's
+    slope ignores its NE corner) to the steep slope measured from the
+    original ground, once per corner. Only face vertices move, never the
+    floor or the level above. Returns the corners lifted; p.seal_open
+    lists levels where a leak remains (reported by the level checks)."""
+    g = terrain.GRID_CM
+    f0 = p.field.astype(float).copy()
+    need = walk.BLOCK_SLOPE * 1.15 * g
+    inner = low | face
+    zone = areas.distance_m(inner) <= 1.0
+    # the way out is vertices; the cells along its sides carry its heights
+    # too (a cell takes the slope of all four corners), so they are part of it
+    allowed = areas.distance_m(allowed) <= 4.0 if allowed.any() else allowed
+    liftable = face & ~allowed
+    # never above the face's own top nearby: a lifted corner is a steeper
+    # face, not a bump standing on the level above
+    top = f0.copy()
+    for dr in (-2, -1, 0, 1, 2):
+        for dc in (-2, -1, 0, 1, 2):
+            top = np.maximum(top, np.roll(np.roll(f0, dr, 0), dc, 1))
+    done = np.zeros(low.shape, bool)
+    lifted = 0
+    for _ in range(rounds):
+        f = p.field.astype(float)
+        gx, gy = terrain.gradient(f)
+        free = (np.hypot(gx, gy) < walk.BLOCK_SLOPE) & ~allowed[:-1, :-1]
+        seen = free & low[:-1, :-1]
+        while True:
+            n = seen.copy()
+            n[1:] |= seen[:-1]; n[:-1] |= seen[1:]; n[:, 1:] |= seen[:, :-1]; n[:, :-1] |= seen[:, 1:]
+            n[1:, 1:] |= seen[:-1, :-1]; n[:-1, :-1] |= seen[1:, 1:]; n[1:, :-1] |= seen[:-1, 1:]; n[:-1, 1:] |= seen[1:, :-1]
+            n &= free
+            if np.array_equal(n, seen):
+                break
+            seen = n
+        leak = seen & ~zone[:-1, :-1]
+        if not leak.any():
+            return lifted
+        # the leaking cells that touch the face: any corner on it
+        cf = liftable[:-1, :-1] | liftable[1:, :-1] | liftable[:-1, 1:] | liftable[1:, 1:]
+        moved = 0
+        for r, c in zip(*np.nonzero(seen & cf)):
+            for rr, cc in ((r + 1, c), (r, c + 1), (r + 1, c + 1)):     # NW, SE, and NE when it sits low
+                if liftable[rr, cc] and not done[rr, cc]:
+                    want = min(f0[r, c] + need, top[rr, cc])
+                    if f[rr, cc] < want:
+                        f[rr, cc] = want
+                        moved += 1
+                    done[rr, cc] = True
+        lifted += moved
+        p.field = np.round(f.astype("<f4"), 1).astype("<f4")
+        if not moved:
+            break
+    p.seal_open = getattr(p, "seal_open", 0) + 1
     return lifted
 
 
@@ -676,7 +1197,8 @@ def road_end(p, name, path_block):
         return free_corner((int(round(p.start_v[0] / 4)), int(round(p.start_v[1] / 4))), path_block)
     if name in p.features:
         r, c = p.features[name]["centre"]
-        return free_corner((int(round(r / 4)), int(round(c / 4))), path_block)
+        steep = getattr(p, "corner_steep", None)       # a feature may sit by a slope (a ramp's top)
+        return free_corner((int(round(r / 4)), int(round(c / 4))), path_block if steep is None else path_block | steep)
     raise SystemExit("road end %r is neither a village, 'start' nor a feature (%s)"
                      % (name, ", ".join(sorted(p.features))))
 
@@ -914,10 +1436,11 @@ def village_checks(s, p, members, field, start, check):
     check(not missing, "every mesh of every village object exists on disk %s" % (sorted(missing)[:3] or ""))
     g = terrain.GRID_CM
     rough, unreachable = [], []
-    blocked = decorate.blocked_cells(members + (p.placed or []) + (getattr(p, "barrier", None) or []),
+    blocked = decorate.blocked_cells(members + (p.placed or []) + (getattr(p, "barrier", None) or [])
+                                     + (getattr(p, "walls", None) or []) + (getattr(p, "landmarks", None) or []),
                                      (field.shape[0] - 1, field.shape[1] - 1),
                                      footprints(s))
-    a = walk.analyse(field, start, play_mask(s, p), blocked, trap_scope=trap_scope(s, p))
+    a = walk.analyse(field, start, play_mask(s, p), blocked, trap_scope=trap_scope(s, p), links=getattr(p, "links", ()))
     fp = footprints(s)
     for q in members:
         if not q["rc"]:
@@ -992,7 +1515,31 @@ RETAIL_BORDER = {"steep_5_10": 0.75, "steep_10_20": 0.35, "rise_10_20": 15.0}
 # plateau top is flat on purpose; the closed-ring test replaces it.)
 
 
-def gentle_escape_m(field, start, play):
+def gentle_flood(gentle, s0, links=()):
+    """Gentle cells joined to `s0`, 8-connected (diagonal steps between two
+    steep cells count, as the client allows them), across `links` (bridge
+    decks: cell pairs)."""
+    h, w = gentle.shape
+    seen = np.zeros_like(gentle)
+    if not gentle[s0]:
+        return seen
+    other = {}
+    for a, b in links:
+        other.setdefault(tuple(a), []).append(tuple(b))
+        other.setdefault(tuple(b), []).append(tuple(a))
+    seen[s0] = True
+    stack = [s0]
+    while stack:
+        r, c = stack.pop()
+        nxt = [(r + dr, c + dc) for dr in (-1, 0, 1) for dc in (-1, 0, 1)] + other.get((r, c), [])
+        for rr, cc in nxt:
+            if 0 <= rr < h and 0 <= cc < w and gentle[rr, cc] and not seen[rr, cc]:
+                seen[rr, cc] = True
+                stack.append((rr, cc))
+    return seen
+
+
+def gentle_escape_m(field, start, play, links=()):
     """How far (m) outside the play area gentle ground (< 54 deg, 8-connected,
     so diagonal steps between two steep cells count) reaches from `start`."""
     if play is None:
@@ -1000,23 +1547,12 @@ def gentle_escape_m(field, start, play):
     gx, gy = terrain.gradient(field)
     gentle = np.hypot(gx, gy) < walk.BLOCK_SLOPE
     h, w = gentle.shape
-    seen = np.zeros_like(gentle)
-    s0 = (min(start[0], h - 1), min(start[1], w - 1))
-    stack = [s0]
-    seen[s0] = True
-    while stack:
-        r, c = stack.pop()
-        for dr in (-1, 0, 1):
-            for dc in (-1, 0, 1):
-                rr, cc = r + dr, c + dc
-                if 0 <= rr < h and 0 <= cc < w and gentle[rr, cc] and not seen[rr, cc]:
-                    seen[rr, cc] = True
-                    stack.append((rr, cc))
+    seen = gentle_flood(gentle, (min(start[0], h - 1), min(start[1], w - 1)), links)
     d = areas.distance_m(play)[:-1, :-1]
     return float(d[seen].max()) if seen.any() else 0.0
 
 
-def border_profile(field, start, wet=None):
+def border_profile(field, start, wet=None, links=()):
     """The walk region (gentle cells joined to `start`, water counted as
     walkable, inner steep spots filled) and, outside it, the share of steep
     cells and the median rise above its edge at 0-5, 5-10, 10-20 and 20-40 m.
@@ -1028,12 +1564,27 @@ def border_profile(field, start, wet=None):
         gentle |= wet[:-1, :-1]
     s0 = (min(start[0], gentle.shape[0] - 1), min(start[1], gentle.shape[1] - 1))
     region = np.zeros_like(gentle)
+    comps = []
     for rr, cc in water.components(gentle):
         m = np.zeros_like(gentle)
         m[rr, cc] = True
-        if m[s0]:
-            region = m
-            break
+        comps.append(m)
+    # the start's component, and every one a bridge joins to it
+    grow = True
+    want = {s0}
+    while grow:
+        grow = False
+        for m in comps:
+            if not (m & ~region).any():
+                continue
+            if any(m[q] for q in want):
+                region |= m
+                grow = True
+        for a, b in links:
+            for q, o in ((tuple(a), tuple(b)), (tuple(b), tuple(a))):
+                if region[q] and o not in want:
+                    want.add(o)
+                    grow = True
     outside = np.zeros_like(region)
     for rr, cc in water.components(~region):
         if rr.min() == 0 or cc.min() == 0 or rr.max() == region.shape[0] - 1 or cc.max() == region.shape[1] - 1:
@@ -1142,6 +1693,7 @@ def intent_checks(s, p, field, placed, lattice, check):
             k = int(dcfg.get("path_clear_m", 4.0) * 100 / terrain.GRID_CM) + 1
             for r, c in zip(pr * 4, pc * 4):
                 deco_off[max(0, r - k):r + k + 1, max(0, c - k):c + k + 1] = True
+    lw = {}                                     # walk analyses shared by the level checks
     for it in intents:
         kind, label = it["check"], it.get("label", "")
         if kind == "tilt":
@@ -1173,13 +1725,13 @@ def intent_checks(s, p, field, placed, lattice, check):
             # fence line is what closes a low cliff
             # the region a player walks, measured as for retail: gentle cells
             # (water included) joined to the start, inner steep spots filled
-            _, region = border_profile(field, p.start_v, wet)
+            _, region = border_profile(field, p.start_v, wet, getattr(p, "links", ()))
             share = float(region.mean())
             check(abs(share - it["target"]) <= it.get("tol", 0.12),
                   "%s: %.0f%% of the map is walkable (want %.0f%% +/- %.0f; retail 24-55%% dry)"
                   % (label, 100 * share, 100 * it["target"], 100 * it.get("tol", 0.12)))
         elif kind == "border_like_retail":
-            prof, _ = border_profile(field, p.start_v, wet)
+            prof, _ = border_profile(field, p.start_v, wet, getattr(p, "links", ()))
             ok = prof["steep_5_10"] >= RETAIL_BORDER["steep_5_10"] and prof["rise_10_20"] >= RETAIL_BORDER["rise_10_20"]
             check(ok, "%s: outside the walk region %.0f%% of cells 5-10 m out are too steep to climb, %.1f m up at "
                       "10-20 m (want >= %.0f%%, %.0f m; retail 79-92%%, 18-30 m)"
@@ -1187,7 +1739,7 @@ def intent_checks(s, p, field, placed, lattice, check):
                      100 * RETAIL_BORDER["steep_5_10"], RETAIL_BORDER["rise_10_20"]))
             # and the ring is closed: gentle ground reachable from the start
             # (diagonal steps between corners included) stays in the play area
-            esc = gentle_escape_m(field, p.start_v, getattr(p, "play_v", None))
+            esc = gentle_escape_m(field, p.start_v, getattr(p, "play_v", None), getattr(p, "links", ()))
             check(esc <= 6.0, "%s: walkable ground ends within %.1f m of the play area's edge (want <= 6 m)"
                   % (label, esc))
         elif kind == "wet_in":
@@ -1255,18 +1807,29 @@ def intent_checks(s, p, field, placed, lattice, check):
                     r, c = p.features[name]["centre"]
                     ends.append((int(round(r / 4)), int(round(c / 4))))
             near = lambda q, e: max(abs(q[0] - e[0]), abs(q[1] - e[1])) <= 2
-            todo = [tuple(q) for q in np.argwhere(lattice == pb) if near(tuple(q), ends[0])]
-            seen = set()
-            while todo:
-                q = todo.pop()
-                if q in seen:
-                    continue
-                seen.add(q)
-                for d in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                    n = (q[0] + d[0], q[1] + d[1])
-                    if 0 <= n[0] < lattice.shape[0] and 0 <= n[1] < lattice.shape[1] and lattice[n] == pb:
-                        todo.append(n)
-            check(any(near(q, ends[1]) for q in seen), "%s: a path runs from %s to %s" % (label, it["from"], it["to"]))
+
+            def painted(e0, e1):
+                todo = [tuple(q) for q in np.argwhere(lattice == pb) if near(tuple(q), e0)]
+                seen = set()
+                while todo:
+                    q = todo.pop()
+                    if q in seen:
+                        continue
+                    seen.add(q)
+                    for d in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        n = (q[0] + d[0], q[1] + d[1])
+                        if 0 <= n[0] < lattice.shape[0] and 0 <= n[1] < lattice.shape[1] and lattice[n] == pb:
+                            todo.append(n)
+                return any(near(q, e1) for q in seen)
+            if it.get("via"):
+                ea, eb = [(int(round(v[0] / 4)), int(round(v[1] / 4)))
+                          for v in (p.features[it["via"] + "_a"]["centre"], p.features[it["via"] + "_b"]["centre"])]
+                if math.hypot(ea[0] - ends[0][0], ea[1] - ends[0][1]) > math.hypot(eb[0] - ends[0][0], eb[1] - ends[0][1]):
+                    ea, eb = eb, ea
+                ok = painted(ends[0], ea) and painted(eb, ends[1])
+            else:
+                ok = painted(ends[0], ends[1])
+            check(ok, "%s: a path runs from %s to %s" % (label, it["from"], it["to"]))
         elif kind == "shore":
             f, lk = p.features[it["feature"]], p.features[it["lake"]]
             d = float(areas.distance_m(lk["mask"])[f["centre"]])
@@ -1296,8 +1859,102 @@ def intent_checks(s, p, field, placed, lattice, check):
             diff = float(field[f["centre"]] - np.median(field[ring]))
             check(diff >= it["min_cm"], "%s: %s stands %.1f m above its surroundings (want >= %.1f m)"
                   % (label, it["feature"], diff / 100, it["min_cm"] / 100))
+        elif kind in LEVEL_CHECKS:
+            level_check(kind, it, s, p, field, placed, check, label, lw)
         else:
             check(False, "unknown intent check %r" % kind)
+
+
+LEVEL_CHECKS = ("ravine_sealed", "bridge", "pits", "ledges", "ledges_no_drop", "on_level")
+
+
+def level_check(kind, it, s, p, field, placed, check, label, lw):
+    """Intent checks for levels (phase 7c), on the walk model with every
+    wall in place: decorations, village members, fences, invisible walls,
+    landmarks; bridges as links."""
+    cells = (field.shape[0] - 1, field.shape[1] - 1)
+    if "blocked" not in lw:
+        lw["blocked"] = decorate.blocked_cells(list(placed or []) + village_members(p) + (p.barrier or [])
+                                               + (p.walls or []) + (p.landmarks or []), cells, footprints(s))
+        lw["base"] = walk.analyse(field, p.start_v, play_mask(s, p), lw["blocked"], trap_scope=trap_scope(s, p),
+                                  links=p.links)
+    blocked, base = lw["blocked"], lw["base"]
+    cellm = lambda v: v[:-1, :-1] & v[1:, 1:] & v[1:, :-1] & v[:-1, 1:]
+    g = terrain.GRID_CM
+    if kind == "ravine_sealed":
+        rv = p.ravine
+        side = rv["side"][:-1, :-1]
+        far_sign = -rv["side"][p.start_v]
+        far = cellm(p.play_v & ~rv["inside"]) & (side == far_sign) & ~base["steep"]
+        alone = walk.analyse(field, p.start_v, play_mask(s, p), blocked, trap_scope=trap_scope(s, p))
+        leak = int((alone["reach"] & far).sum())
+        check(leak == 0, "%s: without the bridges, the far bank is out of reach (%d of its %d cells reached)"
+              % (label, leak, int(far.sum())))
+        got = float((base["home"] & far).sum()) / max(1, int(far.sum()))
+        check(got >= 0.9, "%s: over the bridges, %.0f%% of the far bank is reachable both ways (want >= 90%%)"
+              % (label, 100 * got))
+        floor = cellm(rv["inside"] & p.play_v) & ~base["steep"]
+        back = float((base["home"] & floor).sum()) / max(1, int(floor.sum()))
+        check(back >= 0.9, "%s: %.0f%% of the ravine floor has a way back up (want >= 90%%)" % (label, 100 * back))
+    elif kind == "bridge":
+        q = next(b for b in p.bridges if b["name"] == it["name"])
+        i = p.bridges.index(q)
+        a, b = p.links[[k for k, bq in enumerate(p.bridges) if bq.get("category") == "BRIDGE"].index(i)]
+        both = bool(base["home"][a]) and bool(base["home"][b])
+        deck = q["z"] + levels.BRIDGES[q["name"] if q["name"] in levels.BRIDGES else
+                                       next(k for k, v in levels.BRIDGES.items() if v["id"] == q["id"])]["end_cm"] \
+            * q["scale"][0]
+        off = []
+        for nm in ("_a", "_b"):
+            r, c = p.features[it["name"] + nm]["centre"]
+            off.append(abs(float(field[r, c]) - deck) / 100.0)
+        check(both and max(off) <= 1.0, "%s: both ends reachable from the start (%s), deck ends %.1f / %.1f m off "
+              "the ground (want <= 1 m)" % (label, "yes" if both else "no", off[0], off[1]))
+    elif kind == "pits":
+        pits = getattr(p, "pits", [])
+        check(len(pits) == it["count"], "%s: %d pits dug (want %d)" % (label, len(pits), it["count"]))
+        bad = []
+        for pt in pits:
+            inside = cellm(pt["inside"])
+            floor = inside & ~base["steep"] & ~cellm(pt["gully"])
+            rim = float(np.median(field[(areas.distance_m(pt["inside"]) > 0) & (areas.distance_m(pt["inside"]) < 3)]))
+            depth = (rim - pt["floor_h"]) / 100.0
+            # the way out and the cells along its sides (they carry its heights)
+            way = (areas.distance_m(pt["gully"]) <= 3.0)[:-1, :-1] & ~floor
+            sealed = walk.analyse(field, p.start_v, play_mask(s, p), blocked | way,
+                                  trap_scope=trap_scope(s, p), links=p.links)
+            stuck = float((sealed["traps"] & floor).sum()) / max(1, int(floor.sum()))
+            out = float((base["home"] & floor).sum()) / max(1, int(floor.sum()))
+            if depth < 4.0 or stuck < 0.8 or out < 0.9:
+                bad.append("%s %.1f m deep, %.0f%% walled in without its way out, %.0f%% out with it"
+                           % (pt["name"], depth, 100 * stuck, 100 * out))
+        check(not bad, "%s: each pit >= 4 m deep, walled in except its one way out%s"
+              % (label, (": " + "; ".join(bad)) if bad else ""))
+    elif kind == "ledges":
+        led = cellm(p.level_masks["ledge"]) & ~base["steep"]
+        got = float((base["home"] & led).sum()) / max(1, int(led.sum()))
+        check(got >= 0.9, "%s: %.0f%% of the ledges is reachable both ways (want >= 90%%)" % (label, 100 * got))
+    elif kind == "ledges_no_drop":
+        ramps = cellm(p.level_masks["ramps"]) | (areas.distance_m(p.level_masks["ramps"])[:-1, :-1] < 3.0)
+        floor = cellm(p.level_masks["floor"]) & ~ramps
+        bad = []
+        for side in ("north", "south", "west", "east"):
+            m = p.level_masks.get("ledge_" + side)
+            if m is None or not m.any():
+                continue
+            cand = np.argwhere(cellm(m) & ~base["steep"] & ~blocked & ~ramps
+                               & (areas.distance_m(~m)[:-1, :-1] > 6.0))
+            if not len(cand):
+                continue
+            seed = tuple(int(v) for v in cand[len(cand) // 2])
+            a = walk.analyse(field, seed, None, blocked | ramps, links=p.links)
+            n = int((a["reach"] & floor).sum())
+            if n:
+                bad.append("%s ledge reaches %d floor cells" % (side, n))
+        check(not bad, "%s%s" % (label, (": " + "; ".join(bad)) if bad else " (walls hold)"))
+    elif kind == "on_level":
+        r, c = p.features[it["feature"]]["centre"]
+        check(bool(p.level_masks[it["level"]][r, c]), "%s: %s stands on the %s" % (label, it["feature"], it["level"]))
 
 
 def water_margin(s, p, dcfg):
@@ -1372,10 +2029,11 @@ def deco_checks(s, p, placed, field, start, check, zdir=None):
                     tight += 1
     check(tight == 0, "colliding objects keep a %.0f m walkable gap (%d pairs closer)" % (gap / 100, tight))
 
-    blocked = decorate.blocked_cells(placed + village_members(p) + (getattr(p, "barrier", None) or []),
+    blocked = decorate.blocked_cells(placed + village_members(p) + (getattr(p, "barrier", None) or [])
+                                     + (getattr(p, "walls", None) or []) + (getattr(p, "landmarks", None) or []),
                                      (field.shape[0] - 1, field.shape[1] - 1),
                                      footprints(s))
-    a = walk.analyse(field, start, play_mask(s, p), blocked, trap_scope=trap_scope(s, p))
+    a = walk.analyse(field, start, play_mask(s, p), blocked, trap_scope=trap_scope(s, p), links=getattr(p, "links", ()))
     need = (s.get("terrain") or {}).get("min_connected_fraction", 0.95)
     check(a["trap_cells"] == 0,
           "with object collision: no area you can walk into but not out of (%d)" % a["trap_cells"])
@@ -1631,7 +2289,7 @@ def play_mask(s, p):
 
 def terrain_checks(s, p, field, start, check):
     """The phase 2 terrain checks; `field` may come from the spec or from disk."""
-    a = walk.analyse(field, start, play_mask(s, p), trap_scope=trap_scope(s, p))
+    a = walk.analyse(field, start, play_mask(s, p), trap_scope=trap_scope(s, p), links=getattr(p, "links", ()))
     need = (s.get("terrain") or {}).get("min_connected_fraction", 0.95)
     check(a["trap_cells"] == 0,
           "no area the player can walk into but not climb out of (%d trap cells)" % a["trap_cells"])
@@ -2221,9 +2879,15 @@ def cmd_verify(s):
         g = terrain.GRID_CM
         in_village = [bool(vm[min(int(round(q["y"] / g)), vm.shape[0] - 1), min(int(round(q["x"] / g)), vm.shape[1] - 1)])
                       for q in placed_disk]
-        bkeys = {(round(q["x"] / 100), round(q["y"] / 100)) for q in (p.barrier or [])}
+        bkeys = {(round(q["x"] / 100), round(q["y"] / 100)) for q in (p.barrier or []) + (p.bridges or [])}
         is_barrier = [(round(q["x"] / 100), round(q["y"] / 100)) in bkeys for q in placed_disk]
-        check(sum(is_barrier) == len(p.barrier or []), "barrier objects on disk = the spec's (%d)" % sum(is_barrier))
+        check(sum(is_barrier) == len(p.barrier or []) + len(p.bridges or []),
+              "barrier and bridge objects on disk = the spec's (%d)" % sum(is_barrier))
+        n_coll = 0
+        for k in p.chunks():
+            with open(os.path.join(zdir, chunk_stem(*k) + ".IFO"), "rb") as fh:
+                n_coll += len(ifo.parse(fh.read()).lump(ifo.COLLISION) or [])
+        check(n_coll == len(p.walls or []), "invisible walls (collision boxes) on disk = the spec's (%d)" % n_coll)
         deco_disk = [q for q, iv, ib in zip(placed_disk, in_village, is_barrier) if not iv and not ib]
         placed_disk = [q for q, ib in zip(placed_disk, is_barrier) if not ib]
         n_vdeco = sum(1 for q in village_members(p) if q["lump"] == "OBJECT")

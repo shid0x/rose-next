@@ -1,0 +1,48 @@
+{
+ "layout": 1,
+ "description": "A 4x4 Junon grassland map split in two by a deep ravine running north to south, with a river at the bottom. Two wooden bridges cross it: one on the main road near the centre, one narrow footbridge far to the north. The player starts in a camp on the west side; the village is on the east side, so the only way to reach it is over a bridge.",
+ "notes": [
+  "Ravine: deep (19 m under its lowest bank), 40 m wide, a 12 m floor with a 1.5 m river along it.",
+  "Main bridge: field-bridge02, retail's stream bridge, scaled to span the ravine narrowed under it (retail scales 1.5-2.2).",
+  "Footbridge: guroomdari, retail's suspension bridge over deep gaps (Anima Lake, Kenji Beach).",
+  "'The only way to reach it is over a bridge': a player who falls in climbs out by two gullies, both onto the west bank; the east wall is sealed.",
+  "Camp: anima_camp. Village: adventurer_houses (the dry-ground five-house village).",
+  "The main road runs from the camp over the main bridge to the village."
+ ],
+ "name": "Mapgen Ravine",
+ "folder": "MAPGEN07",
+ "size": "4x4",
+ "seed": 7101,
+ "terrain": {
+  "character": "gentle",
+  "shape": "basin",
+  "play": "large",
+  "border": "mountains"
+ },
+ "levels": {
+  "ravine": {
+   "axis": "north-south",
+   "depth": "deep",
+   "width": "medium",
+   "river": true,
+   "climb_out": "west",
+   "crossings": [
+    {"name": "main_bridge", "kind": "bridge", "at": "centre"},
+    {"name": "footbridge", "kind": "footbridge", "at": "far north"}
+   ]
+  }
+ },
+ "villages": [
+  {"name": "camp", "prefab": "anima_camp", "where": "west"},
+  {"name": "village", "prefab": "adventurer_houses", "where": "east"}
+ ],
+ "roads": [
+  {"from": "camp", "to": "village", "via": "main_bridge", "style": "road"}
+ ],
+ "start": {"near": "camp"},
+ "cover": [
+  {"where": "everywhere", "is": "meadow"},
+  {"where": "north-west", "is": "woods"},
+  {"where": "south-east", "is": "woods", "density": "light"}
+ ]
+}

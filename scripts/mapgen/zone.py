@@ -76,6 +76,9 @@ class ZoneParams:
     objects: Optional[dict] = None
     # Construction records per chunk slot (IFO lump 3, obj_id into the CNST ZSC), phase 6.
     cnst: Optional[dict] = None
+    # Invisible collision boxes per chunk slot (IFO lump 11, the client's
+    # Add_CollisionBox: LIST_DECO_SPECIAL.ZSC object 2), phase 7c.
+    collision: Optional[dict] = None
 
     def chunks(self):
         for y in range(self.y0, self.y0 + self.height):
@@ -122,7 +125,7 @@ def make_mov():
     return chunk.Mov(32, 32, np.zeros((32, 32), dtype="u1"))   # 0 = AI may move
 
 
-def make_ifo(stem_x, stem_y, water_rects=(), objects=(), cnst=()):
+def make_ifo(stem_x, stem_y, water_rects=(), objects=(), cnst=(), collision=()):
     """An empty chunk IFO laid out exactly as the editor's File > New writes it:
     all 13 lumps in enum order (editor/IFO.cs:1202-1500, New.xaml.cs:266-301)."""
     water = np.zeros(256, dtype=ifo.WATER_CELL)
@@ -135,7 +138,7 @@ def make_ifo(stem_x, stem_y, water_rects=(), objects=(), cnst=()):
         (ifo.WATER, ifo.WideWater(16, 16, water)),
         (ifo.REGEN, []),
         (ifo.OCEAN, ifo.Ocean(2000.0, list(water_rects))),   # 2000: retail/editor texture repeat
-        (ifo.WARP, []), (ifo.COLLISION, []), (ifo.EVENT_OBJECT, []),
+        (ifo.WARP, []), (ifo.COLLISION, list(collision)), (ifo.EVENT_OBJECT, []),
     ]
     c = Container()
     for i, (t, body) in enumerate(lumps):
@@ -201,7 +204,8 @@ def build_zone(p, template_zon):
         files[stem + ext(".mov")] = mov
         files[stem + ext(".ifo")] = ifo.build(make_ifo(x, 64 - y, (p.water or {}).get((x, y), ()),
                                                        (p.objects or {}).get((x, y), ()),
-                                                       (p.cnst or {}).get((x, y), ())))
+                                                       (p.cnst or {}).get((x, y), ()),
+                                                       (p.collision or {}).get((x, y), ())))
         files["%s/LIGHTMAP/BUILDINGLIGHTMAPDATA.LIT" % stem] = empty_lit
         files["%s/LIGHTMAP/OBJECTLIGHTMAPDATA.LIT" % stem] = empty_lit
     return files

@@ -140,6 +140,23 @@ DENSITY = {"sparse": 0.5, "light": 0.75, "normal": 1.0, "dense": 1.3, "very dens
 
 ROAD_STYLES = ("road", "path")
 
+# Levels (phase 7c; mapgen/levels.py). Ravine depth / width, cm and m:
+# retail's guroomdari crossings span 19-40 m deep gaps (Anima Lake, Kenji
+# Beach), field-bridge02 streams 3-9 m below.
+RAVINE_DEPTH = {"shallow": 900, "medium": 1400, "deep": 1900}
+RAVINE_WIDTH = {"narrow": 30, "medium": 40, "wide": 50}
+BRIDGE_KINDS = {"bridge": "field-bridge02", "wooden bridge": "field-bridge02", "footbridge": "guroomdari",
+                "rope bridge": "guroomdari", "suspension bridge": "guroomdari"}
+# pits: radius m; depth cm (a character is ~1.8 m: 6 m is "cannot climb out")
+PIT_SIZE = {"small": 8, "medium": 11, "large": 15}
+PIT_DEPTH = {"shallow": 500, "deep": 800, "very deep": 1100}
+# ledges: cliff height cm, ledge width m
+LEDGE_HEIGHT = {"low": 800, "medium": 1200, "high": 1600}
+LEDGE_WIDTH = {"narrow": 20, "medium": 28, "wide": 38}
+# landmarks: (deco object id, scale, clear m around it)
+LANDMARKS = {"lookout tower": (200, 1.3, 8.0), "watchtower": (200, 1.3, 8.0), "guard post": (200, 1.0, 6.0)}
+LEDGE_SIDES = {"valley east-west": ("north", "south"), "valley north-south": ("west", "east")}
+
 
 class LayoutError(ValueError):
     pass
@@ -193,6 +210,12 @@ def area(word, names=()):
         f = 0.5 if part == "half" else 1 / 3.0
         box = {"north": [0, 1 - f, 1, 1], "south": [0, 0, 1, f], "east": [1 - f, 0, 1, 1], "west": [0, 0, f, 1]}[side]
         return {"box": box}
+    m = re.fullmatch(r"(the )?rims? of (the )?(\S+)", w)
+    if m:
+        name = m.group(3)
+        if names and name not in names:
+            _err("place %r: nothing called %r (known: %s)" % (word, name, ", ".join(names)))
+        return {"near": name, "extra_m": 9.0}
     m = re.fullmatch(r"near (the )?(\S+)", w)
     if m:
         name = m.group(2)
@@ -287,6 +310,19 @@ def compile_layout(lay):
         names.append("water")
     water_names = [n for n in names if n not in [f["name"] for f in (lay.get("terrain") or {}).get("features", [])]]
     names += [v.get("name", v.get("prefab")) for v in lay.get("villages", [])]
+    lt0 = lay.get("terrain") or {}
+    lv0 = lay.get("levels") or {}
+    names += ["exit:%s" % e for e in lt0.get("exits", [])]
+    if lv0.get("ravine"):
+        names += [c["name"] for c in lv0["ravine"].get("crossings", [])]
+        names.append("river")
+    if lv0.get("pits"):
+        names += ["pit%d" % (i + 1) for i in range(int(lv0["pits"].get("count", 5)))]
+    if lv0.get("ledges"):
+        sides = LEDGE_SIDES.get(lt0.get("shape"), ("north", "south"))
+        ends = ("west", "east") if sides[0] == "north" else ("south", "north")
+        names += ["ramp_%s_%s" % (a, b) for a in sides for b in ends]
+    names += [l["name"] for l in lay.get("landmarks", [])]
 
     # --- terrain
     lt = lay.get("terrain") or {}
@@ -314,6 +350,7 @@ def compile_layout(lay):
         s["paint"]["cliff"]["material"] = _one_of(lt["cliff_material"], ["auto", "grass", "rock", "earth"],
                                                   "cliff material")
     shape = _one_of(lt.get("shape", "organic"), SHAPES, "map shape")
+    exits = [_one_of(e, list(terrain.EDGES), "exit") for e in lt.get("exits", [])]
     border = lt.get("border", "cliffs")
     edges = list(terrain.EDGES)
     sea = (lay.get("water") or {}).get("sea")
@@ -340,6 +377,8 @@ def compile_layout(lay):
                               "profile": "range", "wall_m": face_m, "wall_cm": face_cm,
                               "body_cm": TOPS[top] or body_cm, "top": top,
                               "range_wavelength_m": ridge_m, "edge": "none"}
+                if exits:
+                    t["shape"]["exits"] = exits
             intent.append({"check": "border_like_retail",
                            "label": "%s border as steep as retail's (El Verloon, Adventurer's Plain ...)" % kind_b})
         else:
@@ -352,8 +391,15 @@ def compile_layout(lay):
             t["shape"] = {"kind": shape, "share": share, "open": [sea["edge"]] if sea else [],
                           "wall_m": wall_m, "wall_cm": wall_cm, "highland_cm": 2500 if wall_cm else 0, "edge": rim}
         border = "none"                          # the shape's own cliffs replace the ring
-        intent.append({"check": "play_share", "target": share, "tol": 0.12,
-                       "label": "%s play area, about %d%% of the map" % (shape, round(share * 100))})
+        if (lay.get("levels") or {}).get("ledges"):
+            # the ledges are play area too: two strips ~38 m wide along the valley
+            share_all = share + 0.12
+            intent.append({"check": "play_share", "target": share_all, "tol": 0.12,
+                           "label": "%s floor (about %d%% of the map) plus its ledges"
+                           % (shape, round(share * 100))})
+        else:
+            intent.append({"check": "play_share", "target": share, "tol": 0.12,
+                           "label": "%s play area, about %d%% of the map" % (shape, round(share * 100))})
     if isinstance(border, dict):
         edges = [_one_of(e, list(terrain.EDGES), "cliff edge") for e in border.get("cliffs", [])]
     elif border == "none":
@@ -486,13 +532,22 @@ def compile_layout(lay):
         s["villages"] = vills
     village_names = [v["name"] for v in vills]
     roads = []
-    for r in lay.get("roads", []):
-        for end in (r["from"], r["to"]):
+    for i, r in enumerate(lay.get("roads", [])):
+        for end in (r["from"], r["to"]) + ((r["via"],) if r.get("via") else ()):
             if end != "start" and end not in names:
                 _err("road end %r: not a village or feature (known: %s)" % (end, ", ".join(names)))
-        roads.append({"from": r["from"], "to": r["to"]})
-        intent.append({"check": "road", "from": r["from"], "to": r["to"], "label": "%s %s to %s"
-                       % (_one_of(r.get("style", "road"), list(ROAD_STYLES), "road style"), r["from"], r["to"])})
+        rd = {"from": r["from"], "to": r["to"]}
+        if r.get("via"):
+            rd["via"] = r["via"]
+        if (lay.get("levels") or {}).get("pits") and                 lay["levels"]["pits"].get("near", "road 1") == "road %d" % (i + 1):
+            rd["planned"] = True                  # pits are dug beside it: the route is laid before them
+        roads.append(rd)
+        it = {"check": "road", "from": r["from"], "to": r["to"], "label": "%s %s to %s"
+              % (_one_of(r.get("style", "road"), list(ROAD_STYLES), "road style"), r["from"], r["to"])}
+        if r.get("via"):
+            it["via"] = r["via"]
+            it["label"] += " over the %s" % r["via"]
+        intent.append(it)
     if roads:
         s["roads"] = roads
     st = lay.get("start")
@@ -501,10 +556,87 @@ def compile_layout(lay):
             if st["near"] not in names:
                 _err("start near %r: not a village or feature" % st["near"])
             s["start"] = {"near": st["near"]}
-            intent.append({"check": "near", "feature": "start", "to": st["near"], "max_m": 5.0,
+            intent.append({"check": "near", "feature": "start", "to": st["near"],
+                           "max_m": 40.0 if st["near"].startswith("exit:") else 5.0,
                            "label": "the player starts at the %s" % st["near"]})
         elif st.get("where"):
             s["start"] = {"area": area(st["where"], names)}
+
+    # --- levels
+    lv = lay.get("levels") or {}
+    levels = {}
+    if lv.get("ravine"):
+        rv = lv["ravine"]
+        axis = _one_of(rv.get("axis", "north-south"), ["north-south", "east-west"], "ravine axis")
+        depth = RAVINE_DEPTH[_one_of(rv.get("depth", "deep"), list(RAVINE_DEPTH), "ravine depth")]
+        width = RAVINE_WIDTH[_one_of(rv.get("width", "medium"), list(RAVINE_WIDTH), "ravine width")]
+        out = {"axis": axis, "depth_cm": depth, "width_m": width, "floor_m": 12.0,
+               "river_cm": 150.0 if rv.get("river", True) else 0.0, "crossings": [], "exits": []}
+        for c in rv.get("crossings", []):
+            kind = BRIDGE_KINDS[_one_of(c.get("kind", "bridge"), list(BRIDGE_KINDS), "crossing kind")]
+            at = c.get("at", 0.5)
+            if isinstance(at, str):
+                at = {"centre": 0.5, "middle": 0.5, "near the centre": 0.5, "far north": 0.88, "north": 0.75,
+                      "far south": 0.12, "south": 0.25, "far east": 0.88, "east": 0.75, "far west": 0.12,
+                      "west": 0.25}.get(at)
+                if at is None:
+                    _err("crossing %s at %r: centre, north, far north, south, far south (or 0..1)"
+                         % (c["name"], c["at"]))
+            out["crossings"].append({"name": c["name"], "kind": kind, "at": float(at)})
+        side = rv.get("climb_out")
+        if side:
+            side = _one_of(side, list(terrain.EDGES), "ravine climb-out side")
+            taken = [c["at"] for c in out["crossings"]]
+            for at in (0.3, 0.68):
+                # away from the bridges (a gully under a deck reads as a mistake)
+                while any(abs(at - a) < 0.12 for a in taken):
+                    at += 0.05
+                out["exits"].append({"at": round(min(at, 0.95), 2), "side": side})
+        levels["ravine"] = out
+        intent.append({"check": "ravine_sealed", "label": "a deep ravine nobody climbs out of except by its %s"
+                       % ("%s-side gullies" % side if side else "bridges")})
+        for c in out["crossings"]:
+            intent.append({"check": "bridge", "name": c["name"], "label": "%s over the ravine" % c["name"]})
+    if lv.get("pits"):
+        pt = lv["pits"]
+        levels["pits"] = {"count": int(pt.get("count", 5)),
+                          "radius_m": PIT_SIZE[_one_of(pt.get("size", "medium"), list(PIT_SIZE), "pit size")],
+                          "depth_cm": PIT_DEPTH[_one_of(pt.get("depth", "deep"), list(PIT_DEPTH), "pit depth")],
+                          "offset_m": 7.0, "gully_slope_deg": 26.0, "gully_width_m": 7.0}
+        intent.append({"check": "pits", "count": levels["pits"]["count"],
+                       "label": "%d steep-sided pits beside the road, each with one way out"
+                       % levels["pits"]["count"]})
+    if lv.get("ledges"):
+        lg = lv["ledges"]
+        if shape not in LEDGE_SIDES:
+            _err("ledges need a valley shape (%s)" % ", ".join(LEDGE_SIDES))
+        levels["ledges"] = {"cliff_cm": LEDGE_HEIGHT[_one_of(lg.get("height", "medium"), list(LEDGE_HEIGHT),
+                                                             "ledge height")],
+                            "cliff_deg": 66.0,
+                            "width_m": LEDGE_WIDTH[_one_of(lg.get("width", "wide"), list(LEDGE_WIDTH), "ledge width")],
+                            "ramp_deg": 22.0, "ramp_width_m": 7.0, "ramp_margin_m": 30.0,
+                            "walls": lg.get("drop", "ramps only") == "ramps only"}
+        intent.append({"check": "ledges", "label": "walkable clifftop ledges reached by a ramp at each end"})
+        if levels["ledges"]["walls"]:
+            intent.append({"check": "ledges_no_drop", "label": "no dropping off the ledges except at the ramps"})
+    lms = []
+    for l in lay.get("landmarks", []):
+        oid, scale, clear = LANDMARKS[_one_of(l.get("kind", "lookout tower"), list(LANDMARKS), "landmark kind")]
+        on = l.get("on", "")
+        m = re.fullmatch(r"(north|south|east|west)(ern)? (ledge|clifftop)", on)
+        if not m:
+            _err("landmark %s on %r: '<north|south|east|west> ledge'" % (l["name"], on))
+        at = l.get("at", 0.5)
+        if isinstance(at, str):
+            at = {"middle": 0.5, "centre": 0.5, "west": 0.3, "east": 0.7, "south": 0.3, "north": 0.7}[at]
+        lms.append({"name": l["name"], "object_id": oid, "scale": scale, "clear_m": clear,
+                    "on": "ledge_%s" % m.group(1), "at": float(at)})
+        intent.append({"check": "on_level", "feature": l["name"], "level": "ledge_%s" % m.group(1),
+                       "label": "%s on the %s" % (l["name"], on)})
+    if lms:
+        levels["landmarks"] = lms
+    if levels:
+        s["levels"] = levels
 
     # --- cover
     cover = []

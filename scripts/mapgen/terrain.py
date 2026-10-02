@@ -193,8 +193,21 @@ def play_shape(shape, cfg, rng):
     side_m = min(h, w) * GRID_CM / 100.0
     score = base + amp * fbm(shape, side_m * 0.5, 3, 0.5, rng)
     keep_off = (cfg.get("wall_m", 36.0) + 10.0) * 100 / GRID_CM
+    exits = cfg.get("exits", [])
+    corridor = np.zeros(shape, bool)
+    for e in exits:
+        # an exit: a corridor through the border to the middle of that edge
+        # (a road leaves the map there; warps are out of scope)
+        d = edge_distance(shape, (e,))
+        lateral = np.abs(ux) if e in ("north", "south") else np.abs(uy)
+        width = cfg.get("exit_width", 0.07)
+        score = score + 2.4 * np.clip(1 - lateral / width, 0, 1) * np.clip(1 - d / (0.55 * min(h, w)), 0, 1)
+        corridor |= lateral < width
     for e in EDGES:
         d = edge_distance(shape, (e,))
+        if e in exits:
+            score = np.where((d < keep_off) & ~corridor, -10.0, score)
+            continue
         if e in cfg.get("open", []):
             # pull the region out to this edge (a coast): the bonus decays over
             # half the map, so the corridor from the centre to the edge stays

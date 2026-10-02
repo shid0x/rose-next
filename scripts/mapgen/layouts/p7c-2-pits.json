@@ -1,0 +1,33 @@
+{
+ "layout": 1,
+ "description": "A 4x4 Junon grassland plateau with a road running from the south exit to the north exit. Five steep-sided pits are scattered close to the road, some partly hidden by tall grass and bushes at the rim. Each pit is deep enough that the player cannot climb the sides, and each has one narrow ramp or tunnel-like gully leading back up to the plateau.",
+ "notes": [
+  "Exits: corridors through the border to the middle of the south and north edges; the road is laid first and the pits dug beside it.",
+  "Pits: 11 m radius, 8 m deep, walls at 68 degrees (54 is the client's climbing limit); one 7 m gully at 26 degrees each, leaving away from the road.",
+  "'Some partly hidden': overgrown cover (tall grass, bushes) on the rims of pits 1, 3 and 4."
+ ],
+ "name": "Mapgen Pits",
+ "folder": "MAPGEN08",
+ "size": "4x4",
+ "seed": 7102,
+ "terrain": {
+  "character": "gentle",
+  "shape": "organic",
+  "play": "medium",
+  "exits": ["south", "north"],
+  "border": "mountains"
+ },
+ "levels": {
+  "pits": {"count": 5, "size": "medium", "depth": "deep", "near": "road 1"}
+ },
+ "roads": [
+  {"from": "exit:south", "to": "exit:north", "style": "road"}
+ ],
+ "start": {"near": "exit:south"},
+ "cover": [
+  {"where": "everywhere", "is": "meadow"},
+  {"where": "rim of pit1", "is": "overgrown", "density": "dense"},
+  {"where": "rim of pit3", "is": "overgrown", "density": "dense"},
+  {"where": "rim of pit4", "is": "overgrown", "density": "dense"}
+ ]
+}

@@ -246,7 +246,8 @@ def placed_from_records(records_by_chunk_, x0, y0, cat, field):
     return out
 
 
-def repair(placed, field, start, play_mask, max_rounds=20, fixed=(), footprints=None, trap_scope=None):
+def repair(placed, field, start, play_mask, max_rounds=20, fixed=(), footprints=None, trap_scope=None,
+           links=()):
     """Remove colliding objects next to any trap cell until there is none.
 
     A tree on a >= 54 degree slope can block the only downhill way out of a
@@ -258,7 +259,7 @@ def repair(placed, field, start, play_mask, max_rounds=20, fixed=(), footprints=
     g = terrain.GRID_CM
     for _ in range(max_rounds):
         blocked = blocked_cells(list(placed) + list(fixed), (field.shape[0] - 1, field.shape[1] - 1), footprints)
-        a = walk.analyse(field, start, play_mask, blocked, trap_scope=trap_scope)
+        a = walk.analyse(field, start, play_mask, blocked, trap_scope=trap_scope, links=links)
         if not a["trap_cells"]:
             return placed, removed
         tr, tc = np.nonzero(a["traps"])
