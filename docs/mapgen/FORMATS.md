@@ -329,9 +329,19 @@ What retail files contain (phase 0 corpus scan, 1,538 IFOs):
   The game only logs it (`io_terrain.cpp:2390-2397`).
 - **`warp_id`** is non-zero only on WARP records (and 5 stray OBJECT records).
   **`event_id`** is non-zero only on 20 EVENT_OBJECT records.
-- **`map_x` / `map_y`:** about 72% equal the record's 2.5 m grid cell inside
-  the chunk in one of four orientations; about 11% are 0; the rest are
-  something else. The game only logs them.
+- **`map_x` / `map_y`:** the object's 2.5 m cell in its chunk, as
+  (column from the west, 63 - row counted from the south). This holds for
+  98% of the 10,806 JG decorations (phase 5 survey); other lumps vary more,
+  with some zeros. The game only logs them.
+- **Every object is stored in the chunk that contains it** (all 10,806 JG
+  decorations).
+- **Decoration habits** (JG01-08, lump 1):
+  - median 30 per chunk (p90 111, max 190; corpus max 278);
+  - yaw-only rotation for 87% of trees, 57% of rocks, 68% of grass;
+  - sunk into the ground (grass ~0.5 m, trees and rocks 0.3-1.8 m);
+  - uniform scale, typically 1.2-3.8.
+  - The big "waterfall rock" (`stone0211`) sits on ~62° slopes over the rock
+    brush: retail covers its cliffs with rock objects.
 - **Lump 7 (WATER):** always 16x16. `use = 0`, `height = 0`, `type = 1`,
   `index = 0`, `reserved = 0`, apart from 44 files with some `type = 0`.
   This is exactly what the editor's File > New writes.
@@ -557,6 +567,23 @@ Collision has no file of its own:
 
 - Objects collide by a per-part ZSC property (`src/client/io_model.cpp:326-333`,
   `:417`).
+  - It is property 29: `SWITCH_COLLISION` = 8 + `MAX_MESH_ANI_TYPE` (21),
+    `io_model.cpp:51-52`.
+  - In `LIST_DECO_JG`: rocks are 12 (polygon + not moveable) on every part;
+    trees are 12 on one part, often the trunk but sometimes a crown; grass
+    is 0.
+  - The client tests collision with spheres around the character's feet and
+    body (`cobjchar_collision.cpp:510-530`). So only colliding geometry
+    near the ground blocks walking (`catalogue.collision_profile`).
+  - **Confirmed in game** (user, 2026-10-02): generated rocks and trunks
+    block, grass and flowers don't. Objects with no `.lit` entry render
+    without baked lighting, which looks flat but is otherwise correct.
+- The editor's `3DDATA/STB/LIST_TERRAIN_OBJECT_<type>.STB` names each DECO
+  object:
+  - row = object id;
+  - col 0 = name in UTF-8 Korean;
+  - col 1 = source path, whose folder is the category (TREE, STONE, GRASS,
+    VILLAGE, ETC, SPECIAL).
 - Terrain collides through the heightfield (`src/client/cobjchar_collision.cpp`).
 
 ## Not verified
@@ -564,5 +591,3 @@ Collision has no file of its own:
 - **IFO lump 7:** whether the client's misparse of it is always harmless, or
   just harmless on the data we have. Retail only ever holds the 16x16
   default, so copying that is safe.
-- **IFO `map_x` / `map_y`:** which of the four grid-cell orientations is the
-  convention; about 17% of records match none.

@@ -82,7 +82,7 @@ def brush_slope_stats(zone_dirs, ts):
 
 
 def save_stats(path, counts, ts, zones):
-    with open(path, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
         json.dump({"_comment": "Corner brush counts per slope band in retail zones; regenerate with "
                                "`mapgen-zone.py stats`. Rows = slope bands (degrees), cols = brushes.",
                    "zones": zones, "slope_bands": SLOPE_BANDS,
@@ -131,7 +131,7 @@ def astar(cost, a, b):
 
 
 def paint(field, ts, stats, cfg, seed, waypoints, forced=None):
-    """Corner lattice (row 0 = south) of brush ids for a heightfield.
+    """(Corner lattice (row 0 = south) of brush ids, path-corner mask) for a heightfield.
 
     cfg is the spec's "paint" section. waypoints is a list of paths, each a
     list of lattice (row, col) points. `forced` (lattice-shaped, -1 = free)
@@ -208,4 +208,4 @@ def paint(field, ts, stats, cfg, seed, waypoints, forced=None):
                 continue
             got = np.bincount([index.get(b, 0) for b in lattice[sel]], minlength=len(land)) / sel.sum()
             bias[k] += np.clip(np.log((probs[k] + 1e-3) / (got + 1e-3)), -1.0, 1.0)
-    return realise(bias)
+    return realise(bias), on_path

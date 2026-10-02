@@ -55,7 +55,7 @@ BUILD = os.path.join(REPO, "build", "mapgen")
 sys.path.insert(0, HERE)
 
 import mapgen  # noqa: E402
-from mapgen import chunk, ifo, paint, preview, terrain, tiles, walk, water, zon  # noqa: E402
+from mapgen import catalogue, chunk, decorate, ifo, paint, preview, terrain, tiles, walk, water, zon  # noqa: E402
 from mapgen.zone import (CHUNK_CM, EventPoint, Tile, ZoneParams, build_zone,  # noqa: E402
                          centre_world, chunk_stem)
 
@@ -170,9 +170,124 @@ def params_from_spec(s):
         forced = lake_brushes(s, p, (rows, cols))
         paths = [[free_corner(pt, forced) for pt in pts] for pts in paths]
         seed = cfg.get("seed", t["seed"] + 1)
-        p.lattice = paint.paint(p.field, ts, stats, cfg, seed, paths, forced)
+        p.lattice, p.path_corners = paint.paint(p.field, ts, stats, cfg, seed, paths, forced)
         p.tile_grid = tiles.tiles_from_lattice(p.lattice, ts, np.random.default_rng(seed + 1))
+    p.placed = None
+    dcfg = s.get("decorate")
+    if dcfg:
+        if p.lattice is None:
+            raise SystemExit("'decorate' needs a 'paint' section")
+        cat = catalogue.load(os.path.join(STATS_DIR, dcfg["catalogue"]))
+        _, placed = decorate.place(p.field, p.lattice, p.x0, p.y0, cat, dcfg,
+                                   dcfg.get("seed", t["seed"] + 7), water_margin(s, p, dcfg),
+                                   p.path_corners, anchor)
+        placed, p.deco_removed = decorate.repair(placed, p.field, anchor, play_mask(s, p))
+        p.placed = placed
+        p.objects = decorate.records_by_chunk(placed, p.x0, p.y0)
     return p
+
+def water_margin(s, p, dcfg):
+    """Vertices where no decoration may stand: lakes plus `water_clear_m`."""
+    m = np.zeros(p.field.shape, bool)
+    steps = int(dcfg.get("water_clear_m", 3.0) * 100 / terrain.GRID_CM)
+    for lk in getattr(p, "lakes", []) or []:
+        g = lk["mask"].copy()
+        for _ in range(steps):
+            n = g.copy()
+            n[1:] |= g[:-1]
+            n[:-1] |= g[1:]
+            n[:, 1:] |= g[:, :-1]
+            n[:, :-1] |= g[:, 1:]
+            g = n
+        m |= g
+    return m
+
+
+def deco_checks(s, p, placed, field, start, check, zdir=None):
+    """Phase 5 checks; `placed` from the spec or rebuilt from the IFOs on disk."""
+    if not placed:
+        return None
+    dcfg = s["decorate"]
+    zstb, _, _ = tables()
+    deco_rel = zstb.get(s["template_zone_row"], COL_DECO).decode("latin-1").replace("\\\\", "\\")
+    meshes, objects = catalogue.read_zsc(P(deco_rel))
+    used = sorted({q["id"] for q in placed})
+    bad_ids = [i for i in used if not 0 <= i < len(objects) or not objects[i]["parts"]]
+    missing = sorted({m for i in used if i not in bad_ids
+                      for m in catalogue.object_box(DATA, meshes, objects[i])[2]})
+    check(not bad_ids, "every object id exists in the zone's DECO ZSC %s" % (bad_ids or ""))
+    check(not missing, "every mesh of every placed object exists on disk %s" % (missing[:3] or ""))
+
+    per, outside = {}, 0
+    for q in placed:
+        cx = int((p.x0 * 16000 + q["x"]) // 16000)
+        cy = int((p.y0 * 16000 + q["y"]) // 16000)
+        per[(cx, cy)] = per.get((cx, cy), 0) + 1
+        if zdir and "rec" in q and not any(r is q["rec"] for r in zdir_records(zdir, cx, cy)):
+            outside += 1
+    counts = [per.get(k, 0) for k in p.chunks()]
+    check(max(counts) <= 278, "objects per chunk %d..%d, median %d (retail JG median 30, corpus max 278)"
+          % (min(counts), max(counts), int(np.median(counts))))
+    if zdir:
+        check(outside == 0, "every object is stored in the chunk that contains it (%d not)" % outside)
+
+    avoid = water_margin(s, p, dcfg)
+    in_water = sum(bool(avoid[int(round(q["y"] / terrain.GRID_CM)), int(round(q["x"] / terrain.GRID_CM))])
+                   for q in placed)
+    sx, sy = start[1] * terrain.GRID_CM, start[0] * terrain.GRID_CM
+    clear = dcfg.get("start_clear_m", 15.0) * 100
+    in_start = sum(bool(np.hypot(q["x"] - sx, q["y"] - sy) < clear) for q in placed)
+    pr, pc = np.nonzero(p.path_corners)
+    if len(pr):
+        pxy = np.stack([pc * 4 * terrain.GRID_CM, pr * 4 * terrain.GRID_CM], axis=1)
+    else:
+        pxy = np.zeros((0, 2))
+    pclear = dcfg.get("path_clear_m", 4.0) * 100
+    on_path = sum(bool(len(pxy) and np.min(np.hypot(pxy[:, 0] - q["x"], pxy[:, 1] - q["y"])) < pclear)
+                  for q in placed)
+    check(in_water == 0 and in_start == 0 and on_path == 0,
+          "nothing in the water, the start area or on the path (%d / %d / %d)" % (in_water, in_start, on_path))
+
+    gap = dcfg.get("collision_gap_m", 3.0) * 100
+    coll = [q for q in placed if q["rc"]]
+    tight = 0
+    for i, a in enumerate(coll):
+        for b in coll[i + 1:]:
+            if abs(a["x"] - b["x"]) < 6000 and abs(a["y"] - b["y"]) < 6000:
+                if np.hypot(a["x"] - b["x"], a["y"] - b["y"]) < a["rc"] + b["rc"] + gap - 1:
+                    tight += 1
+    check(tight == 0, "colliding objects keep a %.0f m walkable gap (%d pairs closer)" % (gap / 100, tight))
+
+    blocked = decorate.blocked_cells(placed, (field.shape[0] - 1, field.shape[1] - 1))
+    a = walk.analyse(field, start, play_mask(s, p), blocked)
+    need = (s.get("terrain") or {}).get("min_connected_fraction", 0.95)
+    check(a["trap_cells"] == 0,
+          "with object collision: no area you can walk into but not out of (%d)" % a["trap_cells"])
+    check(a["connected_fraction"] >= need,
+          "with object collision: start connected to %.1f%% of the gentle play area"
+          % (100 * a["connected_fraction"]))
+    by = {}
+    for q in placed:
+        by[q["category"]] = by.get(q["category"], 0) + 1
+    print("        %d objects (%s); %d colliding, blocking %d cells; %d colliders removed to clear traps"
+          % (len(placed), ", ".join("%s %d" % kv for kv in sorted(by.items())), len(coll), int(blocked.sum()),
+             getattr(p, "deco_removed", 0)))
+    return blocked
+
+
+_zdir_cache = {}
+
+
+def zdir_records(zdir, cx, cy):
+    key = (zdir, cx, cy)
+    if key not in _zdir_cache:
+        path = os.path.join(zdir, chunk_stem(cx, cy) + ".IFO")
+        recs = []
+        if os.path.isfile(path):
+            with open(path, "rb") as f:
+                recs = ifo.parse(f.read()).lump(ifo.OBJECT) or []
+        _zdir_cache[key] = recs
+    return _zdir_cache[key]
 
 
 def load_tileset(cfg):
@@ -500,6 +615,12 @@ def cmd_stats():
     out = os.path.join(STATS_DIR, "jg_brush_by_slope.json")
     paint.save_stats(out, counts, ts, JG_ZONES)
     print("wrote %s" % out)
+    cat = catalogue.build(DATA, "JG", dirs, ts)
+    out_cat = os.path.join(STATS_DIR, "jg_decoration.json")
+    catalogue.save(out_cat, cat)
+    used = [o for o in cat["objects"] if o["uses"]]
+    print("wrote %s: %d objects, %d used in retail JG (%d placements)"
+          % (out_cat, len(cat["objects"]), len(used), sum(o["uses"] for o in used)))
     land = [b for b in range(ts.brushes) if b not in paint.WATER_BRUSHES_JG]
     print("land-brush share per slope band (what the painter aims for):")
     print("  %-9s" % "deg" + "".join("%8s" % ("b%d" % b) for b in land))
@@ -519,6 +640,7 @@ def cmd_preview(s):
     check = Checks()
     a = terrain_checks(s, p, p.field, start_vertex(s, p), check)
     wet = water_checks(p, p.field, p.water, check)
+    deco_checks(s, p, p.placed, p.field, start_vertex(s, p), check)
     os.makedirs(BUILD, exist_ok=True)
     out = preview.render(p.field, a, os.path.join(BUILD, "preview-%s.png" % s["folder"]), wet=wet)
     lo, hi = float(p.field.min()), float(p.field.max())
@@ -528,7 +650,8 @@ def cmd_preview(s):
         zstb, _, _ = tables()
         colours = brush_colours(ts, template_zon(s, zstb))
         out2 = preview.render_tiles(p.field, p.lattice, colours, a,
-                                    os.path.join(BUILD, "preview-%s-tiles.png" % s["folder"]), wet=wet)
+                                    os.path.join(BUILD, "preview-%s-tiles.png" % s["folder"]), wet=wet,
+                                    objects=p.placed)
         share = np.bincount(p.lattice.ravel(), minlength=ts.brushes) / p.lattice.size
         # Retail target for THIS terrain: the table's per-band mix weighted by
         # how many of our corners fall in each slope band.
@@ -547,7 +670,8 @@ def cmd_preview(s):
     same = np.array_equal(again.field.view("u4"), p.field.view("u4")) and again.water == p.water
     if p.tile_grid is not None:
         same &= np.array_equal(again.tile_grid, p.tile_grid)
-    check(same, "same spec + seed -> bit-identical terrain, water and tiles")
+    same &= again.objects == p.objects
+    check(same, "same spec + seed -> bit-identical terrain, water, tiles and objects")
     return 1 if check.failed else 0
 
 
@@ -785,6 +909,12 @@ def cmd_verify(s):
     if s.get("water") or on_disk_water:
         check(on_disk_water == (p.water or {}), "water rectangles on disk = the spec's (%d chunks)" % len(on_disk_water))
         water_checks(p, field, on_disk_water, check)
+    if s.get("decorate"):
+        cat = catalogue.load(os.path.join(STATS_DIR, s["decorate"]["catalogue"]))
+        on_disk = {k: zdir_records(zdir, *k) for k in p.chunks()}
+        placed_disk = decorate.placed_from_records(on_disk, p.x0, p.y0, cat, field)
+        check(len(placed_disk) == len(p.placed or []), "objects on disk = the spec's (%d)" % len(placed_disk))
+        deco_checks(s, p, placed_disk, field, sv, check, zdir)
     if s.get("paint"):
         ts = load_tileset(s["paint"])
         zt = tiles.read_stb_cells(P(ZONETYPE_STB))

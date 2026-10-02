@@ -71,6 +71,9 @@ class ZoneParams:
     # Water rectangles per chunk slot (x, y): [(sx, sz, sy, ex, ez, ey), ...]
     # in zone-relative cm, as water.rects_for builds them (phase 4).
     water: Optional[dict] = None
+    # Decoration records per chunk slot (x, y), as decorate.place builds them
+    # (phase 5): IFO lump 1, obj_id into the zone's DECO ZSC.
+    objects: Optional[dict] = None
 
     def chunks(self):
         for y in range(self.y0, self.y0 + self.height):
@@ -117,7 +120,7 @@ def make_mov():
     return chunk.Mov(32, 32, np.zeros((32, 32), dtype="u1"))   # 0 = AI may move
 
 
-def make_ifo(stem_x, stem_y, water_rects=()):
+def make_ifo(stem_x, stem_y, water_rects=(), objects=()):
     """An empty chunk IFO laid out exactly as the editor's File > New writes it:
     all 13 lumps in enum order (editor/IFO.cs:1202-1500, New.xaml.cs:266-301)."""
     water = np.zeros(256, dtype=ifo.WATER_CELL)
@@ -125,7 +128,7 @@ def make_ifo(stem_x, stem_y, water_rects=()):
     lumps = [
         (ifo.MAPINFO, ifo.MapInfo(16, 16, stem_x, stem_y, (0.0,) * 16,
                                   ("%d_%d" % (stem_x, stem_y)).encode())),
-        (ifo.OBJECT, []), (ifo.MOB, []), (ifo.CNST, []), (ifo.SOUND, []),
+        (ifo.OBJECT, list(objects)), (ifo.MOB, []), (ifo.CNST, []), (ifo.SOUND, []),
         (ifo.EFFECT, []), (ifo.MORPH, []),
         (ifo.WATER, ifo.WideWater(16, 16, water)),
         (ifo.REGEN, []),
@@ -194,7 +197,8 @@ def build_zone(p, template_zon):
             block = np.ascontiguousarray(p.tile_grid[r0:r0 + 16, c0:c0 + 16][::-1])   # TIL row 0 = north
             files[stem + ext(".til")] = chunk.build_til(chunk.Til(16, 16, block))
         files[stem + ext(".mov")] = mov
-        files[stem + ext(".ifo")] = ifo.build(make_ifo(x, 64 - y, (p.water or {}).get((x, y), ())))
+        files[stem + ext(".ifo")] = ifo.build(make_ifo(x, 64 - y, (p.water or {}).get((x, y), ()),
+                                                       (p.objects or {}).get((x, y), ())))
         files["%s/LIGHTMAP/BUILDINGLIGHTMAPDATA.LIT" % stem] = empty_lit
         files["%s/LIGHTMAP/OBJECTLIGHTMAPDATA.LIT" % stem] = empty_lit
     return files

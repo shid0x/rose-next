@@ -83,7 +83,7 @@ def _flood(seed, step_ok):
         cur = nxt
 
 
-def analyse(field, start_vertex, play_mask=None):
+def analyse(field, start_vertex, play_mask=None, blocked=None):
     """Return a dict of masks over cells (rows-1, cols-1) plus summary numbers.
 
     start_vertex is (row, col) in the field; the start cell is the one to its
@@ -105,9 +105,11 @@ def analyse(field, start_vertex, play_mask=None):
         liberal[(dr, dc)] = (src | dst) & inside
         # strict move a -> b; for the reverse flood (who can reach the start)
         # we walk edges backwards: from b to a, indexed by b.
-        strict = src & dst & inside                          # indexed by a, move a -> a+(dr,dc)
+        free = ~blocked if blocked is not None else np.ones_like(src)
+        ok = src & free                                      # allows d and is not inside an object
+        strict = ok & _shift(ok, -dr, -dc) & inside          # indexed by a, move a -> a+(dr,dc)
         if dr and dc:                                        # diagonal: via a side cell, not the corner point
-            strict &= _shift(src, -dr, 0) | _shift(src, 0, -dc)
+            strict &= _shift(ok, -dr, 0) | _shift(ok, 0, -dc)
         strict_rev[(-dr, -dc)] = _shift(strict, dr, dc)      # indexed by b, "came from" b-(dr,dc)
 
     seed = np.zeros((h, w), bool)
@@ -115,8 +117,12 @@ def analyse(field, start_vertex, play_mask=None):
     reach = _flood(seed, liberal)
     can_return = _flood(seed, strict_rev)
     traps = reach & ~can_return
+    if blocked is not None:
+        traps &= ~blocked
 
     gentle = ~steep
+    if blocked is not None:
+        gentle &= ~blocked
     if play_mask is not None:
         gentle &= play_mask
     home = reach & can_return
@@ -190,4 +196,19 @@ def selftest():
     bowl = np.hypot(*np.meshgrid(np.arange(n) - 32.0, np.arange(n) - 32.0)) * 250.0 * math.tan(math.radians(56))
     bowl[28:37, 28:37] = bowl[28:37, 28:37].min()   # flat floor at the centre
     expect("start inside a 56-degree bowl: can walk nowhere uphill", bowl, traps=False, home_frac=None)
+
+    def expect_blocked(name, blocked, traps):
+        a = analyse(flat, centre, blocked=blocked)
+        ok = (a["trap_cells"] > 0) == traps
+        print("  %s %-58s traps %4d" % ("ok  " if ok else "FAIL", name, a["trap_cells"]))
+        if not ok:
+            fails.append(name)
+
+    ring = np.zeros((n - 1, n - 1), bool)
+    ring[8:16, 8:16] = True
+    ring[9:15, 9:15] = False                # a pocket fully walled by objects
+    expect_blocked("pocket walled in by rocks: flagged (conservative)", ring, traps=True)
+    gap = ring.copy()
+    gap[11:13, 8] = False                   # a 5 m gap in the west wall
+    expect_blocked("same rock ring with a 5 m gap: no trap", gap, traps=False)
     return fails

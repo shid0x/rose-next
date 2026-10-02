@@ -382,7 +382,63 @@ from mesh headers (the ZSC's stored boxes are wrong).
 - **Checks:** no missing meshes; `scripts/fix-coplanar-object-overlaps.py
   --dry-run` reports 0 pairs; decoration per chunk within the retail range
   (max 278); collision works in game.
-- **Status:** NOT STARTED.
+- **Status:** DONE 2026-10-02. The user tested in game and in the editor:
+  - **collision** works on trees, grass and rocks: what should stop you does,
+    what shouldn't doesn't;
+  - **density** is fine as a baseline ("some could be denser, some lighter");
+  - **the look is flat** without baked lighting, which was expected and can
+    come later.
+
+  Noted, not changed:
+  - large rocks placed near the lake can lean into the water, because
+    clearance is measured from the object's centre;
+  - the orange "mushroom" (`grass002`) is a retail grass-category object.
+  - **Zone 12 now** is the phase 4 map plus 1,236 decorations: 1,022 grass
+    and flower clumps, 166 trees, 48 rocks; 44-121 per chunk.
+    - Warps: nearest tree `/mm 12 510 514`, nearest rock `/mm 12 512 515`.
+  - **`verify` from disk:**
+    - objects on disk = the spec's;
+    - every id exists and every mesh is on disk;
+    - every object is stored in the chunk that contains it;
+    - nothing in the water, the start area or on the path;
+    - colliders keep a 3 m gap;
+    - with object collision: 0 traps and 100% connected.
+  - **Also:**
+    - `fix-coplanar-object-overlaps.py --zone 12 --dry-run`: 0 fighting pairs;
+    - the editor's readers see the decorations in every chunk;
+    - all regression checks pass.
+- **How:**
+  - `scripts/mapgen/catalogue.py` builds `stats/jg_decoration.json` (via
+    `mapgen-zone.py stats`): per object its category (the editor table's
+    source folder), name, real size and reach from the mesh headers, a
+    collision profile from the mesh vertices, and retail's uses, scale and
+    sink percentiles, slope-band and brush counts.
+  - `scripts/mapgen/decorate.py`:
+    - Poisson placement per 10 m tile at retail's density for that slope band
+      and brush, times low-frequency cluster noise;
+    - object choice by the same densities;
+    - scale and sink from retail's middle 50%; random yaw;
+    - exclusions (water + 3 m, path + 4 m, start + 15 m) and spacing;
+    - `repair` removes any collider next to a trap cell.
+  - `walk.analyse` takes the blocked cells.
+  - Spec: `scripts/mapgen/specs/phase5-decorate.json`.
+- **Changes from the plan / decisions made:**
+  - **Categories** come from the editor's `LIST_TERRAIN_OBJECT_JG.STB`
+    source folders (TREE / STONE / GRASS / VILLAGE / ETC / SPECIAL). v1 places
+    GRASS, TREE and STONE objects that retail uses at least 10 times,
+    excluding water plants (duckweed, lotus).
+  - **Collision footprints come from mesh vertices, not boxes.** The client
+    collides with spheres around the feet and body. Only colliding geometry
+    0-2.5 m above the ground (after scale and sink) blocks walking. With the
+    bounding box a big tree blocked a 10 m circle and created 5 false traps.
+    Now a leafy tree blocks 0.36 m, a palm 0 (collision only in its crown),
+    big trees and rocks 3-6.5 m.
+  - **A real trap class exists:** a tree on a >= 54° slope can block the only
+    downhill way out of a steep cell. `decorate.repair` removes such
+    colliders; none were needed on this map once footprints were real.
+  - **Yaw-only rotation for v1**, although retail tilts 43% of rocks.
+  - **No lightmap entries** for the objects; they render without baked
+    lighting (flat-lit v1). How that looks is part of the in-game check.
 
 ### Phase 6 — village
 
@@ -445,3 +501,11 @@ Baked terrain lightmap, generated `.MOV`, minimap.
 - 2026-10-02 — Phase 4 confirmed by the user (waterline, shore, walk in/out)
   and committed. Next: phase 5 (decoration: trees and rocks from the JG
   decoration catalogue).
+- 2026-10-02 — Phase 5 built: decoration catalogue from the ZSC, editor table
+  and retail placements; statistical placement with collision-aware trap
+  checks; zone 12 reinstalled with 1,236 objects; automated checks pass;
+  in-game look and collision handed to the user.
+- 2026-10-02 — Phase 5 confirmed in game by the user: collision correct,
+  density fine as a baseline, flat look expected. Open for later: object
+  and terrain lightmaps (phase 8 or a dedicated lighting phase), per-spec
+  density tuning. Next: phase 6 (village prefabs).

@@ -23,7 +23,8 @@ def _tint_water(rgb, wet_px):
     rgb[wet_px] = rgb[wet_px] * 0.35 + np.array([40, 110, 150]) * 0.65
 
 
-def render_tiles(field, lattice, colours, analysis, out_path, px_per_tile=8, exaggeration=4.0, wet=None):
+def render_tiles(field, lattice, colours, analysis, out_path, px_per_tile=8, exaggeration=4.0, wet=None,
+                 objects=None):
     """Painted preview: corner brushes blended bilinearly across each 10 m
     tile (roughly how the tile textures blend), times a hillshade. Start in
     blue, chunk borders in white."""
@@ -53,6 +54,18 @@ def render_tiles(field, lattice, colours, analysis, out_path, px_per_tile=8, exa
     out *= shade[vr][:, vc][..., None]
     if wet is not None:
         _tint_water(out, wet[vr][:, vc])
+    if objects:
+        # trees dark green, rocks grey, everything else (grass, flowers) a light dot
+        px_per_cm = n / (4 * GRID_CM)
+        for q in objects:
+            x, y = q["x"] * px_per_cm, q["y"] * px_per_cm
+            col = {"TREE": (20, 70, 25), "STONE": (150, 150, 145)}.get(q["category"], (215, 230, 140))
+            big = q["category"] in ("TREE", "STONE")
+            rad = max(1, int((q["rc"] or 40) * px_per_cm)) if big else 1
+            ys, xs = np.mgrid[int(y) - rad:int(y) + rad + 1, int(x) - rad:int(x) + rad + 1]
+            keep = ((ys - y) ** 2 + (xs - x) ** 2 <= rad * rad) & (ys >= 0) & (ys < out.shape[0]) \
+                & (xs >= 0) & (xs < out.shape[1])
+            out[ys[keep], xs[keep]] = col
     out[::16 * n, :] = 255
     out[:, ::16 * n] = 255
     sr, sc = analysis["start_cell"]
