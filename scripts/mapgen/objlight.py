@@ -148,6 +148,11 @@ class Parts:
                 if roots != [0]:
                     ok, why = False, "root is not part 0 (GetPartIndex would remap)"
                 for i, part in enumerate(parts):
+                    if part.get("material", {}).get("blend", 0):
+                        # additive glow (light cones, neon): retail never
+                        # lightmaps one (81 of 81 parts left out); no entry
+                        out.append(None)
+                        continue
                     rel = meshes[part["mesh"]] if 0 <= part["mesh"] < len(meshes) else ""
                     z = read_zms(self.data_dir, rel) if rel else None
                     if z is None or z[3] not in LIT_FORMATS or z[2] is None:
@@ -482,9 +487,12 @@ def bake(field, chunk_records, parts, cell_table, cfg=None, terrain_cfg=None, x0
                 wl = [None if pr is None else world_tris(pr[0], local, rec.rot, rec.scale) for pr in prs]
                 placed[(slot, lump, i)] = (rec, prs, ok, why, wl)
     # occluders: solid parts and leaves of every object but grass and flowers
+    # (invisible parts -- collision shells and walls with a fully transparent
+    # texture -- block nothing: a leaf layer of fixed opacity would have
+    # shaded everything behind a 20 m invisible wall)
     occluders = [(w, pr[2][2]) for (slot, lump, i), (rec, prs, ok, why, wl) in placed.items()
                  if not (lump == "OBJECT" and i in chunk_records[slot].get("foliage", ()))
-                 for pr, w in zip(prs, wl) if pr is not None]
+                 for pr, w in zip(prs, wl) if pr is not None and pr[2][0] >= 0.02]
 
     # every part's texels: a cell rasterised from uv1; grass and flowers one
     # constant colour in a 32 px cell (small_plant_rgb); a mesh whose uv1
@@ -502,6 +510,8 @@ def bake(field, chunk_records, parts, cell_table, cfg=None, terrain_cfg=None, x0
                     continue
                 flat = lump == "OBJECT" and i in lumps.get("foliage", ())
                 for k, (pr, w) in enumerate(zip(prs, wl)):
+                    if pr is None:
+                        continue                   # a part that takes no lightmap (Parts.get)
                     tri, uv, (cover, rgb, cut), rel = pr
                     if flat:
                         jobs.append((slot, lump, i, k, 32, rel, "plant", 0))

@@ -2573,7 +2573,10 @@ def objlight_checks(s, p, zdir, check):
                     bad.append("%s %s ordinal %d is outside its chunk for the client" % (stem, fn, o.obj_index))
                 oid = recs[o.obj_index - 1].obj_id
                 nparts = len(objs[oid]["parts"]) if 0 <= oid < len(objs) else 0
-                if sorted(pt.part_index for pt in o.parts) != list(range(nparts)):
+                # every part but additive glow ones (objlight.Parts gives those no cell)
+                want = [k for k, part in enumerate(objs[oid]["parts"] if 0 <= oid < len(objs) else [])
+                        if not part.get("material", {}).get("blend", 0)]
+                if sorted(pt.part_index for pt in o.parts) != want:
                     bad.append("%s %s ordinal %d parts %s of %d" % (stem, fn, o.obj_index,
                                                                     [pt.part_index for pt in o.parts], nparts))
                 for pt in o.parts:
@@ -2602,8 +2605,10 @@ def objlight_checks(s, p, zdir, check):
                         bad.append("%s %s cell %d shared" % (stem, name, pt.position_in_map))
                     used.add(key)
                     cells.setdefault((stem, name), []).append((ppw, pt.position_in_map))
-            kept = [i for i, r in enumerate(recs) if objlight.client_accepts(r.pos, (x, y))]
-            dropped += len(recs) - len(kept)
+            kept = [i for i, r in enumerate(recs) if objlight.client_accepts(r.pos, (x, y))
+                    and 0 <= r.obj_id < len(objs)
+                    and any(not part.get("material", {}).get("blend", 0) for part in objs[r.obj_id]["parts"])]
+            dropped += sum(1 for r in recs if not objlight.client_accepts(r.pos, (x, y)))
             unlit += sum(1 for i in kept if i + 1 not in listed)
     for (stem, name), info in atlases.items():
         if info is None:

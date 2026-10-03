@@ -46,7 +46,10 @@ bake (the editor does not renumber): every later entry lights its neighbour.
 
 Records whose model the client cannot create (object id outside the ZSC, no
 parts) get object index 0, which resolves to nothing: their entries are
-ignored, safely.
+ignored, safely -- but the object is missing in game, reported as INFO
+(2026-10-03: Desert of the Dead, 561 decorations and all 6 buildings: our
+LIST_DECO_JD / LIST_CNST_JD predate the map; every reference client has
+the objects).
 
 Severity: CRASH (certain or out-of-bounds), RISK (lights the wrong object,
 may go out of bounds), VISUAL, INFO. Exit code 1 if any CRASH or RISK.
@@ -265,6 +268,11 @@ def audit_chunk(zdir, stem, zscs, add):
                         % (where, o.obj_index, pt.part_index, pt.position_in_map, name, used[key]))
                 used[key] = o.obj_index
     for lump in (ifo.OBJECT, ifo.CNST):
+        objs = zscs[lump][1]
+        empty = [r.obj_id for r in m.lump(lump) or [] if not (0 <= r.obj_id < len(objs) and objs[r.obj_id]["parts"])]
+        if empty:
+            add("INFO", "%s: %d %s records name objects the ZSC does not have (%s): the client creates nothing, "
+                "missing in game" % (stem, len(empty), LUMP_NAME[lump], ", ".join(map(str, sorted(set(empty))[:8]))))
         for i in sorted(dropped[lump]):
             r = m.lump(lump)[i]
             add("INFO", "%s: %s record %d (object %d) is outside its chunk; the client drops it (missing in game)"

@@ -1253,3 +1253,10 @@ can be added without rewriting it.
   fitted against retail's own cells (JG02 correlation 0.74, held out on
   JG01/JG04/JG07). Grass and flowers unshaded after the user's review.
   Both maps reinstalled; all checks pass; confirmed in game.
+- 2026-10-03 — Lighting tools beyond generated maps: `audit-lightmap-index.py`
+  (crash audit of every zone's .lit files; three retail crash-class entries
+  fixed by `fix-lightmap-index.py`) and `relight-zone.py` (bake an existing,
+  editor-made zone with the generator's bakers; every setting exposed and
+  saved per map; backups, verify, restore; doc/relighting-maps.md). Tested
+  on Shibuya (relit in data/, not yet baked into the VFS) and a full
+  bake-twice-restore cycle on Character Select.

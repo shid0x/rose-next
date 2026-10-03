@@ -216,6 +216,8 @@ class Shapes:
                 for i, part in enumerate(parts):
                     if not 0 <= part["mesh"] < len(meshes):
                         continue
+                    if part.get("material", {}).get("blend", 0):
+                        continue                  # additive glow (light cones, neon): casts nothing
                     t = catalogue.mesh_triangles(self.data_dir, meshes[part["mesh"]])
                     if t is None or not len(t):
                         continue
@@ -391,11 +393,14 @@ def object_layers(shapes, placed, sun, shape_px, cfg, field=None):
 
 # ----------------------------------------------------------------- bake
 
-def bake(field, placed, shapes, water=(), cfg=None):
+def bake(field, placed, shapes, water=(), cfg=None, normal_field=None):
     """RGB lightmap over the whole map, (rows*8, cols*8, 3) float, row 0 =
     south, for a heightfield of rows+1 x cols+1 vertices (cm). `placed`:
     objects as the generator stores them (field-local x, y cm; z; rot; scale;
-    sink; lump; id). `water`: [(vertex mask, level cm)]."""
+    sink; lump; id). `water`: [(vertex mask, level cm)]. `normal_field`: the
+    heights the slope term uses, when they differ from the shadow casters'
+    (relight: holes between chunks filled low to cast nothing, but with
+    their edge heights for the slope, or the edge texels tilt)."""
     c = dict(DEFAULT)
     c.update(cfg or {})
     sun = sun_vec(c["sun_az"], c["sun_el"])
@@ -405,7 +410,7 @@ def bake(field, placed, shapes, water=(), cfg=None):
     texel_m = TEXEL_CM / 100.0
 
     # slope term from vertex normals, bilinear to texels
-    n = vertex_normals(field)
+    n = vertex_normals(field if normal_field is None else normal_field)
     ndl = np.clip(sum(upsample(n[..., k], f8) * sun[k] for k in range(3)), 0.0, None)
 
     # terrain shadow: on a 2x finer point grid, then to texels, softened

@@ -49,9 +49,13 @@ def read_zsc(path):
         return s
 
     meshes = [cstr() for _ in range(take("<h"))]
-    materials = []
+    materials, mat_flags = [], []
     for _ in range(take("<h")):                       # materials: texture path + flags
         materials.append(cstr())
+        # skin, alpha, two-sided, alpha test, alpha ref, z write, z test,
+        # blend (0 none, 1 lighten, 2 normal), specular (the editor's ZSC.cs)
+        f = struct.unpack_from("<9h", raw, p[0])
+        mat_flags.append({"alpha": f[1], "alpha_test": f[3], "zwrite": f[5], "blend": f[7]})
         p[0] += 9 * 2 + 4 + 2 + 12
     for _ in range(take("<h")):                       # effects
         cstr()
@@ -66,6 +70,7 @@ def read_zsc(path):
                         "scale": (1.0, 1.0, 1.0), "parent": -1, "collision": 0}
                 mat = take("<h")
                 part["texture"] = materials[mat] if 0 <= mat < len(materials) else ""
+                part["material"] = mat_flags[mat] if 0 <= mat < len(mat_flags) else {}
                 while True:
                     tag = take("<B")
                     if tag == 0:
