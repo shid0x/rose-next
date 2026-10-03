@@ -924,9 +924,91 @@ Baked terrain lightmap, generated `.MOV`, minimap.
 
 Lightmaps (user, 2026-10-02): either the user gets an existing baking
 script shared by someone, or we write our own later. Ask before starting.
+User, 2026-10-03: "lighting would be sick". We write our own, in three
+steps.
 
-- **Check:** visual comparison with a retail zone.
-- **Status:** NOT STARTED.
+- **Step 1: measure retail. DONE 2026-10-03.**
+  `scripts/mapgen-lightmap-survey.py` (`zones` / `trees` / `objects` /
+  `chunk`, read-only). How the client uses lightmaps is in FORMATS.md
+  "Lightmaps"; what retail's look like is in DESIGN.md "Lighting".
+  - Headline: terrain = tiles x lightmap x 2 with no other shading, and
+    retail open ground is baked at 1.23-1.49x while our maps get ~1.0x.
+  - The bakes are top-down renders of the lit scene: sun from ~60° az,
+    soft object shadows, blue water, a per-zone tint.
+  - Open: the sun's elevation (30° or 45°).
+- **Step 2: terrain bake. DONE 2026-10-03.** `mapgen/lighting.py`, run at
+  build and install time (~80 s for a 4x4 map). It writes
+  `x_y/x_y_PLANELIGHTINGMAP.DDS` per chunk: 512 px, DXT5, full mips,
+  encoded by the vendored texconv.
+  - **Model**, per texel (31.25 cm), over the whole map at once:
+    `ambient + sun x max(0, n.l) x visibility`, then x contact x canopy,
+    then water.
+    - Visibility = a heightfield ray march x object shadows.
+    - Object shadows: every triangle of every object projected along the
+      sun onto the terrain. Leaf textures cast `leaf_shadow` x their
+      opaque share per layer; plants without alpha count as leaves.
+    - Contact = each part's low-vertex footprint, filled (rock shells),
+      sharp plus a wide halo.
+    - The canopy shows its leaf colour from above.
+    - Water blends to blue with depth.
+  - **Tuned against retail** (`mapgen-lightmap-survey.py compare`): bake a
+    retail window from its own terrain, objects and water, and score it.
+    - Sun 62° az, **45° el** (30° scored 0.78, 45° 0.85).
+    - JG02: luminance correlation 0.85. Averaged tree shadow toward 243°
+      at 1/3/6/10/15 m: 0.60/0.66/0.74/0.86/0.91 vs retail
+      0.59/0.66/0.72/0.84/0.88.
+    - Rocks: dark centre and wide halo, slightly dark at 3-6 m.
+    - JG01, never tuned on: correlation 0.87, profiles as close.
+  - **Checks** (`lightmap_checks`, in verify):
+    - every chunk has a 512 px DXT5 lightmap with a full mip chain;
+    - open ground at luminance 140-195 (retail; Riverwatch 157,
+      Ledgewood 159 = x1.23-1.24);
+    - water reads blue;
+    - chunk edges agree (step across a seam 1.6 vs 1.0 between
+      neighbouring texels).
+
+    Double build byte-identical.
+  - **Layouts** bake by default; `"lighting": {...}` overrides any
+    `lighting.DEFAULT` setting (sun, tint, strengths), `false` turns it
+    off.
+  - **Shots** (editor, lightmaps loaded): crates, trees, the farm and the
+    tower cast soft south-west shadows; ravine and pit walls show a lit and
+    a shaded side, so the pits read deep; cliffs catch the light.
+  - **User review in game (2026-10-03):** brightness good; shadows "quite
+    dark, strange". All three culprits were contact darkening, not the
+    sun. Found by rendering the screenshot spots (`shots --at X,Y`, the
+    minimap's coordinates).
+    - A bamboo cluster (object 32: three stalks in one mesh, 18 m apart)
+      drew one black triangle, the hull of all its stalk bases. Footprints
+      are now one filled hull per clump of low vertices (3 m).
+    - A bridge deck resting near the bank drew a black slab: bridges cast
+      sun shadows only, and only geometry within 0.6 m of the ground makes
+      a footprint.
+    - The 3 m halo had been fitted to retail's averaged darkness 3-6 m from
+      a rock's centre, which is mostly the rock's own (hidden) area. It is
+      now 1.2 m at 0.3.
+
+    - Second look: "mostly fine", but the farm carts' shadows read black.
+      Two causes:
+      - Solid surfaces stacked their shadows (planks, both faces, wheels,
+        canvas: near black). A solid object now casts one shadow of fixed
+        depth (`solid_shadow` 0.8, max, not layers); leaves still stack.
+      - A cart's floor, 0.5 m up, counted as touching the ground. Only
+        vertices within 0.25 m of it make a footprint now (wheels, rock
+        bases, trunks).
+
+      Retail JG02 correlation 0.82.
+    The darkness under trees comes from the soft canopy term (0.45).
+    Against retail JG02: correlation 0.83; trees a little lighter than
+    retail's average (0.65 vs 0.59 at 1 m), by choice.
+  - On the way: a hollow shell drew a ring (footprints are filled hulls
+    of low vertices); a branch starting near the ground drew a 5 m black
+    triangle (vertices, not triangles). The triangles that remain are
+    object 32's solid wooden planter, which hides that ground in game.
+- **Step 3: object lightmaps (later).** Atlases + LIT for the decorations
+  (needs UV1, which every retail lit mesh has), so trees and houses darken
+  in shade too.
+- **Status:** steps 1-2 done and reviewed in game by the user (2026-10-03: brightness good, shadows fine after two rounds of fixes); Riverwatch and Ledgewood installed lit as zones 12 and 13. Step 3 (object lightmaps) not started.
 
 ### Beyond v1 — level design (user, 2026-10-02)
 
@@ -1050,3 +1132,13 @@ can be added without rewriting it.
   checks pass from disk. Then visual review without the user: the map
   editor renders named views on command (`mapgen-zone.py shots`); it caught
   two invisible pits, now painted earth. In-game review handed to the user.
+- 2026-10-03 — Phase 8 lighting, step 1: retail lightmaps measured
+  (`mapgen-lightmap-survey.py`). The client multiplies terrain by its
+  lightmap x2 and nothing else; retail ground is baked 1.23-1.49x, ours
+  gets ~1.0x. The bakes are top-down scene renders lit from ~60° az.
+  Next: the terrain bake.
+- 2026-10-03 — Phase 8 lighting, step 2: terrain lightmaps baked from the
+  real geometry (`mapgen/lighting.py`), tuned against retail JG02
+  (correlation 0.85; tree shadow profiles within 0.03) and confirmed on
+  JG01 (0.87). Sun 62° az, 45° el. Both maps reinstalled lit; all checks
+  pass. In-game look handed to the user.

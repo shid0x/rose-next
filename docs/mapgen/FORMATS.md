@@ -442,6 +442,49 @@ Read at `io_terrain.cpp:2403-2465`; editor `editor/LIT.cs:173-250`.
 Then optionally `i32 count` + `count x bstr` DDS names, which the game never
 reads. Retail files may end without it.
 
+## Lightmaps — how the client uses them (phase 8 survey, 2026-10-03)
+
+Settled from code; numbers from `scripts/mapgen-lightmap-survey.py`.
+
+**Terrain (`x_y_PlaneLightingMap.dds`).**
+
+- **Formula:** terrain = tiles x lightmap x 2, then x the zone light's
+  diffuse colour. The game draws terrain fixed-function: `INIT.LUA:5` sets
+  `usePixelShader(0)`. The texture stages are
+  `zz_material_terrain.cpp:260-290`: stage 0 = tile (`SELECTARG1`, **no
+  vertex lighting at all**), 1 = second tile, 2 = lightmap with the
+  lightmap blend style, 4 = `TFACTOR` = light diffuse.
+- **Blend style:** set per zone from `LIST_SKY` col 5 of the zone's sky
+  (`io_terrain.cpp:3189`). It is 5 (`MODULATE2X`) in every row, as is
+  `INIT.LUA:40`'s default. The unused pixel shader `TERRAIN.PSO` does the
+  same `mul_x2` (decoded from the shipped bytecode).
+- **Neutral value:** 128 leaves a tile as drawn. The lightmap is the only
+  shading terrain ever gets.
+- **Fallback:** `3DDATA\TERRAIN\default_light.dds`, 32 px, ~(132, 125, 132).
+  That is ~1.0x, which is why generated maps look even and flat.
+- **Mapping** (`zz_mesh_tool.cpp:1131-1150`): one image per chunk, covering
+  exactly that chunk (`mapsize` 16,000 cm). u runs west to east; v = 1 - y,
+  so **row 0 is the north edge**. Sampled with clamp addressing
+  (`zz_material_terrain.cpp:604`), so edge texels hold to the border.
+- **Retail files:** always DXT5 with a full mip chain, 512 px (10 mips;
+  JG01, 02, 07, 08) or 256 px (9 mips; JG03-06). The chunk-folder name is
+  the HIM's (`x_(64-y)`).
+
+**What mapgen writes (phase 8 step 2):** one
+`x_y/x_y_PLANELIGHTINGMAP.DDS` per chunk (the HIM's stem), 512 px, DXT5,
+full mip chain, legacy DX9 header (texconv `-dx9 -m 0 -nowic -if BOX`),
+349,680 bytes like retail's. Baked over the whole map, so edges agree; the
+verify round-trip skips `.dds` (no codec) and `lightmap_checks` reads them
+back instead.
+
+**Objects (`LightMap/*.lit` + atlases).** Same `MODULATE2X` blend, on the
+colormap material's stage 1 (`zz_material_colormap.cpp:248-313`). A
+part's cell is placed through a per-part UV transform
+(`ZZ_VSC_LIGHTMAP_TRANSFORM`) applied to the mesh's **second UV set**
+(ZMS format bit 256). In retail JG every decoration has an entry (JG01-03
+and JG07: 100%), and every lit part's mesh has UV1. Cells are 32 or 64 px
+(a few 128); atlases are 256 or 512 px.
+
 ## Codec status (phase 0)
 
 Codecs live in `scripts/mapgen/`. The modules are `zon.py`, `ifo.py`,

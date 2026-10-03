@@ -79,6 +79,9 @@ class ZoneParams:
     # Invisible collision boxes per chunk slot (IFO lump 11, the client's
     # Add_CollisionBox: LIST_DECO_SPECIAL.ZSC object 2), phase 7c.
     collision: Optional[dict] = None
+    # Baked plane lightmaps (DDS bytes) per chunk slot, phase 8; None = the
+    # client's default_light.dds.
+    lightmaps: Optional[dict] = None
 
     def chunks(self):
         for y in range(self.y0, self.y0 + self.height):
@@ -206,6 +209,9 @@ def build_zone(p, template_zon):
                                                        (p.objects or {}).get((x, y), ()),
                                                        (p.cnst or {}).get((x, y), ()),
                                                        (p.collision or {}).get((x, y), ())))
+        if p.lightmaps and (x, y) in p.lightmaps:
+            # the client's name: <chunk folder>\<x>_<64-y>_PlaneLightingMap.dds
+            files["%s/%s_PLANELIGHTINGMAP.DDS" % (stem, stem)] = p.lightmaps[(x, y)]
         files["%s/LIGHTMAP/BUILDINGLIGHTMAPDATA.LIT" % stem] = empty_lit
         files["%s/LIGHTMAP/OBJECTLIGHTMAPDATA.LIT" % stem] = empty_lit
     return files

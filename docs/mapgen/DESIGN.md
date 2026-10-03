@@ -104,6 +104,72 @@ up one over 54°.
   without a road; tunnels (the description's "tunnel-like" gully is an
   open-topped trench: the terrain is a heightfield).
 
+## Lighting: what retail lightmaps look like (phase 8 survey)
+
+Measured over JG01-JG08 (`scripts/mapgen-lightmap-survey.py`; pictures
+in `build/mapgen/lightmap-survey/`).
+
+- **A retail plane lightmap is a top-down render of the whole lit scene,**
+  not a terrain-only bake:
+  - water is in it (the river bed is tinted blue);
+  - trees show as their green canopy over dappled shadow;
+  - the ground under a rock is black;
+  - buildings and posts cast block shadows.
+
+  Terrain relief shading is faint by comparison. Most of the contrast comes
+  from objects and water.
+- **Open ground is baked bright:** luminance 157-190, i.e. 1.23-1.49x the
+  tile in game (JG08: 1.10). Generated maps currently get ~1.0x from the
+  fallback, so they render 20-35% darker than retail ground as well as
+  flat.
+- **One sun, from the north-east, in every zone:** light from bearing
+  54-66° (east-north-east), shadows falling to the south-west.
+  - Elevation is between ~30° (tree shadow lengths, terrain cast-shadow
+    match) and ~45° (slope-brightness fit).
+  - Step 2 settles it by casting shadows from real object geometry and
+    matching retail.
+- **Slopes:** luminance = 118-137 + 40-53 x (n.l) where the fit holds
+  (JG01, JG02). So the full swing from a slope facing away to one facing
+  the sun is only ~25%.
+- **Shadows are soft and partial:**
+  - Terrain shadow: 0.5-0.8 of open ground.
+  - Tree, averaged over 266 JG02 trees: 0.5-0.6 at the trunk in every
+    direction (contact darkening, gone by ~5 m), and a cast shadow toward
+    243° still ~0.85 at 18 m.
+  - Rocks: 0.15 over their footprint.
+- **Water:** blue, roughly (40-100, 70-115, 120-190).
+- **Each zone has its own tint and era:** grey-white (JG01, JG02), green
+  (JG03), cream with heavy brown darkening round rocks (JG07), bluish
+  (JG08). A generated map should pick one tint for the whole map.
+- **Retail chunks were baked separately:** edges disagree by 1.5-7
+  luminance steps, a faint seam. A bake over the whole map at once has
+  none.
+
+- **What the generator bakes (phase 8 step 2):** the retail Junon look by
+  default.
+  - Sun from 62° at 45°.
+  - Open ground x1.23 (luminance ~157), full shadow 0.70 of it.
+  - Soft object shadows from the real geometry; leaves dapple.
+  - Darkness under and round rocks and trunks, leaf colour under canopies,
+    blue under water.
+  - A layout can change any setting under `"lighting"` (for instance a
+    greener `open_rgb` for a JG03-like zone, or a lower sun). Keep the sun
+    in the north-east unless the map has a reason: every Junon map shares
+    it, and players read shadows that way.
+- **Shadows should read soft, never as black shapes** (user, in game,
+  2026-10-03: "very dark, strange").
+  - The ground under a solid object is hidden by it, so darkness there
+    costs nothing.
+  - Darkness beyond an object's outline is what players see: keep it
+    short and light, and never let a footprint span empty ground (a hull
+    over several trunks, a bridge deck).
+  - Err lighter than retail's averages: retail's objects carry their own
+    lightmaps, ours don't yet, so dark ground beside a bright object looks
+    pasted on.
+  - A solid object casts one shadow, not one per surface, and only what
+    really touches the ground darkens it: players see under a raised cart
+    (user, 2026-10-03, farm carts).
+
 ## Cliff and mountain material
 
 - **Cliffs take the map's theme, not the ground at their foot** (user,

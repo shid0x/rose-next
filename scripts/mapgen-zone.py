@@ -59,7 +59,7 @@ BUILD = os.path.join(REPO, "build", "mapgen")
 sys.path.insert(0, HERE)
 
 import mapgen  # noqa: E402
-from mapgen import areas, barrier, levels, catalogue, chunk, decorate, ifo, layout, paint, prefab, preview, terrain, tiles, walk, water, zon  # noqa: E402
+from mapgen import areas, barrier, levels, lighting, catalogue, chunk, decorate, ifo, layout, paint, prefab, preview, terrain, tiles, walk, water, zon  # noqa: E402
 from mapgen.zone import (CHUNK_CM, EventPoint, Tile, ZoneParams, build_zone,  # noqa: E402
                          centre_world, chunk_stem)
 
@@ -2477,7 +2477,117 @@ def field_from_disk(zdir, p):
 
 
 def build_files(s, zstb):
-    return build_zone(params_from_spec(s), template_zon(s, zstb))
+    p = params_from_spec(s)
+    p.lightmaps = bake_lightmaps(s, p)
+    return build_zone(p, template_zon(s, zstb))
+
+
+def light_inputs(s, p):
+    """What casts light and shadow: every visible object (decorations,
+    village members, fences, bridges, landmarks; not the invisible walls)
+    and the water."""
+    placed = list(p.placed or []) + village_members(p) + list(getattr(p, "barrier", None) or []) \
+        + list(getattr(p, "bridges", None) or [])
+    kof = kind_of(s) or (lambda o: o.get("category"))
+    small = ("GRASS", "FLOWER", "PLANT", "MUSHROOM")
+    placed = [dict(q, foliage=True) if q.get("lump", "OBJECT") == "OBJECT" and kof(q) in small else q
+              for q in placed]
+    fp = footprints(s)
+    shapes = lighting.Shapes(DATA, {"OBJECT": fp.zsc["OBJECT"], "CNST": fp.zsc["CNST"]})
+    water = [(lk["mask"], lk["level"]) for lk in (p.lakes or [])]
+    return placed, shapes, water
+
+
+def bake_lightmaps(s, p):
+    """Plane lightmaps for every chunk (mapgen/lighting.py), or None when the
+    spec has no "lighting" section or no terrain."""
+    lc = s.get("lighting")
+    if lc is None or lc is False or p.field is None:
+        return None
+    placed, shapes, water = light_inputs(s, p)
+    t0 = time.time()
+    lm = lighting.bake(p.field, placed, shapes, water, lc if isinstance(lc, dict) else {})
+    dds = lighting.encode_dds(lighting.chunk_images(lm, p.width, p.height))
+    print("lightmaps: %d chunks baked in %.0f s (%d objects cast light)" % (len(dds), time.time() - t0, len(placed)))
+    return {(p.x0 + cx, p.y0 + cy): b for (cx, cy), b in dds.items()}
+
+
+# what retail Junon lightmaps measure (mapgen-lightmap-survey.py zones)
+RETAIL_OPEN_LUM = (140.0, 195.0)
+
+
+def lightmap_checks(s, p, zdir, check):
+    """Phase 8: each chunk has its plane lightmap, in retail's format; open
+    ground is as bright as retail's; water reads blue; chunk edges agree."""
+    from PIL import Image
+    imgs, bad = {}, []
+    for x, y in p.chunks():
+        stem = chunk_stem(x, y)
+        path = os.path.join(zdir, stem, stem + "_PLANELIGHTINGMAP.DDS")
+        if not os.path.exists(path):
+            bad.append(stem)
+            continue
+        with open(path, "rb") as f:
+            head = f.read(128)
+        w, h, mips, four = lighting.dds_info(head)
+        if (w, h, four) != (512, 512, "DXT5") or mips != 10:
+            bad.append("%s %dx%d %s %d mips" % (stem, w, h, four, mips))
+        imgs[(x - p.x0, y - p.y0)] = np.asarray(Image.open(path).convert("RGB")).astype(np.float32)[::-1]
+    check(not bad, "every chunk has a 512 px DXT5 plane lightmap with a full mip chain %s" % (bad[:3] or ""))
+    if len(imgs) != p.width * p.height:
+        return
+    P = lighting.PX
+    lm = np.zeros((p.height * P, p.width * P, 3), np.float32)
+    for (cx, cy), a in imgs.items():
+        lm[cy * P:(cy + 1) * P, cx * P:(cx + 1) * P] = a
+    lum = lm[..., 0] * 0.299 + lm[..., 1] * 0.587 + lm[..., 2] * 0.114
+    # open ground: play area, dry, flat, away from objects
+    play = p.play_v if getattr(p, "play_v", None) is not None else np.ones(p.field.shape, bool)
+    wet = np.zeros(p.field.shape, bool)
+    for lk in p.lakes or []:
+        wet |= lk["mask"]
+    gx, gy = terrain.gradient(p.field)
+    flat = np.zeros(p.field.shape, bool)
+    flat[:-1, :-1] = np.hypot(gx, gy) < 0.1
+    placed, _, _ = light_inputs(s, p)
+    near = np.zeros(p.field.shape, bool)
+    for q in placed:
+        r, c = int(round(q["y"] / terrain.GRID_CM)), int(round(q["x"] / terrain.GRID_CM))
+        near[max(0, r - 4):r + 5, max(0, c - 4):c + 5] = True
+    open_v = play & ~wet & flat & ~near
+    vr, vc = np.nonzero(open_v[:-1, :-1])
+    if len(vr):
+        o = np.median(lum[np.clip(vr * 8 + 4, 0, lum.shape[0] - 1), np.clip(vc * 8 + 4, 0, lum.shape[1] - 1)])
+        check(RETAIL_OPEN_LUM[0] <= o <= RETAIL_OPEN_LUM[1],
+              "open ground baked at luminance %.0f, x%.2f in game (retail Junon %.0f-%.0f)"
+              % (o, o / 128.0, RETAIL_OPEN_LUM[0], RETAIL_OPEN_LUM[1]))
+    if wet.any():
+        deep = np.zeros(p.field.shape, bool)
+        for lk in p.lakes:
+            deep |= lk["mask"] & (p.field < lk["level"] - 100)
+        wr, wc = np.nonzero(deep[:-1, :-1])
+        if len(wr):
+            px = lm[np.clip(wr * 8 + 4, 0, lm.shape[0] - 1), np.clip(wc * 8 + 4, 0, lm.shape[1] - 1)]
+            m = np.median(px, axis=0)
+            check(m[2] > m[0] + 40, "under water the lightmap is blue (median rgb %d, %d, %d; retail blue)"
+                  % tuple(int(v) for v in m))
+    # a seam is a step across a chunk edge that the texels either side of
+    # it do not take inside their own chunk (DXT noise included in both)
+    across, within = [], []
+    for cy in range(p.height):
+        for cx in range(p.width - 1):
+            e = (cx + 1) * P
+            across.append(float(np.abs(lum[cy * P:(cy + 1) * P, e - 1] - lum[cy * P:(cy + 1) * P, e]).mean()))
+            within.append(float(np.abs(lum[cy * P:(cy + 1) * P, e - 2] - lum[cy * P:(cy + 1) * P, e - 1]).mean()))
+    for cy in range(p.height - 1):
+        for cx in range(p.width):
+            e = (cy + 1) * P
+            across.append(float(np.abs(lum[e - 1, cx * P:(cx + 1) * P] - lum[e, cx * P:(cx + 1) * P]).mean()))
+            within.append(float(np.abs(lum[e - 2, cx * P:(cx + 1) * P] - lum[e - 1, cx * P:(cx + 1) * P]).mean()))
+    if across:
+        a, w = float(np.mean(across)), float(np.mean(within))
+        check(a <= w + 1.0, "chunk edges agree: mean step %.1f across a seam vs %.1f between neighbouring texels "
+                            "(retail 1.5-7 vs 0.3-1.7: retail chunks were baked one by one)" % (a, w))
 
 
 def row_values(s, zone_no, zstb):
@@ -2687,7 +2797,28 @@ def contact_sheet(out_dir, names, path, thumb_w=480):
     return path
 
 
-def cmd_shots(s, only=None):
+def at_views(p, spots):
+    """Views of given spots, as the game's minimap prints them ("5014,5047":
+    world metres, x east, y north): the follow camera's height and angle,
+    from the south-west, looking at the spot."""
+    out = []
+    g = terrain.GRID_CM
+    rows, cols = p.field.shape
+    for spot in spots:
+        x, y = (float(v) for v in spot.split(","))
+        c = int(round((x * 100.0 - p.x0 * CHUNK_CM) / g))
+        r = int(round((y * 100.0 - p.y0 * CHUNK_CM) / g))
+        if not (0 <= r < rows and 0 <= c < cols):
+            raise SystemExit("--at %s is outside the map" % spot)
+        z = float(p.field[r, c]) / 100.0
+        ce = int(round(((x - 9.0) * 100.0 - p.x0 * CHUNK_CM) / g))
+        re_ = int(round(((y - 12.0) * 100.0 - p.y0 * CHUNK_CM) / g))
+        ze = float(p.field[min(max(re_, 0), rows - 1), min(max(ce, 0), cols - 1)]) / 100.0
+        out.append(("at-%d-%d" % (round(x), round(y)), [x - 9.0, y - 12.0, max(z, ze) + 11.0], [x, y, z + 1.0]))
+    return out
+
+
+def cmd_shots(s, only=None, at=None):
     """Render the installed zone from named views with the map editor
     (`Map Editor.exe --shots`, Engine/ShotRunner.cs) and write PNGs plus a
     contact sheet to build/mapgen/shots/<folder>/. Needs a desktop session
@@ -2701,6 +2832,8 @@ def cmd_shots(s, only=None):
     views = shot_views(s, p)
     if only:
         views = [v for v in views if any(o in v[0] for o in only)]
+    if at:
+        views = (views if only else []) + at_views(p, at)
     out_dir = os.path.join(BUILD, "shots", s["folder"])
     os.makedirs(out_dir, exist_ok=True)
     for f in os.listdir(out_dir):
@@ -3081,6 +3214,8 @@ def cmd_verify(s):
             blob = f.read()
         if sha(blob) != h:
             bad_hash.append(rel)
+        if rel.lower().endswith(".dds"):
+            continue                     # baked lightmaps: checked by lightmap_checks
         parse, build = mapgen.CODECS[os.path.splitext(rel)[1].lower()]
         if build(parse(blob)) != blob:
             bad_rt.append(rel)
@@ -3148,6 +3283,8 @@ def cmd_verify(s):
           int(round((start.x + 520000 - p.x0 * CHUNK_CM) / terrain.GRID_CM)))
     check(abs(float(field[sv]) - start.z) < 1.0, "start event height %.1f cm = terrain %.1f cm" % (start.z, field[sv]))
     terrain_checks(s, p, field, sv, check)
+    if s.get("lighting") not in (None, False):
+        lightmap_checks(s, p, zdir, check)
     on_disk_water = water_from_disk(zdir, p)
     if s.get("water") or on_disk_water:
         check(on_disk_water == (p.water or {}), "water rectangles on disk = the spec's (%d chunks)" % len(on_disk_water))
@@ -3382,6 +3519,7 @@ def main():
     sh = sub.add_parser("shots", help="render the installed zone from named views with the map editor")
     sh.add_argument("spec")
     sh.add_argument("--only", nargs="*", help="views whose name contains one of these")
+    sh.add_argument("--at", nargs="*", help="extra views of spots given as the minimap prints them: X,Y")
     a = ap.parse_args()
     if a.cmd == "oracle":
         return cmd_oracle()
@@ -3435,7 +3573,7 @@ def main():
     if a.cmd == "verify":
         return cmd_verify(s)
     if a.cmd == "shots":
-        return cmd_shots(s, a.only)
+        return cmd_shots(s, a.only, a.at)
     return cmd_uninstall(s, a.dry_run)
 
 

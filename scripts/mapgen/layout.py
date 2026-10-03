@@ -269,6 +269,8 @@ def base_spec():
     # nothing but rocks on cliff faces (user, third phase 7b review: grass
     # tufts and shrubs on the border's faces)
     s["decorate"]["max_slope_deg"] = 45
+    # baked plane lightmaps (mapgen/lighting.py defaults: retail Junon, phase 8)
+    s["lighting"] = {}
     return s
 
 
@@ -651,6 +653,17 @@ def compile_layout(lay):
         intent.append({"check": "sightline", "from": sl["from"], "to": sl["to"],
                        "is": _one_of(sl.get("is", "visible"), ["visible", "hidden"], "sightline"),
                        "label": sl.get("why", "%s %s from %s" % (sl["to"], sl.get("is", "visible"), sl["from"]))})
+
+    # --- lighting: baked plane lightmaps (on by default; mapgen/lighting.py)
+    lg = lay.get("lighting", {})
+    if lg is False:
+        s.pop("lighting", None)
+    elif isinstance(lg, dict):
+        from . import lighting as _lighting
+        for k, v in lg.items():
+            if k not in _lighting.DEFAULT:
+                _err("lighting %r: not a lighting setting (%s)" % (k, ", ".join(sorted(_lighting.DEFAULT))))
+            s["lighting"][k] = v
 
     # --- cover
     cover = []
