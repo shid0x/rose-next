@@ -485,6 +485,69 @@ part's cell is placed through a per-part UV transform
 and JG07: 100%), and every lit part's mesh has UV1. Cells are 32 or 64 px
 (a few 128); atlases are 256 or 512 px.
 
+Settled from the client source and the shipped shaders (phase 8 step 3):
+
+- **A listed part loses all vertex lighting.** `CMAP::LoadLightMapINFO`
+  (`io_terrain.cpp:2403-2465`) reads the building `.lit` (lump 3) and then
+  the object `.lit` (lump 1) and calls `CObjFIXED::SetLightMap`, which
+  moves the part to `shader_lightmap_nolit`: the vertex shaders write the
+  light diffuse as a constant (no n.l, no ambient), so
+  **final = texture x light_01 diffuse x lightmap x 2**, the terrain's
+  convention. The lightmap carries all the shading; 128 is neutral.
+  Unlisted parts keep `simple_lit`: texture x saturate(ambient (0.86,
+  0.83, 0.80) + max(n.l, 0) x diffuse), L toward the north-east at 35°.
+- **The diffuse is the day/night colour** (`CDayNNightProc`, LIST_SKY
+  cols 6-9; sky 0: day white, night (125, 135, 163)), so lit objects dim
+  and tint at night with the terrain; unlit ones keep the 0.86 ambient.
+- **Distance fade:** the lightmap shaders take their vertex alpha from the
+  alpha-fog range, `simple_lit` from the fog range. Lit objects fade at
+  110-220 m on the Normal view distance (LIST_CAMERA), unlit ones stay
+  opaque to ~240 m.
+- **Display presets:** 3/4 load the file's own mip count and halve the
+  atlas; 5 turns lightmaps off and lit parts then draw flat (oD0 =
+  diffuse), not vertex-lit.
+- **Cell:** `col = pos % ppw`, `row = pos // ppw`; the shader samples
+  `(uv1 + (col, row)) / ppw`, uv1 raw (v = 0 is the top row), with clamp
+  addressing and trilinear filtering. The atlas must be square with side
+  `ppw x cell`; `pixels_per_part`, `tga_name` and `lightmap_index` are
+  never used, nor the trailing DDS list. Retail atlas alpha is a coverage
+  mask the client ignores.
+- **Indices:** `obj_index` = 1-based ordinal in the lump; `part_index`
+  goes through `GetPartIndex` (identity when the root is part 0, true of
+  every JG object). **Nothing is bounds-checked**: an ordinal past the
+  lump, a lump that is absent, a part past the object's count or
+  `ppw = 0` crashes or corrupts the client.
+- **No shared cells:** the material cache key is `@P{x}x{y}@{path}`
+  without the diffuse texture, so two parts on one cell draw with the
+  first one's texture.
+- **Meshes:** only ZMS formats 390 (position | normal | uv0 | uv1) and 386
+  (no normal, forced) read uv1 correctly; every retail lit mesh is one of
+  them. Three JG meshes (whealbone01, shellfish01, SumDoor03) have uv1
+  outside their cell or overlapping.
+- **Mips:** the client loads 3 levels (`setMipmapLevel(3)`); retail ships
+  full chains, which bleed between cells at presets 3/4. House rule: 3.
+- **Names:** `Object_<cell px>_<k>.dds` / `Building_<cell px>_<k>.dds`,
+  `k` from 0 per size. Lookup is case-insensitive (retail LITs are mixed
+  case, files upper case). `LightMap/LISTDATA.DAT` is an editor artefact
+  nothing reads.
+- **The editor draws object lightmaps** (tex x 2 x lightmap, same cell
+  layout, by ZSC part index), so `shots` shows the bake. It keys entries
+  by ordinal and never renumbers them on delete: saving a lit zone after
+  deleting an object misassigns every later entry.
+- **A record the client drops keeps its ordinal.** `CMAP::AddObject`
+  (`io_terrain.cpp:1867-1877`) rejects a record whose f32 world position
+  minus the chunk origin, in 10 m patches truncated toward zero, is
+  outside 0..15 (only the east/north edge can trip it), and the next
+  record reuses its object slot. A `.lit` entry for the dropped record
+  lights that next object instead.
+
+**What mapgen writes (phase 8 step 3):** per chunk, both `.lit` files and
+`x_y/LIGHTMAP/OBJECT_<px>_<k>.DDS` / `BUILDING_<px>_<k>.DDS` atlases
+(DXT5, legacy header, exactly 3 mips), every part of every record of lumps
+1 and 3 listed, entries and catalogue as retail writes them. A layout with
+`"lighting": {"objects": false}` writes the empty 8-byte LITs instead
+(File > New's).
+
 ## Codec status (phase 0)
 
 Codecs live in `scripts/mapgen/`. The modules are `zon.py`, `ifo.py`,
@@ -534,7 +597,7 @@ What the generator should write in each:
 | IFO record `map_x` / `map_y` | log only | the 2.5 m grid cell (exact orientation not settled; 0 is also retail-valid) |
 | IFO lump 0 MAPINFO | nothing | `16, 16, x, y`, name `"x_y"`, zero matrix (as the editor) |
 | IFO lump 7 WATER | nothing; the client misparses and discards it | 16x16, `type = 1`, rest 0 — or omit the lump |
-| LIT `tga_name`, `lightmap_index`, DDS catalogue | nothing | not written in v1 (no object lightmaps): empty LIT files as File > New writes, or none |
+| LIT `tga_name`, `lightmap_index`, DDS catalogue | nothing | written as retail does (phase 8 step 3): tga `<mesh>_<Object\|Building>_<obj>_<part>_<x_y>_LightingMap.tga`, index into the catalogue (Building atlases first, then Object, by cell size then number) |
 
 ## Tile painting: corner brushes (settled 2026-10-02, phase 3)
 

@@ -203,7 +203,10 @@ Clear-Content '..\..\data\Map Editor.log'
   `RemoveAt` does not renumber them, so every later object takes its neighbour's
   lightmap; the client's `LoadLightMapINFO` also indexes `m_pObjectIndex` with that
   ordinal unchecked. Move or sink an object instead of deleting it. New objects are
-  appended, get no LIT entry, and render without baked lighting.
+  appended, get no LIT entry, and render without baked lighting. Since mapgen phase 8
+  step 3 (2026-10-03) generated zones (`MAPGEN*`) ship full LITs too, so this applies
+  to them: change the layout and rebuild with `scripts/mapgen-zone.py` rather than
+  editing and saving a generated zone here.
 
 - **A blank sky column no longer hides a map (2026-09-17).** `IsValidMap` rejected any
   LIST_ZONE row whose sky cell (editor column 8, game column 7) was empty, and the load

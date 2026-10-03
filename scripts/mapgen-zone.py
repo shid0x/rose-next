@@ -37,6 +37,7 @@ them).
 """
 
 import argparse
+import contextlib
 import dataclasses
 import datetime
 import hashlib
@@ -59,7 +60,7 @@ BUILD = os.path.join(REPO, "build", "mapgen")
 sys.path.insert(0, HERE)
 
 import mapgen  # noqa: E402
-from mapgen import areas, barrier, levels, lighting, catalogue, chunk, decorate, ifo, layout, paint, prefab, preview, terrain, tiles, walk, water, zon  # noqa: E402
+from mapgen import areas, barrier, levels, lighting, lit, objlight, catalogue, chunk, decorate, ifo, layout, paint, prefab, preview, terrain, tiles, walk, water, zon  # noqa: E402
 from mapgen.zone import (CHUNK_CM, EventPoint, Tile, ZoneParams, build_zone,  # noqa: E402
                          centre_world, chunk_stem)
 
@@ -2479,7 +2480,154 @@ def field_from_disk(zdir, p):
 def build_files(s, zstb):
     p = params_from_spec(s)
     p.lightmaps = bake_lightmaps(s, p)
+    p.object_lights = bake_object_lightmaps(s, p)
     return build_zone(p, template_zon(s, zstb))
+
+
+SMALL_PLANTS = ("GRASS", "FLOWER", "PLANT", "MUSHROOM")
+
+
+def object_light_inputs(s, p):
+    """Per chunk slot, the IFO records exactly as build_zone writes them
+    (lump 1 = p.objects, lump 3 = p.cnst, in list order: the .lit ordinals
+    must match), and which lump-1 records are small plants (flat cells)."""
+    kof = kind_of(s)
+    with open(os.path.join(STATS_DIR, "jg_decoration.json"), encoding="utf-8") as f:
+        cat_of = {o["id"]: o["category"] for o in json.load(f)["objects"]}
+    out = {}
+    for slot in p.chunks():
+        objs = list((p.objects or {}).get(slot, ()))
+        cn = list((getattr(p, "cnst", None) or {}).get(slot, ()))
+        kind = (lambda r: kof({"id": r.obj_id, "category": cat_of.get(r.obj_id, "?")})) if kof else \
+            (lambda r: cat_of.get(r.obj_id, "?"))
+        out[slot] = {"OBJECT": objs, "CNST": cn, "foliage": {i for i, r in enumerate(objs) if kind(r) in SMALL_PLANTS}}
+    return out
+
+
+def bake_object_lightmaps(s, p):
+    """Object lightmaps (mapgen/objlight.py), or None when the spec has no
+    "lighting" section, sets "objects": false, or has no terrain."""
+    lc = s.get("lighting")
+    if lc is None or lc is False or p.field is None:
+        return None
+    lc = lc if isinstance(lc, dict) else {}
+    if lc.get("objects") is False:
+        return None
+    fp = footprints(s)
+    zscs = {"OBJECT": fp.zsc["OBJECT"], "CNST": fp.zsc["CNST"]}
+    parts = objlight.Parts(DATA, zscs, lighting.Shapes(DATA, zscs))
+    with open(os.path.join(STATS_DIR, "jg_lightmap_cells.json"), encoding="utf-8") as f:
+        table = json.load(f)["cells"]
+    t0 = time.time()
+    res = objlight.bake(p.field, object_light_inputs(s, p), parts, table,
+                        cfg={k: v for k, v in lc.items() if k in objlight.OBJECT_DEFAULT},
+                        terrain_cfg={k: v for k, v in lc.items() if k in lighting.DEFAULT}, x0=p.x0, y0=p.y0)
+    images = {(slot, name): a for slot, r in res.items() for name, a in r["atlases"].items()}
+    dds = lighting.encode_dds(images, mips=3)
+    out = {}
+    n_parts = n_skip = 0
+    for slot, r in res.items():
+        out[slot] = {"OBJECT": r["OBJECT"], "CNST": r["CNST"],
+                     "dds": {name: dds[(slot, name)] for name in r["atlases"]}}
+        n_skip += r["skipped"]
+        n_parts += sum(len(o.parts) for o in lit.parse_lit(r["OBJECT"]).objects) + \
+            sum(len(o.parts) for o in lit.parse_lit(r["CNST"]).objects)
+    print("object lightmaps: %d parts in %d atlases, %d objects left vertex-lit, %.0f s"
+          % (n_parts, len(images), n_skip, time.time() - t0))
+    return out
+
+
+def objlight_checks(s, p, zdir, check):
+    """Phase 8 step 3, from disk: every .lit entry is one the client can
+    follow without reading out of bounds (ordinal within its IFO lump, part
+    within its ZSC object, cell within its atlas), no two parts share a
+    cell, every atlas is a square DXT5 with exactly 3 mip levels, every
+    record of both lumps is lit, and the cells are about as bright as
+    retail's with nothing black in them."""
+    fp = footprints(s)
+    zscs = {ifo.OBJECT: fp.zsc["OBJECT"], ifo.CNST: fp.zsc["CNST"]}
+    bad, unlit, n_parts, atlases, cells, ppw_of = [], 0, 0, {}, {}, {}
+    dropped = 0
+    from PIL import Image
+    samples = []
+    for x, y in p.chunks():
+        stem = chunk_stem(x, y)
+        with open(os.path.join(zdir, stem + ".IFO"), "rb") as f:
+            m = ifo.parse(f.read())
+        used = set()
+        for lump, fn in ((ifo.OBJECT, "OBJECTLIGHTMAPDATA.LIT"), (ifo.CNST, "BUILDINGLIGHTMAPDATA.LIT")):
+            recs = m.lump(lump) or []
+            with open(os.path.join(zdir, stem, "LIGHTMAP", fn), "rb") as f:
+                L = lit.parse_lit(f.read())
+            listed = set()
+            meshes, objs = zscs[lump]
+            for o in L.objects:
+                if not 1 <= o.obj_index <= len(recs):
+                    bad.append("%s %s ordinal %d of %d" % (stem, fn, o.obj_index, len(recs)))
+                    continue
+                if o.obj_index in listed:
+                    bad.append("%s %s ordinal %d listed twice" % (stem, fn, o.obj_index))
+                listed.add(o.obj_index)
+                if not objlight.client_accepts(recs[o.obj_index - 1].pos, (x, y)):
+                    # the client drops this record and gives its slot to the next
+                    bad.append("%s %s ordinal %d is outside its chunk for the client" % (stem, fn, o.obj_index))
+                oid = recs[o.obj_index - 1].obj_id
+                nparts = len(objs[oid]["parts"]) if 0 <= oid < len(objs) else 0
+                if sorted(pt.part_index for pt in o.parts) != list(range(nparts)):
+                    bad.append("%s %s ordinal %d parts %s of %d" % (stem, fn, o.obj_index,
+                                                                    [pt.part_index for pt in o.parts], nparts))
+                for pt in o.parts:
+                    n_parts += 1
+                    name = pt.dds_name.decode("latin-1").upper()
+                    path = os.path.join(zdir, stem, "LIGHTMAP", name)
+                    if (stem, name) not in atlases:
+                        if not os.path.exists(path):
+                            atlases[(stem, name)] = None
+                        else:
+                            with open(path, "rb") as f:
+                                head = f.read(128)
+                            atlases[(stem, name)] = (lighting.dds_info(head), path)
+                    info = atlases[(stem, name)]
+                    if info is None:
+                        bad.append("%s missing %s" % (stem, name))
+                        continue
+                    (w, h, mips, four), _ = info
+                    ppw = pt.parts_per_width
+                    if ppw < 1 or w != h or w != ppw * pt.pixels_per_part or not 0 <= pt.position_in_map < ppw * ppw:
+                        bad.append("%s %s cell %d/%d in %dx%d" % (stem, name, pt.position_in_map, ppw, w, h))
+                    if ppw_of.setdefault((stem, name), ppw) != ppw:
+                        bad.append("%s %s with two grid widths" % (stem, name))
+                    key = (name, pt.position_in_map % max(ppw, 1), pt.position_in_map // max(ppw, 1))
+                    if key in used:                       # the client's material cache key
+                        bad.append("%s %s cell %d shared" % (stem, name, pt.position_in_map))
+                    used.add(key)
+                    cells.setdefault((stem, name), []).append((ppw, pt.position_in_map))
+            kept = [i for i, r in enumerate(recs) if objlight.client_accepts(r.pos, (x, y))]
+            dropped += len(recs) - len(kept)
+            unlit += sum(1 for i in kept if i + 1 not in listed)
+    for (stem, name), info in atlases.items():
+        if info is None:
+            continue
+        (w, h, mips, four), path = info
+        if four != "DXT5" or mips != 3:
+            bad.append("%s %s %s %d mips" % (stem, name, four, mips))
+        a = np.asarray(Image.open(path).convert("RGB")).astype(np.float32)
+        lum = a[..., 0] * 0.299 + a[..., 1] * 0.587 + a[..., 2] * 0.114
+        for ppw, pos in cells.get((stem, name), ()):          # used cells only
+            P = w // max(ppw, 1)
+            r0, c0 = divmod(pos, max(ppw, 1))
+            samples.append(lum[r0 * P:(r0 + 1) * P:2, c0 * P:(c0 + 1) * P:2].ravel())
+    check(not bad, "object lightmaps: every entry within its IFO lump, ZSC object and atlas, no shared cell, "
+                   "DXT5 with 3 mips (%d parts, %d atlases) %s" % (n_parts, len(atlases), bad[:4] or ""))
+    check(unlit == 0, "every decoration and building record is lightmapped (%d left vertex-lit; %d outside "
+                      "their chunk for the client, dropped by it and left out)" % (unlit, dropped))
+    if samples:
+        v = np.concatenate(samples)
+        med, p10, p90 = (float(np.percentile(v, q)) for q in (50, 10, 90))
+        check(70 <= med <= 150 and p10 >= 30 and p90 <= 200,
+              "object lightmap cells: median %.0f (want 70-150), 10th percentile %.0f (want >= 30: no black "
+              "shapes), 90th %.0f (want <= 200); 128 = the texture as drawn, retail covered texels median "
+              "83-112 (JG01/02/04/07)" % (med, p10, p90))
 
 
 def light_inputs(s, p):
@@ -3283,8 +3431,11 @@ def cmd_verify(s):
           int(round((start.x + 520000 - p.x0 * CHUNK_CM) / terrain.GRID_CM)))
     check(abs(float(field[sv]) - start.z) < 1.0, "start event height %.1f cm = terrain %.1f cm" % (start.z, field[sv]))
     terrain_checks(s, p, field, sv, check)
-    if s.get("lighting") not in (None, False):
+    lc = s.get("lighting")
+    if lc not in (None, False):
         lightmap_checks(s, p, zdir, check)
+        if not (isinstance(lc, dict) and lc.get("objects") is False):
+            objlight_checks(s, p, zdir, check)
     on_disk_water = water_from_disk(zdir, p)
     if s.get("water") or on_disk_water:
         check(on_disk_water == (p.water or {}), "water rectangles on disk = the spec's (%d chunks)" % len(on_disk_water))
@@ -3568,13 +3719,34 @@ def main():
         return cmd_preview(s)
     if a.cmd == "build":
         return cmd_build(s, a.out)
-    if a.cmd == "install":
-        return cmd_install(s, a.zone, a.dry_run)
     if a.cmd == "verify":
         return cmd_verify(s)
     if a.cmd == "shots":
         return cmd_shots(s, a.only, a.at)
-    return cmd_uninstall(s, a.dry_run)
+    with table_lock():
+        if a.cmd == "install":
+            return cmd_install(s, a.zone, a.dry_run)
+        return cmd_uninstall(s, a.dry_run)
+
+
+@contextlib.contextmanager
+def table_lock():
+    """install and uninstall read LIST_ZONE.STB / LIST_ZONE_S.STL whole and
+    write them back whole, so two running at once lose one zone's row and
+    name (it happened: two installs in parallel, Ledgewood's row gone).
+    One at a time; a lock left by a killed run is removed by hand."""
+    path = os.path.join(BUILD, "install.lock")
+    os.makedirs(BUILD, exist_ok=True)
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        sys.exit("another install/uninstall is running (%s; delete it if none is)" % path)
+    try:
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        yield
+    finally:
+        os.remove(path)
 
 
 if __name__ == "__main__":

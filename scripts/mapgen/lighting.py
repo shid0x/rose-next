@@ -468,11 +468,12 @@ TEXCONV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "
                        "directxtex-2020.9.30", "texconv.exe")
 
 
-def encode_dds(images):
-    """{key: (512, 512, 3) uint8} -> {key: DDS bytes}: DXT5 with a full mip
-    chain and the legacy DX9 header, as retail plane lightmaps are. Encoded
-    by the vendored texconv (-nowic -if BOX, see add-dds-mipmaps.py: WIC
-    darkens downsampled mips)."""
+def encode_dds(images, mips=0):
+    """{key: (h, w, 3) uint8} -> {key: DDS bytes}: DXT5 with the legacy DX9
+    header, a full mip chain (mips=0, plane lightmaps, as retail) or exactly
+    `mips` levels (object atlases: 3, so no quality preset samples a level
+    small enough to bleed between cells). Encoded by the vendored texconv
+    (-nowic -if BOX, see add-dds-mipmaps.py: WIC darkens downsampled mips)."""
     out = {}
     with tempfile.TemporaryDirectory() as tmp:
         names = {}
@@ -480,7 +481,7 @@ def encode_dds(images):
             name = "lm%03d" % i
             Image.fromarray(a, "RGB").save(os.path.join(tmp, name + ".png"))
             names[key] = name
-        cmd = [os.path.abspath(TEXCONV), "-nologo", "-y", "-dx9", "-m", "0", "-nowic", "-if", "BOX",
+        cmd = [os.path.abspath(TEXCONV), "-nologo", "-y", "-dx9", "-m", str(mips), "-nowic", "-if", "BOX",
                "-f", "DXT5", "-o", tmp] + [os.path.join(tmp, n + ".png") for n in names.values()]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:

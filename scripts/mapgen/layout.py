@@ -659,10 +659,11 @@ def compile_layout(lay):
     if lg is False:
         s.pop("lighting", None)
     elif isinstance(lg, dict):
-        from . import lighting as _lighting
+        from . import lighting as _lighting, objlight as _objlight
+        known = set(_lighting.DEFAULT) | set(_objlight.OBJECT_DEFAULT) | {"objects"}
         for k, v in lg.items():
-            if k not in _lighting.DEFAULT:
-                _err("lighting %r: not a lighting setting (%s)" % (k, ", ".join(sorted(_lighting.DEFAULT))))
+            if k not in known:
+                _err("lighting %r: not a lighting setting (%s)" % (k, ", ".join(sorted(known))))
             s["lighting"][k] = v
 
     # --- cover

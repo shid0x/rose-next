@@ -1005,10 +1005,116 @@ steps.
     of low vertices); a branch starting near the ground drew a 5 m black
     triangle (vertices, not triangles). The triangles that remain are
     object 32's solid wooden planter, which hides that ground in game.
-- **Step 3: object lightmaps (later).** Atlases + LIT for the decorations
-  (needs UV1, which every retail lit mesh has), so trees and houses darken
-  in shade too.
-- **Status:** steps 1-2 done and reviewed in game by the user (2026-10-03: brightness good, shadows fine after two rounds of fixes); Riverwatch and Ledgewood installed lit as zones 12 and 13. Step 3 (object lightmaps) not started.
+- **Step 3: object lightmaps. DONE 2026-10-03.** `mapgen/objlight.py`,
+  run after the terrain bake (~70-90 s for a 4x4 map). Every part of every
+  decoration and building gets its own cell in a per-chunk atlas, listed in
+  the chunk's two `.lit` files, so houses, crates and trees darken on their
+  shaded side like retail's. How the client uses them: FORMATS.md
+  "Lightmaps" (settled from the client source and shaders by an
+  investigation workflow first).
+  - **What changes in game, by construction** (the client's lightmap
+    shader replaces vertex lighting):
+    - lit objects fade out at the alpha-fog distance (110-220 m on the
+      Normal view distance) instead of staying opaque to ~240 m, like
+      retail's;
+    - they darken and tint at night with the terrain (unlit ones barely
+      dimmed);
+    - at the lowest display preset (5) lightmaps are off and lit objects
+      draw flat, as retail's do.
+  - **Model**, per texel at its 3D point (one sample per covered texel of
+    the part's uv1 islands, face normals from the winding: retail's stored
+    normals are often garbage):
+    `ambient x (1 - 0.5 x (1 - sky)) + sun x 1.2 x max(0, n.l) x visibility`,
+    ambient and sun being the terrain's open-ground light x 0.8.
+    - Visibility: an occlusion map along the sun (25 cm) of the terrain,
+      every solid part (one shadow, depth 0.8) and leaves (layers).
+    - Sky: the unoccluded share of 13 sky directions (6 at 25°, 6 at 55°,
+      zenith) that the face looks at, from 13 more occlusion maps (50 cm).
+      A face looking down sees none of it.
+    - Leaves (alpha-cut parts): constant n.l 0.7, and 0.3 of the
+      whole-sky term. Grass and flowers: one constant open-air value
+      (no shadow, no sky), 32 px cells. Meshes whose uv1 leaves the unit
+      square: one value lit at the object's base.
+    - Texels under the ground x 0.6.
+    - Every uncovered texel takes its nearest covered one (no gutters);
+      atlases DXT5 with exactly 3 mips.
+  - **Tuned against retail** (`mapgen-lightmap-survey.py compare-objects`):
+    bake the cells of a retail window with the bake's own texel and
+    lighting code, from retail's terrain and objects, and compare texel by
+    texel through retail's uv1 layout.
+    - The uv convention checks out: unflipped v correlates 0.49, flipped
+      0.26.
+    - Lit faces matched from the start; the gap was occlusion: retail's
+      undersides, nooks and feet of objects are dark. The sky term took
+      JG02 solid parts from 0.56 to 0.74. Held out: JG01 0.52 -> 0.66,
+      JG04 0.41 -> 0.56, JG07 0.83 -> 0.89. A normal-only hemisphere term
+      and a ground-contact term added nothing on top.
+    - After the review fixes (continuous sky term, small plants scored as
+      production bakes them), JG02 `1 1 2`: solid 0.73, within a part
+      0.70; full sun 124 (retail 130), turned away 58 (58), in shadow 56
+      (32), undersides 44 (36) -- shadows lighter than retail's, by
+      choice.
+  - **Packing as retail:** per lump and cell size (retail's own size per
+    mesh, `stats/jg_lightmap_cells.json`, else by size), cells dense from
+    the top-left, atlases of at most 512 px named `Object_<px>_<k>.dds` /
+    `Building_<px>_<k>.dds`, the retail tga names and DDS catalogue.
+  - **Checks** (`objlight_checks`, in verify), because the client checks
+    nothing and a bad entry crashes it:
+    - every entry's ordinal is inside its IFO lump, its parts are exactly
+      the ZSC object's, its cell is inside a square atlas of
+      `parts_per_width x pixels_per_part`, and no two parts share a cell;
+    - every atlas exists and is DXT5 with 3 mips;
+    - every record of both lumps is lit (no lit object beside an unlit one);
+    - the used cells' median is 70-150 and the 10th percentile >= 30 (no
+      black shapes). Riverwatch 111 / 56, Ledgewood 121 / 65.
+  - Layouts bake objects with the terrain; `"lighting": {"objects": false}`
+    leaves them vertex-lit, and every `objlight.OBJECT_DEFAULT` setting can
+    be overridden under `"lighting"`.
+  - **Shots** (the editor draws object lightmaps): crate tops lit and
+    sides shaded, houses and the windmill shaded on their far side, rocks
+    darker underneath, nothing black.
+  - **Install lock:** install and uninstall rewrite LIST_ZONE.STB and
+    LIST_ZONE_S.STL whole. Two installs run in parallel lost Ledgewood's
+    row (redone alone); a lock file now refuses a second run.
+  - **Review** (workflow: three finders, a skeptic each, a completeness
+    critic). Fixed:
+    - Grass and flower samples sat under the terrain on slopes (16% of
+      clumps baked at half brightness): sampled 40 cm over the ground now.
+    - The client drops an IFO record whose f32 position falls outside its
+      chunk (`CMAP::AddObject`) and gives its object slot to the next
+      record, so a `.lit` entry for it would light another object with
+      part indices that may not exist. None does today (the coplanar
+      nudge can push a record up to 6 cm over an edge; one sits 1 cm from
+      it). The bake leaves such records out (`objlight.client_accepts`)
+      and verify fails on one.
+    - The sky term jumped from full to half ambient as a face turned past
+      ~62° below the horizon; it now fades.
+    - Unused atlas cells were black and would bleed into neighbouring
+      cells' edges at mips 1-2; they take the used cells' mean.
+    - verify crashed on `"lighting": true`; its shared-cell check now keys
+      on the client's material cache key, checks one grid width per atlas
+      and a repeated ordinal.
+    - `compare-objects` scored small plants per texel (production bakes
+      one flat value) and did not print the levels quoted here; it does
+      now.
+
+    Refuted: crease texels taking a neighbouring face's normal (real but
+    under a texel, invisible).
+  - **User review in game (2026-10-03):** "mostly fine", but some grass
+    clumps dark for no reason, and grass under trees too dark (retail
+    leaves it unshaded, Adventurer's Plain). The dark clumps were
+    `grass005` sunk 60-75 cm into the ground, sampled underground (the
+    review's finding). Grass and flowers now get one constant open-air
+    colour (`objlight.small_plant_rgb`, luminance ~133) and 32 px cells:
+    Riverwatch 70 -> 57 atlases, Ledgewood 54 -> 44. Both reinstalled,
+    all checks pass, re-baked.
+  - **Do not edit a generated zone in the xadet editor and save it.** The
+    editor keys `.lit` entries by ordinal and does not renumber them when
+    an object is deleted, so a save leaves entries pointing at the wrong
+    object (wrong lighting, or a crash on a part index the new object
+    lacks). Generated LITs used to be empty, so this was harmless before.
+    Change the layout and rebuild instead.
+- **Status:** steps 1-3 done. Steps 1-2 reviewed in game by the user (2026-10-03: brightness good, shadows fine after two rounds of fixes). Step 3 installed in Riverwatch and Ledgewood (zones 12 and 13), all checks pass; reviewed in game by the user (2026-10-03: "pretty good", after the grass fix).
 
 ### Beyond v1 — level design (user, 2026-10-02)
 
@@ -1142,3 +1248,8 @@ can be added without rewriting it.
   (correlation 0.85; tree shadow profiles within 0.03) and confirmed on
   JG01 (0.87). Sun 62° az, 45° el. Both maps reinstalled lit; all checks
   pass. In-game look handed to the user.
+- 2026-10-03 — Phase 8 lighting, step 3: object lightmaps
+  (`mapgen/objlight.py`): one cell per part, sun plus sky occlusion,
+  fitted against retail's own cells (JG02 correlation 0.74, held out on
+  JG01/JG04/JG07). Grass and flowers unshaded after the user's review.
+  Both maps reinstalled; all checks pass; confirmed in game.

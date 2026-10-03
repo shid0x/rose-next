@@ -144,6 +144,14 @@ in `build/mapgen/lightmap-survey/`).
 - **Retail chunks were baked separately:** edges disagree by 1.5-7
   luminance steps, a faint seam. A bake over the whole map at once has
   none.
+- **Retail objects are lightmapped too, and darker than today's
+  vertex-lit ones:** covered texels median 83-112 by zone (128 = the
+  texture as drawn).
+  - Faces in sun ~133, turned away ~70, in shadow ~45, undersides ~32;
+    the feet of objects and their nooks go near black (retail's baker had
+    sky occlusion).
+  - Leaves barely follow their normal (median 97-122).
+  - Grass and flowers are near-flat.
 
 - **What the generator bakes (phase 8 step 2):** the retail Junon look by
   default.
@@ -156,6 +164,19 @@ in `build/mapgen/lightmap-survey/`).
     greener `open_rgb` for a JG03-like zone, or a lower sun). Keep the sun
     in the north-east unless the map has a reason: every Junon map shares
     it, and players read shadows that way.
+- **What it bakes on objects (phase 8 step 3):** the same sun and open
+  light, objects at x0.8 of it, plus sky occlusion at half strength.
+  - Faces in sun ~124, turned away ~58, in shadow ~56, undersides ~44
+    (JG02 window; retail 130 / 58 / 32 / 36): retail's shape, its shadows
+    lighter.
+  - Leaves flat-ish, a little darker inside a canopy.
+  - **Grass and flowers are never shaded** (user, in game, 2026-10-03):
+    one open-air value (~133, about as today) under trees and in the open
+    alike. Retail leaves grass unshaded under trees, and per-clump shading
+    read as random dark patches.
+  - Every object is lit or none is (`"objects": false`). A lit object
+    beside an unlit one shows two shading models: the unlit one keeps a
+    0.86 ambient and no night.
 - **Shadows should read soft, never as black shapes** (user, in game,
   2026-10-03: "very dark, strange").
   - The ground under a solid object is hidden by it, so darkness there
@@ -163,9 +184,9 @@ in `build/mapgen/lightmap-survey/`).
   - Darkness beyond an object's outline is what players see: keep it
     short and light, and never let a footprint span empty ground (a hull
     over several trunks, a bridge deck).
-  - Err lighter than retail's averages: retail's objects carry their own
-    lightmaps, ours don't yet, so dark ground beside a bright object looks
-    pasted on.
+  - Err lighter than retail's averages. Dark ground beside a bright
+    object looks pasted on; since step 3 our objects darken in shade too,
+    and their shadows also stay lighter than retail's.
   - A solid object casts one shadow, not one per surface, and only what
     really touches the ground darkens it: players see under a raised cart
     (user, 2026-10-03, farm carts).

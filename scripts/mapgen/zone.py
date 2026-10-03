@@ -82,6 +82,10 @@ class ZoneParams:
     # Baked plane lightmaps (DDS bytes) per chunk slot, phase 8; None = the
     # client's default_light.dds.
     lightmaps: Optional[dict] = None
+    # Baked object lightmaps per chunk slot, phase 8 step 3: {"OBJECT": lit
+    # bytes, "CNST": lit bytes, "dds": {atlas name: DDS bytes}}; None = the
+    # empty .lit files File > New writes (objects keep vertex lighting).
+    object_lights: Optional[dict] = None
 
     def chunks(self):
         for y in range(self.y0, self.y0 + self.height):
@@ -212,6 +216,9 @@ def build_zone(p, template_zon):
         if p.lightmaps and (x, y) in p.lightmaps:
             # the client's name: <chunk folder>\<x>_<64-y>_PlaneLightingMap.dds
             files["%s/%s_PLANELIGHTINGMAP.DDS" % (stem, stem)] = p.lightmaps[(x, y)]
-        files["%s/LIGHTMAP/BUILDINGLIGHTMAPDATA.LIT" % stem] = empty_lit
-        files["%s/LIGHTMAP/OBJECTLIGHTMAPDATA.LIT" % stem] = empty_lit
+        ol = (p.object_lights or {}).get((x, y))
+        files["%s/LIGHTMAP/BUILDINGLIGHTMAPDATA.LIT" % stem] = ol["CNST"] if ol else empty_lit
+        files["%s/LIGHTMAP/OBJECTLIGHTMAPDATA.LIT" % stem] = ol["OBJECT"] if ol else empty_lit
+        for name, blob in (ol["dds"].items() if ol else ()):
+            files["%s/LIGHTMAP/%s" % (stem, name.upper())] = blob
     return files

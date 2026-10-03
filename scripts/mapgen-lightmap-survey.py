@@ -8,6 +8,14 @@ and PLAN.md phase 8 from the files in data/:
     python scripts/mapgen-lightmap-survey.py trees  [JG01 ...]   # averaged tree/rock shadow profiles
     python scripts/mapgen-lightmap-survey.py objects [JG01 ...]  # object lightmaps: coverage, cells, atlases
     python scripts/mapgen-lightmap-survey.py chunk JG02 1 2      # one chunk next to a sun-only model (PNG)
+    python scripts/mapgen-lightmap-survey.py cells               # retail cell size per mesh -> stats/jg_lightmap_cells.json
+    python scripts/mapgen-lightmap-survey.py compare-objects JG02 0 1 3 [key=value ...]
+        # bake the object cells of a retail window with mapgen/objlight.py
+        # (retail terrain, objects, sun) and compare each part's cell with
+        # retail's cell for the same part, texel by texel through the same
+        # uv1 layout: correlation (overall and within a part), the levels in
+        # full sun / turned away / in shadow / undersides, and small plants
+        # (one constant, as production) against retail's cell median.
     python scripts/mapgen-lightmap-survey.py compare JG02 0 1 3 [key=value ...]
         # bake a 3x3-chunk window of a retail zone with mapgen/lighting.py
         # (its own terrain, objects, water) and score it against the real
@@ -26,6 +34,7 @@ vertex i of a chunk sits on the texel edge 8i.
 """
 
 import argparse
+import math
 import importlib.util
 import json
 import os
@@ -42,7 +51,7 @@ sys.path.insert(0, HERE)
 _spec = importlib.util.spec_from_file_location("mapgen_zone", os.path.join(HERE, "mapgen-zone.py"))
 mz = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(mz)
-from mapgen import catalogue, ifo, lighting, lit, prefab, terrain  # noqa: E402
+from mapgen import catalogue, ifo, lighting, lit, objlight, prefab, terrain  # noqa: E402
 
 PX = 512
 OUT = os.path.join(mz.BUILD, "lightmap-survey")
@@ -396,6 +405,176 @@ def shadow_profiles(L, placed, kind):
     return out, len(ws)
 
 
+def cmd_cells():
+    """The object-lightmap cell size retail gave each mesh, over all JG
+    zones (217 of 220 meshes always get the same one): the most common
+    pixels_per_part per mesh file stem. mapgen/objlight.py uses it."""
+    zstb = mz.oro.Stb(mz.P(mz.ZONE_STB))
+    counts = {}
+    for name, row in mz.PROFILE_ZONES.items():
+        rel = lambda col: zstb.get(row, col).decode("latin-1").replace("\\\\", "\\")
+        zscs = {ifo.OBJECT: catalogue.read_zsc(os.path.join(mz.DATA, rel(mz.COL_DECO))),
+                ifo.CNST: catalogue.read_zsc(os.path.join(mz.DATA, rel(mz.COL_CNST)))}
+        zdir = zone_dir(row)
+        for f in os.listdir(zdir):
+            ifo_path = os.path.join(zdir, f + ".IFO")
+            if not (os.path.isdir(os.path.join(zdir, f)) and os.path.exists(ifo_path)):
+                continue
+            with open(ifo_path, "rb") as fh:
+                m = ifo.parse(fh.read())
+            for lump, fn in ((ifo.OBJECT, "ObjectLightMapData.lit"), (ifo.CNST, "BuildingLightMapData.lit")):
+                p = os.path.join(zdir, f, "LightMap", fn)
+                if not os.path.exists(p):
+                    continue
+                recs = m.lump(lump) or []
+                meshes, objs = zscs[lump]
+                with open(p, "rb") as fh:
+                    L = lit.parse_lit(fh.read())
+                for o in L.objects:
+                    if not 1 <= o.obj_index <= len(recs):
+                        continue
+                    oid = recs[o.obj_index - 1].obj_id
+                    for part in o.parts:
+                        if 0 <= oid < len(objs) and 0 <= part.part_index < len(objs[oid]["parts"]):
+                            mi = objs[oid]["parts"][part.part_index]["mesh"]
+                            stem = os.path.splitext(os.path.basename(meshes[mi].replace("\\", "/")))[0].lower()
+                            c = counts.setdefault(stem, Counter())
+                            c[part.pixels_per_part] += 1
+    table = {k: int(v.most_common(1)[0][0]) for k, v in sorted(counts.items())}
+    mixed = {k: dict(v) for k, v in counts.items() if len(v) > 1}
+    out = os.path.join(mz.STATS_DIR, "jg_lightmap_cells.json")
+    with open(out, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump({"_comment": "Object lightmap cell size (px) retail gives each mesh (file stem, lower case), "
+                               "most common over JG01-JG08; written by mapgen-lightmap-survey.py cells.",
+                   "cells": table, "mixed": mixed}, fh, indent=1, sort_keys=True)
+    print("%d meshes (%s); mixed: %s -> %s" % (len(table), dict(Counter(table.values())), mixed, out))
+
+
+def cmd_compare_objects(name, cx0, cy0, n, settings):
+    """Bake the object cells of a retail window with mapgen/objlight.py's own
+    texel and lighting code (retail terrain and objects; occluders from the
+    window plus one chunk around it) and compare them with retail's cells,
+    texel by texel through the same uv1 layout."""
+    row = mz.PROFILE_ZONES[name]
+    zdir, field, (x0, y0), mosaic, have, sizes, objs_all = load_zone(row)
+    f = np.nan_to_num(field, nan=float(np.nanmin(field)))
+    zstb = mz.oro.Stb(mz.P(mz.ZONE_STB))
+    rel = lambda col: zstb.get(row, col).decode("latin-1").replace("\\\\", "\\")
+    zscs = {"OBJECT": catalogue.read_zsc(os.path.join(mz.DATA, rel(mz.COL_DECO))),
+            "CNST": catalogue.read_zsc(os.path.join(mz.DATA, rel(mz.COL_CNST)))}
+    parts = objlight.Parts(mz.DATA, zscs, lighting.Shapes(mz.DATA, zscs))
+    cfg, tcfg = {}, {}
+    for kv in settings:
+        k, v = kv.split("=")
+        (cfg if k in objlight.OBJECT_DEFAULT else tcfg)[k] = float(v)
+    chunks = {}
+    for fn in os.listdir(zdir):
+        mm = re.match(r"(\d+)_(\d+)\.ifo$", fn, re.I)
+        if mm:
+            with open(os.path.join(zdir, fn), "rb") as fh:
+                m = ifo.parse(fh.read())
+            chunks[(int(mm.group(1)), 64 - int(mm.group(2)))] = (fn[:-4], m)
+    win = {(x0 + cx0 + i, y0 + cy0 + j) for i in range(n) for j in range(n)}
+    near = {(x0 + cx0 + i, y0 + cy0 + j) for i in range(-1, n + 1) for j in range(-1, n + 1)}
+    # small plants as production classifies them (mapgen-zone.py
+    # object_light_inputs): no shadow, one flat value per part
+    with open(os.path.join(mz.STATS_DIR, "jg_object_kinds.json"), encoding="utf-8") as fh:
+        by_id = {i: k for k, ids in json.load(fh)["kinds"].items() for i in ids}
+    with open(os.path.join(mz.STATS_DIR, "jg_decoration.json"), encoding="utf-8") as fh:
+        cat_of = {o["id"]: o["category"] for o in json.load(fh)["objects"]}
+    occluders, placed = [], []
+    for slot, (stem, m) in chunks.items():
+        if slot not in near:
+            continue
+        for lump, key in ((ifo.OBJECT, "OBJECT"), (ifo.CNST, "CNST")):
+            for i, r in enumerate(m.lump(lump) or []):
+                prs, ok, why = parts.get(key, r.obj_id)
+                small = lump == ifo.OBJECT and by_id.get(r.obj_id, cat_of.get(r.obj_id)) in mz.SMALL_PLANTS
+                local = (r.pos[0] + objlight.ORIGIN_CM - x0 * objlight.CHUNK_CM,
+                         r.pos[1] + objlight.ORIGIN_CM - y0 * objlight.CHUNK_CM, r.pos[2])
+                wl = [None if pr is None else objlight.world_tris(pr[0], local, r.rot, r.scale) for pr in prs]
+                if not small:
+                    occluders += [(w, pr[2][2]) for pr, w in zip(prs, wl) if pr is not None]
+                if slot in win:
+                    placed.append((stem, key, i, prs, wl, small))
+    cache = {}
+    texels, pts, nrm, fol, pid = [], [], [], [], []
+    flat_pts, flat_ret = [], []
+    for stem, key, i, prs, wl, small in placed:
+        fn = "ObjectLightMapData.lit" if key == "OBJECT" else "BuildingLightMapData.lit"
+        lp = os.path.join(zdir, stem, "LightMap", fn)
+        if not os.path.exists(lp):
+            continue
+        if lp not in cache:
+            with open(lp, "rb") as fh:
+                cache[lp] = {o.obj_index: o for o in lit.parse_lit(fh.read()).objects}
+        o = cache[lp].get(i + 1)
+        if o is None:
+            continue
+        for pt in o.parts:
+            if not 0 <= pt.part_index < len(prs) or prs[pt.part_index] is None:
+                continue
+            tri, uv, (cover, rgb, cut), meshrel = prs[pt.part_index]
+            ap = os.path.join(zdir, stem, "LightMap", pt.dds_name.decode("latin-1"))
+            if ap not in cache:
+                cache[ap] = np.asarray(Image.open(ap).convert("RGB")).astype(np.float32) if os.path.exists(ap) else None
+            A = cache[ap]
+            if A is None:
+                continue
+            P = A.shape[0] // pt.parts_per_width
+            r0, c0 = divmod(pt.position_in_map, pt.parts_per_width)
+            w = wl[pt.part_index]
+            pix, p_, n_ = objlight.cell_texels(P, w, uv)
+            if len(pix) < 4:
+                continue
+            ret = A[r0 * P:(r0 + 1) * P, c0 * P:(c0 + 1) * P]
+            if small:
+                cx_, cy_ = float(np.mean(w[..., 0])), float(np.mean(w[..., 1]))
+                g = float(lighting.ground_cm(f, np.array([cx_]), np.array([cy_]))[0])
+                flat_pts.append([cx_, cy_, max(float(w[..., 2].min()), g) + 40.0])
+                flat_ret.append(float(np.median(lum(ret[pix[:, 0], pix[:, 1]]))))
+                continue
+            texels.append(lum(ret[pix[:, 0], pix[:, 1]]))
+            pts.append(p_); nrm.append(n_); fol.append(np.full(len(pix), bool(cut)))
+            pid.append(np.full(len(pix), len(pid)))
+    if not texels:
+        print("no parts compared")
+        return
+    nt = sum(len(t) for t in texels)
+    fol = np.concatenate(fol)
+    P_all = np.concatenate(pts)
+    N_all = np.concatenate(nrm)
+    col, d = objlight.light(f, occluders, P_all, N_all, fol, cfg, tcfg, print, detail=True)
+    ours_all = lum(col)
+    ours = ours_all[:nt]
+    flat_ours = np.full(len(flat_pts), float(lum(objlight.small_plant_rgb(cfg, tcfg)[None])[0]))
+    vis, fol, N = d["vis"][:nt], fol[:nt], N_all[:nt].astype(float)
+    theirs, part = np.concatenate(texels), np.concatenate(pid)
+    t = dict(lighting.DEFAULT)
+    t.update(tcfg)
+    ndl = N @ lighting.sun_vec(t["sun_az"], t["sun_el"])
+    print("%s window (%d, %d) %dx%d: %d texels of %d parts, %d small plants (flat)"
+          % (name, cx0, cy0, n, n, len(ours), len(texels), len(flat_pts)))
+    for label, sel in (("all", np.ones(len(ours), bool)), ("solid", ~fol), ("foliage", fol)):
+        if sel.sum() > 100:
+            print("   %-8s correlation %.3f; median ours %.0f / retail %.0f; 10th pct %.0f / %.0f; 90th %.0f / %.0f"
+                  % (label, np.corrcoef(ours[sel], theirs[sel])[0, 1], np.median(ours[sel]), np.median(theirs[sel]),
+                     np.percentile(ours[sel], 10), np.percentile(theirs[sel], 10),
+                     np.percentile(ours[sel], 90), np.percentile(theirs[sel], 90)))
+    solid = ~fol
+    rs = [np.corrcoef(ours[m], theirs[m])[0, 1] for m in (solid & (part == k) for k in np.unique(part[solid]))
+          if m.sum() > 200 and ours[m].std() > 1 and theirs[m].std() > 1]
+    if rs:
+        print("   solid within a part: median correlation %.3f over %d parts" % (np.median(rs), len(rs)))
+    for label, sel in (("full sun", solid & (ndl > 0.5) & (vis > 0.9)), ("turned away", solid & (ndl <= 0) & (N[:, 2] > -0.5)),
+                       ("in shadow", solid & (ndl > 0) & (vis < 0.5)), ("undersides", solid & (N[:, 2] < -0.5))):
+        if sel.sum() > 100:
+            print("   %-12s median ours %.0f / retail %.0f (%d texels)" % (label, np.median(ours[sel]), np.median(theirs[sel]), sel.sum()))
+    if flat_pts:
+        print("   small plants median ours %.0f / retail %.0f; 10th %.0f / %.0f"
+              % (np.median(flat_ours), np.median(flat_ret), np.percentile(flat_ours, 10), np.percentile(flat_ret, 10)))
+
+
 def cmd_compare(name, cx0, cy0, n, settings):
     f, placed, shapes, water, mosaic = retail_light_inputs(mz.PROFILE_ZONES[name])
     v0r, v0c = cy0 * 64, cx0 * 64
@@ -441,6 +620,13 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     for c in ("zones", "trees", "objects"):
         sub.add_parser(c).add_argument("names", nargs="*")
+    sub.add_parser("cells")
+    co = sub.add_parser("compare-objects")
+    co.add_argument("name")
+    co.add_argument("cx", type=int)
+    co.add_argument("cy", type=int)
+    co.add_argument("n", type=int)
+    co.add_argument("settings", nargs="*")
     cp = sub.add_parser("compare")
     cp.add_argument("name")
     cp.add_argument("cx", type=int)
@@ -458,6 +644,10 @@ def main():
         cmd_trees(a.names)
     elif a.cmd == "objects":
         cmd_objects(a.names)
+    elif a.cmd == "compare-objects":
+        cmd_compare_objects(a.name, a.cx, a.cy, a.n, a.settings)
+    elif a.cmd == "cells":
+        cmd_cells()
     elif a.cmd == "compare":
         cmd_compare(a.name, a.cx, a.cy, a.n, a.settings)
     else:
