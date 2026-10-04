@@ -254,8 +254,8 @@ namespace Map_Editor.Forms.Controls
         {
             try
             {
-                XNA.Texture2D bottomTexture = XNA.Texture2D.FromFile(device, FileManager.ZON.Textures[FileManager.ZON.Tiles[index].ID1].Path);
-                XNA.Texture2D topTexture = XNA.Texture2D.FromFile(device, FileManager.ZON.Textures[FileManager.ZON.Tiles[index].ID2].Path);
+                XNA.Texture2D bottomTexture = Map_Editor.Engine.GameData.LoadTexture(device, FileManager.ZON.Textures[FileManager.ZON.Tiles[index].ID1].Path);
+                XNA.Texture2D topTexture = Map_Editor.Engine.GameData.LoadTexture(device, FileManager.ZON.Textures[FileManager.ZON.Tiles[index].ID2].Path);
 
                 spriteBatch.Begin(XNA.SpriteBlendMode.None, XNA.SpriteSortMode.Deferred, XNA.SaveStateMode.SaveState);
 
@@ -414,10 +414,10 @@ namespace Map_Editor.Forms.Controls
             int tileID = FileManager.TileSet.Brushes[Brush].TileNumberF;
 
             if (FileManager.ZON.Textures[FileManager.ZON.Tiles[tileID].ID1].Tile == null)
-                FileManager.ZON.Textures[FileManager.ZON.Tiles[tileID].ID1].Tile = XNA.Texture2D.FromFile(MapManager.Heightmaps.GraphicsDevice, FileManager.ZON.Textures[FileManager.ZON.Tiles[tileID].ID1].Path);
+                FileManager.ZON.Textures[FileManager.ZON.Tiles[tileID].ID1].Tile = Map_Editor.Engine.GameData.LoadTexture(MapManager.Heightmaps.GraphicsDevice, FileManager.ZON.Textures[FileManager.ZON.Tiles[tileID].ID1].Path);
 
             if (FileManager.ZON.Textures[FileManager.ZON.Tiles[tileID].ID2].Tile == null)
-                FileManager.ZON.Textures[FileManager.ZON.Tiles[tileID].ID2].Tile = XNA.Texture2D.FromFile(MapManager.Heightmaps.GraphicsDevice, FileManager.ZON.Textures[FileManager.ZON.Tiles[tileID].ID2].Path);
+                FileManager.ZON.Textures[FileManager.ZON.Tiles[tileID].ID2].Tile = Map_Editor.Engine.GameData.LoadTexture(MapManager.Heightmaps.GraphicsDevice, FileManager.ZON.Textures[FileManager.ZON.Tiles[tileID].ID2].Path);
         }
 
         #endregion

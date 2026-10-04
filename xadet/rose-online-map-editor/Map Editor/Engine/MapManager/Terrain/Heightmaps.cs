@@ -206,7 +206,7 @@ namespace Map_Editor.Engine.Terrain
                         SwapEffect = SwapEffect.Discard
                     }))
                     {
-                        Texture2D shadowMap = Texture2D.FromFile(graphicsDevice, string.Format(@"{0}\{1}_{2}\{1}_{2}_PLANELIGHTINGMAP.DDS", mapFolder, mapOffset.Y, mapOffset.X));
+                        Texture2D shadowMap = GameData.LoadTexture(graphicsDevice, string.Format(@"{0}\{1}_{2}\{1}_{2}_PLANELIGHTINGMAP.DDS", mapFolder, mapOffset.Y, mapOffset.X));
 
                         SpriteBatch spriteBatch = new SpriteBatch(graphicsDevice);
                         RenderTarget2D renderTarget = new RenderTarget2D(graphicsDevice, IMAGE_DIMENSION, IMAGE_DIMENSION, 1, SurfaceFormat.Color, MultiSampleType.NonMaskable, 0);
@@ -261,10 +261,10 @@ namespace Map_Editor.Engine.Terrain
                     for (int x = 0; x < 16; x++)
                     {
                         if (FileManager.ZON.Textures[Tiles[y, x].TileID1].Tile == null)
-                            FileManager.ZON.Textures[Tiles[y, x].TileID1].Tile = Texture2D.FromFile(device, FileManager.ZON.Textures[Tiles[y, x].TileID1].Path);
+                            FileManager.ZON.Textures[Tiles[y, x].TileID1].Tile = GameData.LoadTexture(device, FileManager.ZON.Textures[Tiles[y, x].TileID1].Path);
 
                         if (FileManager.ZON.Textures[Tiles[y, x].TileID2].Tile == null)
-                            FileManager.ZON.Textures[Tiles[y, x].TileID2].Tile = Texture2D.FromFile(device, FileManager.ZON.Textures[Tiles[y, x].TileID2].Path);
+                            FileManager.ZON.Textures[Tiles[y, x].TileID2].Tile = GameData.LoadTexture(device, FileManager.ZON.Textures[Tiles[y, x].TileID2].Path);
                     }
                 }
             }
@@ -398,10 +398,10 @@ namespace Map_Editor.Engine.Terrain
                 Tiles[y, x].TileID2 = FileManager.ZON.Tiles[TileFile.Tiles[y, x].TileID].ID2;
 
                 if (FileManager.ZON.Textures[Tiles[y, x].TileID1].Tile == null)
-                    FileManager.ZON.Textures[Tiles[y, x].TileID1].Tile = Texture2D.FromFile(device, FileManager.ZON.Textures[Tiles[y, x].TileID1].Path);
+                    FileManager.ZON.Textures[Tiles[y, x].TileID1].Tile = GameData.LoadTexture(device, FileManager.ZON.Textures[Tiles[y, x].TileID1].Path);
 
                 if (FileManager.ZON.Textures[Tiles[y, x].TileID2].Tile == null)
-                    FileManager.ZON.Textures[Tiles[y, x].TileID2].Tile = Texture2D.FromFile(device, FileManager.ZON.Textures[Tiles[y, x].TileID2].Path);
+                    FileManager.ZON.Textures[Tiles[y, x].TileID2].Tile = GameData.LoadTexture(device, FileManager.ZON.Textures[Tiles[y, x].TileID2].Path);
             }
 
             /// <summary>

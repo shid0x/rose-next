@@ -117,12 +117,12 @@ namespace Map_Editor.Forms
                 {
                     try
                     {
-                        if (!File.Exists(FileManager.STBs["LIST_ZONE"].Cells[selectedMapID][9]))
+                        if (!GameData.Exists(FileManager.STBs["LIST_ZONE"].Cells[selectedMapID][9]))
                             return;
 
                         if (!File.Exists(string.Format(@"{0}\Minimap{1}.png", Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), selectedMapID)))
                         {
-                            Texture2D minimapTexture = Texture2D.FromFile(graphicsDevice, FileManager.STBs["LIST_ZONE"].Cells[selectedMapID][9]);
+                            Texture2D minimapTexture = GameData.LoadTexture(graphicsDevice, FileManager.STBs["LIST_ZONE"].Cells[selectedMapID][9]);
                             minimapTexture.Save(string.Format(@"{0}\Minimap{1}.png", Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), selectedMapID), ImageFileFormat.Png);
                             minimapTexture.Dispose();
                         }
@@ -159,13 +159,13 @@ namespace Map_Editor.Forms
                         MessageBox.Show(string.Format("An error occured while trying to load\n{0}", FileManager.STBs["LIST_ZONE"].Cells[selectedMapID][9]), "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                     }
 
-                    if (!Directory.Exists(System.IO.Path.GetDirectoryName(FileManager.STBs["LIST_ZONE"].Cells[selectedMapID][2])))
+                    if (!GameData.DirectoryExists(System.IO.Path.GetDirectoryName(FileManager.STBs["LIST_ZONE"].Cells[selectedMapID][2])))
                         return;
 
                     float startPositionX = (float)Convert.ToInt32(FileManager.STBs["LIST_ZONE"].Cells[selectedMapID][10]) * 160.0f;
                     float startPositionY = 10400.0f - ((float)Convert.ToInt32(FileManager.STBs["LIST_ZONE"].Cells[selectedMapID][11]) * 160.0f);
 
-                    string[] ifoFiles = Directory.GetFiles(System.IO.Path.GetDirectoryName(FileManager.STBs["LIST_ZONE"].Cells[selectedMapID][2]), "*.IFO");
+                    string[] ifoFiles = GameData.GetFiles(System.IO.Path.GetDirectoryName(FileManager.STBs["LIST_ZONE"].Cells[selectedMapID][2]), "*.IFO");
 
                     Dispatcher.BeginInvoke(DispatcherPriority.Normal, (DispatcherOperationCallback)delegate
                     {

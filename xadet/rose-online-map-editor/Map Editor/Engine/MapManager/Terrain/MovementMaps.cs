@@ -35,7 +35,7 @@ namespace Map_Editor.Engine.Terrain
                     if (item == null) continue;
                     string path = Path.ChangeExtension(item.HeightFile.FilePath, ".MOV");
                     string[] xy = Path.GetFileNameWithoutExtension(path).Split('_');
-                    Block block = new Block { Terrain = item, X = int.Parse(xy[0]), Y = int.Parse(xy[1]), Missing = !System.IO.File.Exists(path) };
+                    Block block = new Block { Terrain = item, X = int.Parse(xy[0]), Y = int.Parse(xy[1]), Missing = !GameData.Exists(path) };
                     block.File = block.Missing ? new MOV { FilePath = path } : new MOV(path);
                     hasFiles |= !block.Missing;
                     Blocks.Add(block.X * 100 + block.Y, block);
@@ -71,6 +71,9 @@ namespace Map_Editor.Engine.Terrain
         {
             if (Error != null) throw new InvalidOperationException(Error);
             if (!generateMissing && !HasChanges) return 0;
+            foreach (Block block in Blocks.Values)
+                if (GameData.IsArchived(block.File.FilePath) || GameData.IsArchived(block.Terrain.HeightFile.FilePath))
+                    throw new InvalidOperationException("This map is read from the client's archives (data.idx) and is read-only.");
             int count = 0;
             string backupID = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N");
             foreach (Block block in Blocks.Values)

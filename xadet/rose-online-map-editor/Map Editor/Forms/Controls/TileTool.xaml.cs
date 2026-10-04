@@ -246,8 +246,8 @@ namespace Map_Editor.Forms.Controls
         {
             try
             {
-                XNA.Texture2D bottomTexture = XNA.Texture2D.FromFile(device, FileManager.ZON.Textures[FileManager.ZON.Tiles[index].ID1].Path);
-                XNA.Texture2D topTexture = XNA.Texture2D.FromFile(device, FileManager.ZON.Textures[FileManager.ZON.Tiles[index].ID2].Path);
+                XNA.Texture2D bottomTexture = Map_Editor.Engine.GameData.LoadTexture(device, FileManager.ZON.Textures[FileManager.ZON.Tiles[index].ID1].Path);
+                XNA.Texture2D topTexture = Map_Editor.Engine.GameData.LoadTexture(device, FileManager.ZON.Textures[FileManager.ZON.Tiles[index].ID2].Path);
 
                 spriteBatch.Begin(XNA.SpriteBlendMode.None, XNA.SpriteSortMode.Deferred, XNA.SaveStateMode.SaveState);
 
@@ -401,10 +401,10 @@ namespace Map_Editor.Forms.Controls
             Tile = (int)imageHost.Tag;
 
             if (FileManager.ZON.Textures[FileManager.ZON.Tiles[Tile].ID1].Tile == null)
-                FileManager.ZON.Textures[FileManager.ZON.Tiles[Tile].ID1].Tile = XNA.Texture2D.FromFile(MapManager.Heightmaps.GraphicsDevice, FileManager.ZON.Textures[FileManager.ZON.Tiles[Tile].ID1].Path);
+                FileManager.ZON.Textures[FileManager.ZON.Tiles[Tile].ID1].Tile = Map_Editor.Engine.GameData.LoadTexture(MapManager.Heightmaps.GraphicsDevice, FileManager.ZON.Textures[FileManager.ZON.Tiles[Tile].ID1].Path);
 
             if (FileManager.ZON.Textures[FileManager.ZON.Tiles[Tile].ID2].Tile == null)
-                FileManager.ZON.Textures[FileManager.ZON.Tiles[Tile].ID2].Tile = XNA.Texture2D.FromFile(MapManager.Heightmaps.GraphicsDevice, FileManager.ZON.Textures[FileManager.ZON.Tiles[Tile].ID2].Path);
+                FileManager.ZON.Textures[FileManager.ZON.Tiles[Tile].ID2].Tile = Map_Editor.Engine.GameData.LoadTexture(MapManager.Heightmaps.GraphicsDevice, FileManager.ZON.Textures[FileManager.ZON.Tiles[Tile].ID2].Path);
 
             if (MapManager.Heightmaps.TileTool.ToolMode == Tiles.TileToolType.None && MapManager.Heightmaps.TileTool.ToolMode != Tiles.TileToolType.Pick)
                 MapManager.Heightmaps.TileTool.ToolMode = Tiles.TileToolType.Modify;

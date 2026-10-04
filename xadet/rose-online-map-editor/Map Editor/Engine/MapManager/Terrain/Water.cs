@@ -112,7 +112,7 @@ namespace Map_Editor.Engine.Terrain
             waterTextures = new Texture2D[24];
 
             for (int i = 0; i < 24; i++)
-                waterTextures[i] = Texture2D.FromFile(game.GraphicsDevice, string.Format(@"3Ddata\JUNON\WATER\OCEAN01_{0:00}.DDS", i + 1));
+                waterTextures[i] = GameData.LoadTexture(game.GraphicsDevice, string.Format(@"3Ddata\JUNON\WATER\OCEAN01_{0:00}.DDS", i + 1));
 
             currentTexture = 0;
 

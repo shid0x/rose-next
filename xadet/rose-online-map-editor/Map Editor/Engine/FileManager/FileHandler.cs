@@ -349,7 +349,7 @@ namespace Map_Editor.Engine
         /// Gets or sets the file stream.
         /// </summary>
         /// <value>The file stream.</value>
-        private FileStream fileStream { get; set; }
+        private Stream fileStream { get; set; }
 
         /// <summary>
         /// Gets or sets the binary reader.
@@ -390,11 +390,16 @@ namespace Map_Editor.Engine
 
             if (fileOpenMode == FileOpenMode.Reading)
             {
-                fileStream = File.OpenRead(filePath);
+                fileStream = GameData.OpenRead(filePath);
                 binaryReader = new BinaryReader(fileStream, encodeType ?? Encoding.Default);
             }
             else if (fileOpenMode == FileOpenMode.Writing)
             {
+                // Backstop for the save entry points' own check: writing an archived file
+                // loose would shadow the client's copy from then on.
+                if (GameData.IsArchived(filePath))
+                    throw new InvalidOperationException(string.Format("{0} is read from the client's archives (data.idx) and cannot be saved.", filePath));
+
                 fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
                 binaryWriter = new BinaryWriter(fileStream, encodeType ?? Encoding.Default);
             }
@@ -417,6 +422,15 @@ namespace Map_Editor.Engine
         public int Tell()
         {
             return (int)fileStream.Position;
+        }
+
+        /// <summary>
+        /// Get the stream length.
+        /// </summary>
+        /// <returns>Length</returns>
+        public int Length()
+        {
+            return (int)fileStream.Length;
         }
 
         #region Reading

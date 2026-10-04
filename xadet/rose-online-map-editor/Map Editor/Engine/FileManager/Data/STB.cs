@@ -80,7 +80,7 @@ namespace Map_Editor.Engine.Data
         {
             byte[] signature = new byte[4];
 
-            using (FileStream stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (Stream stream = GameData.OpenRead(filePath))
             {
                 if (stream.Read(signature, 0, 4) < 4)
                     throw new InvalidDataException(string.Format("{0} is too small to be an STB file.", filePath));

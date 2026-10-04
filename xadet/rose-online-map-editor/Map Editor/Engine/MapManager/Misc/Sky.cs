@@ -86,7 +86,7 @@ namespace Map_Editor.Engine.Misc
             vertexCount = skyModel.VertexCount;
             indexCount = skyModel.IndexCount;
 
-            texture = Texture2D.FromFile(Game.GraphicsDevice, texturePath);
+            texture = GameData.LoadTexture(Game.GraphicsDevice, texturePath);
 
             vertexDeclaration = new VertexDeclaration(Game.GraphicsDevice, ZMS.Vertex.VertexElements);
 

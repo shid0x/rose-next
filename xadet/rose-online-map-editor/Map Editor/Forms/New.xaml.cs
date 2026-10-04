@@ -153,6 +153,15 @@ namespace Map_Editor.Forms
         /// <param name="e">The <see cref="System.Windows.RoutedEventArgs"/> instance containing the event data.</param>
         private void Create_Click(object sender, RoutedEventArgs e)
         {
+            // A new map is registered in LIST_ZONE.STB / LIST_ZONE_S.STL, which a packed
+            // client keeps in its archives; writing them loose would fork its tables.
+            if (GameData.IsArchived(FileManager.STBs["LIST_ZONE"].FilePath) || GameData.IsArchived(FileManager.STLs["LIST_ZONE_S"].FilePath))
+            {
+                MessageBox.Show("This client's zone tables are read from its archives (data.idx), which the editor cannot write. Create new maps in a folder with loose data.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+
+                return;
+            }
+
             if (Name.Text.Length == 0)
             {
                 MessageBox.Show("You must enter a map name", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -207,7 +216,7 @@ namespace Map_Editor.Forms
                 return;
             }
 
-            if (Directory.Exists(FilePath.Text))
+            if (GameData.DirectoryExists(FilePath.Text))
             {
                 MessageBox.Show("Map folder already exists", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
 

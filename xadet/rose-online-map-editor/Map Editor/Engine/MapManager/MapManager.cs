@@ -289,7 +289,7 @@ namespace Map_Editor.Engine
 
                 loadStep = "Loading Heightmaps";
                 Output.WriteLine(Output.MessageType.Normal, "- Loading Heightmaps");
-                string[] himFiles = Directory.GetFiles(mapFolder, "*.HIM");
+                string[] himFiles = GameData.GetFiles(mapFolder, "*.HIM");
 
                 Heightmaps.Clear();
 

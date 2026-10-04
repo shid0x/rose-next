@@ -294,7 +294,7 @@ namespace Map_Editor.Forms.Controls
                             BoundingBox boundingBox = new BoundingBox();
                             string[] objectRow = FileManager.STBs["LIST_MORPH_OBJECT"].Cells[i].ToArray();
 
-                            if (File.Exists(objectRow[2]) && File.Exists(objectRow[4]))
+                            if (Map_Editor.Engine.GameData.Exists(objectRow[2]) && Map_Editor.Engine.GameData.Exists(objectRow[4]))
                             {
                                 ZMS models = new ZMS();
                                 models.Load(objectRow[2]);
@@ -318,7 +318,7 @@ namespace Map_Editor.Forms.Controls
 
                                 view = Microsoft.Xna.Framework.Matrix.CreateLookAt(cameraPosition, modelSphere.Center, Vector3.Down);
 
-                                using (XNA.Texture2D texture = XNA.Texture2D.FromFile(graphicsDevice, objectRow[4]))
+                                using (XNA.Texture2D texture = Map_Editor.Engine.GameData.LoadTexture(graphicsDevice, objectRow[4]))
                                 {
                                     shader.World = Microsoft.Xna.Framework.Matrix.Identity;
                                     shader.View = view;

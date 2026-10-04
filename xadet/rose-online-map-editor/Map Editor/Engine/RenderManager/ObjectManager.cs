@@ -328,7 +328,7 @@ namespace Map_Editor.Engine.RenderManager
 
             if (animationPath != null && animationPath.Trim().Length > 0)
             {
-                if (System.IO.File.Exists(animationPath))
+                if (GameData.Exists(animationPath))
                     newAnimation = new ZMO(animationPath, false, true);
                 else
                     Output.WriteLine(Output.MessageType.Error, string.Format("Missing Animation: {0}", animationPath));
@@ -386,7 +386,7 @@ namespace Map_Editor.Engine.RenderManager
             Texture2D texture;
             if (!lightmapTextures.TryGetValue(key, out texture))
             {
-                texture = Texture2D.FromFile(device, key);
+                texture = GameData.LoadTexture(device, key);
                 lightmapTextures.Add(key, texture);
             }
 

@@ -176,7 +176,7 @@ namespace Map_Editor.Engine.Map
             Objects = new List<Object>();
             DDSFiles = new List<DDS>();
             hasDDSList = true;
-            if (!File.Exists(filePath))
+            if (!GameData.Exists(filePath))
             {
                 Output.WriteLine(Output.MessageType.Error, string.Format(@"Missing File: {0}", filePath));
 
@@ -223,7 +223,7 @@ namespace Map_Editor.Engine.Map
 
                 // Retail maps can end after the object records, including a lone
                 // zero object count. The game's lightmap reader needs no DDS list.
-                hasDDSList = fh.Tell() < new FileInfo(filePath).Length;
+                hasDDSList = fh.Tell() < fh.Length();
                 int ddsCount = hasDDSList ? fh.Read<int>() : 0;
                 DDSFiles = new List<DDS>(ddsCount);
 

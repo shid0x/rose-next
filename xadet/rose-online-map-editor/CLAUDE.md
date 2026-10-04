@@ -196,6 +196,30 @@ Clear-Content '..\..\data\Map Editor.log'
 
 ## Compatibility Fixes Already Made
 
+- **Packed clients open directly (2026-10-04).** Copy the editor into any client
+  folder and run it there: if the folder has a `data.idx`, `GameData.Mount` (called
+  from `FileManager.Initialize`) opens it and every `.vfs` it names, and all reads go
+  loose-first, then archive. Every reader routes through `Engine/FileManager/GameData.cs`
+  (`OpenRead` in `FileHandler`, `Exists`, `GetFiles` for map folders, `LoadTexture`
+  for every `Texture2D.FromFile` on game data); new code that reads game files must
+  use it too, or it silently works on loose data only. Archive keys are normalized
+  (upper case, `/` and doubled `\\` collapsed, root-relative). The cipher is detected
+  per index by decoding a sample of STB/ZMS/ZMO/ZMD/DDS files with each
+  `VfsCipher.All` entry (`Engine/FileManager/VfsArchive.cs`): plain (retail, iROSE,
+  Rose Next) and **Wish Online** (Taiwan 2010: per file, a size-bucketed rotation, the
+  key = the stored byte at that rotation = the file's first byte, the rest XORed with
+  it; files of 128 bytes or less are stored plain). The log says
+  `cipher ... (n/24 sample files read)`; a new client's scheme goes into `VfsCipher.All`.
+  **Archived files are read-only**: Save, the MOV panel and New Map refuse when the
+  map or LIST_ZONE comes from an archive, and `FileHandler` refuses to write any
+  archived path as a backstop -- a loose copy would shadow the packed one from then
+  on. Verified 2026-10-04 with `--shots` on Wish zones 49 (Oblivion Temple), 42
+  (Pyramid Tombs) and 26 (Forest of Wisdom): 24/24 cipher samples, no missing files,
+  full render; our `data/` and tsuki (loose) load unchanged; movement tests pass.
+  Not handled: compressed index entries (skipped and counted; no known client uses
+  them), and a client with no `LIST_DECO_SPECIAL.ZSC` still crashes at startup in
+  `WarpGates`/`Collision`, which index objects 1 and 2 unconditionally.
+
 - **Saving a Karkia or Skaaj map destroyed its IFOs (2026-09-23).** Every Jrose-origin
   IFO (all 141 in `KARKIA\*` and `SKAAJ\SKTOWN`) has no MapInfo lump 0, so
   `MapInfo.MapName` stayed null and `IFO.Save` threw inside `BinaryWriter.Write`.

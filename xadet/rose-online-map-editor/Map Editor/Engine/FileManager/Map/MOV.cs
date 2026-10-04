@@ -13,7 +13,7 @@ namespace Map_Editor.Engine.Map
         public MOV(string path) { Load(path); }
         public void Load(string path)
         {
-            using (BinaryReader reader = new BinaryReader(File.OpenRead(path)))
+            using (BinaryReader reader = new BinaryReader(GameData.OpenRead(path)))
             {
                 if (reader.BaseStream.Length != 8 + Size * Size ||
                     reader.ReadInt32() != Size || reader.ReadInt32() != Size)

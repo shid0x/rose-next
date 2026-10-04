@@ -284,6 +284,8 @@
     <Compile Include="Engine\FileManager\Data\STL.cs" />
     <Compile Include="Engine\FileManager\FileHandler.cs" />
     <Compile Include="Engine\FileManager\FileManager.cs" />
+    <Compile Include="Engine\FileManager\GameData.cs" />
+    <Compile Include="Engine\FileManager\VfsArchive.cs" />
     <Compile Include="Engine\FileManager\Map\HIM.cs" />
     <Compile Include="Engine\FileManager\Map\IFO.cs" />
     <Compile Include="Engine\FileManager\Map\LIT.cs" />

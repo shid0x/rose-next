@@ -399,7 +399,7 @@ namespace Map_Editor.Forms.Controls
                             world *= Microsoft.Xna.Framework.Matrix.CreateScale(zscFile.Objects[chrModels[i]].Models[j].Scale);
                             world *= Microsoft.Xna.Framework.Matrix.CreateTranslation(zscFile.Objects[chrModels[i]].Models[j].Position);
 
-                            using (XNA.Texture2D texture = XNA.Texture2D.FromFile(graphicsDevice, zscFile.Textures[zscFile.Objects[chrModels[i]].Models[j].TextureID].Path))
+                            using (XNA.Texture2D texture = Map_Editor.Engine.GameData.LoadTexture(graphicsDevice, zscFile.Textures[zscFile.Objects[chrModels[i]].Models[j].TextureID].Path))
                             {
                                 shader.World = world;
                                 shader.View = view;

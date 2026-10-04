@@ -136,6 +136,9 @@ namespace Map_Editor.Engine
         {
             Reset(true);
 
+            // A client folder may keep its data packed (data.idx + .vfs) instead of loose.
+            GameData.Mount(Directory.GetCurrentDirectory());
+
             Output.WriteLine(Output.MessageType.Event, "Loading STBs");
 
             Output.WriteLine(Output.MessageType.Normal, "- Loading 3DDATA\\STB\\LIST_ZONE.STB [Key: LIST_ZONE]");
@@ -195,7 +198,7 @@ namespace Map_Editor.Engine
             {
                 case FileType.IFO:
                     {
-                        string[] files = Directory.GetFiles(directory, "*.IFO");
+                        string[] files = GameData.GetFiles(directory, "*.IFO");
 
                         for (int i = 0; i < files.Length; i++)
                             Add(files[i], FileType.IFO);
@@ -234,7 +237,7 @@ namespace Map_Editor.Engine
         {
             bool keyedTable = fileType == FileType.STB || fileType == FileType.STL || fileType == FileType.ZSC || fileType == FileType.CHR;
 
-            if (!File.Exists(filePath))
+            if (!GameData.Exists(filePath))
             {
                 // A keyed table is registered empty rather than fatal, so a data set that is
                 // simply missing an editor-only table still opens; everything else still aborts.

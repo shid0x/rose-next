@@ -216,6 +216,16 @@ namespace Map_Editor
         /// <param name="e">The <see cref="System.Windows.RoutedEventArgs"/> instance containing the event data.</param>
         private void Save_Click(object sender, RoutedEventArgs e)
         {
+            // A map opened from a client's archives is read-only: saving would write a
+            // loose copy that shadows the packed one from then on.
+            if (FileManager.ZON != null && (GameData.IsArchived(FileManager.ZON.FilePath) ||
+                FileManager.IFOs.Exists(delegate(IFO file) { return GameData.IsArchived(file.FilePath); })))
+            {
+                MessageBox.Show("This map is read from the client's archives (data.idx) and is read-only.", "Save", MessageBoxButton.OK, MessageBoxImage.Information);
+
+                return;
+            }
+
             try
             {
                 Engine.Tools.Movement movement = ToolManager.Tool as Engine.Tools.Movement;

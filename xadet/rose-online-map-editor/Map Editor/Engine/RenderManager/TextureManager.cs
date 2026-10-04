@@ -205,7 +205,7 @@ namespace Map_Editor.Engine.RenderManager
 
             textureList.Add(new Texture()
             {
-                Image = image ?? Texture2D.FromFile(device, texturePath),
+                Image = image ?? GameData.LoadTexture(device, texturePath),
                 FilePath = texturePath,
                 RenderState = renderStates,
             });
