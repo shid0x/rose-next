@@ -1,4 +1,4 @@
-"""Restore the missing Eldeon zone-to-zone warp gates in the map .IFO files.
+"""Restore missing zone-to-zone warp gates in the map .IFO files (Eldeon, Junon).
 
 Symptom: on Eldeon you cannot walk from one zone to another. Arriving in Refuge
 Xita (EJT01, zone 61) leaves you stuck in town, and Forest of Wandering / Marsh of
@@ -17,8 +17,9 @@ into: an entry in the map `.IFO`'s LUMP_TERRAIN_WARP (type 10) block.
   server  classUSER::Recv_cli_TELEPORT_REQ looks the id up in WARP.STB and
           resolves the destination through g_pZoneLIST->Get_EventPOS.
 
-The server never reads the .IFO, so this is purely client-side map data. Junon and
-Lunar are fully wired, which is why warping works everywhere else.
+The server never reads the .IFO, so the gate itself is client-side map data. The
+destination, though, is a named event position in the destination .ZON, which the
+server *does* read: a gate whose arrival point is missing teleports nowhere.
 
 Our Eldeon maps instead carry *dead* LUMP_TERRAIN_EVENT_OBJECT (type 12) entries
 at roughly the same spots -- visible `warpbox` models (EVENT_OBJECT.STB row 10)
@@ -46,16 +47,28 @@ Deliberately NOT touched: the dead event objects "FowToSr" (EJ02/38_39) and
 "PriToSea" (EZ01/33_31). No reference has a warp there and they would point at
 Eldeon zones (66-68) that our LIST_ZONE.STB does not have.
 
-Known still-missing elsewhere, same defect, out of scope here: warp 40
-(JG03 -> Desert of the Dead), 43 (JD04 -> Anima Lake), 70 (SUM_EVENT -> Zant) are
-recoverable from the references; 37 (JG03 -> Breezy Hills), 121/122 (LZ02 ->
-Crystal Snowfields) and 90-98 (JGF01/JGF02, maps absent from our data) are not.
+Junon, added 2026-10-04: Desert of the Dead (JD04, zone 29) had no way in or out
+on foot. Same defect -- dead boxes "AniToDod" (JG03/34_30) and "DodToAni"
+(JD04/31_33) where every reference (ruff, QQ-iROSE, RoseZA, 139, titanRose) has
+warps 40 (Anima Lake -> Desert of the Dead) and 43 (back). Gate 43 also lacked
+its landing point: our JG03.ZON had lost the event position "WARP-JD04-JG03"
+that WARP.STB row 43 names, present in all five references at the same spot.
+`ZON_EVENTS` copies it verbatim (the .ZON is rewritten with scripts/mapgen/zon,
+byte-faithful on every retail file).
 
-Idempotent: a warp id already present is left alone, an already-removed box is
-skipped. Makes .bak backups. Use --dry-run to preview and --selftest to prove the
-rewriter is byte-faithful before it touches anything.
+Known still-missing elsewhere, same defect, out of scope here: warp 70 (SUM_EVENT
+-> Zant) is recoverable from the references; 37 (JG03 -> Breezy Hills), 121/122
+(LZ02 -> Crystal Snowfields) and 90-98 (JGF01/JGF02, maps absent from our data)
+are not.
 
-After running: rebake/deploy the client VFS data. No server restart needed.
+Idempotent: a warp id or event position already present is left alone, an
+already-removed box is skipped. Originals go to build/warp-gates/ (never beside
+the map: pack.ps1 refuses to bake a .bak), the first copy is kept, and --restore
+puts them back. Use --dry-run to preview and --selftest to prove the rewriter is
+byte-faithful before it touches anything.
+
+After running: rebake/deploy the client VFS data, and restart the servers when a
+.ZON changed (they read event positions at startup).
 
 .IFO layout, which this script rewrites:
     i32 lump_count
@@ -71,20 +84,32 @@ cannot be corrupted.
 """
 import argparse, os, shutil, struct, sys
 
-MAPS_REL = os.path.join("data", "3DDATA", "Maps", "ELDEON")
-DEFAULT_REF = r"C:\Users\Thomas\Desktop\Testclients\RoseZA test client\data\3DDATA\Maps\ELDEON"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from mapgen import zon  # noqa: E402
+
+MAPS_REL = os.path.join("data", "3DDATA", "Maps")
+BACKUP_REL = os.path.join("build", "warp-gates")
+DEFAULT_REF = r"C:\Users\Thomas\Desktop\Testclients\RoseZA test client\data\3DDATA\Maps"
 
 LUMP_WARP = 10
 LUMP_EVENT_OBJECT = 12
 
-# (zone, ifo basename, warp id to restore, dead event trigger to drop or None)
+# (planet, zone, ifo basename, warp id to restore, dead event trigger to drop or None)
 PLAN = [
-    ("EJT01", "32_31", 126, None),
-    ("EJT01", "36_31", 127, None),
-    ("EJ02",  "38_32", 131, "FOW-Shadi"),
-    ("EJ02",  "33_37", 134, "FOWtoPRI"),
-    ("EJ03",  "31_31", 133, "Marsh-Shady"),
-    ("EZ01",  "34_31", 135, "PrisonToFOW"),
+    ("ELDEON", "EJT01", "32_31", 126, None),
+    ("ELDEON", "EJT01", "36_31", 127, None),
+    ("ELDEON", "EJ02",  "38_32", 131, "FOW-Shadi"),
+    ("ELDEON", "EJ02",  "33_37", 134, "FOWtoPRI"),
+    ("ELDEON", "EJ03",  "31_31", 133, "Marsh-Shady"),
+    ("ELDEON", "EZ01",  "34_31", 135, "PrisonToFOW"),
+    ("JUNON",  "JG03",  "34_30", 40,  "AniToDod"),
+    ("JUNON",  "JD04",  "31_33", 43,  "DodToAni"),
+]
+
+# (planet, zone, event position name): a warp's landing point, copied from the
+# reference .ZON when ours lacks it
+ZON_EVENTS = [
+    ("JUNON", "JG03", "WARP-JD04-JG03"),
 ]
 
 OBJ_FIXED = 2 + 2 + 4 + 4 + 4 + 4 + 16 + 12 + 12   # everything after the name
@@ -244,8 +269,8 @@ def selftest(paths):
     return ok
 
 
-def find_ref_warp(ref_dir, zone, base, warp_id):
-    p = os.path.join(ref_dir, zone, base + ".IFO")
+def find_ref_warp(ref_dir, planet, zone, base, warp_id):
+    p = os.path.join(ref_dir, planet, zone, base + ".IFO")
     if not os.path.isfile(p):
         raise SystemExit(f"reference not found: {p}")
     buf, bounds = read_ifo(p)
@@ -258,19 +283,75 @@ def find_ref_warp(ref_dir, zone, base, warp_id):
     raise SystemExit(f"{p}: no warp object with id {warp_id}")
 
 
+def backup(root, path):
+    """Keep the first original in build/warp-gates/<planet>_<zone>_<file>."""
+    maps = os.path.join(root, MAPS_REL)
+    rel = os.path.relpath(path, maps).replace(os.sep, "_")
+    dst = os.path.join(root, BACKUP_REL, rel)
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    if not os.path.exists(dst):
+        shutil.copyfile(path, dst)
+
+
+def restore(root):
+    bdir = os.path.join(root, BACKUP_REL)
+    if not os.path.isdir(bdir):
+        raise SystemExit("nothing to restore (%s missing)" % bdir)
+    maps = os.path.join(root, MAPS_REL)
+    for name in sorted(os.listdir(bdir)):
+        planet, zone, base = name.split("_", 2)
+        dst = os.path.join(maps, planet, zone, base)
+        shutil.copyfile(os.path.join(bdir, name), dst)
+        os.remove(os.path.join(bdir, name))
+        print("restored %s" % dst)
+    return 0
+
+
+def restore_zon_event(args, maps, planet, zone, name):
+    """Copy a named event position from the reference .ZON. Returns a note."""
+    path = os.path.join(maps, planet, zone, zone + ".ZON")
+    ours = zon.parse(open(path, "rb").read())
+    events = ours.lump(zon.EVENTS)
+    want = name.encode("latin-1")
+    tag = "%s/%s.ZON" % (zone, zone)
+    if any(e.name == want for e in events):
+        print("  %-18s event %r already present" % (tag, name))
+        return False
+    ref_path = os.path.join(args.ref, planet, zone, zone + ".ZON")
+    ref = [e for e in zon.parse(open(ref_path, "rb").read()).lump(zon.EVENTS) if e.name == want]
+    if len(ref) != 1:
+        raise SystemExit("%s: %d event positions named %r" % (ref_path, len(ref), name))
+    events.append(ref[0])
+    print("  %-18s + event %r at (%.0f, %.0f, %.0f)" % (tag, name, ref[0].x, ref[0].z, ref[0].y))
+    if args.dry_run:
+        return False
+    data = zon.build(ours)
+    backup(args.root, path)
+    with open(path, "wb") as fh:
+        fh.write(data)
+    check = zon.parse(open(path, "rb").read()).lump(zon.EVENTS)
+    if not any(e.name == want for e in check):
+        raise SystemExit("VERIFY FAILED: %s has no %r after write" % (tag, name))
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--dry-run", action="store_true", help="preview without writing")
     ap.add_argument("--selftest", action="store_true",
                     help="prove the rewriter is byte-faithful, then exit")
+    ap.add_argument("--restore", action="store_true", help="put back the originals in build/warp-gates/")
     ap.add_argument("--root", default=".", help="repo root (default: cwd)")
-    ap.add_argument("--ref", default=DEFAULT_REF, help="reference client ELDEON maps dir")
+    ap.add_argument("--ref", default=DEFAULT_REF, help="reference client 3DDATA/Maps dir")
     args = ap.parse_args()
+
+    if args.restore:
+        return restore(args.root)
 
     maps = os.path.join(args.root, MAPS_REL)
     if not os.path.isdir(maps):
         raise SystemExit(f"not found: {maps} (run from the repo root or pass --root)")
-    targets = [os.path.join(maps, z, b + ".IFO") for z, b, _, _ in PLAN]
+    targets = [os.path.join(maps, p, z, b + ".IFO") for p, z, b, _, _ in PLAN]
     for p in targets:
         if not os.path.isfile(p):
             raise SystemExit(f"not found: {p}")
@@ -283,25 +364,27 @@ def main():
 
     if not os.path.isdir(args.ref):
         raise SystemExit(f"reference maps dir not found: {args.ref}\n"
-                         f"pass --ref <client>/3DDATA/Maps/ELDEON")
+                         f"pass --ref <client>/3DDATA/Maps")
 
     print("self-test:")
     if not selftest(targets):
         raise SystemExit("rewriter self-test FAILED -- refusing to write")
 
     changed_files = 0
-    for zone, base, warp_id, dead_trigger in PLAN:
-        path = os.path.join(maps, zone, base + ".IFO")
+    for planet, zone, base, warp_id, dead_trigger in PLAN:
+        path = os.path.join(maps, planet, zone, base + ".IFO")
         buf, bounds = read_ifo(path)
         repl = {}
         notes = []
 
         woff, wend = block(bounds, LUMP_WARP)
+        if woff is None:
+            raise SystemExit(f"{path}: no WARP lump (adding one is not implemented)")
         warps = parse_object_lump(buf, woff, wend, LUMP_WARP)
         if any(w["warp_id"] == warp_id for w in warps):
             notes.append(f"warp {warp_id} already present")
         else:
-            ref = find_ref_warp(args.ref, zone, base, warp_id)
+            ref = find_ref_warp(args.ref, planet, zone, base, warp_id)
             warps.append(ref)
             repl[LUMP_WARP] = build_object_lump(warps)
             px, py, pz = struct.unpack_from("<3f", ref["fixed"], 2 + 2 + 4 + 4 + 4 + 4 + 16)
@@ -326,7 +409,7 @@ def main():
         if not repl or args.dry_run:
             continue
 
-        shutil.copyfile(path, path + ".bak")
+        backup(args.root, path)
         write_ifo(path, bounds, buf, repl)
 
         # verify by re-reading through the same decoder
@@ -342,10 +425,13 @@ def main():
                 raise SystemExit(f"VERIFY FAILED: {tag} still has {dead_trigger!r}")
         changed_files += 1
 
+    for planet, zone, name in ZON_EVENTS:
+        changed_files += restore_zon_event(args, maps, planet, zone, name)
+
     if args.dry_run:
         print("dry run: nothing written")
     else:
-        print(f"wrote {changed_files} file(s); .bak backups alongside; verified")
+        print(f"wrote {changed_files} file(s); originals in {BACKUP_REL}; verified")
     return 0
 
 
