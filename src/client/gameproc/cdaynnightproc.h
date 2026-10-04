@@ -111,11 +111,12 @@ public:
 
     void SetWorldTime(int iZoneNO, DWORD dwWorldTime);
     int GetCurrentTimeState();
-    bool IsDay() {
-        if (m_iCurrentState == TIME_DN_MORNING || m_iCurrentState == TIME_DN_DAY)
-            return true;
-        return false;
-    }
+    /// m_iCurrentState holds DN_DAY / DN_NIGHT. This used to compare it against
+    /// TIME_DN_MORNING (0) / TIME_DN_DAY (1), which are the same two numbers, so it
+    /// answered "day" at night too: PushEffect then hid every night-only map effect
+    /// (torches, braziers) created after the last Start(), i.e. every object streamed
+    /// in after the zone loaded, until the next zone entry or dusk relinked them.
+    bool IsDay() { return m_iCurrentState == DN_DAY; }
 
     bool CheckUpdateEnvironment();
 
