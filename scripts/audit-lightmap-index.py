@@ -48,8 +48,8 @@ Records whose model the client cannot create (object id outside the ZSC, no
 parts) get object index 0, which resolves to nothing: their entries are
 ignored, safely -- but the object is missing in game, reported as INFO
 (2026-10-03: Desert of the Dead, 561 decorations and all 6 buildings: our
-LIST_DECO_JD / LIST_CNST_JD predate the map; every reference client has
-the objects).
+LIST_DECO_JD / LIST_CNST_JD predated the map; filled 2026-10-04 by
+scripts/fill-zsc-gaps.py, the tool for this finding).
 
 Severity: CRASH (certain or out-of-bounds), RISK (lights the wrong object,
 may go out of bounds), VISUAL, INFO. Exit code 1 if any CRASH or RISK.

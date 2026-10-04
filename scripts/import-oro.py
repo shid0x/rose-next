@@ -65,7 +65,9 @@ File formats this script writes are documented at their reader/writer functions.
 import argparse, io, os, re, shutil, struct, subprocess, sys, tempfile
 
 NUL = b"\x00"
-ABS_ASSET_RE = re.compile(rb"3DDATA[\\/][0-9A-Za-z_\\/. -]+?\.(?:ptl|dds|tga|zms)", re.I)
+# zmo: a mesh effect names its morph animation too (JDCE_NIGHT01.EFT, the Desert
+# of the Dead church's night light); without it the copied effect has no motion.
+ABS_ASSET_RE = re.compile(rb"3DDATA[\\/][0-9A-Za-z_\\/. -]+?\.(?:ptl|dds|tga|zms|zmo)", re.I)
 BARE_TEXTURE_RE = re.compile(rb"[0-9A-Za-z_][0-9A-Za-z_-]*\.(?:dds|tga)", re.I)
 
 # --------------------------------------------------------------------- config
