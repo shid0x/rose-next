@@ -44,7 +44,24 @@ $stdout_log = Join-Path $env:TEMP "rose-pack.stdout.log"
 $stderr_log = Join-Path $env:TEMP "rose-pack.stderr.log"
 
 try {
-    Set-Content -Path $manifest_path -Value "# Temporary manifest for direct VFS packing from data/" -NoNewline
+    # Development files that live in data/ on purpose but are not game data:
+    # the map editor runs from data/ (its exe, pdb, ini, log, irrKlang dll,
+    # XNA Content\ and ESTB\ tileset tables), scripts keep their sidecars
+    # beside the tables they changed (*.json, read back by --restore), and the
+    # quest editor its sources. The client reads none of them. pack.rs honours
+    # "ignore <glob>" lines (globset: matched against the path relative to
+    # data/, forward slashes, case-sensitive; `*` crosses folders; a glob cannot
+    # contain a space, hence Map?Editor). The manifest excludes itself.
+    $excludes = @(
+        "pack.manifest",
+        "Map?Editor.*", "*.dll", "*.pdb", "*.log", "*.md",
+        "Content/**", "ESTB/**",
+        "*.json", "*.py", "*.tmp",
+        "3DDATA/MAPS/JUNON/AGIT01/TEMP/**"   # stray retail tile files the client never probes
+    )
+    $manifest = @("# Temporary manifest for direct VFS packing from data/ (scripts/pack.ps1)") +
+                ($excludes | ForEach-Object { "ignore $_" })
+    Set-Content -Path $manifest_path -Value ($manifest -join "`n") -NoNewline
 
     Write-Host "Packing VFS from $input_dir to $output_dir"
     $packer_built = (Get-Item $pipeline).LastWriteTime
@@ -81,10 +98,10 @@ try {
         throw ("$($baks.Count) .bak file(s) under $input_dir would be baked into the .vfs. " +
                "Move them to build/ and re-run.")
     }
-    $other = @($strays | Where-Object { $_.Extension -in '.json', '.orig', '.tmp', '.log', '.py' })
+    $other = @($strays | Where-Object { $_.Extension -in '.orig' })
     if ($other.Count -gt 0) {
         Write-Warning ("$($other.Count) non-game file(s) under $input_dir will be baked into the .vfs " +
-                       "(sidecars/tool output, {0:N0} KB). Harmless but shipped." -f (($other | Measure-Object Length -Sum).Sum / 1KB))
+                       "(tool output, {0:N0} KB). Harmless but shipped; add them to `$excludes." -f (($other | Measure-Object Length -Sum).Sum / 1KB))
     }
 
     if (Test-Path $stdout_log) {

@@ -90,7 +90,8 @@ src/
 data/                    # Game data files (STB tables, scripts, shaders)
 database/                # PostgreSQL schema + migrations
 thirdparty/              # C++ deps (lua, zlib, ogg/vorbis, imgui, flatbuffers, etc.)
-scripts/                 # PowerShell build/dev scripts
+scripts/                 # build/dev scripts, data import/repair/audit tools (Python), and
+                         # scripts/mapgen/: zone file codecs + the map generator (see below)
  
 ```
 
@@ -1221,6 +1222,54 @@ ids there too. **Re-running `--stage 3` rebuilds the band's
   non-zero key with a NULL name, so the second handed NULL to `_strcmpi` -- a CRT
   invalid-parameter fail-fast. `Add_FILE` now returns 0 for an empty name.
 
+### Map Files: Readers, Writers And Tools (`scripts/mapgen/`, merged 2026-10-04)
+
+**Reuse these before writing any new parser.** The six map formats (ZON, HIM,
+TIL, MOV, IFO, LIT) have codecs that round-trip retail files **byte for byte**:
+`python scripts/mapgen-roundtrip.py --selftest` proves it on all 9,035 map files.
+The binary layouts, and the client/server code that consumes each field, are in
+[docs/mapgen/FORMATS.md](docs/mapgen/FORMATS.md).
+Import them with `sys.path.insert(0, "scripts")` and `from mapgen import ...`.
+
+| File | Module | API |
+|---|---|---|
+| `<zone>.ZON` | `mapgen/zon.py` | `parse(bytes)` / `build(zon)`; info, event points, textures, tiles, economy |
+| `x_y.HIM` / `.TIL` / `.MOV` | `mapgen/chunk.py` | `parse_him` / `build_him` (+ `compute_him_bounds`), `parse_til` / `build_til`, `parse_mov` / `build_mov` |
+| `x_y.IFO` (all 13 lumps) | `mapgen/ifo.py` | `parse(bytes)` / `build(ifo)`; `m.lump(ifo.OBJECT)` -> records (`obj_id`, `pos` zone-centre cm, `rot`, `scale`); NPC/MOB, sound, effect, regen, ocean, warp, collision, event lumps; `None` = lump absent |
+| ZON/IFO lump container | `mapgen/container.py` | unknown lumps kept raw, so a rewrite is byte-identical |
+| `LightMap/*.lit` | `mapgen/lit.py` | `parse_lit` / `build_lit` (`LitObject.obj_index` 1-based ordinal, `LitPart` cell fields) |
+| `LIST_*.ZSC` (read) | `mapgen/catalogue.py` | `read_zsc(path)` -> meshes + objects/parts (mesh, texture, transform, parent, collision, material flags: alpha, alpha test, z-write, blend) |
+| `LIST_*.ZSC` / STB / STL / CHR / LTB (write) | `scripts/import-oro.py` | `Stb` (`get`/`set`/`to_bytes`), `Stl`, `Zsc`, `Chr`, `Ltb` -- the codec library every importer loads |
+| `.ZMS` | `catalogue.mesh_triangles` / `mesh_box`, `objlight.read_zms` | triangles; header box; positions + faces + second UV set + format |
+| `.DDS` | `lighting.encode_dds` (texconv, DXT5, chosen mip count), `lighting.dds_info` | encode / read the header |
+| editor STB lists | `tiles.read_stb_cells` | any STB's cells as text |
+| a whole zone's heights | `prefab._zone_field(zdir)` | heightfield (row 0 = south) + SW chunk slot; `mapgen/relight.Zone` loads a zone the way the client does (chunks, IFOs, ZSCs, water) |
+
+Coordinates: chunk folder `x_y` is slot `(x, 64 - y)`; IFO positions are
+cm relative to the zone centre (world = pos + 520000); 1 chunk = 160 m,
+64 cells of 2.5 m. `objlight.client_accepts` is the client's own
+"is this record inside its chunk" test.
+
+Tools built on them:
+
+- `scripts/mapgen-zone.py` -- the map generator: a layout (Claude writes it in
+  chat) -> `compile` -> `preview` / `build` / `install --zone N` / `verify` /
+  `uninstall` (cell-level manifests in `build/mapgen/installed/`, an install lock)
+  / `shots` (editor screenshots). Plan, decisions and history:
+  [docs/mapgen/PLAN.md](docs/mapgen/PLAN.md), design rules
+  [docs/mapgen/DESIGN.md](docs/mapgen/DESIGN.md).
+- **Map editor screenshots without a person**: `data/Map Editor.exe --shots job.txt`
+  (`Engine/ShotRunner.cs`), driven by `mapgen-zone.py shots` and
+  `relight-zone.py shots --zone N [--at X,Y]` -- the way to *look* at a map from a
+  script (it renders object and terrain lightmaps).
+- Lightmap bakers: `mapgen/lighting.py` (ground) and `mapgen/objlight.py`
+  (objects), fitted against retail; `scripts/relight-zone.py` applies them to any
+  existing zone (see Data Repair Tooling); `scripts/mapgen-lightmap-survey.py`
+  measures retail lightmaps and scores a bake against retail
+  (`compare` / `compare-objects`).
+- `scripts/audit-lightmap-index.py` -- the lightmap crash audit, also a quick way
+  to list records that name objects a ZSC does not have (missing in game).
+
 ### Data Repair Tooling
 
 Our `data/` is a translated iROSE dump with gaps; the reference dumps in `C:\Users\Thomas\Desktop\Testclients\` (QQ-iROSE, RoseZA, titanRose) are intact, so diffing a single field across all three is a fast, high-confidence way to find and fix them. All three scripts below are idempotent, take `--dry-run`, and verify after writing. `data/` is gitignored, so **the script is the only committed record of the change** — put the reasoning in its docstring.
@@ -1242,7 +1291,7 @@ Our `data/` is a translated iROSE dump with gaps; the reference dumps in `C:\Use
 
 - `scripts/repackage-subweapons.py` — re-files the Jrose "shields" (LIST_SUBWPN 306-334) that are not shields. **The retail table already has the classes**: col 4 is 261 Shield, 262 Support Tool (the Book of Standards → Magic Pearl caster ladder, rows 61-82, INT-gated, +Max MP/+MP regen) and 263 Dolls (renamed "Charm" in `STR_ITEMTYPE.STL`). Class 261 does exactly four things in code: the tooltip's DEF/RES line (now printed for any sub-weapon with non-zero DEF/RES — the server sums every slot regardless of class, so a tool's RES was invisible), the Soldier/Knight *Shield Barrier* / *Endure* requirement, 40% of incoming durability wear, and a shield passive no skill grants. Attach point is the ZSC dummy, never the class. Four real shields remain, one per tier (Garm 210, Golden Angel 220, Ancient Davion 230, Righteous Shield NEO 240), sized at 12-13% of the armour set's DEF; the mirrors are 262 (INT gate = the old STR value), the rest 263 with a DEX (avoid/crit) or STR (max HP/hit) flavour. **Every 230/240 import had cloned the Davion template's +150 DEF option** — stripped, Davion included. Drops: the `OFF_*` lists in `add-karkia-drops.py` (re-applied with `--rewrite`; its `--restore` is a whole-file ITEM_DROP copy, never use it after Oro/Shibuya ran) and `add-oro-drops.py`; Huzam's tab is pinned in `stock-muris-shops.py`. Cell-level sidecar, `--dry-run`/`--verify`/`--restore`.
 
-Note `src/pipeline/src/pack.rs` walks the data tree filtering only *hidden* entries — no extension filter — so any `.bak` these scripts leave behind gets baked into the `.vfs`. Clean them before a bake.
+Note `src/pipeline/src/pack.rs` walks the data tree filtering only *hidden* entries plus the `ignore <glob>` lines of the manifest `scripts/pack.ps1` writes. That exclude list (`$excludes`, 2026-10-04) keeps development files out of the `.vfs`: the map editor that runs from `data/` (exe/pdb/ini/log, dll, `Content\`, `ESTB\`), every `*.json` sidecar, `*.md`/`*.py`/`*.tmp`, and a stray retail `AGIT01\TEMP`. Globs are case-sensitive with forward slashes, `*` crosses folders, and a pattern cannot contain a space. A `.bak` is not excluded: `pack.ps1` refuses to bake while one exists — move it to `build/`. A new kind of tool file under `data/` belongs in `$excludes`.
 
 ### The .vfs Offset Limit (2 GB -> 4 GB)
 
