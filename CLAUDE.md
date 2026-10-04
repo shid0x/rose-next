@@ -206,6 +206,11 @@ editing an `.IFO` by hand or in the map editor is silently undone by the next
 points, so spatial thinning deletes species; `SPAWN_CAMPS` merges neighbouring points
 into mixed-species camps instead, which cannot.
 
+**A point spawns on its first tick** (2026-10-05, `CRegenPOINT::Load` back-dates
+`m_dwCheckTIME` by one interval). Before, the zone clock started at 0 and every point
+waited a full `interval` after a server boot, so a 30-minute lone boss was absent for
+the first half hour.
+
 Separately: **a zone that ships no `.MOV` file is blocked on every cell**, which
 silently disables monster leashing, wandering and fleeing while leaving chase intact.
 See the gameserver `CLAUDE.md`.
@@ -1222,6 +1227,52 @@ ids there too. **Re-running `--stage 3` rebuilds the band's
   non-zero key with a NULL name, so the second handed NULL to `_strcmpi` -- a CRT
   invalid-parameter fail-fast. `Add_FILE` now returns 0 for an empty name.
 
+### Cave Of Ulverick Is RoseZA's Spider Dungeon, Opened Up (imported 2026-10-04/05, not yet validated in game)
+
+RoseZA's party instance under Desert of the Dead (map `JZC01`, its zone rows 90-94),
+imported as our **open zone 34** by `scripts/import-ulverick.py` (`--stage 1-5`,
+`--dry-run`, `--verify`, `--selftest`; backups `build/ulverick/`). Only RoseZA ships it
+whole. **In: [Bone Warden] Ossian** (LIST_NPC 1158, at the cave mouth, JD04 36_33)
+takes a toll of 10 Animal Leg Bone + 10 Animal Backbone (Desert of the Dead drops) and
+warps you to the cave's `start` -- one QSD trigger, `Ulverick-EnterCave` in QP401.QSD,
+and a have/lack dialog written by `quest-editor con-toll`. Out: the cave's own gate,
+re-pointed from RoseZA row 80 (our Pyramid gate) to 100, landing on `WARP-JZC01-JD04`
+in `JD04.ZON`. Kept: the map; its 55 points binned into 17 camps of Ulverick's Minion
+(531, lv128); one lone boss per room -- King Ulverick (534, lv151, 30 min) in the round
+middle room (the hardest to reach), the General (533, lv145, 20 min) in the big
+north-west room, the Leader
+(532, lv135, 10 min) in the small south-east one -- each with its own authored table
+(819-822, zone row 34 mirrors 819), the first source of the Jrose back items 957-1061.
+The minimap is 2.5 m a pixel from (4800, 5600) m -- how the rooms were located.
+Things that will bite:
+
+- **AICOND17 ("select NPC N") is a server-wide lookup** (`g_pZoneLIST->Get_LocalNPC`),
+  so an instance's AI keeps reaching its controller NPC wherever she stands: the
+  King's idle event selected Lithia (1156, placed in JD04) and **killed itself**
+  whenever her slot variable was 0, i.e. always without the instance. Every event
+  gated on condition 17 is cut; they were all instance bookkeeping.
+- The spider skeleton has the event-less `casting_01` in slots 6-8, so the bosses'
+  motion-6 casts are moved to 8 (release on slot 9, `action_skill01`). **AI speech
+  (AIACT28) is cut**: its text is a row number into the AI string table, another
+  lineage's here, and the Leader's spawn line was a server-wide announcement.
+- **A warp object must sit within a few metres of the ground**: the first import put
+  the entrance gate at RoseZA's event-box depth, 15 m under the desert, and nobody
+  could get in. Retail gates sit 0.5-3 m below the surface.
+- **A failing quest trigger is silent** (client re-check, server reply alike), so any
+  priced warp needs a dialog that says "you cannot pay" -- `con-toll`.
+- **Torches that stay dark until you die** were a retail client bug, not the import
+  (fixed 2026-10-05): every map flame is a night-only dummy effect
+  (`POINT_EFFECT_DAYNNIGHT`), and `CDayNNightProc::IsDay()` compared the `DN_DAY`/
+  `DN_NIGHT` state against `TIME_DN_MORNING`/`TIME_DN_DAY` -- the same numbers 0/1 -- so
+  it always said "day" and `PushEffect` hid every night effect created after the last
+  `Start()` (zone entry, dusk): objects that stream in as you walk stayed unlit. Every
+  zone's night lamps had it; the cave (always night: its day columns are 0) showed it.
+- New monsters in levels 60-199 go into `balance-trend-exclude.py`, and
+  `rebalance-eldeon-outliers.py` now honours it too (531/534 moved its DEF fit
+  by one point on 1571). **Pricing new spawns' EXP is `rebalance-exp-rewards.py
+  --restore` then a plain run** (EXP is no input to its plan, so every other row comes
+  back identical); a re-run of stage 2 keeps whatever EXP that pass wrote.
+
 ### Map Files: Readers, Writers And Tools (`scripts/mapgen/`, merged 2026-10-04)
 
 **Reuse these before writing any new parser.** The six map formats (ZON, HIM,
@@ -1288,7 +1339,7 @@ Our `data/` is a translated iROSE dump with gaps; the reference dumps in `C:\Use
 - `scripts/audit-lightmap-index.py` — read-only crash audit of every zone's object lightmap index files (`x_y/LightMap/*.lit`), 3 s for the whole game. `CMAP::LoadLightMapINFO` checks nothing: an entry for an absent IFO lump dereferences NULL, an ordinal past the lump reads past the heap array, a part outside the model indexes past `m_pHNODES`/`m_pLightMapMaterial`, a grid width of 0 divides by zero. It also grades records `CMAP::AddObject` drops for lying outside their chunk (their object slot goes to the next object, which then receives the dropped entry) and flags entries **baked for another mesh** than the record now holds (the tga name carries the mesh) — the trace of a map edited in the editor after its bake, since the editor never renumbers entries. Run it after any import that brings map files and after editing a map in xadet. First run (2026-10-03): 3 crash-class entries, all retail bugs present in every reference client (JD04 32_34; Goblin Cave B1 JZ01_1 31_30 and 32_31, shifted by records inserted after the bake), fixed by `scripts/fix-lightmap-index.py` (reviewed `FIXES` table, each move checked against the baked mesh names; backups in `build/lightmap-index/`, `--dry-run`/`--verify`/`--restore`; client-only data, re-bake). Left as INFO: 21 retail objects sit on or past their chunk's far edge and are simply missing in game. **Desert of the Dead (zone 29) was missing 561 of its 1006 decorations and all 6 buildings**: our `LIST_DECO_JD.ZSC` / `LIST_CNST_JD.ZSC` were an older cut of the same tables (every object we had is identical in ruff/139/Evo/Jrose/QQ), so the map's records named empty objects and the client created nothing. Fixed 2026-10-04 by `scripts/fill-zsc-gaps.py` (see below).
 - `scripts/fill-zsc-gaps.py` — fills the ZSC objects a zone places but our table leaves empty (default zone 29; `--zone N` for others), from ruff, taking an object only if the 139/Evo/Jrose/QQ witnesses agree. Writes empty slots only (other zones on the same table keep their bytes), remaps dummy-point **effect indices** into our effect list (never verbatim: the client indexes it unchecked), and copies missing `.eft` chains — JD04 needed 7 `.eft` plus a `.ZMS`/`.ZMO` mesh effect; the meshes and textures were already here. `--dry-run`/`--verify`/`--restore`, backups in `build/zsc-gaps/`; client-only, re-bake. Confirm with `audit-lightmap-index.py --zone N`: each `.lit` entry names the mesh it was baked for, so a clean audit proves the ids landed on the right models. Not yet validated in game.
 - `scripts/relight-zone.py` — bakes the ground and object lightmaps of an **existing** zone (made or edited in the map editor) with the map generator's bakers; artist guide in [doc/relighting-maps.md](doc/relighting-maps.md). Every look setting is exposed (`settings` lists them), saved per map in `scripts/mapgen/relight/<FOLDER>.json` (commit it: `data/` is not in git). Originals go to `build/relight/<FOLDER>/` on the first bake, so `restore` always returns to them; each bake is checked with the audit's rules and rolled back on any crash-class entry. Refuses generated `MAPGEN*` zones (their lighting is in the layout). Re-bake the VFS afterwards; servers do not read lightmaps.
-- `scripts/restore-warp-gates.py` — re-inserts `LUMP_TERRAIN_WARP` (type 10) objects into map `.IFO`s. `WARP.STB` and the destination `.ZON` event positions are usually fine; the missing piece is the trigger object the player walks into. Has a `--selftest` that proves the container rewrite is byte-identical before it touches anything.
+- `scripts/restore-warp-gates.py` — re-inserts `LUMP_TERRAIN_WARP` (type 10) objects into map `.IFO`s. `WARP.STB` is usually fine; the missing piece is the trigger object the player walks into, often replaced by a dead `warpbox` event object whose trigger exists in no QSD. **Also check the landing point**: gate 43 (Desert of the Dead -> Anima Lake) needed `WARP-JD04-JG03` put back into `JG03.ZON`, which the server reads (restart it). Covers Eldeon and, since 2026-10-04, Junon gates 40/43. Has a `--selftest` that proves the container rewrite is byte-identical before it touches anything; originals in `build/warp-gates/`, `--restore`.
 
 - `scripts/repackage-subweapons.py` — re-files the Jrose "shields" (LIST_SUBWPN 306-334) that are not shields. **The retail table already has the classes**: col 4 is 261 Shield, 262 Support Tool (the Book of Standards → Magic Pearl caster ladder, rows 61-82, INT-gated, +Max MP/+MP regen) and 263 Dolls (renamed "Charm" in `STR_ITEMTYPE.STL`). Class 261 does exactly four things in code: the tooltip's DEF/RES line (now printed for any sub-weapon with non-zero DEF/RES — the server sums every slot regardless of class, so a tool's RES was invisible), the Soldier/Knight *Shield Barrier* / *Endure* requirement, 40% of incoming durability wear, and a shield passive no skill grants. Attach point is the ZSC dummy, never the class. Four real shields remain, one per tier (Garm 210, Golden Angel 220, Ancient Davion 230, Righteous Shield NEO 240), sized at 12-13% of the armour set's DEF; the mirrors are 262 (INT gate = the old STR value), the rest 263 with a DEX (avoid/crit) or STR (max HP/hit) flavour. **Every 230/240 import had cloned the Davion template's +150 DEF option** — stripped, Davion included. Drops: the `OFF_*` lists in `add-karkia-drops.py` (re-applied with `--rewrite`; its `--restore` is a whole-file ITEM_DROP copy, never use it after Oro/Shibuya ran) and `add-oro-drops.py`; Huzam's tab is pinned in `stock-muris-shops.py`. Cell-level sidecar, `--dry-run`/`--verify`/`--restore`.
 

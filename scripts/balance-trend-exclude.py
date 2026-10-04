@@ -1,7 +1,8 @@
 """LIST_NPC rows every balance pass keeps out of its level trend.
 
 The monster passes -- rebalance-karkia.py, rebalance-oro-667.py,
-rebalance-endgame-curve.py, rebalance-oro-bosses.py -- fit a stat-vs-level trend
+rebalance-endgame-curve.py, rebalance-oro-bosses.py, rebalance-eldeon-outliers.py
+(since 2026-10-04, when the Ulverick import moved its DEF fit) -- fit a stat-vs-level trend
 on the live table's level 60-199 rows, and rebalance-exp-rewards.py fits its tier
 medians the same way. Each recorded its result in a sidecar and verifies against
 a re-fit. So a later import that lands monsters in that window moves the trend
@@ -23,7 +24,10 @@ Loaded by path, like every other shared script here:
 SHIBUYA = frozenset({1833, 1947, 1948, 4060, 4061, 4062, 4063, 4064, 4065, 4066,
                      4068, 4069})
 
-EXCLUDED = SHIBUYA
+# import-ulverick.py stage 2: the Cave of Ulverick's minion and three bosses (MONSTERS).
+ULVERICK = frozenset({531, 532, 533, 534})
+
+EXCLUDED = SHIBUYA | ULVERICK
 
 
 def excluded(row):

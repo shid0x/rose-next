@@ -65,6 +65,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 NPC_STB = os.path.join(ROOT, "data", "3DDATA", "STB", "LIST_NPC.STB")
 SIDECAR = os.path.join(ROOT, "data", "3DDATA", "STB", "LIST_NPC.eldeon-outliers.json")
+_te_spec = importlib.util.spec_from_file_location(
+    "balance_trend_exclude", os.path.join(HERE, "balance-trend-exclude.py"))
+trend_exclude = importlib.util.module_from_spec(_te_spec)
+_te_spec.loader.exec_module(trend_exclude)   # rows no level trend may include
 
 COL_NAME, COL_LEVEL, COL_HP, COL_DEF = 0, 7, 8, 11
 LEVEL_CAP = 240             # our character level cap
@@ -115,6 +119,7 @@ def fit_def_trend(stb):
         # our own authoring, not the retail curve this fit is meant to measure.
         vals = [gi(stb, i, COL_DEF) for i in range(1, stb.rows)
                 if stb.get(i, COL_NAME).strip() and not 2100 <= i < 2400
+                and not trend_exclude.excluded(i)
                 and lo <= gi(stb, i, COL_LEVEL) < lo + 10 and gi(stb, i, COL_DEF) > 0]
         if len(vals) >= 4:
             pts.append((lo + 5, statistics.median(vals)))
