@@ -46,6 +46,7 @@ fn main() -> ExitCode {
         Some("con-append") => cmd_con_append(&args[1..]),
         Some("con-warp") => cmd_con_warp(&args[1..]),
         Some("con-store") => cmd_con_store(&args[1..]),
+        Some("con-toll") => cmd_con_toll(&args[1..]),
         Some("npc-find") => cmd_npc_find(&args[1..]),
         Some("ltb-check") => cmd_ltb_check(&args[1..]),
         Some("icons-check") => cmd_icons_check(args.get(1)),
@@ -84,6 +85,12 @@ fn main() -> ExitCode {
             eprintln!(
                 "  quest-editor con-triggers <root> <con-file | npc-id>\n\
                  \x20                            list the quests an NPC's dialog offers (accept/turn-in)"
+            );
+            eprintln!(
+                "  quest-editor con-toll <root> <con_file> <key> <trigger> [--greet T] [--ask T]\n\
+                 \x20     [--bye T] [--offer T] [--lack T] [--accept T] [--decline T] [--later T] [--write]\n\
+                 \x20                            write a toll-gate dialog: pay the price <trigger>\n\
+                 \x20                            checks, or be turned away (no silent failure)"
             );
             eprintln!(
                 "  quest-editor con-store <root> <npc_id> <key> [--text T] [--write]\n\
@@ -828,6 +835,74 @@ fn cmd_con_warp(args: &[String]) -> Result<bool> {
         println!("\n(re-run with --write to apply, then bake the VFS + restart)");
     } else {
         println!("\nnext: bake the VFS, restart servers + client, click npc {npc_id}.");
+    }
+    Ok(true)
+}
+
+fn cmd_con_toll(args: &[String]) -> Result<bool> {
+    const TEXT_FLAGS: [&str; 8] = [
+        "--greet",
+        "--ask",
+        "--bye",
+        "--offer",
+        "--lack",
+        "--accept",
+        "--decline",
+        "--later",
+    ];
+    let write = args.iter().any(|a| a == "--write");
+    let flag = |name: &str| -> Option<String> {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
+    let mut skip = false;
+    let pos: Vec<String> = args
+        .iter()
+        .filter(|a| {
+            if skip {
+                skip = false;
+                return false;
+            }
+            if a.starts_with("--") {
+                skip = TEXT_FLAGS.contains(&a.as_str());
+                return false;
+            }
+            true
+        })
+        .cloned()
+        .collect();
+    if pos.len() < 4 {
+        bail!(
+            "usage: con-toll <root> <con_file> <key> <trigger> [--greet T] [--ask T] [--bye T]\n\
+             \x20      [--offer T] [--lack T] [--accept T] [--decline T] [--later T] [--write]\n\
+             \x20  writes EVENT/<con_file> as a toll gate for a dedicated NPC: asked to let you\n\
+             \x20  through, it names the price when <trigger>'s conditions pass and turns you\n\
+             \x20  away when they do not; paying fires <trigger> (conditions = the price,\n\
+             \x20  rewards = take it + REWD_007). The trigger, the LIST_EVENT row and the\n\
+             \x20  placement are the caller's.\n\
+             \x20  e.g. con-toll ../data EM29-005.con ulv Ulverick-EnterCave --write"
+        );
+    }
+    let root = PathBuf::from(&pos[0]);
+    let text = quest_editor::write::TollText {
+        greeting: flag("--greet")
+            .unwrap_or_else(|| "Few pass this way, and fewer come back.".into()),
+        ask: flag("--ask").unwrap_or_else(|| "Let me through.".into()),
+        bye: flag("--bye").unwrap_or_else(|| "Farewell.".into()),
+        offer: flag("--offer").unwrap_or_else(|| "You carry the price. Pay it, and pass.".into()),
+        lack: flag("--lack")
+            .unwrap_or_else(|| "You do not carry the price. Come back when you do.".into()),
+        accept: flag("--accept").unwrap_or_else(|| "Pay and pass.".into()),
+        decline: flag("--decline").unwrap_or_else(|| "Not yet.".into()),
+        later: flag("--later").unwrap_or_else(|| "I'll be back.".into()),
+    };
+    let report =
+        quest_editor::write::write_toll_gate(&root, &pos[1], &pos[2], &pos[3], &text, !write)?;
+    report.print();
+    if report.dry_run {
+        println!("\n(re-run with --write to apply, then bake the VFS + restart)");
     }
     Ok(true)
 }

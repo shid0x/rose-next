@@ -1578,6 +1578,105 @@ pub fn append_warp_to_npc_dialog(
     })
 }
 
+/// The lines of a toll-gate conversation (see `convo::build_toll_gate`).
+pub struct TollText {
+    pub greeting: String,
+    pub ask: String,
+    pub bye: String,
+    pub offer: String,
+    pub lack: String,
+    pub accept: String,
+    pub decline: String,
+    pub later: String,
+}
+
+/// Write (or rewrite) `EVENT/<con_name>` as a toll-gate conversation for a
+/// dedicated NPC: ask -> "pay?" or "you cannot pay", then pay and fire
+/// `trigger`. The trigger (conditions = the price, rewards = take it + warp)
+/// must exist; this writes no QSD, no LIST_EVENT row and no placement.
+pub fn write_toll_gate(
+    root: &Path,
+    con_name: &str,
+    key: &str,
+    trigger: &str,
+    text: &TollText,
+    dry_run: bool,
+) -> Result<WriteReport> {
+    if !key.chars().all(|c| c.is_ascii_alphanumeric()) || key.is_empty() {
+        bail!("key must be non-empty and alphanumeric (it becomes a Lua identifier): {key:?}");
+    }
+    if !con_name.to_ascii_lowercase().ends_with(".con") || con_name.contains(['/', '\\']) {
+        bail!("con_name must be a bare .CON file name: {con_name:?}");
+    }
+    let stb_dir = resolve_stb_dir(root)?;
+    let event_dir = stb_dir
+        .parent()
+        .ok_or_else(|| anyhow!("STB dir has no parent"))?
+        .join("EVENT");
+    let path = file_ci(&event_dir, con_name).unwrap_or_else(|_| event_dir.join(con_name));
+
+    let ltb_path = file_ci(&event_dir, "ulngtb_con.ltb")?;
+    let mut ltb = crate::ltb::LtbTable::read_file(&ltb_path)?;
+    let mut put = |part: &str, s: &str| ltb.set_or_append(&format!("QT{key}_{part}"), s) as i32;
+    let strings = crate::convo::TollStrings {
+        greeting: put("greet", &text.greeting),
+        ask_option: put("ask", &text.ask),
+        bye_option: put("bye", &text.bye),
+        offer: put("offer", &text.offer),
+        lack: put("lack", &text.lack),
+        accept_option: put("accept", &text.accept),
+        decline_option: put("decline", &text.decline),
+        later_option: put("later", &text.later),
+    };
+    let bytes = crate::convo::build_toll_gate(key, trigger, &strings);
+    crate::convo::ConFile::parse(&bytes).context("built toll gate failed to self-parse")?;
+
+    let existed = path.is_file();
+    let same = existed && fs::read(&path)? == bytes;
+    let mut changes = vec![format!(
+        "{} toll gate \"{key}\" -> {} (offer → QF_doQuestTrigger(\"{trigger}\"))",
+        if same {
+            "UNCHANGED"
+        } else if existed {
+            "REWRITE"
+        } else {
+            "CREATE"
+        },
+        path.display()
+    )];
+    changes.push(format!(
+        "UPSERT 8 dialog strings into {}",
+        ltb_path.display()
+    ));
+
+    if dry_run {
+        return Ok(WriteReport {
+            dry_run: true,
+            changes,
+            backups: Vec::new(),
+        });
+    }
+    let mut backups = Vec::new();
+    if existed && !same {
+        if let Some(b) = backup_once(&path)? {
+            backups.push(b);
+        }
+    }
+    if !same {
+        fs::write(&path, &bytes).with_context(|| format!("writing {}", path.display()))?;
+    }
+    if let Some(b) = backup_once(&ltb_path)? {
+        backups.push(b);
+    }
+    fs::write(&ltb_path, ltb.to_bytes())
+        .with_context(|| format!("writing {}", ltb_path.display()))?;
+    Ok(WriteReport {
+        dry_run: false,
+        changes,
+        backups,
+    })
+}
+
 /// Append an ungated shop option to an NPC's existing dialog.
 ///
 /// For an NPC that has shop tabs in `LIST_NPC` but whose conversation never

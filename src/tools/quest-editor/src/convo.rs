@@ -1202,6 +1202,123 @@ pub fn remove_warp_option(con: &mut ConFile, key: &str) -> bool {
     true
 }
 
+// --------------------------------------------------------------------------
+// A toll gate: a dedicated conversation for an NPC that lets you through
+// for a price. The price and the destination are one QSD trigger -- conditions
+// check what you carry (COND_004), rewards take it (REWD_001 op 0) and warp
+// (REWD_007) -- so the dialog only has to ask whether that trigger would pass.
+//
+// It needs its own "you cannot pay" line, which `append_warp_option` has no
+// room for: a failing trigger is silent on both sides (QF_doQuestTrigger
+// checks the conditions client-side and returns 0 without sending anything,
+// and the server's TRIGGER_FAILED reply shows nothing either), so a player
+// without the price would click "yes" and nothing would happen. Instead the
+// answer to "let me through" is two sibling NPCSAY nodes gated on mutually
+// exclusive checks -- CEvent::Conversation opens the window again for every
+// NPCSAY that passes, so exactly one may.
+// --------------------------------------------------------------------------
+
+/// Event-string ids for a toll-gate conversation.
+pub struct TollStrings {
+    /// What the NPC says when you click it.
+    pub greeting: i32,
+    /// The player's "let me through" line.
+    pub ask_option: i32,
+    /// The player's "goodbye" line under the greeting.
+    pub bye_option: i32,
+    /// The NPC names the price, when you carry it.
+    pub offer: i32,
+    /// The NPC turns you away, when you do not.
+    pub lack: i32,
+    /// "Pay and go" (fires the trigger).
+    pub accept_option: i32,
+    /// "Not now", under the offer.
+    pub decline_option: i32,
+    /// The close line under the refusal.
+    pub later_option: i32,
+}
+
+fn toll_prefix(key: &str) -> String {
+    format!("QT{key}_")
+}
+
+/// The Lua source of a toll gate: HAVE / LACK gate the two answers, GO pays.
+pub fn toll_gate_lua(key: &str, trigger: &str) -> String {
+    let p = toll_prefix(key);
+    format!(
+        "-- generated toll gate \"{key}\": fires {trigger}\n\
+         function {p}HAVE(E)\n\
+         \tif QF_checkQuestCondition(\"{trigger}\") >= 1 then return 1 end\n\
+         \treturn 0\n\
+         end\n\
+         function {p}LACK(E)\n\
+         \tif QF_checkQuestCondition(\"{trigger}\") >= 1 then return 0 end\n\
+         \treturn 1\n\
+         end\n\
+         function {p}GO(E)\n\
+         \tQF_doQuestTrigger(\"{trigger}\")\n\
+         \treturn 1\n\
+         end\n"
+    )
+}
+
+/// Build a complete toll-gate `.CON` (Lua source in the main blob, as the
+/// quest-giver does):
+///
+/// ```text
+/// [0] NPCSAY greeting                          -> 1
+/// [1] PLAYERSELECT ask                         -> 2
+///     CLOSE bye
+/// [2] NPCSAY offer  (check HAVE)               -> 3
+///     NPCSAY lack   (check LACK)               -> 4
+/// [3] CLOSE accept  (click GO)
+///     CLOSE decline
+/// [4] CLOSE later
+/// ```
+pub fn build_toll_gate(key: &str, trigger: &str, s: &TollStrings) -> Vec<u8> {
+    let p = toll_prefix(key);
+    let messages = vec![ConMsg {
+        sn: 0,
+        mtype: SC_MSG_PLAYERSELECT,
+        value: 0,
+        check_func: String::new(),
+        click_func: String::new(),
+        str_id: 0,
+    }];
+    let menus = vec![
+        ConMenu {
+            items: vec![menu_item(SC_MSG_NPCSAY, 1, "", "", s.greeting)],
+        },
+        ConMenu {
+            items: vec![
+                menu_item(SC_MSG_PLAYERSELECT, 2, "", "", s.ask_option),
+                menu_item(SC_MSG_CLOSE, -1, "", "", s.bye_option),
+            ],
+        },
+        ConMenu {
+            items: vec![
+                menu_item(SC_MSG_NPCSAY, 3, &format!("{p}HAVE"), "", s.offer),
+                menu_item(SC_MSG_NPCSAY, 4, &format!("{p}LACK"), "", s.lack),
+            ],
+        },
+        ConMenu {
+            items: vec![
+                menu_item(SC_MSG_CLOSE, -1, "", &format!("{p}GO"), s.accept_option),
+                menu_item(SC_MSG_CLOSE, -1, "", "", s.decline_option),
+            ],
+        },
+        ConMenu {
+            items: vec![menu_item(SC_MSG_CLOSE, -1, "", "", s.later_option)],
+        },
+    ];
+    build_con(
+        &[],
+        &messages,
+        &menus,
+        toll_gate_lua(key, trigger).as_bytes(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1251,6 +1368,43 @@ mod tests {
         assert_eq!(p.menus[1].items[1].mtype, SC_MSG_CLOSE);
         assert_eq!(p.lua, lua);
         // The parsed file (raw == built bytes) re-serializes identically.
+        assert_eq!(p.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn toll_gate_branches_on_the_trigger() {
+        let s = TollStrings {
+            greeting: 1,
+            ask_option: 2,
+            bye_option: 3,
+            offer: 4,
+            lack: 5,
+            accept_option: 6,
+            decline_option: 7,
+            later_option: 8,
+        };
+        let bytes = build_toll_gate("ulv", "Ulverick-EnterCave", &s);
+        let p = ConFile::parse(&bytes).expect("parse built toll gate");
+        assert_eq!(p.menus.len(), 5);
+        // the answer to "let me through" is the offer OR the refusal
+        let answers = &p.menus[2].items;
+        assert_eq!(
+            (answers[0].check_func.as_str(), answers[0].child_menu),
+            ("QTulv_HAVE", 3)
+        );
+        assert_eq!(
+            (answers[1].check_func.as_str(), answers[1].child_menu),
+            ("QTulv_LACK", 4)
+        );
+        assert!(answers.iter().all(|it| it.mtype == SC_MSG_NPCSAY));
+        // only the offer's accept line pays
+        assert_eq!(p.menus[3].items[0].click_func, "QTulv_GO");
+        assert!(p.menus[4].items.iter().all(|it| it.click_func.is_empty()));
+        let lua = String::from_utf8(p.lua.clone()).unwrap();
+        for f in ["QTulv_HAVE", "QTulv_LACK", "QTulv_GO"] {
+            assert!(lua.contains(&format!("function {f}(E)")), "{f} missing");
+        }
+        assert!(lua.contains("QF_doQuestTrigger(\"Ulverick-EnterCave\")"));
         assert_eq!(p.to_bytes(), bytes);
     }
 

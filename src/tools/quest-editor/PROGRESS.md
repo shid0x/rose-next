@@ -260,6 +260,34 @@ item `13:129`. (Validate the id exists in the item DB when generating.)
 
 ## Status log
 
+### 2026-10-05 — `con-toll`: a dialog for an NPC that lets you through for a price
+
+```
+quest-editor con-toll <root> <con_file> <key> <trigger> [--greet T] [--ask T] [--bye T]
+                      [--offer T] [--lack T] [--accept T] [--decline T] [--later T] [--write]
+```
+
+Writes `EVENT/<con_file>` from scratch (Lua **source** in the main blob, like the
+quest-giver) for a dedicated NPC. First user: the Cave of Ulverick's gatekeeper
+(`scripts/import-ulverick.py` stage 5, `EM29-005.con`, trigger `Ulverick-EnterCave`).
+
+- **Why not `con-warp`:** a trigger whose conditions fail is silent on both sides --
+  `QF_doQuestTrigger` re-checks client-side and returns 0 without sending, and the
+  server's `TRIGGER_FAILED` reply shows nothing -- so a "pay and go" option on a
+  player without the price is a click that does nothing. `con-warp`'s check is
+  `return 1`.
+- **Layout** (`convo::build_toll_gate`): greeting -> "let me through" | bye; the answer
+  is two sibling NPCSAY nodes gated on `QT<key>_HAVE` / `QT<key>_LACK`, both
+  `QF_checkQuestCondition(<trigger>)` (>= 1 is a pass), mutually exclusive because
+  `CEvent::Conversation` opens the window again for every NPCSAY that passes; only the
+  offer's accept line clicks `QT<key>_GO` (`QF_doQuestTrigger`).
+- **The trigger is the caller's**: conditions = the price (COND_004, `iWhere` 12 = the
+  bag, op 2 = >=; it counts the first stack found), rewards = take it (REWD_001 op 0)
+  then warp (REWD_007, party opt 0). Retail's `2051-19` (QP201.QSD) is the shape.
+  Strings are upserted as `QT<key>_*` LTB keys, so a re-run is a refresh; the report
+  says CREATE / REWRITE / UNCHANGED. Test: `toll_gate_branches_on_the_trigger`.
+- Not the tool's job: the LIST_NPC / LIST_EVENT rows and the MOB placement.
+
 ### 2026-09-29 — Prerequisite quests + quest packs (for the Shibuya band quests)
 
 **Prerequisites.** `QuestSpec.requires: Vec<Prerequisite { quest_sn, switch_no }>`
