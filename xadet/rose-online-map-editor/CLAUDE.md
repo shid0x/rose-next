@@ -67,6 +67,20 @@ config file is not saved), `settle <frames>`, and
 message box) and exits 1. It needs an unlocked desktop session: the editor
 opens its window as usual. Captures are the render panel's size.
 
+## Fullscreen view (F11)
+
+**View > Fullscreen** or **F11** shows the map alone over the whole screen, for
+hand-taken screenshots; F11 or Escape leaves it. It hides the menu, toolbars,
+status bar, output and tool panel, makes the window borderless and maximized,
+and draws the world only (no gizmos, tooltips or preview panel, like
+`--shots`). It also switches off the editing helpers `--shots` jobs hide
+(`SHOT_HIDE`: Collision, SpawnPoints, WarpGates, Sounds, Effects,
+EventTriggers, GridOutline, GridNumbers) **in memory only**, and puts them
+back on leaving. Closing the editor while fullscreen leaves it first, so the
+config file never saves the hidden state. Code: `Main.ToggleFullScreen`
+(`Main.xaml.cs`) and the early return in `Engine/Main.cs` `Draw`; the
+backbuffer already follows the render panel's size every frame.
+
 ## Architecture
 
 Entry flow:

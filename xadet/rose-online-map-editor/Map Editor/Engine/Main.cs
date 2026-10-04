@@ -216,6 +216,10 @@ namespace Map_Editor.Engine
                 return;
             }
 
+            // fullscreen is for screenshots: the world only, as above
+            if (App.Form.FullScreen)
+                return;
+
             Map_Editor.Engine.Tools.Movement movement = ToolManager.Tool as Map_Editor.Engine.Tools.Movement;
             if (movement != null) movement.Draw();
 

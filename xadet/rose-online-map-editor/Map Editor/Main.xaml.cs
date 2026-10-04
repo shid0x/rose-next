@@ -134,6 +134,8 @@ namespace Map_Editor
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             if (!ConfirmMovementChanges()) { e.Cancel = true; return; }
+            // restores the hidden helpers and the panel width before they are saved
+            if (FullScreen) ToggleFullScreen();
             ConfigurationManager.SetValue("UI", "RightSplitterWidth", RightColumn.Width);
             ConfigurationManager.SetValue("UI", "OutputExpanded", OutputExpander.IsExpanded);
 
@@ -1311,7 +1313,9 @@ namespace Map_Editor
         /// <param name="e">The <see cref="T:System.Windows.Input.KeyEventArgs"/> that contains the event data.</param>
         protected override void OnKeyUp(KeyEventArgs e)
         {
-            if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.O && Open.IsEnabled)
+            if (e.Key == Key.F11 || (e.Key == Key.Escape && FullScreen))
+                ToggleFullScreen();
+            else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.O && Open.IsEnabled)
                 Open_Click(null, null);
             else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.S && Save.IsEnabled)
                 Save_Click(null, null);
@@ -1336,7 +1340,9 @@ namespace Map_Editor
         /// <param name="e">The <see cref="System.Windows.Forms.KeyEventArgs"/> instance containing the event data.</param>
         private void Panel_KeyUp(object sender, System.Windows.Forms.KeyEventArgs e)
         {
-            if (e.Control && e.KeyCode == System.Windows.Forms.Keys.O && Open.IsEnabled)
+            if (e.KeyCode == System.Windows.Forms.Keys.F11 || (e.KeyCode == System.Windows.Forms.Keys.Escape && FullScreen))
+                ToggleFullScreen();
+            else if (e.Control && e.KeyCode == System.Windows.Forms.Keys.O && Open.IsEnabled)
                 Open_Click(null, null);
             else if (e.Control && e.KeyCode == System.Windows.Forms.Keys.S && Save.IsEnabled)
                 Save_Click(null, null);
@@ -1350,6 +1356,104 @@ namespace Map_Editor
                 Copy_Click(null, null);
             else if (e.Control && e.KeyCode == System.Windows.Forms.Keys.V && Paste.IsEnabled)
                 Paste_Click(null, null);
+        }
+
+        #endregion
+
+        #region Fullscreen
+
+        /// <summary>
+        /// The editing helpers hidden while in fullscreen: the same set the
+        /// unattended screenshots hide (scripts/mapgen-zone.py SHOT_HIDE).
+        /// </summary>
+        private static readonly string[] FullScreenHiddenLayers = { "Collision", "SpawnPoints", "WarpGates", "Sounds", "Effects", "EventTriggers", "GridOutline", "GridNumbers" };
+
+        /// <summary>
+        /// Gets whether the render view fills the screen (F11).
+        /// </summary>
+        public bool FullScreen { get; private set; }
+
+        private WindowState savedWindowState;
+        private WindowStyle savedWindowStyle;
+        private ResizeMode savedResizeMode;
+        private GridLength savedRightColumnWidth;
+        private bool savedOutputExpanded;
+        private readonly Dictionary<string, bool> savedLayers = new Dictionary<string, bool>();
+
+        /// <summary>
+        /// Shows the map alone, covering the whole screen, for screenshots: the
+        /// menus, toolbars, panels and editing helpers are hidden. The helpers
+        /// are switched off in memory only and restored on leaving.
+        /// </summary>
+        public void ToggleFullScreen()
+        {
+            if (!FullScreen)
+            {
+                savedWindowState = WindowState;
+                savedWindowStyle = WindowStyle;
+                savedResizeMode = ResizeMode;
+                savedRightColumnWidth = RightColumn.Width;
+                savedOutputExpanded = OutputExpander.IsExpanded;
+
+                savedLayers.Clear();
+                foreach (string layer in FullScreenHiddenLayers)
+                {
+                    savedLayers[layer] = ConfigurationManager.GetValue<bool>("Draw", layer);
+                    ConfigurationManager.SetValue("Draw", layer, false);
+                }
+
+                MainMenu.Visibility = Visibility.Collapsed;
+                MainToolBarTray.Visibility = Visibility.Collapsed;
+                MainStatusBar.Visibility = Visibility.Collapsed;
+                OutputExpander.Visibility = Visibility.Collapsed;
+                ToolHost.Visibility = Visibility.Collapsed;
+                RightSplitter.Visibility = Visibility.Collapsed;
+                RightColumn.Width = new GridLength(0);
+
+                // A borderless window only covers the taskbar when it is
+                // maximized after the border is removed.
+                WindowState = WindowState.Normal;
+                WindowStyle = WindowStyle.None;
+                ResizeMode = ResizeMode.NoResize;
+                WindowState = WindowState.Maximized;
+
+                FullScreen = true;
+                Output.WriteLine(Output.MessageType.Event, "Fullscreen: press F11 or Escape to leave");
+            }
+            else
+            {
+                FullScreen = false;
+
+                foreach (KeyValuePair<string, bool> layer in savedLayers)
+                    ConfigurationManager.SetValue("Draw", layer.Key, layer.Value);
+                savedLayers.Clear();
+
+                WindowState = WindowState.Normal;
+                WindowStyle = savedWindowStyle;
+                ResizeMode = savedResizeMode;
+                WindowState = savedWindowState;
+
+                MainMenu.Visibility = Visibility.Visible;
+                MainToolBarTray.Visibility = Visibility.Visible;
+                MainStatusBar.Visibility = Visibility.Visible;
+                OutputExpander.Visibility = Visibility.Visible;
+                OutputExpander.IsExpanded = savedOutputExpanded;
+                ToolHost.Visibility = Visibility.Visible;
+                RightSplitter.Visibility = Visibility.Visible;
+                RightColumn.Width = savedRightColumnWidth;
+            }
+
+            RenderPanel.Focus();
+        }
+
+        /// <summary>
+        /// Handles the Click event of the FullScreen menu item.
+        /// </summary>
+        /// <param name="sender">The source of the event.</param>
+        /// <param name="e">The <see cref="System.Windows.RoutedEventArgs"/> instance containing the event data.</param>
+        private void FullScreen_Click(object sender, RoutedEventArgs e)
+        {
+            ToggleFullScreen();
         }
 
         #endregion

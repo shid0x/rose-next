@@ -78,7 +78,7 @@
         </LinearGradientBrush>
     </Window.Background>
     <DockPanel>
-        <Menu Height="24" DockPanel.Dock="Top" Foreground="#455267" Padding="0,1,0,0" FontWeight="475">
+        <Menu Name="MainMenu" Height="24" DockPanel.Dock="Top" Foreground="#455267" Padding="0,1,0,0" FontWeight="475">
             <Menu.Background>
                 <LinearGradientBrush EndPoint="0,1">
                     <GradientStop Offset="0.0" Color="#cdd5e2" />
@@ -134,6 +134,9 @@
                     </MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
+            <MenuItem Header="View">
+                <MenuItem Header="Fullscreen" Name="FullScreenMenu" Click="FullScreen_Click" InputGestureText="F11" />
+            </MenuItem>
             <MenuItem Header="Tools">
                 <MenuItem Header="Movement (.MOV)" Name="MovementMenu" IsEnabled="False">
                     <MenuItem Header="Paint movement permissions" Click="Movement_Click" />
@@ -148,7 +151,7 @@
                 </MenuItem>
             </MenuItem>
         </Menu>
-        <ToolBarTray DockPanel.Dock="Top">
+        <ToolBarTray Name="MainToolBarTray" DockPanel.Dock="Top">
             <ToolBarTray.Background>
                 <LinearGradientBrush EndPoint="0,1">
                     <GradientStop Offset="0.0" Color="#9cabc6" />
@@ -340,7 +343,7 @@
                 </ToggleButton>
             </ToolBar>
         </ToolBarTray>
-        <StatusBar Height="23" DockPanel.Dock="Bottom" Background="#293852">
+        <StatusBar Name="MainStatusBar" Height="23" DockPanel.Dock="Bottom" Background="#293852">
             <StatusBarItem DockPanel.Dock="Right">
                 <TextBlock Foreground="#bcc3d0" Margin="5,0" Name="Position"></TextBlock>
             </StatusBarItem>
@@ -366,7 +369,7 @@
                         <wf:Panel KeyUp="Panel_KeyUp" Click="Panel_Click" />
                     </WindowsFormsHost>
                     <ScrollViewer Grid.Column="1" Name="ToolHost" VerticalScrollBarVisibility="Auto" />
-                    <GridSplitter HorizontalAlignment="Left" Width="4" Background="#FF273655" Grid.Column="1" />
+                    <GridSplitter Name="RightSplitter" HorizontalAlignment="Left" Width="4" Background="#FF273655" Grid.Column="1" />
                 </Grid>
             </DockPanel>
         </Grid>
