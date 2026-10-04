@@ -132,6 +132,13 @@ CRegenPOINT::Load(CFileSystem* pFileSystem) {
     m_iInterval *= 1000;
     m_iRange *= 100; // m --> cm
 
+    // Spawn on the first tick. The zone clock (CDXHPC) counts from 0 when the
+    // zone thread starts, so a check time of 0 made every point wait one full
+    // interval after a server boot -- a 30-minute boss stayed absent for the
+    // first half hour. Back-dating the last check by one interval (unsigned
+    // wrap-around, as Proc's subtraction expects) fires it at once.
+    m_dwCheckTIME = 0 - (DWORD)m_iInterval;
+
     return true;
 }
 
