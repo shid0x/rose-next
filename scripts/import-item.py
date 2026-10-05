@@ -319,7 +319,7 @@ def object_is_placeholder(source, src_zsc, obj_idx):
 # which is why the result is collapsed below rather than used as-is.
 _ASSET_RE = re.compile(
     rb"3[Dd][Dd][Aa][Tt][Aa][\\/][ -~]{0,200}?\.(?:[Pp][Tt][Ll]|[Dd][Dd][Ss]|[Tt][Gg][Aa]"
-    rb"|[Zz][Mm][Ss]|[Ee][Ff][Tt])")
+    rb"|[Zz][Mm][Ss]|[Zz][Mm][Oo]|[Ee][Ff][Tt])")
 
 def _collapse_seps(rel):
     while b"\\\\" in rel:
@@ -388,9 +388,65 @@ def zsc_selftest(paths):
     return bad
 
 
+# A dummy point whose effect the client places with its rotation and scale as well
+# as its position (client io_model.h, POINT_EFFECT_ORIENTED). Plain points (0)
+# have only ever been placed by position, and two shipped back items rely on that.
+POINT_EFFECT_ORIENTED = 3
+
+def weapon_effect_dummy(source, row):
+    """(effect path, point type, props) for a Jrose LIST_WEAPONEFFECT placement.
+
+    Jrose attaches a cosmetic effect to an equipped item through its item
+    tables (LIST_BACK col 51 -> LIST_WEAPONEFFECT row), not through the model;
+    its particle-only back items carry a 4-vertex placeholder mesh and nothing
+    else. Our client has no such table, but it does spawn effects from a
+    model's ZSC dummy points, so the placement becomes one.
+
+    Column meanings come from TRose.exe, not from the STB header (every column
+    title there is the editor's "put a title here" placeholder). The three
+    readers of the table (0x45f680, 0x4621c0, 0x462340) all do the same thing:
+
+        col 2          FILE_EFFECT row of the .eft
+        cols 4,5,6,7   x, y, z, w * 0.01 -> CEffect::Rotation(quat) -> setQuaternion
+        cols 9,10,11   position, as is   -> CEffect::Transform -> setPosition
+        cols 13,14,15  scale * 0.01      -> CEffect::Scale -> setScale
+
+    then link the effect to the part's model node -- what our client does with a
+    dummy whose parent is part 1. Cols 3, 8 and 12 are never read. The quaternion
+    is passed through un-normalised, as Jrose does; quat::to_matrix uses the
+    1-2(yy+zz) form, so (0,0,0,0.01) is the identity and a short quaternion
+    shrinks the effect a little as well as turning it. Rotation is written in
+    the ZSC's own order, w x y z (CPointPART::Load's ReadFloat4).
+    """
+    stb_dir = os.path.join(source, "3DDATA", "STB")
+    _, _, _, _, wfx = stb_read(os.path.join(stb_dir, "LIST_WEAPONEFFECT.STB"))
+    _, _, _, _, files = stb_read(os.path.join(stb_dir, "FILE_EFFECT.STB"))
+    if not 0 <= row < len(wfx):
+        sys.exit("LIST_WEAPONEFFECT has no row %d" % row)
+    cell = lambda c: int(wfx[row][c] or b"0")
+    eft_id = cell(2)
+    if not 0 < eft_id < len(files) or not files[eft_id][1]:
+        sys.exit("LIST_WEAPONEFFECT row %d names FILE_EFFECT row %d, which is empty"
+                 % (row, eft_id))
+    path = files[eft_id][1]
+    pos = (float(cell(9)), float(cell(10)), float(cell(11)))
+    rot = tuple(cell(c) * 0.01 for c in (7, 4, 5, 6))
+    scale = tuple(cell(c) * 0.01 for c in (13, 14, 15))
+    props = (struct.pack("<BB3f", 1, 12, *pos) + struct.pack("<BB4f", 2, 16, *rot)
+             + struct.pack("<BB3f", 3, 12, *scale) + struct.pack("<BBh", 7, 2, 1) + b"\x00")
+    print("attached effect: LIST_WEAPONEFFECT %d -> %s, pos %s, rot(wxyz) %s, scale %s"
+          % (row, path.decode("ascii", "replace"), pos,
+             tuple(round(v, 2) for v in rot), tuple(round(v, 2) for v in scale)))
+    return path, POINT_EFFECT_ORIENTED, props
+
+
 def zsc_build_append(ours_path, src_zsc, src_obj_idx, source=None, copy_effects=False,
-                     target=None):
+                     target=None, extra_dummies=()):
     """Return (object_index, assets_needed, new_file_bytes) -- writes nothing.
+
+    `extra_dummies` are (effect path, point type, props) points added after the
+    source object's own -- weapon_effect_dummy() builds them. Their effect is
+    always copied, as --copy-effects would.
 
     `target` writes the object **at that index** instead of appending, for
     --target-row. The row's existing object must be empty; the caller checks
@@ -493,6 +549,15 @@ def zsc_build_append(ours_path, src_zsc, src_obj_idx, source=None, copy_effects=
               "effect does not. Pass --copy-effects to port it."
               % (src_path.decode("ascii", "replace") if src_path else "index %d" % list_idx,
                  os.path.basename(ours_path), len(ours.effects)))
+    for src_path, eff_type, props in extra_dummies:
+        if norm(src_path) in our_eft_idx:
+            idx = our_eft_idx[norm(src_path)]
+        else:
+            idx = len(ours.effects) + len(new_effects)
+            our_eft_idx[norm(src_path)] = idx
+            new_effects.append(src_path)
+            effect_files.append(src_path)
+        kept.append((struct.pack("<hh", idx, eff_type), props))
     obj.append(struct.pack("<H", len(kept)))
     for a, props in kept:
         obj += [a, props]
@@ -740,6 +805,13 @@ def main():
                          "and copies the .eft plus the particle files and textures it pulls "
                          "in. Without this such a dummy point is dropped, since a dangling "
                          "effect index crashes the client on load.")
+    ap.add_argument("--attach-effect-row", type=int,
+                    help="back only: add a dummy point carrying the effect of this row of "
+                         "the source's LIST_WEAPONEFFECT.STB (Jrose col 51 of LIST_BACK), "
+                         "placed with its rotation and scale. For Jrose's particle-only back "
+                         "items, whose model is a placeholder; implies --allow-placeholder "
+                         "and copies the effect's files. Needs the matching client "
+                         "(POINT_EFFECT_ORIENTED) for the rotation and scale.")
     ap.add_argument("--allow-placeholder", action="store_true",
                     help="import even if the source model is degenerate geometry (it will "
                          "equip and show nothing); normally such a row is refused")
@@ -1106,12 +1178,17 @@ def main():
     empty_models = set()
     zsc_counts_before = {rel: len(Zsc(os.path.join(OURS, rel)).objects)
                          for rel in ZSC_RELS}
+    extra_dummies = ()
+    if args.attach_effect_row is not None:
+        if args.type != "back":
+            sys.exit("--attach-effect-row is for back items only")
+        extra_dummies = (weapon_effect_dummy(args.source, args.attach_effect_row),)
     for rel in ZSC_RELS:
         src_zsc = Zsc(os.path.join(args.source, rel))
         if not src_zsc.objects[args.source_row][1]:
             empty_models.add(rel)
         elif object_is_placeholder(args.source, src_zsc, args.source_row) \
-                and not args.allow_placeholder:
+                and not args.allow_placeholder and not extra_dummies:
             sys.exit("source object %d in %s is a placeholder -- every part is degenerate "
                      "geometry (a few vertices in a near-zero bounding box), so the item "
                      "would equip and show nothing. The source most likely draws this "
@@ -1120,7 +1197,8 @@ def main():
                      % (args.source_row, os.path.basename(rel)))
         obj_id, files_needed, blob = zsc_build_append(
             os.path.join(OURS, rel), src_zsc, args.source_row,
-            args.source, args.copy_effects, target=args.target_row)
+            args.source, args.copy_effects, target=args.target_row,
+            extra_dummies=extra_dummies)
         if obj_id != new_id:
             sys.exit("STB/ZSC index drift in %s: row %d vs object %d"
                      % (os.path.basename(rel), new_id, obj_id))

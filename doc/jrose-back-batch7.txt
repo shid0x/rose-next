@@ -1,0 +1,48 @@
+# Jrose back-item import, batch 7 -- our IDs 1083-1087, imported 2026-10-05.
+#
+# The five particle-only rows left out of batch 6. Jrose draws these through its
+# item tables: the LIST_BACK object is a 4-vertex placeholder
+# (skeleton_back_0212_wa.zms) and col 51 names a LIST_WEAPONEFFECT row that
+# places an .eft on the item (col 2 -> FILE_EFFECT, cols 4-7 quaternion x0.01,
+# 9-11 position, 13-15 scale x0.01 -- read out of TRose.exe, see
+# weapon_effect_dummy() in scripts/import-item.py). We have no such table, so
+# `--attach-effect-row` turns the placement into a ZSC dummy point of type
+# POINT_EFFECT_ORIENTED (3), which the client places with rotation and scale as
+# well as position. Plain points (type 0) keep the old position-only placement,
+# so Phoenix Wings and Portable Fireworks are unchanged.
+#
+# Validated in game 2026-10-05. Two things are Jrose's own and left as they are:
+# the magic circle's spin steps at 30 fps (its .ZMO is 30 fps vertex keyframes
+# and the engine's morpher never interpolates between them -- true of every mesh
+# effect), and the Will-o'-Wisps float ~40 cm to one side (row 169's position).
+#
+# Needs the client built with POINT_EFFECT_ORIENTED (cobjchar.cpp
+# New_ModelDummyEFFECT). An older client shows the effects unrotated and
+# unscaled: the magic circle lies flat, the light wings face sideways.
+#
+# Stats follow batch 6's method (doc/jrose-back-batch6.txt), placed in bands
+# that batch did not use; all are job-free, price 600 x level.
+#
+# Fields, pipe-separated:
+#
+#   jrose_row | effect_row | template | name | description | DEF | RES | level | price | bonus1 | bonus2
+#
+# Replay (from the repo root; --dry-run first):
+#
+#   grep -v '^#' doc/jrose-back-batch7.txt | while IFS='|' read -r row fx tmpl name desc def res lv price b1 b2; do
+#     python scripts/import-item.py --type back \
+#       --source "C:/Users/Thomas/Desktop/Testclients/Jrose" \
+#       --source-row "$row" --attach-effect-row "$fx" --art-only --template-row "$tmpl" \
+#       --name "$name" --desc "$desc" --def "$def" --res "$res" --req-level "$lv" \
+#       --price "$price" ${b1:+--bonus "$b1"} ${b2:+--bonus "$b2"} \
+#       --copy-icon --copy-effects
+#   done
+#
+# Then: scripts/add-dds-mipmaps.py, move any .bak out of data/, bake, deploy.
+# Roll the whole batch back with:
+#   python scripts/remove-trailing-items.py --type back --from-id 1083 --dry-run
+1137|169|202|Will-o'-Wisps|Three small ghost-lights that drift around you and carry what they can.|9|12|58|34800|25:650|12:4
+1118|100|233|Wing Charm|A charm that unfolds six small wings of light when worn.|13|19|82|49200|23:70|20:12
+1094|30|233|Shining Wings|Wings made of nothing but light, held open behind you.|21|27|128|76800|23:90|39:180
+1208|242|891|Powder Snow|A ward of fine snow that falls around you and blurs your outline.|36|24|142|85200|22:20|
+1161|177|212|Moonlit Magic Circle|A pale circle of runes that turns at your back and shoulders part of your load.|18|32|152|91200|25:1200|39:260

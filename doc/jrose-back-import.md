@@ -1,9 +1,17 @@
 # Importing Back Items From Jrose
 
-**Status:** **105 back items imported** — IDs **957–1027** (batches 1–4, confirmed in game)
-and **1028–1061** (batch 5, awaiting an in-game look). Every new wing *model* Jrose had is
-in. Model-carried effects (wing trails) implemented and confirmed.
-**Date:** 2026-09-04, batches 3-4 2026-09-05, batch 5 2026-09-06.
+**Status:** **131 back items imported** — IDs **957–1027** (batches 1–4, confirmed in game),
+**1028–1061** (batch 5, awaiting an in-game look) and **1062–1082** (batch 6, user-picked,
+the first back items above level 155: 14 of them fill levels 160–240 — stat method in
+[jrose-back-batch6.txt](jrose-back-batch6.txt); awaiting an in-game look). Every new wing
+*model* Jrose had is in. Model-carried effects (wing trails) implemented and confirmed.
+**1083–1087** (batch 7): the five particle-only backs, whose look is a Jrose
+`LIST_WEAPONEFFECT` placement (col 51) rather than a model — imported with
+`import-item.py --attach-effect-row` as a ZSC dummy point of type `POINT_EFFECT_ORIENTED`
+(3), which the client places with rotation and scale; column meanings were read out of
+`TRose.exe` (see [jrose-back-batch7.txt](jrose-back-batch7.txt)). Still out: Jrose's
+mantles (cloth system, 3-vertex dummy mesh).
+**Date:** 2026-09-04, batches 3-4 2026-09-05, batch 5 2026-09-06, batches 6-7 2026-10-05.
 **Source:** `C:\Users\Thomas\Desktop\Testclients\Jrose` (loose `3Ddata\`).
 **Prerequisite reading:** [doc/jrose-survey.md](jrose-survey.md) for the dump as a whole.
 

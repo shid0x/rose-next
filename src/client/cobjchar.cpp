@@ -1652,6 +1652,15 @@ CObjCHAR::New_ModelDummyEFFECT(CMODEL<CCharPART>* pCharPART, short nPartIdx, boo
         if (NULL == pEffect)
             continue;
 
+        // Add_EFFECT places the effect by position only. A point marked
+        // POINT_EFFECT_ORIENTED also wants its rotation and scale: a magic circle
+        // stood upright behind the back, wings of light turned to face out.
+        CPointPART& Point = pCharPART->m_pDummyPoints[nP];
+        if (POINT_EFFECT_ORIENTED == Point.m_nEffectType) {
+            pEffect->Rotation(Point.m_Rotate);
+            pEffect->Scale(Point.m_Scale);
+        }
+
         // These are passive, bone-attached, looping cosmetics -- exactly what
         // CBoneEffectBudget is for, and the reason it is safe to switch this
         // path on at all. Budgeting them means a crowd wearing the same wings

@@ -13,6 +13,13 @@ enum enumPOINTEFFECTTYPE {
     POINT_EFFECT_NORMAL = 0,
     POINT_EFFECT_DAYNNIGHT = 1,
     POINT_LIGHT_CONTAINER = 2,
+    /// An equipment model's effect that is placed with the point's full transform --
+    /// rotation and scale as well as position. Add_EFFECT has only ever applied the
+    /// position, and the two retail-era back items with effects (Phoenix Wings,
+    /// Portable Fireworks) carry rotations that were never applied and look right
+    /// that way, so the full transform is opt-in per point. Written by
+    /// import-item.py --attach-effect-row for Jrose's LIST_WEAPONEFFECT placements.
+    POINT_EFFECT_ORIENTED = 3,
 };
 
 class CPointPART {
@@ -24,6 +31,15 @@ public:
     D3DXQUATERNION m_Rotate;
     D3DVECTOR m_Transform;
     D3DVECTOR m_Scale;
+
+    // Load only overwrites the fields whose tags the ZSC carries, so a point
+    // without a rotation or scale tag used to keep whatever the heap held.
+    CPointPART() :
+        m_uiEftKEY(0), m_nEffectType(POINT_EFFECT_NORMAL), m_nParent(0),
+        m_Rotate(0.0f, 0.0f, 0.0f, 1.0f) {
+        m_Transform.x = m_Transform.y = m_Transform.z = 0.0f;
+        m_Scale.x = m_Scale.y = m_Scale.z = 1.0f;
+    }
     bool Load(CFileSystem* pFilesystem);
 };
 
