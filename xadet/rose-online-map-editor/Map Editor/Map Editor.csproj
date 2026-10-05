@@ -279,6 +279,7 @@
     <Compile Include="Engine\Extensions\Quaternion.cs" />
     <Compile Include="Engine\Extensions\Ray.cs" />
     <Compile Include="Engine\FileManager\Character\CHR.cs" />
+    <Compile Include="Engine\FileManager\Character\CharacterPose.cs" />
     <Compile Include="Engine\FileManager\Data\LTB.cs" />
     <Compile Include="Engine\FileManager\Data\STB.cs" />
     <Compile Include="Engine\FileManager\Data\STL.cs" />
@@ -292,6 +293,7 @@
     <Compile Include="Engine\FileManager\Map\MOV.cs" />
     <Compile Include="Engine\FileManager\Map\TIL.cs" />
     <Compile Include="Engine\FileManager\Map\ZON.cs" />
+    <Compile Include="Engine\FileManager\Models\ZMD.cs" />
     <Compile Include="Engine\FileManager\Models\ZMO.cs" />
     <Compile Include="Engine\FileManager\Models\ZMS.cs" />
     <Compile Include="Engine\FileManager\Models\ZSC.cs" />

@@ -99,6 +99,28 @@ namespace Map_Editor.Engine.Models
         /// <value>The index count.</value>
         public short IndexCount { get; set; }
 
+        /// <summary>
+        /// Gets the format version from the magic (ZMS0008 -> 8), 0 if unrecognised.
+        /// Version 7 and later store positions in metres; earlier ones in centimetres.
+        /// </summary>
+        public int Version { get; private set; }
+
+        /// <summary>
+        /// Gets the mesh bone table: a vertex's bone index is a slot in this table,
+        /// and the value is the skeleton (ZMD) bone it means.
+        /// </summary>
+        public short[] BoneTable { get; private set; }
+
+        /// <summary>
+        /// Gets the per-vertex bone weights, or null if the mesh is not skinned.
+        /// </summary>
+        public Vector4[] BoneWeights { get; private set; }
+
+        /// <summary>
+        /// Gets the per-vertex bone table slots (4 per vertex), or null if the mesh is not skinned.
+        /// </summary>
+        public short[] BoneIndices { get; private set; }
+
         #endregion
 
         /// <summary>
@@ -126,7 +148,11 @@ namespace Map_Editor.Engine.Models
         {
             FileHandler fh = new FileHandler(FilePath = filePath, FileHandler.FileOpenMode.Reading, null);
 
-            fh.Seek(8, SeekOrigin.Begin);
+            byte[] magic = fh.Read<byte[]>(8);
+            int version;
+
+            Version = (magic[0] == 'Z' && magic[1] == 'M' && magic[2] == 'S' &&
+                       int.TryParse(System.Text.Encoding.ASCII.GetString(magic, 3, 4), out version)) ? version : 0;
 
             int format = fh.Read<int>();
 
@@ -134,7 +160,10 @@ namespace Map_Editor.Engine.Models
 
             short boneCount = fh.Read<short>();
 
-            fh.Seek(boneCount * 2, SeekOrigin.Current);
+            BoneTable = new short[System.Math.Max(0, (int)boneCount)];
+
+            for (int i = 0; i < BoneTable.Length; i++)
+                BoneTable[i] = fh.Read<short>();
 
             VertexCount = fh.Read<short>();
 
@@ -159,7 +188,19 @@ namespace Map_Editor.Engine.Models
                 fh.Seek(4 * VertexCount, SeekOrigin.Current);
 
             if ((format & 16) > 0 && (format & 32) > 0)
-                fh.Seek(24 * VertexCount, SeekOrigin.Current);
+            {
+                // Interleaved per vertex: 4 float weights, then 4 short bone table slots.
+                BoneWeights = new Vector4[VertexCount];
+                BoneIndices = new short[VertexCount * 4];
+
+                for (int i = 0; i < VertexCount; i++)
+                {
+                    BoneWeights[i] = new Vector4(fh.Read<float>(), fh.Read<float>(), fh.Read<float>(), fh.Read<float>());
+
+                    for (int j = 0; j < 4; j++)
+                        BoneIndices[i * 4 + j] = fh.Read<short>();
+                }
+            }
 
             if ((format & 64) > 0)
                 fh.Seek(12 * VertexCount, SeekOrigin.Current);

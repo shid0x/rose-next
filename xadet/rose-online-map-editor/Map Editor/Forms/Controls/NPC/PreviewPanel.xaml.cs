@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Map_Editor.Engine;
 using Map_Editor.Engine.Characters;
+using Map_Editor.Engine.Character;
 using Map_Editor.Engine.Models;
 using Map_Editor.Engine.RenderManager;
 using Microsoft.Xna.Framework;
@@ -266,6 +267,7 @@ namespace Map_Editor.Forms.Controls.NPC
             Matrix objectWorld = Matrix.CreateScale(npcScale);
 
             List<short> chrModels = FileManager.CHRs["LIST_NPC"].Characters[id].Models;
+            CharacterPose pose = CharacterPose.ForCharacter(id);
 
             selectedNPC = new NPCs.WorldObject()
             {
@@ -282,7 +284,7 @@ namespace Map_Editor.Forms.Controls.NPC
 
                 for (int j = 0; j < zscObject.Models.Count; j++)
                 {
-                    int modelID = objectManager.Add(FileManager.ZSCs["PART_NPC"].Models[zscObject.Models[j].ModelID]);
+                    int modelID = objectManager.AddPosed(FileManager.ZSCs["PART_NPC"].Models[zscObject.Models[j].ModelID], pose);
 
                     if (modelID == -1)
                         return;

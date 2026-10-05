@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Map_Editor.Engine.Character;
 using Map_Editor.Engine.Map;
 using Map_Editor.Engine.Models;
 using Map_Editor.Engine.RenderManager;
@@ -274,6 +275,7 @@ namespace Map_Editor.Engine.Characters
                                  Matrix.CreateTranslation(ifoObject.Position);
 
             List<short> chrModels = FileManager.CHRs["LIST_NPC"].Characters[ifoObject.ObjectID].Models;
+            CharacterPose pose = CharacterPose.ForCharacter(ifoObject.ObjectID);
 
             WorldObject newObject = new WorldObject()
             {
@@ -290,7 +292,7 @@ namespace Map_Editor.Engine.Characters
 
                 zscObject.Models.ForEach(delegate(ZSC.Object.Model model)
                 {
-                    int modelID = ObjectManager.Add(FileManager.ZSCs["PART_NPC"].Models[model.ModelID]);
+                    int modelID = ObjectManager.AddPosed(FileManager.ZSCs["PART_NPC"].Models[model.ModelID], pose);
 
                     if (modelID == -1)
                         return;

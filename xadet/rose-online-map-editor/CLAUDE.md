@@ -196,6 +196,30 @@ Clear-Content '..\..\data\Map Editor.log'
 
 ## Compatibility Fixes Already Made
 
+- **NPCs and monsters are drawn in their stand pose (2026-10-06).** The editor used to
+  draw a skinned character mesh's raw vertices, i.e. the bind pose the artist skinned
+  it in: most characters stood in a T/A-pose, and rigs whose bind pose is far from
+  standing came apart -- Rose Brasil's `[God] Hebarn` (LIST_NPC 4350, `BOSS_weilian`,
+  a 3ds Max Biped used as a horse plus a rider on custom bones) showed the rider
+  floating above the saddle and the whole model ~3 m off its placement.
+  `CharacterPose.ForCharacter(id)` (`Engine/FileManager/Character/`) reads the
+  character's skeleton and motion slot 0 from `LIST_NPC.CHR` and poses each mesh with
+  frame 0 on the CPU, once, when the mesh is loaded -- the engine's own maths (motion
+  channels replace the ZMD bind rotation/translation; vertex moves by inverse(bind
+  world) x posed world, row-vector, quaternions stored w,x,y,z, ZMD in cm). `ZMS.Load`
+  now keeps the bone table and skin weights it used to skip (same bytes read);
+  `ZMD.cs` is new. All four character builders use it: map NPCs, map monster spawns,
+  the NPC preview panel, the monster tool's thumbnail. `ObjectManager.AddPosed` caches
+  a posed mesh under path + pose, so it never shares a buffer with an unposed copy.
+  Anything that cannot be posed is drawn as before: no skeleton or slot-0 motion, a
+  missing file (logged once: `drawn unposed`), a ZMS6-or-older mesh (centimetre
+  vertices, skipped on purpose), or a bone reference outside the skeleton. Picking and
+  selection boxes follow, since they are built from the posed vertices. Only the
+  editor's view changes; nothing is written. Verified 2026-10-06 with `--shots`
+  old/new pairs: Hebarn (Brasil zone 111) seated and centred; Junon Polis and Xita
+  Refuge NPCs and spawns in their idle stance, 0-2.5% of pixels changed, no log
+  errors. Still not done: animation (the editor shows frame 0 only).
+
 - **Packed clients open directly (2026-10-04).** Copy the editor into any client
   folder and run it there: if the folder has a `data.idx`, `GameData.Mount` (called
   from `FileManager.Initialize`) opens it and every `.vfs` it names, and all reads go

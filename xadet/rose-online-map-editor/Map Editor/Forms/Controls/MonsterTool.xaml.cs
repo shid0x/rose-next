@@ -9,6 +9,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Map_Editor.Engine;
 using Map_Editor.Engine.Map;
+using Map_Editor.Engine.Character;
 using Map_Editor.Engine.Models;
 using Map_Editor.Engine.RenderManager;
 using Map_Editor.Misc;
@@ -348,6 +349,7 @@ namespace Map_Editor.Forms.Controls
                     graphicsDevice.Clear(XNA.ClearOptions.Target | XNA.ClearOptions.DepthBuffer, new XNA.Color(245, 247, 250), 1.0f, 0);
 
                     List<short> chrModels = FileManager.CHRs["LIST_NPC"].Characters[id].Models;
+                    CharacterPose pose = CharacterPose.ForCharacter(id);
                     ZMS[][] models = new ZMS[chrModels.Count][];
 
                     BoundingBox boundingBox = new BoundingBox();
@@ -365,6 +367,9 @@ namespace Map_Editor.Forms.Controls
 
                             models[i][j] = new ZMS();
                             models[i][j].Load(zscFile.Models[zscFile.Objects[chrModels[i]].Models[j].ModelID]);
+
+                            if (pose != null)
+                                pose.Apply(models[i][j]);
 
                             Vector3[] modelPoints = new Vector3[models[i][j].VertexCount];
 

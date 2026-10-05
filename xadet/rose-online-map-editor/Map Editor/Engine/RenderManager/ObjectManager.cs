@@ -134,6 +134,12 @@ namespace Map_Editor.Engine.RenderManager
             public string FilePath { get; set; }
 
             /// <summary>
+            /// Gets or sets the character pose the vertices were moved into, null if none.
+            /// </summary>
+            /// <value>The pose key.</value>
+            public string PoseKey { get; set; }
+
+            /// <summary>
             /// Gets or sets the last update.
             /// </summary>
             /// <value>The last update.</value>
@@ -313,9 +319,28 @@ namespace Map_Editor.Engine.RenderManager
         /// <returns></returns>
         public int Add(string modelPath, string animationPath)
         {
+            return Add(modelPath, animationPath, null);
+        }
+
+        /// <summary>
+        /// Adds a character mesh moved into the character's stand pose. With no pose,
+        /// or a mesh the pose cannot move, it is the plain mesh as Add(modelPath) loads it.
+        /// </summary>
+        /// <param name="modelPath">The model path.</param>
+        /// <param name="pose">The pose, or null.</param>
+        public int AddPosed(string modelPath, Character.CharacterPose pose)
+        {
+            return Add(modelPath, null, pose);
+        }
+
+        private int Add(string modelPath, string animationPath, Character.CharacterPose pose)
+        {
+            string poseKey = pose == null ? null : pose.Key;
+
             for (int i = 0; i < objectList.Count; i++)
             {
-                if (string.Compare(objectList[i].FilePath, modelPath, true) == 0)
+                if (string.Compare(objectList[i].FilePath, modelPath, true) == 0 &&
+                    string.Compare(objectList[i].PoseKey, poseKey, true) == 0)
                     return i;
             }
 
@@ -323,6 +348,11 @@ namespace Map_Editor.Engine.RenderManager
 
             if (newModel.VertexCount == 0)
                 return -1;
+
+            // A mesh the pose cannot move is still cached under the pose key, so the
+            // check is not repeated for every placement.
+            if (pose != null)
+                pose.Apply(newModel);
 
             ZMO newAnimation = null;
 
@@ -339,6 +369,7 @@ namespace Map_Editor.Engine.RenderManager
                 objectList.Add(new Object()
                 {
                     FilePath = modelPath,
+                    PoseKey = poseKey,
                     VertexBuffer = newModel.CreateVertexBuffer(device),
                     IndexBuffer = newModel.CreateIndexBuffer(device),
                     VertexCount = newModel.VertexCount,
