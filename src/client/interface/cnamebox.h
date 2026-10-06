@@ -39,6 +39,10 @@ public:
     void DrawMyName(float x, float y, float z, CObjCHAR* pCharOBJ, bool bTargeted);
     void DrawTargetMark(CObjCHAR* pChar, RECT& rcDrawName, float z);
 
+    /// Screen y of the top of what DrawAvatarName / DrawMyName stack above a
+    /// player anchored at screen y (name row, then the clan row above it).
+    static float GetPlayerNameStackTop(CObjCHAR* pChar, float y);
+
 private:
     D3DVECTOR GetClanMarkDrawPos(CObjCHAR* pChar, float x, float y, float z);
 };

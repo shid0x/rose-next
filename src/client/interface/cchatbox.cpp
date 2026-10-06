@@ -5,6 +5,7 @@
 #include "..\\Game.h"
 
 #include "CNameBox.h"
+#include "PersonalStoreManager.h"
 #include "../util/Localizing.h"
 #include "tgamectrl/SplitHangul.h"
 #include <algorithm>
@@ -186,7 +187,20 @@ CChatBox::Draw(HNODE* backTexture) {
     float fPosY = 0;
     switch (pCHAR->Get_TYPE()) {
         case OBJ_USER:
-        case OBJ_AVATAR:
+        case OBJ_AVATAR: {
+            fPosY = PosSCR.y - iAdjustY - NAMEBOX_HEIGHT;
+
+            /// The bubble's bottom sits at a fixed height, which is where the shop
+            /// sign and the clan row end up once they are lifted for each other.
+            /// Keep it above whichever of them is highest.
+            int iBoxHeight = nCNT ? CHATBOX_HEIGHT_BIG : CHATBOX_HEIGHT_SMALL;
+            float fBelowTop = ((CObjAVT*)pCHAR)->IsPersonalStoreMode()
+                ? CPersonalStoreManager::GetSignTop(pCHAR, PosSCR.y)
+                : CNameBox::GetPlayerNameStackTop(pCHAR, PosSCR.y);
+            if (fPosY + iBoxHeight > fBelowTop)
+                fPosY = fBelowTop - iBoxHeight;
+            break;
+        }
         case OBJ_NPC:
             fPosY = PosSCR.y - iAdjustY - NAMEBOX_HEIGHT;
             break;

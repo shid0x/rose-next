@@ -4,6 +4,7 @@
 
 #include "../CObjCHAR.h"
 #include "../Object.h"
+#include "CNameBox.h"
 
 #include "tgamectrl/SplitHangul.h"
 
@@ -11,6 +12,8 @@ const int TITLE_TEXT_WIDTH = 28;
 
 const int TITLE_BOX_WIDTH = 200;
 const int TITLE_BOX_HEIGHT = 20;
+
+int CPersonalStoreManager::s_iSignHeight = 32;
 
 //----------------------------------------------------------------------------------------------------
 ///
@@ -40,8 +43,21 @@ CPersonalStoreManager::Init() {
     }
 
     getTextureSize(m_ShopTitleBox, m_iShopTitleBoxWidth, m_iShopTitleBoxHeight);
+    s_iSignHeight = m_iShopTitleBoxHeight;
 
     return true;
+}
+
+float
+CPersonalStoreManager::GetSignTop(CObjCHAR* pChar, float y) {
+    /// The sign sits 70 px up, which clears the name but not the clan row
+    /// stacked above it, so lift it over whatever the name box draws.
+    float fSignY = y - 70;
+    float fStackTop = CNameBox::GetPlayerNameStackTop(pChar, y);
+    if (fSignY + s_iSignHeight > fStackTop)
+        fSignY = fStackTop - s_iSignHeight;
+
+    return fSignY;
 }
 
 //----------------------------------------------------------------------------------------------------
@@ -89,7 +105,7 @@ CPersonalStoreManager::Draw() {
             D3DXMATRIX mat;
             D3DXMatrixTranslation(&mat,
                 PosSCR.x - m_iShopTitleBoxWidth / 2,
-                PosSCR.y - 70,
+                GetSignTop(pAVT, PosSCR.y),
                 PosSCR.z);
 
             ::setTransformSprite(mat);

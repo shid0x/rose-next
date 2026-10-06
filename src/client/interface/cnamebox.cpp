@@ -51,6 +51,13 @@ GetClanNameColor(int iClanLevel) {
 D3DCOLOR g_dwNameColor[] =
     {g_dwRedName, g_dwYellowName, g_dwGreenName, g_dwBlueName, g_dwVioletName, g_dwGrayName};
 
+/// Height of the row DrawMyName stacks above its gauge for the player's name.
+const int kMyNameRowHeight = 18;
+/// Distance from the name anchor up to the clan row's top (GetClanMarkDrawPos).
+const int kClanRowOffset = NAMEBOX_HEIGHT / 2 + 20;
+/// Distance from the name anchor up to the name row's top (the gauge's top).
+const int kNameRowOffset = NAMEBOX_HEIGHT / 2 - 4;
+
 CNameBox::CNameBox() {}
 
 CNameBox::~CNameBox() {}
@@ -524,7 +531,7 @@ CNameBox::DrawMyName(float x, float y, float z, CObjCHAR* pCharOBJ, bool bTarget
     int iWidthGuage = 115;
     int iHeightGuage = 14;
     /// Height of the name row stacked above the gauge.
-    int iHeightNameRow = 18;
+    int iHeightNameRow = kMyNameRowHeight;
 
     float fGuageDrawX = x - iWidthBackImage / 2;
     float fGuageDrawY = y - NAMEBOX_HEIGHT / 2 + 4;
@@ -656,8 +663,34 @@ CNameBox::GetClanMarkDrawPos(CObjCHAR* pChar, float x, float y, float z) {
     D3DVECTOR vDrawPos;
 
     vDrawPos.x = x - size.cx / 2 - 25;
-    vDrawPos.y = y - NAMEBOX_HEIGHT / 2 - 20;
+    vDrawPos.y = y - kClanRowOffset;
     vDrawPos.z = z;
 
     return vDrawPos;
+}
+
+/// The personal shop sign is placed above this, so it never covers the name or
+/// the clan row. Keep it in step with DrawAvatarName / DrawMyName.
+float
+CNameBox::GetPlayerNameStackTop(CObjCHAR* pChar, float y) {
+    assert(pChar);
+
+    bool bShown;
+    float fAnchorY = y;
+
+    if (pChar->Get_TYPE() == OBJ_USER) {
+        bShown = g_ClientStorage.m_PlayOption.iShowMyName != 0;
+        /// DrawMyName puts the name one row above its gauge.
+        fAnchorY = y - kMyNameRowHeight;
+    } else {
+        bShown = g_ClientStorage.IsShowPcName();
+    }
+
+    if (!bShown)
+        return y;
+
+    if (pChar->GetClanID())
+        return fAnchorY - kClanRowOffset;
+
+    return fAnchorY - kNameRowOffset;
 }
