@@ -1273,6 +1273,24 @@ Things that will bite:
   --restore` then a plain run** (EXP is no input to its plan, so every other row comes
   back identical); a re-run of stage 2 keeps whatever EXP that pass wrote.
 
+### [God] Hebarn Is A Talk-Then-Fight Boss (Oasis Shrine, zone 80)
+
+`scripts/import-hebarn.py` (`--dry-run`, `--verify`); its docstring holds the kit, stats
+and loot. TALK NPC 4147 and BOSS 4148 share one model. QP401.QSD `Hebarn-Challenge`
+takes the offering, **hides TALK (REWD_034) and spawns BOSS at its feet (REWD_008
+btWho 1)**; BOSS's AI (`HEBARN.AIP`) fires `Hebarn-Return` (REWD_034 show) on death or
+after 15 min idle. Return the NPC from the AI's dead pattern, never LIST_NPC col 41:
+that column asks the killer's *client* to fire the event.
+
+Monster AI patterns run at different times, and a cast placed in the wrong one never
+fires or fires badly: "attack move" runs only while the monster **chases** (never while
+it stands and swings), "damaged" on a share of the hits it takes. Gate every cast on the
+target already being in the skill's range -- a cast ordered from further away makes the
+server chase first, and the client abandons a remote cast that has not started within
+5 s, so its damage and status land with no animation. A cast's status shows 1-3 s after
+the server applies it (cast clip + release hit frame): size stun durations for that, or
+speed the clips up (LIST_SKILL cols 53/69 apply to monster casts on both sides).
+
 ### Map Files: Readers, Writers And Tools (`scripts/mapgen/`, merged 2026-10-04)
 
 **Reuse these before writing any new parser.** The six map formats (ZON, HIM,

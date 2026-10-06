@@ -1421,7 +1421,7 @@ def regen_mob_ids(extra):
     return ids
 
 
-def import_characters(ids, ours, src, dry, what):
+def import_characters(ids, ours, src, dry, what, src_of=None):
     """Copy LIST_NPC.CHR entries for `ids`, remapping every index on the way in.
 
     Nothing here can be copied by index: the source's PART_NPC.ZSC models,
@@ -1429,6 +1429,9 @@ def import_characters(ids, ours, src, dry, what):
     materials dedupe by path, models are appended, and the skeleton/motion/effect
     pools intern lazily so the table never names a file the asset copy did not
     bring.
+
+    `src_of` maps one of our ids to the source row it is copied from, for a
+    character that lands on a different row here (default: the same row).
     """
     src_chr = Chr(rel_path(src, NPC_CHR_REL))
     our_chr = Chr(rel_path(ours, NPC_CHR_REL))
@@ -1471,9 +1474,10 @@ def import_characters(ids, ours, src, dry, what):
     for i in ids:
         if our_chr.chars[i] is not None:
             continue
-        c = src_chr.chars[i]
+        s = (src_of or {}).get(i, i)
+        c = src_chr.chars[s] if s < len(src_chr.chars) else None
         if c is None:
-            raise SystemExit(f"{what} {i} has no LIST_NPC.CHR entry in the source")
+            raise SystemExit(f"{what} {s} has no LIST_NPC.CHR entry in the source")
         # An index past the end of its pool is dead padding, not a reference:
         # the value is always 52685 (0xCDCD, MSVC's uninitialised-heap fill) under
         # anim type 65535, written out by whatever tool built these files. Our own
