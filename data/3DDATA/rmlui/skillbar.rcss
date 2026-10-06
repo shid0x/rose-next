@@ -20,10 +20,14 @@
 }
 
 /* --- grip: the only drag handle, so slots stay free for their own drags ---- */
+/* border-box: RmlUi rounds a border to whole pixels ( 1dp is 2 px at 150 and
+   175% ) while every other length stays fractional, so a content-box grip grew
+   a pixel wider than its 12dp share and pushed the floated rows below it. */
 .grip {
     float: left;
-    width: 7dp;
-    height: 84dp;              /* two rows ( 42 + 2 + 42 ) less its border */
+    box-sizing: border-box;
+    width: 9dp;
+    height: 86dp;              /* two rows: 42 + 2 + 42 */
     margin-right: 3dp;
     border: 1dp #565656ff;
     border-radius: 2dp;
@@ -150,7 +154,7 @@ body.locked .grip { cursor: default; }
 #skillbar.vertical .grip {
     float: none;
     width: auto;
-    height: 7dp;
+    height: 9dp;
     margin-right: 0dp;
     margin-bottom: 3dp;
 }
