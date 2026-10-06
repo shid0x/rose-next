@@ -367,9 +367,13 @@ public:
     /// avatar's own target. The only remote objects whose command flow, queue
     /// drops and position snaps are traced (Debug level only).
     bool IsCombatTraceSubject();
-    /// Fold the local player's lagging hits on this target into the one being
-    /// presented (event). Returns true when anything was folded.
-    bool FoldLaggingOwnHits(CObjCHAR* pFromOBJ, Rose::Combat::DamageEvent& event);
+    /// Fold pFromOBJ's lagging hits on this character into the one being presented
+    /// (event): its hit-frame/impact events queued at least dwMinAgeMs. szWho names
+    /// the case in the trace ("own", "incoming"). Returns true when anything was folded.
+    bool FoldLaggingHits(CObjCHAR* pFromOBJ,
+        Rose::Combat::DamageEvent& event,
+        DWORD dwMinAgeMs,
+        const char* szWho);
     bool IsPresentedDead() const;
     /// Does this attacker still owe a hit frame for a confirmed melee swing the
     /// server already applied? True from the moment the swing is queued until the

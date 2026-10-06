@@ -1727,6 +1727,22 @@ CObjAI::ProcCMD_ATTACK() {
             // ���� ������ ���� ���� !!!
             if (CanStartConfirmedSwing(this)) {
                 this->Start_ATTACK(pTarget);
+            } else if (m_wState == (CS_NEXT_STOP & ~CS_BIT_INT)) {
+                // A CombatSwing that arrives mid-motion applies SetCMD_ATTACK as
+                // CS_NEXT_STOP, which keeps frame checking (CS_BIT_ONE) but not
+                // CS_BIT_ATTACK -- so when the motion completes this branch runs,
+                // not the refusal branch above. Normally the swing is still
+                // pending by then and Start_ATTACK replaces the state; when it was
+                // settled first (folded into an earlier hit -- see
+                // CObjCHAR::FoldLaggingHits), nothing did, and the motion held on
+                // its last frame re-fired every action point every other tick
+                // until the next swing arrived: 6-19 silent hit frames and attack
+                // sounds in a second (Hebarn, 2026-10-06). Stand it down exactly
+                // like the refusal branch. Matched on the exact leftover state:
+                // CS_NEXT_STOP2 (a skill action) also carries CS_BIT_ONE without
+                // CS_BIT_INT and must never be cut here.
+                m_wState = CS_STOP;
+                static_cast<CObjCHAR*>(this)->Attack_END();
             }
         } else {
             if (!(Get_STATE() & CS_BIT_MOV)) {

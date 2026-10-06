@@ -2521,6 +2521,30 @@ main() {
     }
 
     {
+        // Hit-taken catch-up (FoldLaggingHits "incoming"): the hit being presented is
+        // the one that has aged; the swing queued behind it is young, so the fold asks
+        // for any age -- still only this attacker's hit-frame / impact events.
+        CombatPresentationQueue queue;
+        DamageEvent young = event(30, 1234, 957, 1208);
+        young.queued_at_ms = 9000;
+        queue.push(young);
+        DamageEvent skill = event(31, 1234, 1500, 900);
+        skill.presentation_kind = DamagePresentationKind::Immediate;
+        skill.queued_at_ms = 8000;
+        queue.push(skill);
+        DamageEvent other = event(32, 804, 40, 860);
+        other.queued_at_ms = 100;
+        queue.push(other);
+
+        DamageEvent out;
+        expect(queue.pop_aged_frame_presented(1234, 9100, 0, out) && out.event_id == 30,
+            "age 0 folds the young swing queued behind the presented one");
+        expect(!queue.pop_aged_frame_presented(1234, 9100, 0, out),
+            "an immediate (skill) event of the same attacker is never folded");
+        expect(queue.size() == 2, "the skill event and another attacker's hit stay queued");
+    }
+
+    {
         // The cast's own damage event arrives while the owed swings play; only what
         // had arrived when the skill command applied counts as owed.
         CombatPresentationQueue queue;

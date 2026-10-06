@@ -321,8 +321,25 @@ CObjCHAR::StartConfirmedCombatSwing(int iServerTarget,
 static const DWORD kOwnHitFoldAgeMs = 1500;
 static const int kOwnHitFoldMax = 4;
 
+// Hits taken fall behind the same way, one attacker at a time: a monster whose
+// cast or chase cost the client a swing keeps it, because the server and this
+// client run its attack clip at the same rate and nothing ever catches up. Each
+// of its attack motions then pops the swing before its own -- a standing
+// 2-3 s lag on hits taken, the bar ~2000 HP above the server's, potions pressed
+// after the killing blow (Hebarn, 2026-10-06: every one of his last 17 swings
+// shown 2-3 s late). The signal differs from the own-hit case: the newer queued
+// swing is always young (it arrived with the motion now hitting), so what says
+// "behind" is the age of the hit being presented. When it has waited
+// kIncomingHitLagMs and the same attacker has more hit-frame events queued, they
+// are folded into it (any age) and the next motion presents its own swing again.
+// Crowd mode drains its own way and is left alone.
+static const DWORD kIncomingHitLagMs = 1500;
+
 bool
-CObjCHAR::FoldLaggingOwnHits(CObjCHAR* pFromOBJ, Rose::Combat::DamageEvent& event) {
+CObjCHAR::FoldLaggingHits(CObjCHAR* pFromOBJ,
+    Rose::Combat::DamageEvent& event,
+    DWORD dwMinAgeMs,
+    const char* szWho) {
     const DWORD dwNow = g_GameDATA.GetGameTime();
     int iRemaining = static_cast<int>(
         m_CombatDamageQueue.count_frame_presented_for_attacker(pFromOBJ->Get_INDEX()));
@@ -339,7 +356,7 @@ CObjCHAR::FoldLaggingOwnHits(CObjCHAR* pFromOBJ, Rose::Combat::DamageEvent& even
     while (iFolded < kOwnHitFoldMax && iRemaining - iInFlight > 0) {
         Rose::Combat::DamageEvent older;
         if (!m_CombatDamageQueue.pop_aged_frame_presented(
-                pFromOBJ->Get_INDEX(), dwNow, kOwnHitFoldAgeMs, older)) {
+                pFromOBJ->Get_INDEX(), dwNow, dwMinAgeMs, older)) {
             break;
         }
         --iRemaining;
@@ -376,7 +393,8 @@ CObjCHAR::FoldLaggingOwnHits(CObjCHAR* pFromOBJ, Rose::Combat::DamageEvent& even
     event.raw_damage = merged.m_wDamage;
 
     LogString(LOG_DEBUG_,
-        "CombatTrace own hits folded: attacker %d target %d event %u folded %d folded_damage %d total %d oldest_age %u in_flight %d lethal %d\n",
+        "CombatTrace %s hits folded: attacker %d target %d event %u folded %d folded_damage %d total %d oldest_age %u in_flight %d lethal %d\n",
+        szWho,
         pFromOBJ->Get_INDEX(),
         this->Get_INDEX(),
         event.event_id,
@@ -4587,9 +4605,16 @@ CObjCHAR::Hitted(CObjCHAR* pFromOBJ,
             return true;
         }
 
-        // The local player's own hits that fell behind are folded into this one:
-        // one digit, one bar drop (see FoldLaggingOwnHits).
-        if (pFromOBJ->IsLocalAvatarAttacker() && FoldLaggingOwnHits(pFromOBJ, damageEvent)) {
+        // Hits that fell behind are folded into this one: one digit, one bar drop
+        // (see FoldLaggingHits) -- the local player's own hits on any target, and
+        // hits taken by the local player from an attacker that is a swing behind.
+        if (pFromOBJ->IsLocalAvatarAttacker()) {
+            if (FoldLaggingHits(pFromOBJ, damageEvent, kOwnHitFoldAgeMs, "own")) {
+                presentation = Rose::Combat::CombatPresentationQueue::result_for(damageEvent);
+            }
+        } else if (this == g_pAVATAR && !m_CombatCrowdTracker.active()
+                   && g_GameDATA.GetGameTime() - damageEvent.queued_at_ms >= kIncomingHitLagMs
+                   && FoldLaggingHits(pFromOBJ, damageEvent, 0, "incoming")) {
             presentation = Rose::Combat::CombatPresentationQueue::result_for(damageEvent);
         }
 
