@@ -5568,6 +5568,19 @@ CObjCHAR::Proc(void) {
     //--------------------------------------------------------------------------------
     m_bFrameING = this->ProcMotionFrame();
 
+    // A remote caster's spent skill motion gives way to what comes next (see
+    // EndSpentSkillMotion). Not for the local player, a rider or a mount, whose
+    // skill flow is their own. A queued cast does not count as waiting: the server
+    // plays its own release to the end before starting the next cast, so a cut
+    // ran the client ahead and the start watchdog abandoned the cast (fairy 535,
+    // 20:47:34: cut at frame 46, start 6 s later, the cast landed unanimated).
+    if (m_bFrameING && !this->IsLocalAvatarAttacker() && !this->IsPET()
+        && this->GetPetMode() < 0
+        && this->EndSpentSkillMotion(
+            !m_CommandQueue.IsEmpty() && !m_CommandQueue.HasAnySkillCommand())) {
+        m_bFrameING = false;
+    }
+
     //--------------------------------------------------------------------------------
     // 모션 루프가 끝났다.
     //--------------------------------------------------------------------------------

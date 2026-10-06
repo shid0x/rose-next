@@ -350,6 +350,11 @@ public:
     /// Stand down an attack motion that has no action frame left to play (only
     /// follow-through), so a newly confirmed swing starts at once. True if it did.
     bool StandDownSpentAttackMotion();
+    /// End a remote caster's skill motion that has nothing left to show, as
+    /// ProcMotionFrame does at its last frame: a release past its last frame event
+    /// with an order waiting behind it, or a casting repeat whose result is in.
+    /// True if it did.
+    bool EndSpentSkillMotion(bool bCommandQueued);
     int ProcCMD_Skill2SELF();
     int ProcCMD_Skill2POSITION();
     int ProcCMD_Skill2OBJECT();

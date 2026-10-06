@@ -1711,6 +1711,67 @@ CObjAI::StandDownSpentAttackMotion() {
     return true;
 }
 
+// Any frame event at all at or after iFrom? A skill release carries its payload on
+// many event kinds (launch, hit, effect, sound), so none of them may be cut.
+static bool
+HasFrameEventFrom(const tagMOTION* pMotion, int iFrom) {
+    if (!pMotion || !pMotion->m_pFrameEvent) {
+        return false;
+    }
+    for (int iL = iFrom < 0 ? 0 : iFrom; iL < pMotion->m_wTotalFrame; iL++) {
+        if (pMotion->m_pFrameEvent[iL]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The skill siblings of StandDownSpentAttackMotion (Evil Fairy 2725, 2026-10-06):
+//  - Release. skill_01 is 201 frames with its last event at 45, 5 s of tail, and
+//    every order the server sent meanwhile waits behind it -- in m_CommandQueue, or
+//    already applied as CS_NEXT_STOP (an attack that arrives mid-motion keeps the
+//    motion and waits for its end; m_nDoingSkillIDX says it is still the release).
+//  - Casting repeat. A monster loops its casting clip until RESULT_OF_SKILL arrives
+//    (ProcSkillCastingLoop), and a loop that started just before it plays out in
+//    full: 3.4 s more for the fairy, on half of its casts.
+// Ends the motion exactly as ProcMotionFrame does at its last frame (frame reset,
+// CS_BIT_INT cleared), so everything that runs at a natural end runs here too.
+bool
+CObjAI::EndSpentSkillMotion(bool bCommandQueued) {
+    if (!m_pCurMOTION) {
+        return false;
+    }
+    const char* szWhat;
+    if (m_nDoingSkillIDX && (m_wState == CS_NEXT_STOP2 || m_wState == CS_NEXT_STOP)) {
+        // CS_NEXT_STOP is any order applied mid-motion; only an attack counts. A cast
+        // applied that way leaves the same state (fairy 687, 21:00:33: cut at frame
+        // 51, the server's start came 6 s later, the cast was abandoned unanimated).
+        const bool bAttackWaits = m_wState == CS_NEXT_STOP && m_wCommand == CMD_ATTACK;
+        if (!bCommandQueued && !bAttackWaits) {
+            return false; // nothing waits: an idle caster keeps its full animation
+        }
+        szWhat = "skill action";
+    } else if (m_wState == CS_CASTING && m_iWaitLoopCnt > 0 && bCanActionActiveSkill()) {
+        szWhat = "casting repeat";
+    } else {
+        return false;
+    }
+    if (HasFrameEventFrom(m_pCurMOTION, m_iCurMotionFRAME)) {
+        return false;
+    }
+
+    LogString(LOG_DEBUG_,
+        "CombatTrace spent %s cut: obj %d frame %d of %d\n",
+        szWhat,
+        static_cast<CObjCHAR*>(this)->Get_INDEX(),
+        m_iCurMotionFRAME,
+        (int)m_pCurMOTION->m_wTotalFrame);
+
+    m_iCurMotionFRAME = 0;
+    m_wState &= ~CS_BIT_INT;
+    return true;
+}
+
 static bool
 CanStartConfirmedSwing(CObjAI* pAI) {
     CObjCHAR* pOBJ = static_cast<CObjCHAR*>(pAI);
