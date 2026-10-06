@@ -318,9 +318,12 @@ CObjCHAR::StartConfirmedCombatSwing(int iServerTarget,
 // cast are still owed at the next -- a standing 1-3 s lag (Scout vs Rot Tracker,
 // 2026-09-29: range and position were in sync, the server ran 14 swings to the
 // client's 5 in twenty seconds, kills shown 4 s late). Catch up at the hit that
-// lands: this client's older hits on the same target that have waited
-// kOwnHitFoldAgeMs are folded into it -- one digit (the sum), one bar drop, the
-// newest checkpoint, death if any of them was the killing blow. Only the surplus
+// lands: once that hit has waited kOwnHitFoldAgeMs, this client's other hits on
+// the same target are folded into it, whatever their age -- one digit (the sum),
+// one bar drop, the newest checkpoint, death if any of them was the killing blow.
+// The trigger was the age of each *queued* hit until 2026-10-06; a Knight swinging
+// once a second sat 2-3 s behind with the next queued hit at ~1.3 s, just under
+// it, and four folds in a whole boss fight. Only the surplus
 // over this attacker's bullets still in flight is folded, so no arrow lands blank;
 // oldest first, so the order is kept. The player preferred one number to several
 // here (the crowd catch-up on hits taken shows several). The damage meter is
@@ -4616,7 +4619,8 @@ CObjCHAR::Hitted(CObjCHAR* pFromOBJ,
         // (see FoldLaggingHits) -- the local player's own hits on any target, and
         // hits taken by the local player from an attacker that is a swing behind.
         if (pFromOBJ->IsLocalAvatarAttacker()) {
-            if (FoldLaggingHits(pFromOBJ, damageEvent, kOwnHitFoldAgeMs, "own")) {
+            if (g_GameDATA.GetGameTime() - damageEvent.queued_at_ms >= kOwnHitFoldAgeMs
+                && FoldLaggingHits(pFromOBJ, damageEvent, 0, "own")) {
                 presentation = Rose::Combat::CombatPresentationQueue::result_for(damageEvent);
             }
         } else if (this == g_pAVATAR && !m_CombatCrowdTracker.active()
