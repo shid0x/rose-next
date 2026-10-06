@@ -207,6 +207,9 @@ namespace Map_Editor.Engine
             if (splashProgress < SPLASH_TIME)
                 return;
 
+            if (ShotRunner.Active)
+                ShotRunner.BeforeWorldDraw(device);
+
             base.Draw(gameTime);
 
             if (ShotRunner.Active)

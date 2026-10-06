@@ -67,6 +67,17 @@ config file is not saved), `settle <frames>`, and
 message box) and exits 1. It needs an unlocked desktop session: the editor
 opens its window as usual. Captures are the render panel's size.
 
+Minimap directives (2026-10-06, `scripts/make-minimap.py`):
+`ortho <name> x0 y0 x1 y1 width height` looks straight down on that
+rectangle (editor metres, north up) through the orthographic camera
+(`Orthographic.SetTopDown`, which also stops it reading the keyboard) and
+renders into an off-screen target of exactly width x height
+(`BeforeWorldDraw` swaps the render target and depth buffer in, and
+`AfterWorldDraw` swaps them back), so the picture does not depend on the
+window. `water r g b` makes `Water.Draw` paint every water plane opaque in
+that colour, still depth-tested, so the script can key the water out
+(`DrawKeyed`); it applies to the whole job.
+
 ## Fullscreen view (F11)
 
 **View > Fullscreen** or **F11** shows the map alone over the whole screen, for

@@ -255,6 +255,12 @@ namespace Map_Editor.Engine.Terrain
             Game.GraphicsDevice.Indices = indexBuffer;
             Game.GraphicsDevice.VertexDeclaration = vertexDeclaration;
 
+            if (ShotRunner.WaterKey.HasValue)
+            {
+                DrawKeyed(boundingFrustum, ShotRunner.WaterKey.Value);
+                return;
+            }
+
             Game.GraphicsDevice.RenderState.AlphaBlendEnable = true;
             Game.GraphicsDevice.RenderState.AlphaBlendEnable = true;
 
@@ -303,6 +309,38 @@ namespace Map_Editor.Engine.Terrain
             Game.GraphicsDevice.RenderState.SourceBlend = Blend.One;
             Game.GraphicsDevice.RenderState.DestinationBlend = Blend.Zero;
             Game.GraphicsDevice.RenderState.BlendFunction = BlendFunction.Add;
+        }
+
+        /// <summary>
+        /// Draws every water plane opaque in one flat colour, depth-tested
+        /// like the textured planes: whatever stands above the water still
+        /// covers it. Minimap shots key the water out of the picture with it.
+        /// </summary>
+        private void DrawKeyed(BoundingFrustum boundingFrustum, Vector4 colour)
+        {
+            Game.GraphicsDevice.RenderState.AlphaBlendEnable = false;
+            Game.GraphicsDevice.RenderState.AlphaTestEnable = false;
+            Game.GraphicsDevice.RenderState.CullMode = CullMode.None;
+
+            Effect shader = ShaderManager.GetShader(ShaderManager.ShaderType.SimpleColour);
+
+            shader.SetValue("WorldViewProjection", CameraManager.View * CameraManager.Projection);
+            shader.SetValue("Colour", colour);
+
+            shader.Start("SimpleColour");
+
+            for (int i = 0; i < WorldObjects.Count; i++)
+            {
+                if (!boundingFrustum.OnScreen(WorldObjects[i].BoundingBox))
+                    continue;
+
+                Game.GraphicsDevice.Vertices[0].SetSource(WorldObjects[i].VertexBuffer, 0, VertexPositionTexture.SizeInBytes);
+                Game.GraphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, 4, 0, 2);
+            }
+
+            shader.Finish();
+
+            Game.GraphicsDevice.RenderState.AlphaBlendEnable = true;
         }
     }
 }

@@ -21,6 +21,16 @@ namespace Map_Editor.Engine
     ///   hide Collision SpawnPoints WarpGates ...   ("Draw" settings to turn off)
     ///   settle 60                                  (frames after the load)
     ///   view name ex ey ez tx ty tz                (eye and target, editor metres)
+    ///   ortho name x0 y0 x1 y1 width height        (straight down on a rectangle,
+    ///                                               editor metres, north up, into
+    ///                                               a width x height image)
+    ///   water r g b                                (draw water opaque in this
+    ///                                               colour, 0-255: a key for
+    ///                                               minimap shots)
+    ///
+    /// A view is the render panel's size; an ortho view is rendered off screen
+    /// at its own size, so it does not depend on the window (scripts/
+    /// make-minimap.py tiles a whole map with them).
     ///
     /// Writes out\shots.txt (one line per saved view, then "done") so the
     /// caller can tell a finished run from a crash. Overlays drawn after the
@@ -34,7 +44,19 @@ namespace Map_Editor.Engine
         {
             public string Name;
             public Vector3 Eye, Target;
+
+            /// <summary>Ortho views: the rectangle (x0, y0, x1, y1) and the image size.</summary>
+            public bool Ortho;
+            public Vector4 Rect;
+            public int Width, Height;
         }
+
+        /// <summary>The water colour of a minimap job, if it set one.</summary>
+        public static Vector4? WaterKey { get; private set; }
+
+        private static RenderTarget2D target;
+        private static DepthStencilBuffer targetDepth;
+        private static DepthStencilBuffer savedDepth;
 
         /// <summary>Frames rendered at a view before it is saved.</summary>
         private const int AIM_FRAMES = 12;
@@ -97,6 +119,19 @@ namespace Map_Editor.Engine
                                 Eye = new Vector3(F(w[2]), F(w[3]), F(w[4])),
                                 Target = new Vector3(F(w[5]), F(w[6]), F(w[7]))
                             });
+                            break;
+                        case "ortho":
+                            views.Add(new View
+                            {
+                                Name = w[1],
+                                Ortho = true,
+                                Rect = new Vector4(F(w[2]), F(w[3]), F(w[4]), F(w[5])),
+                                Width = int.Parse(w[6], CultureInfo.InvariantCulture),
+                                Height = int.Parse(w[7], CultureInfo.InvariantCulture)
+                            });
+                            break;
+                        case "water":
+                            WaterKey = new Vector4(F(w[1]) / 255.0f, F(w[2]) / 255.0f, F(w[3]) / 255.0f, 1.0f);
                             break;
                         default:
                             throw new Exception("shots job: unknown directive " + w[0]);
@@ -177,9 +212,51 @@ namespace Map_Editor.Engine
         private static void Aim(int index)
         {
             viewIndex = index;
-            CameraManager.PerspectiveCamera.SetLookAt(views[index].Eye, views[index].Target);
+            View view = views[index];
+            if (view.Ortho)
+            {
+                CameraManager.OrthographicCamera.SetTopDown(view.Rect.X, view.Rect.Y, view.Rect.Z, view.Rect.W);
+                CameraManager.SetCameraType(CameraManager.CameraType.Orthographic);
+            }
+            else
+            {
+                CameraManager.SetCameraType(CameraManager.CameraType.Perspective);
+                CameraManager.PerspectiveCamera.SetLookAt(view.Eye, view.Target);
+            }
             state = State.Aiming;
             frames = 0;
+        }
+
+        /// <summary>
+        /// Called right before the world is drawn: an ortho view draws into
+        /// its own render target, sized for its image.
+        /// </summary>
+        public static void BeforeWorldDraw(GraphicsDevice device)
+        {
+            if (state != State.Aiming || !views[viewIndex].Ortho)
+                return;
+
+            View view = views[viewIndex];
+            if (target == null || target.Width != view.Width || target.Height != view.Height)
+            {
+                ReleaseTarget();
+                target = new RenderTarget2D(device, view.Width, view.Height, 1, SurfaceFormat.Color, MultiSampleType.None, 0);
+                targetDepth = new DepthStencilBuffer(device, view.Width, view.Height, DepthFormat.Depth24Stencil8, MultiSampleType.None, 0);
+            }
+
+            savedDepth = device.DepthStencilBuffer;
+            device.SetRenderTarget(0, target);
+            device.DepthStencilBuffer = targetDepth;
+        }
+
+        private static void ReleaseTarget()
+        {
+            if (target != null)
+                target.Dispose();
+            if (targetDepth != null)
+                targetDepth.Dispose();
+            target = null;
+            targetDepth = null;
         }
 
         /// <summary>
@@ -188,6 +265,14 @@ namespace Map_Editor.Engine
         /// </summary>
         public static void AfterWorldDraw(GraphicsDevice device)
         {
+            bool offscreen = savedDepth != null;
+            if (offscreen)
+            {
+                device.SetRenderTarget(0, null);
+                device.DepthStencilBuffer = savedDepth;
+                savedDepth = null;
+            }
+
             if (!captureNow)
                 return;
 
@@ -195,14 +280,27 @@ namespace Map_Editor.Engine
             View view = views[viewIndex];
             string path = Path.Combine(outDir, view.Name + ".png");
 
-            PresentationParameters pp = device.PresentationParameters;
-            using (ResolveTexture2D texture = new ResolveTexture2D(device, pp.BackBufferWidth, pp.BackBufferHeight, 1, pp.BackBufferFormat))
+            int width, height;
+            if (offscreen)
             {
-                device.ResolveBackBuffer(texture);
+                Texture2D texture = target.GetTexture();
                 texture.Save(path, ImageFileFormat.Png);
+                width = target.Width;
+                height = target.Height;
+            }
+            else
+            {
+                PresentationParameters pp = device.PresentationParameters;
+                using (ResolveTexture2D texture = new ResolveTexture2D(device, pp.BackBufferWidth, pp.BackBufferHeight, 1, pp.BackBufferFormat))
+                {
+                    device.ResolveBackBuffer(texture);
+                    texture.Save(path, ImageFileFormat.Png);
+                }
+                width = pp.BackBufferWidth;
+                height = pp.BackBufferHeight;
             }
 
-            saved.Add(string.Format("{0} {1}x{2}", view.Name, pp.BackBufferWidth, pp.BackBufferHeight));
+            saved.Add(string.Format("{0} {1}x{2}", view.Name, width, height));
             Output.WriteLine(Output.MessageType.Normal, "Shots: saved " + path);
 
             if (viewIndex + 1 < views.Count)
