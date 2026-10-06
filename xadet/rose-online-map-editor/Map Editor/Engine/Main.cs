@@ -210,7 +210,18 @@ namespace Map_Editor.Engine
             if (ShotRunner.Active)
                 ShotRunner.BeforeWorldDraw(device);
 
+            bool minimap = Minimap.MinimapCapture.Active;
+            if (minimap)
+                Minimap.MinimapCapture.BeforeWorldDraw(device);
+
             base.Draw(gameTime);
+
+            if (minimap)
+            {
+                // Tools > Make minimap is rendering off screen: the world only
+                Minimap.MinimapCapture.AfterWorldDraw(device);
+                return;
+            }
 
             if (ShotRunner.Active)
             {

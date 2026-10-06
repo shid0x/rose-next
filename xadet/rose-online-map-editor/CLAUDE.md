@@ -76,7 +76,52 @@ renders into an off-screen target of exactly width x height
 `AfterWorldDraw` swaps them back), so the picture does not depend on the
 window. `water r g b` makes `Water.Draw` paint every water plane opaque in
 that colour, still depth-tested, so the script can key the water out
-(`DrawKeyed`); it applies to the whole job.
+(`DrawKeyed`); it applies to the whole job. `minimap <file.png>` runs
+Tools > Make minimap's capture and styling with its default options and
+writes the PNG (shots.txt gets `minimap WxH difference D`); views are optional.
+
+## Tools > Make minimap (2026-10-06)
+
+The zone's minimap made from the open map, for modders with no Python: a C#
+port of `scripts/make-minimap.py` (which stays for batch runs and style
+tuning). Code: `Engine/Minimap/` and `Forms/Tools/MinimapWindow.xaml(.cs)`.
+
+- **Capture** (`MinimapCapture`): inside the editor's own draw loop, unsaved
+  edits included. Tiles of up to 2048 px at 4x (2x "Draft"), one tile every
+  3 frames, each averaged down to minimap pixels as it is read back. Hides the
+  editing helpers, sky, NPCs and monsters in memory and keys the water (same
+  `Water.DrawKeyed` path as `water`); `Main.Draw` returns after the world while
+  it runs. The window calls `Main.ReleaseTool()` first (the first half of
+  `Tool_Click`, extracted): tool modes change how terrain draws (height brush,
+  tile highlights, selection boxes).
+- **Placement** (`MinimapZone`): 64 px a chunk with a one-chunk margin, top-left
+  chunk = LIST_ZONE game cols 9/10 (`CMinimapDLG::CalculateDisplayPos`). A zone
+  with a minimap keeps its extent, so old and new line up pixel for pixel; one
+  without gets its HIM files' bounding box.
+- **Style** (`MinimapStyle`, off the UI thread): water painted blue by distance
+  from shore (exact EDT), missing chunks push-pull filled (water where the void
+  is bordered by water), a retail frame (`FRAME_SOURCE`, JPT01) cut to size by
+  whole ornament periods, warp gates marked and named (GDI+ text, rotated on the
+  sides). "Match the original" fits an affine land grade and the water colours
+  to the zone's original minimap (robust least squares). No relief shading and
+  no sharpening, on purpose: measured, retail is the plain lightmapped render
+  box-filtered from 4x. Scores against retail match the Python version within
+  0.2 on all eight zones measured.
+- **Files** (`DdsCodec`): DXT1/3/5 and 24/32-bit decoding on the CPU (identical
+  to Pillow on retail minimaps); DXT5 encoding with a full mip chain, halving
+  with round-down like texconv (384 -> 9 levels), error 2.8/255 on a fresh
+  minimap (texconv 2.6). No D3DX, no GPU.
+- **Install / Restore**: writes the DDS; for a NOMAP zone also LIST_ZONE cols
+  8-10, **patched byte for byte** (`SetCells`) -- `STB.Save` round-trips every
+  cell through EUC-KR. The first Install copies what it replaces to
+  `MinimapBackups\<FOLDER>\` (beside the editor, i.e. `data/`; excluded from the
+  bake in `scripts/pack.ps1`) with `installed.txt` recording the old cells;
+  Restore puts them back and deletes the folder. Refused when the file or
+  LIST_ZONE is packed (`GameData.IsArchived`), like Save.
+- `tests/Run-MinimapTests.ps1 [-FreshPicture x.png]`: codec against real
+  minimaps, Install/Restore round trips on a scratch copy of the data (LIST_ZONE
+  byte-identical after Restore), and the window built off screen
+  (`build/minimap-tests/window.png`). Not yet driven by hand in the GUI.
 
 ## Fullscreen view (F11)
 

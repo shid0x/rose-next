@@ -56,6 +56,7 @@ try {
         "pack.manifest",
         "Map?Editor.*", "*.dll", "*.pdb", "*.log", "*.md",
         "Content/**", "ESTB/**",
+        "MinimapBackups/**",                 # the editor's Tools > Make minimap keeps replaced minimaps here
         "*.json", "*.py", "*.tmp",
         "3DDATA/MAPS/JUNON/AGIT01/TEMP/**"   # stray retail tile files the client never probes
     )

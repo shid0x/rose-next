@@ -891,12 +891,21 @@ namespace Map_Editor
         /// </summary>
         /// <param name="sender">The source of the event.</param>
         /// <param name="e">The <see cref="System.Windows.RoutedEventArgs"/> instance containing the event data.</param>
+        private void Minimap_Click(object sender, RoutedEventArgs e)
+        {
+            new Forms.Tools.MinimapWindow() { Owner = this }.Show();
+        }
+
         private void Movement_Click(object sender, RoutedEventArgs e)
         {
             Tool_Click(MovementTool, e);
         }
 
-        private void Tool_Click(object sender, RoutedEventArgs e)
+        /// <summary>
+        /// Leaves the active tool, as clicking another tool does first: its
+        /// buffers rebuilt, its panel closed, no toolbar button checked.
+        /// </summary>
+        public void ReleaseTool()
         {
             if (PreviewPanel.IsVisible)
                 PreviewPanel.Hide();
@@ -987,7 +996,6 @@ namespace Map_Editor
             ToolHost.Content = null;
             ToolManager.SetToolMode(ToolManager.ToolMode.None);
 
-            ToggleButton toolButton = (ToggleButton)sender;
 
             for (int i = 0; i < ToolToolBar.Items.Count; i++)
             {
@@ -1003,6 +1011,13 @@ namespace Map_Editor
 
             Paste.IsEnabled = false;
             QuickPaste.IsEnabled = false;
+        }
+
+        private void Tool_Click(object sender, RoutedEventArgs e)
+        {
+            ReleaseTool();
+
+            ToggleButton toolButton = (ToggleButton)sender;
 
             toolButton.IsChecked = true;
 
@@ -1250,7 +1265,7 @@ namespace Map_Editor
             HeightTool.IsEnabled = false;
             TileTool.IsEnabled = false;
             BrushTool.IsEnabled = false;
-            MovementTool.IsEnabled = MovementMenu.IsEnabled = false;
+            MovementTool.IsEnabled = MovementMenu.IsEnabled = MinimapMenu.IsEnabled = false;
             DecorationTool.IsEnabled = false;
             ConstructionTool.IsEnabled = false;
             NPCTool.IsEnabled = false;
@@ -1287,7 +1302,7 @@ namespace Map_Editor
             HeightTool.IsEnabled = true;
             TileTool.IsEnabled = true;
             BrushTool.IsEnabled = true;
-            MovementTool.IsEnabled = MovementMenu.IsEnabled = true;
+            MovementTool.IsEnabled = MovementMenu.IsEnabled = MinimapMenu.IsEnabled = true;
             DecorationTool.IsEnabled = true;
             ConstructionTool.IsEnabled = true;
             NPCTool.IsEnabled = true;

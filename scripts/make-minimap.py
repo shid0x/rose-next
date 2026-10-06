@@ -49,6 +49,11 @@ LP01 21.5. The worst two are data, not style: our LP01 lacks the chunks
 of its south-east, and JPT01's west chunks carry no ocean plane, so the
 render shows seabed where retail painted sea.
 
+The map editor does the same without Python: Tools > Make minimap
+(Engine/Minimap/ in xadet/rose-online-map-editor, a C# port of this
+pipeline that scores within 0.2 of it on every zone above). This script
+stays for batch runs and for tuning the style.
+
 install writes build/minimap/<FOLDER>/minimap.png as the zone's DDS (DXT5,
 full mip chain, as retail), backing the original up to
 build/minimap/<FOLDER>/original/ on the first install; for a zone with no
@@ -77,6 +82,8 @@ _spec.loader.exec_module(mz)
 from mapgen import lighting, prefab  # noqa: E402
 
 OUT = os.path.join(mz.REPO, "build", "minimap")
+# where the map editor's Tools > Make minimap keeps the minimaps it replaced
+EDITOR_BACKUPS = os.path.join(mz.DATA, "MinimapBackups")
 
 PX_PER_CHUNK = 64          # MINIMAP_RESOLUTION_PER_MAP
 M_PER_PX = 2.5             # 160 m / 64 px
@@ -403,9 +410,11 @@ def frame_source(st):
     rel = st["frame"]
     path = mz.P(rel)
     folder = os.path.basename(os.path.dirname(path)).upper()
-    backup = os.path.join(OUT, folder, "original", os.path.basename(path))
-    if os.path.exists(backup):
-        path = backup
+    for backup in (os.path.join(OUT, folder, "original", os.path.basename(path)),
+                   os.path.join(EDITOR_BACKUPS, folder, os.path.basename(path))):
+        if os.path.exists(backup):
+            path = backup
+            break
     if not os.path.exists(path):
         raise SystemExit("frame source %s not found" % rel)
     return np.asarray(Image.open(path).convert("RGB")).astype(np.float32)
@@ -635,8 +644,8 @@ def original_minimap(z):
     """The zone's own minimap from before any install of ours, or None."""
     if not z.has_minimap:
         return None
-    backup = os.path.join(z.out, "original", os.path.basename(z.minimap_path))
-    for p in (backup, z.minimap_path):
+    name = os.path.basename(z.minimap_path)
+    for p in (os.path.join(z.out, "original", name), os.path.join(EDITOR_BACKUPS, z.folder, name), z.minimap_path):
         if os.path.exists(p):
             return p
     return None

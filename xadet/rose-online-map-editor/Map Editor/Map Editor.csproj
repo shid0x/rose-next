@@ -240,6 +240,12 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
+    <Page Include="Forms\Tools\MinimapWindow.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
     <Page Include="Forms\Search.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -299,6 +305,11 @@
     <Compile Include="Engine\FileManager\Models\ZSC.cs" />
     <Compile Include="Engine\Main.cs" />
     <Compile Include="Engine\ShotRunner.cs" />
+    <Compile Include="Engine\Minimap\DdsCodec.cs" />
+    <Compile Include="Engine\Minimap\MinimapCapture.cs" />
+    <Compile Include="Engine\Minimap\MinimapInputs.cs" />
+    <Compile Include="Engine\Minimap\MinimapStyle.cs" />
+    <Compile Include="Engine\Minimap\MinimapZone.cs" />
     <Compile Include="Engine\MapManager\Characters\Monsters.cs" />
     <Compile Include="Engine\MapManager\Characters\NPCs.cs" />
     <Compile Include="Engine\MapManager\Events\SpawnPoints.cs" />
@@ -481,6 +492,9 @@
     </Compile>
     <Compile Include="Forms\Tools\Options.xaml.cs">
       <DependentUpon>Options.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\Tools\MinimapWindow.xaml.cs">
+      <DependentUpon>MinimapWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="Forms\Search.xaml.cs">
       <DependentUpon>Search.xaml</DependentUpon>

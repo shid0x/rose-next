@@ -255,9 +255,10 @@ namespace Map_Editor.Engine.Terrain
             Game.GraphicsDevice.Indices = indexBuffer;
             Game.GraphicsDevice.VertexDeclaration = vertexDeclaration;
 
-            if (ShotRunner.WaterKey.HasValue)
+            Vector4? waterKey = ShotRunner.WaterKey ?? Minimap.MinimapCapture.WaterKey;
+            if (waterKey.HasValue)
             {
-                DrawKeyed(boundingFrustum, ShotRunner.WaterKey.Value);
+                DrawKeyed(boundingFrustum, waterKey.Value);
                 return;
             }
 

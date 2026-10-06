@@ -1,0 +1,91 @@
+<Window x:Class="Map_Editor.Forms.Tools.MinimapWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Make minimap" Height="680" Width="1120" MinHeight="420" MinWidth="760"
+    WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+    Loaded="Window_Loaded" Closing="Window_Closing">
+    <Window.Background>
+        <LinearGradientBrush EndPoint="0,1">
+            <GradientStop Offset="0.0" Color="#212e43" />
+            <GradientStop Offset="0.1" Color="#3d5379" />
+            <GradientStop Offset="0.5" Color="#42597f" />
+            <GradientStop Offset="0.9" Color="#3d5379" />
+            <GradientStop Offset="1.0" Color="#32425f" />
+        </LinearGradientBrush>
+    </Window.Background>
+    <Window.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Margin" Value="0,0,18,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="Padding" Value="12,3" />
+        </Style>
+    </Window.Resources>
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Name="Info" TextWrapping="Wrap" Margin="0,0,0,8" />
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="New" FontWeight="Bold" Margin="0,0,0,4" />
+                <Border Background="#1c2638">
+                    <Grid>
+                        <Image Name="NewImage" Stretch="Uniform" />
+                        <TextBlock Name="NewHint" Text="Press Generate" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#a0b0c8" />
+                    </Grid>
+                </Border>
+            </DockPanel>
+            <DockPanel Grid.Column="2">
+                <TextBlock Name="CurrentTitle" DockPanel.Dock="Top" Text="Current minimap" FontWeight="Bold" Margin="0,0,0,4" />
+                <Border Background="#1c2638">
+                    <Grid>
+                        <Image Name="CurrentImage" Stretch="Uniform" />
+                        <TextBlock Name="CurrentHint" Text="This zone has no minimap yet" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#a0b0c8" />
+                    </Grid>
+                </Border>
+            </DockPanel>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,10,0,0">
+            <CheckBox Name="MatchBox" Content="Match the original minimap's colours" IsChecked="True" Click="Option_Click"
+                      ToolTip="Fit the land colours and the water to the zone's original minimap, so the new one keeps its look (Luna stays deep blue). Off: the Junon look." />
+            <CheckBox Name="LabelsBox" Content="Name the warp gates" IsChecked="True" Click="Option_Click"
+                      ToolTip="A red marker on every warp gate, with the name of the zone it leads to." />
+            <CheckBox Name="WavesBox" Content="Waves on the water" IsChecked="True" Click="Option_Click"
+                      ToolTip="A faint copy of the game's ocean texture over the painted water." />
+            <TextBlock Text="Quality:" VerticalAlignment="Center" Margin="0,0,6,0" />
+            <ComboBox Name="QualityBox" Width="150" SelectedIndex="1"
+                      ToolTip="The map is drawn this many times larger, then shrunk: High matches retail's detail.">
+                <ComboBoxItem Content="Draft (2x)" />
+                <ComboBoxItem Content="High (4x, as retail)" />
+            </ComboBox>
+        </StackPanel>
+
+        <DockPanel Grid.Row="3" Margin="0,10,0,0" LastChildFill="True">
+            <Button Name="GenerateButton" Content="Generate" Click="Generate_Click" IsDefault="True" />
+            <Button Name="SaveButton" Content="Save PNG..." Click="Save_Click" IsEnabled="False" />
+            <Button Name="InstallButton" Content="Install" Click="Install_Click" IsEnabled="False"
+                    ToolTip="Write the new minimap as the zone's MINIMAP.DDS. The previous one is kept in MinimapBackups." />
+            <Button Name="RestoreButton" Content="Restore original" Click="Restore_Click" IsEnabled="False" />
+            <Button Content="Close" Click="Close_Click" DockPanel.Dock="Right" Margin="8,0,0,0" IsCancel="True" />
+            <TextBlock Name="Status" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        </DockPanel>
+    </Grid>
+</Window>

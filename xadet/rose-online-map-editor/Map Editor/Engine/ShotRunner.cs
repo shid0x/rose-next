@@ -27,6 +27,9 @@ namespace Map_Editor.Engine
     ///   water r g b                                (draw water opaque in this
     ///                                               colour, 0-255: a key for
     ///                                               minimap shots)
+    ///   minimap C:\path\minimap.png               (Tools > Make minimap, unattended:
+    ///                                               the zone's minimap with the
+    ///                                               default options, before the views)
     ///
     /// A view is the render panel's size; an ortho view is rendered off screen
     /// at its own size, so it does not depend on the window (scripts/
@@ -38,7 +41,7 @@ namespace Map_Editor.Engine
     /// </summary>
     public static class ShotRunner
     {
-        private enum State { Waiting, Loading, Settling, Aiming, Done }
+        private enum State { Waiting, Loading, Settling, Minimap, Aiming, Done }
 
         private class View
         {
@@ -68,6 +71,7 @@ namespace Map_Editor.Engine
 
         private static int zone;
         private static string outDir;
+        private static string minimapOut;
         private static int settleFrames = 60;
         private static readonly List<string> hide = new List<string>();
         private static readonly List<View> views = new List<View>();
@@ -130,6 +134,9 @@ namespace Map_Editor.Engine
                                 Height = int.Parse(w[7], CultureInfo.InvariantCulture)
                             });
                             break;
+                        case "minimap":
+                            minimapOut = line.Substring(7).Trim();
+                            break;
                         case "water":
                             WaterKey = new Vector4(F(w[1]) / 255.0f, F(w[2]) / 255.0f, F(w[3]) / 255.0f, 1.0f);
                             break;
@@ -138,8 +145,8 @@ namespace Map_Editor.Engine
                     }
                 }
 
-                if (zone <= 0 || outDir == null || views.Count == 0)
-                    throw new Exception("shots job needs zone, out and at least one view");
+                if (zone <= 0 || outDir == null || (views.Count == 0 && minimapOut == null))
+                    throw new Exception("shots job needs zone, out and at least one view or minimap");
 
                 Directory.CreateDirectory(outDir);
                 File.Delete(Path.Combine(outDir, "shots.txt"));
@@ -200,13 +207,43 @@ namespace Map_Editor.Engine
                     break;
                 case State.Settling:
                     if (++frames >= settleFrames)
-                        Aim(0);
+                    {
+                        if (minimapOut != null)
+                            StartMinimap();
+                        else
+                            Aim(0);
+                    }
                     break;
                 case State.Aiming:
                     if (++frames == AIM_FRAMES)
                         captureNow = true;
                     break;
             }
+        }
+
+        /// <summary>Runs Tools > Make minimap's capture and styling with its default options.</summary>
+        private static void StartMinimap()
+        {
+            state = State.Minimap;
+            Minimap.MinimapZone mz = Minimap.MinimapZone.ForZone(zone);
+            Minimap.MinimapCapture.Start(mz, 4,
+                delegate(Minimap.MinimapRender render)
+                {
+                    Minimap.MinimapStyleInput input = Minimap.MinimapInputs.Gather(mz, render, Minimap.MinimapInputs.Original(mz), true, true, true);
+                    Minimap.MinimapResult result = Minimap.MinimapStyle.Make(input);
+                    using (System.Drawing.Bitmap bmp = Minimap.MinimapStyle.ToBitmap(result.Rgb, result.Width, result.Height))
+                        bmp.Save(minimapOut, System.Drawing.Imaging.ImageFormat.Png);
+                    saved.Add(string.Format(CultureInfo.InvariantCulture, "minimap {0}x{1} difference {2:0.0}", result.Width, result.Height, result.Difference));
+                    Output.WriteLine(Output.MessageType.Normal, "Shots: saved " + minimapOut);
+                    if (views.Count > 0)
+                        Aim(0);
+                    else
+                        Finish("done");
+                },
+                delegate(string error)
+                {
+                    Finish("minimap failed: " + error);
+                });
         }
 
         private static void Aim(int index)

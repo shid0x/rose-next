@@ -141,6 +141,7 @@
                 <MenuItem Header="Movement (.MOV)" Name="MovementMenu" IsEnabled="False">
                     <MenuItem Header="Paint movement permissions" Click="Movement_Click" />
                 </MenuItem>
+                <MenuItem Header="Make minimap..." Name="MinimapMenu" Click="Minimap_Click" IsEnabled="False" />
                 <MenuItem Header="Options" Name="Options" Click="Options_Click" IsEnabled="True" />
             </MenuItem>
             <MenuItem Header="Help">
