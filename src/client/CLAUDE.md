@@ -373,6 +373,14 @@ Names are drawn inside the sprite batch that `CGameStateMain::Render_GameMENU` o
 
 **The underlying rule is not understood** -- the fix matches a working call site rather than explaining why a below-origin rect yields nothing in that batch. `DrawAvatarName`'s gauge branch still draws into `{0, 0, ...}` and is presumably affected the same way; it is hard to notice because it only shows for other players. If this bites again, that is the thread to pull.
 
+**A monster's label height is `max(LIST_NPC col 42, measured model height)`** (2026-10-06,
+`CObjMOB::GetScreenPOS`). Col 42 is an absolute cm override that ignores `NPC_SCALE`, and it used to
+replace the measured height outright, so 26 rows drew their name and bar inside the model: Mega Drake
+(100 cm on an ~885 cm model), Hebarn 4148 (550 vs ~1340), Wolf King, Evil Fairy 2725 (270 at scale
+200), Grandmaster Golem, Deadly Drake, Ikaness Mecha... The other 263 non-zero rows sit *above* the
+bind-pose mesh on purpose -- bees, bats, gargoyles and other flyers hover through animation, which
+`getModelHeight` cannot see -- and are unchanged. A new import needs no col 42 unless it flies.
+
 ## Bone-Attached Particle Budgeting
 
 Character model bone effects created by `CCharMODEL::CreateBoneEFFECT` are passive cosmetic effects and are registered with `CBoneEffectBudget` (`BoneEffectBudget.cpp/h`) using owner, NPC id, bone index, and effect hash. Registration is intentionally narrow: do not add skill particles, hit effects, bullets, terrain/weather effects, weapon effects, or general `g_pEffectLIST` effects to `BoneFx`.
