@@ -298,6 +298,13 @@ CObjCHAR::StartConfirmedCombatSwing(int iServerTarget,
             event.presentation_kind == Rose::Combat::DamagePresentationKind::ProjectileImpact;
         m_bPendingCombatSwingProjectileSpawned = false;
         m_dwPendingCombatSwingTime = g_GameDATA.GetGameTime();
+
+        // Start this swing now if the previous one has nothing left to present
+        // (see StandDownSpentAttackMotion). Remote attackers only -- the local
+        // player's motion self-loops -- and not mounted ones, whose mount plays it.
+        if (!this->IsLocalAvatarAttacker() && this->GetCombatSwingMotionOBJ() == this) {
+            this->StandDownSpentAttackMotion();
+        }
     } else {
         ClearPendingCombatSwingPresentation();
     }

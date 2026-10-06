@@ -41,6 +41,14 @@ CAcceptTHREAD::Execute() {
             break; // continue;	// break;
         }
 
+        // Disable Nagle. Game traffic is a stream of small packets (swings, damage,
+        // HP syncs, moves), and with Nagle on a small send waits for the previous
+        // one's ACK -- up to the peer's ~200 ms delayed-ACK timer -- so packets
+        // arrive bunched or late; the client plays one attack motion per swing
+        // packet, so a late swing is presentation lag it never makes up.
+        BOOL bNoDelay = TRUE;
+        ::setsockopt(ClientSocket, IPPROTO_TCP, TCP_NODELAY, (char*)&bNoDelay, sizeof(bNoDelay));
+
         if (!this->AcceptSOCKET(ClientSocket, SockADDR)) {
             // 더이상 받을수 없거나 블럭된 IP다.
             struct linger li = {0, 0}; // Default: SO_DONTLINGER

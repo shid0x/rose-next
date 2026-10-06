@@ -39,8 +39,15 @@ CRawSOCKET::Socket(UINT uiWindowMsg,
     //	nProtocolType = IPPROTO_TCP;
 
     m_hSocket = socket(nAddressFormat, nSocketType, nProtocolType);
-    if (m_hSocket != INVALID_SOCKET)
+    if (m_hSocket != INVALID_SOCKET) {
+        // Disable Nagle on stream sockets: game traffic is small packets, and
+        // Nagle holds one behind the previous one's ACK (see CAcceptTHREAD).
+        if (nSocketType == SOCK_STREAM) {
+            BOOL bNoDelay = TRUE;
+            setsockopt(m_hSocket, IPPROTO_TCP, TCP_NODELAY, (char*)&bNoDelay, sizeof(bNoDelay));
+        }
         return AsyncSelect(uiWindowMsg, lEvent);
+    }
 
     Socket_Error("CRawSOCKET::Socket");
 

@@ -347,6 +347,9 @@ public:
     int ProcCMD_MOVE();
     int ProcCMD_PICK_ITEM();
     int ProcCMD_ATTACK();
+    /// Stand down an attack motion that has no action frame left to play (only
+    /// follow-through), so a newly confirmed swing starts at once. True if it did.
+    bool StandDownSpentAttackMotion();
     int ProcCMD_Skill2SELF();
     int ProcCMD_Skill2POSITION();
     int ProcCMD_Skill2OBJECT();

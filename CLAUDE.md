@@ -108,6 +108,7 @@ scripts/                 # build/dev scripts, data import/repair/audit tools (Py
 - FlatBuffers for some packet types (defined in `src/common-lib/packets/*.fbs`)
 - C++ packet definitions in `src/common/include/rose/network/`
 - Client has separate socket connections: Login → World → Game server
+- Nagle is disabled (`TCP_NODELAY`) on every accepted server socket (`CAcceptTHREAD`) and every client/server outgoing socket (`CRawSOCKET::Socket`): game traffic is small packets, and Nagle held each one behind the previous one's ACK (up to ~200 ms), bunching combat packets.
 
 ## Code Conventions
 

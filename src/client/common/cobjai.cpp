@@ -1652,6 +1652,65 @@ TraceAvatarAttackWalk(CObjAI* pAI, CObjCHAR* pTarget, const char* szWhere) {
         (unsigned int)pOBJ->Get_STATE());
 }
 
+// Any attack action point at or after iFrom? Same event set io_motion counts in
+// m_wTatalAttackFrame (melee, bow, gun, skill hits, repeat hits).
+static bool
+HasAttackActionFrom(const tagMOTION* pMotion, int iFrom) {
+    if (!pMotion || !pMotion->m_pFrameEvent) {
+        return false;
+    }
+    for (int iL = iFrom < 0 ? 0 : iFrom; iL < pMotion->m_wTotalFrame; iL++) {
+        switch (pMotion->m_pFrameEvent[iL]) {
+            case 21:
+            case 22:
+            case 23:
+            case 24:
+            case 25:
+            case 26:
+            case 27:
+            case 28:
+            case 10:
+            case 20:
+            case 56:
+            case 66:
+            case 57:
+            case 67:
+                return true;
+        }
+    }
+    return false;
+}
+
+// A remote attacker plays one attack motion per confirmed swing, at the server's
+// own rate, so a swing that arrives while the previous motion is still running
+// waits for it to end (CS_NEXT_STOP) -- and since both sides run at the same
+// cadence, that wait is never made up: it is how the client falls a swing behind
+// the server for the rest of a fight. Once the motion's last action frame has
+// played, what is left is follow-through with nothing to present, so the next
+// swing may cut it and start at once. Frames before m_iCurMotionFRAME have been
+// processed (ProcMotionFrame walks [m_iCurMotionFRAME, iFrame)).
+bool
+CObjAI::StandDownSpentAttackMotion() {
+    if (!(m_wState & CS_BIT_ATTACK) || !(m_wState & CS_BIT_INT) || !m_pCurMOTION) {
+        return false;
+    }
+    if (HasAttackActionFrom(m_pCurMOTION, m_iCurMotionFRAME)) {
+        return false;
+    }
+
+    LogString(LOG_DEBUG_,
+        "CombatTrace spent attack motion cut for next swing: obj %d frame %d of %d\n",
+        static_cast<CObjCHAR*>(this)->Get_INDEX(),
+        m_iCurMotionFRAME,
+        (int)m_pCurMOTION->m_wTotalFrame);
+
+    // As the refusal branch of ProcCMD_ATTACK: CS_STOP also clears frame checking,
+    // and Attack_END() is what Set_MOTION's prologue would have run.
+    m_wState = CS_STOP;
+    static_cast<CObjCHAR*>(this)->Attack_END();
+    return true;
+}
+
 static bool
 CanStartConfirmedSwing(CObjAI* pAI) {
     CObjCHAR* pOBJ = static_cast<CObjCHAR*>(pAI);
