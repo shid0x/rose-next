@@ -92,6 +92,13 @@ protected:
     CObjCHAR_Collision* m_pCollision; // 충돌 정보
     float m_fStature; // 신장(키)
     float m_fScale;
+
+    /// The overhead label anchor GetScreenPOS last returned (see StabilizeLabelPOS).
+    float m_fLabelScrX = 0.0f;
+    float m_fLabelScrY = 0.0f;
+    DWORD m_dwLabelScrTime = 0;
+    bool m_bLabelScrValid = false;
+    void StabilizeLabelPOS(D3DVECTOR& PosSCR);
     HNODE m_hNodeGround; // 밟고 있는 오브젝트의 엔진 핸들
 
     bool m_bUseResetPosZ; // Z값을 새로 갱신할 지 여부.

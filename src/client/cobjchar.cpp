@@ -1062,6 +1062,45 @@ CObjCHAR::GetScreenPOS(D3DVECTOR& PosSCR) {
         &PosSCR.x,
         &PosSCR.y,
         &PosSCR.z);
+
+    StabilizeLabelPOS(PosSCR);
+}
+
+/// worldToScreen floors to whole pixels so text stays sharp, but the follow camera
+/// keeps easing for a second or two after the player stops, and every time the
+/// exact position crosses a pixel boundary the floor flips between two values:
+/// names, clan rows, shop signs and bubbles visibly shake on the spot. Hold the
+/// last returned pixel and move only when the position has really moved past it,
+/// trailing by one pixel; a back-and-forth between two neighbouring pixels then
+/// never shows. Every overhead piece starts from here, so they stay in step.
+void
+CObjCHAR::StabilizeLabelPOS(D3DVECTOR& PosSCR) {
+    /// An anchor older than this belongs to an earlier sighting (off screen,
+    /// hidden, warped): take the new position as is.
+    const DWORD kLabelHoldExpireMs = 200;
+
+    DWORD dwNow = g_GameDATA.GetGameTime();
+    if (!m_bLabelScrValid || dwNow - m_dwLabelScrTime > kLabelHoldExpireMs) {
+        m_fLabelScrX = PosSCR.x;
+        m_fLabelScrY = PosSCR.y;
+        m_bLabelScrValid = true;
+    } else {
+        float fDX = PosSCR.x - m_fLabelScrX;
+        if (fDX > 1.0f)
+            m_fLabelScrX = PosSCR.x - 1.0f;
+        else if (fDX < -1.0f)
+            m_fLabelScrX = PosSCR.x + 1.0f;
+
+        float fDY = PosSCR.y - m_fLabelScrY;
+        if (fDY > 1.0f)
+            m_fLabelScrY = PosSCR.y - 1.0f;
+        else if (fDY < -1.0f)
+            m_fLabelScrY = PosSCR.y + 1.0f;
+    }
+    m_dwLabelScrTime = dwNow;
+
+    PosSCR.x = m_fLabelScrX;
+    PosSCR.y = m_fLabelScrY;
 }
 
 //--------------------------------------------------------------------------------
@@ -7012,24 +7051,17 @@ CObjMOB::Get_DefaultAbilityValue(int iType) {
 void
 CObjMOB::GetScreenPOS(D3DVECTOR& PosSCR) {
     float fStature = NPC_HEIGHT(this->m_nCharIdx);
+    if (fStature == 0)
+        fStature = m_fStature; // 모델의 좌표에 키를 더한 위치를 이름출력 위치로 설정
 
-    if (fStature != 0) {
-        ::worldToScreen(m_PosCUR.x,
-            m_PosCUR.y,
-            getPositionZ(m_hNodeMODEL) + fStature,
-            &PosSCR.x,
-            &PosSCR.y,
-            &PosSCR.z);
-        return;
-    }
-
-    // 모델의 좌표에 키를 더한 위치를 이름출력 위치로 설정
     ::worldToScreen(m_PosCUR.x,
         m_PosCUR.y,
-        getPositionZ(m_hNodeMODEL) + m_fStature,
+        getPositionZ(m_hNodeMODEL) + fStature,
         &PosSCR.x,
         &PosSCR.y,
         &PosSCR.z);
+
+    StabilizeLabelPOS(PosSCR);
 }
 
 //--------------------------------------------------------------------------------
