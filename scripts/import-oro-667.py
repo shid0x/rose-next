@@ -33,9 +33,13 @@ WHAT IS AUTHORED HERE, AND WHY
   * `DROP_NPC_PLACEMENTS`: three TOWN placements (Daih'vyd, Roen, Battlemaster
     Amber) have neither a row nor a dialog anywhere -- event/arena NPCs.
   * `GATE_REMAP`: 667's new warp rows 178-180 collide with live Karkia gates.
-  * Spawn camps: ODFS01 (1406 points) and ODGR01 (890) are single-species
-    carpets, exactly Karkia's Spire Village shape, and get the same 60 m camp
-    consolidation. The mixed RoseZA-style points elsewhere pass through.
+  * Spawn camps: every Oro field map gets Karkia's 60 m camps of five
+    (`CAMP_ZONES`, `consolidate_camps`). Until 2026-10-08 only the two
+    single-species carpets (ODFS01, ODGR01) were merged, and only their count-1
+    points: alpha testers found Oro overcrowded, and it measured 0.47-1.01x
+    JG07 against Karkia's 0.27-0.43x. Boss points are never merged, and are
+    capped at one alive (`BOSS_MIN_INTERVAL`). scripts/fix-oro-spawn-density.py
+    replays just this step onto data/ without re-running stage 3.
   * Drop columns 18-20 come from the RoseZA row (667 moved drops to its own
     cols 88-102), so tables 773-851 stay reserved and, as today, nothing drops
     until the drop pass; new species get fresh free table ids at NPC_DROP_ITEM
@@ -127,9 +131,34 @@ ATK_SPEED_DONOR = {2274: 2257, 2275: 2258, 2276: 2259,         # Armastyx <- Mas
 NPC_DROP_COLS = (18, 19, 20)
 NEW_SPECIES_DROP_ITEM = b"100"     # always the (empty) table, never the zone fallback
 DROP_TABLE_FIRST_FREE = 852
-CAMP_ZONES = {"ODFS01": (6000, 5), "ODGR01": (6000, 5)}
+# Camp consolidation: folder -> (grid cell in cm, camp size). Karkia's values
+# (import-karkia.py SPAWN_CAMPS / CAMP_*), on every Oro map that spawns monsters
+# except Muris, whose outskirts already sit at Karkia's density (0.25x).
+#
+# Steady-state population, CRegenPOINT::Proc simulated to fill, measured per
+# occupied 100 m cell against JG07 (32.2, our densest field zone):
+#
+#                       before 2026-10-08                after
+#              bodies  per cell  vs JG07  gap    bodies  per cell  vs JG07  gap
+#   ODD04         685     20.8    0.64x  12 m       304     10.9    0.34x  36 m
+#   ODD05         681     28.4    0.88x  13 m       228     10.4    0.32x  39 m
+#   ODRP01        526     19.5    0.60x  26 m       216      8.6    0.27x  45 m
+#   ODGR01        829     15.1    0.47x  19 m       599     10.9    0.34x  37 m
+#   ODFS01      1,786     32.5    1.01x  13 m       579     11.8    0.37x  36 m
+#
+# Karkia sits at 0.27-0.43x with a ~38 m gap; "gap" is the median distance to
+# the nearest other spawn point. The old pass merged only the carpet (one
+# species, count 1 in every slot) and passed the RoseZA-style nests through:
+# cap 10, counts of 6-7, a 5 s tick and a 20-30 m spread, ~12 m apart. In
+# ODFS01 those nests held 1,240 of the 1,786 bodies the "merged" map carried.
+CAMP_ZONES = {"ODD04": (6000, 5), "ODD05": (6000, 5), "ODRP01": (6000, 5),
+              "ODGR01": (6000, 5), "ODFS01": (6000, 5)}
 CAMP_INTERVAL, CAMP_RANGE, CAMP_TACTIC_POINT = 20, 12, 100
-CARPET_MIN_CAP, CARPET_MAX_INTERVAL = 2, 600   # below/above: an authored lone boss
+# A single-species point that respawns slower than this is a boss: never merged,
+# and held at one alive. 667 authored the Fearsome Terrasaurus King's three
+# points at cap 5 with a 30-50 minute tick, so an unattended point stacked a
+# king every half hour, up to five.
+BOSS_MIN_INTERVAL = 600
 
 # Verified 2026-09-13 by reading both headers: 667's first 44 reader columns are
 # ours under reworded labels. Positional copy is only valid while that holds.
@@ -736,40 +765,77 @@ def resolve_ai(our_ai, src_ai_za, ai_type, byname):
     return r, f
 
 
-def consolidate_carpet(per_file, cell_cm, size):
-    """Karkia's consolidate_camps with the 667 carpet criterion.
+def point_kind(o):
+    """'boss', 'lone', 'camp' or 'empty' for one regen record.
 
-    667 authors its carpets at tacticPoint 100 already, so the tacticPoint test
-    Karkia used to recognise a carpet point does not apply. Here a point is
-    carpet when every slot holds the same species at count 1 -- which is every
-    point in ODFS01 and ODGR01 and none of the mixed RoseZA-style points.
+    A boss is one species on a slow tick (BOSS_MIN_INTERVAL); a lone point is one
+    species at cap 1 on a fast one -- the Golden Ring's Venomous Hooded Asper
+    rares (63 s). Both have the same slot shape as a carpet point (one species,
+    count 1 in all seven slots), so the cap and the interval are what tell them
+    apart, and a boss folded into a 20-second camp of five would be the worst
+    thing this pass could do. Everything else with a roster is camp material.
     """
-    carpet, kept = [], {k: [] for k in per_file}
+    basic, tactics = kk.regen_roster_of(o["extra"])
+    species = {n for n, c in basic + tactics if n >= 1 and c >= 1}
+    if not species:
+        return "empty"
+    iv, cap, _rng, _tac = kk.regen_get_params(o["extra"])
+    if len(species) == 1 and iv >= BOSS_MIN_INTERVAL:
+        return "boss"
+    if len(species) == 1 and cap <= 1:
+        return "lone"
+    return "camp"
+
+
+def cap_bosses(per_file):
+    """Hold every boss point at one alive. Returns (per_file, points changed)."""
+    out, fixed = {}, 0
+    for key, objs in per_file.items():
+        out[key] = []
+        for o in objs:
+            if point_kind(o) == "boss" and kk.regen_get_params(o["extra"])[1] != 1:
+                o = dict(o, extra=kk.regen_set_cap(o["extra"], 1))
+                fixed += 1
+            out[key].append(o)
+    return out, fixed
+
+
+def consolidate_camps(per_file, cell_cm, size):
+    """Karkia's consolidate_camps, generalised to mixed-species nests.
+
+    Karkia's carpet points each hold one species, so a bin's roster ranks species
+    by how many points carried them. Oro's RoseZA-style nests hold two or more
+    at counts up to 7, so here a species weighs the sum of its slot counts over
+    the bin. Bosses and lone points pass through verbatim (point_kind). Camps
+    are Karkia's: every slot count 1, cap `size`, 20 s, 12 m, tacticPoint 100,
+    placed on the authored point nearest the bin centroid. Deterministic, so a
+    re-run reproduces it.
+    """
+    pool, kept = [], {k: [] for k in per_file}
     for key, objs in sorted(per_file.items()):
         for i, o in enumerate(objs):
-            basic, tactics = kk.regen_roster_of(o["extra"])
-            slots = [(n, c) for n, c in basic + tactics if n >= 1 and c >= 1]
-            species = {n for n, _ in slots}
-            iv, cap, _rng, _tac = kk.regen_get_params(o["extra"])
-            # A lone boss is authored as one species, count 1, cap 1, a 30-minute
-            # interval -- the same slot shape as a carpet point. The cap and the
-            # interval are what tell them apart, and a boss folded into a
-            # 20-second camp of five would be the worst thing this pass could do.
-            if (slots and len(species) == 1 and all(c == 1 for _, c in slots)
-                    and cap >= CARPET_MIN_CAP and iv < CARPET_MAX_INTERVAL):
-                x, y, _z = struct.unpack_from("<fff", o["fixed"], kk.REGEN_POS_OFF)
-                carpet.append((key, i, x, y, next(iter(species))))
-            else:
+            if point_kind(o) != "camp":
                 kept[key].append(o)
+                continue
+            basic, tactics = kk.regen_roster_of(o["extra"])
+            weight = collections.Counter()
+            for n, c in basic + tactics:
+                if n >= 1 and c >= 1:
+                    weight[n] += c
+            x, y, _z = struct.unpack_from("<fff", o["fixed"], kk.REGEN_POS_OFF)
+            pool.append((key, i, x, y, weight))
     bins = collections.defaultdict(list)
-    for e in carpet:
+    for e in pool:
         bins[(int(e[2] // cell_cm), int(e[3] // cell_cm))].append(e)
     camps = 0
     for _cell, members in sorted(bins.items()):
         cx = sum(e[2] for e in members) / len(members)
         cy = sum(e[3] for e in members) / len(members)
-        key, i, _x, _y, _sp = min(members, key=lambda e: ((e[2] - cx) ** 2 + (e[3] - cy) ** 2, e[0], e[1]))
-        ranked = [sp for sp, _n in collections.Counter(e[4] for e in members).most_common()]
+        key, i, _x, _y, _w = min(members, key=lambda e: ((e[2] - cx) ** 2 + (e[3] - cy) ** 2, e[0], e[1]))
+        weight = collections.Counter()
+        for e in members:
+            weight.update(e[4])
+        ranked = [sp for sp, _n in weight.most_common()]
         basic = ranked[:size]
         while len(basic) < 5:
             basic.append(ranked[0])
@@ -783,7 +849,82 @@ def consolidate_carpet(per_file, cell_cm, size):
         obj["extra"] = kk.regen_set_tacticpoint(e, CAMP_TACTIC_POINT)
         kept[key].append(obj)
         camps += 1
-    return kept, len(carpet), camps
+    return kept, len(pool), camps
+
+
+def report_spawn_sanity(final, log=print):
+    """Every slot count must stay under its point's cap (the escalation trap),
+    and every boss must be held at one alive. Returns the number of problems on
+    a camp map or a boss point; elsewhere a hot slot is only reported (Muris
+    ships six single-species points with a count of 5 at cap 5 -- the whole nest
+    pops at once, which costs it no species)."""
+    hot, kinds = [], collections.Counter()
+    for key, objs in final.items():
+        for o in objs:
+            kind = point_kind(o)
+            kinds[kind] += 1
+            _iv, cap, _rng, tac = kk.regen_get_params(o["extra"])
+            if kind == "boss":
+                if cap != 1:
+                    hot.append((key[0], key[1], "boss cap", cap))
+                continue
+            if kind == "lone":
+                continue                    # cap 1, slot 0 fills it, by design
+            b, t = kk.regen_roster_of(o["extra"])
+            slots = [(n, c) for n, c in b + t if n >= 1 and c >= 1]
+            if any(c >= cap for _n, c in slots) or tac != 100:
+                hot.append((key[0], key[1], (cap, tac), slots))
+    fatal = [h for h in hot if h[0] in CAMP_ZONES or h[2] == "boss cap"]
+    log(f"    {'regen sanity':26s} {sum(kinds.values())} points: {kinds['boss']} boss, "
+        f"{kinds['lone']} lone, {kinds['camp']} mixed; {len(fatal)} problems, "
+        f"{len(hot) - len(fatal)} hot slots reported outside the camp maps")
+    for h in (fatal or hot)[:6]:
+        log(f"    {'':26s} {h}")
+    return len(fatal)
+
+
+def read_spawn_source(s667):
+    """{(folder, file): (regen objects, lump trailing bytes)} from 667's maps,
+    excluded species stripped. The input to plan_spawns and stage 3's roster."""
+    regen_src = {}
+    for _, folder in ZONES:
+        d = os.path.join(P(s667, MAPS_REL), folder)
+        for name in sorted(os.listdir(d)):
+            if not name.lower().endswith(".ifo"):
+                continue
+            buf, bounds = oro.read_ifo(os.path.join(d, name))
+            off, _end = oro.lump_block(bounds, oro.LUMP_REGEN)
+            if off is None or buf[off:off + 4] == b"\0\0\0\0":
+                continue
+            objs, trailing = oro.read_lump(buf, bounds, oro.LUMP_REGEN)
+            objs, _dropped = strip_species(objs, EXCLUDE_MONSTERS)
+            regen_src[(folder, name)] = (objs, trailing)
+    return regen_src
+
+
+def plan_spawns(regen_src, log=print):
+    """{(folder, file): regen objects} as Oro should ship them: bosses held at
+    one alive everywhere, every CAMP_ZONES map merged into camps."""
+    per_folder = collections.defaultdict(dict)
+    for (folder, name), (objs, _trailing) in regen_src.items():
+        per_folder[folder][(folder, name)] = objs
+    final = {}
+    for folder, per_file in sorted(per_folder.items()):
+        per_file, capped = cap_bosses(per_file)
+        if capped:
+            log(f"    {'boss points':26s} {folder}: {capped} held at one alive")
+        spec = CAMP_ZONES.get(folder)
+        if spec:
+            per_file, absorbed, camps = consolidate_camps(per_file, *spec)
+            log(f"    {'spawn camps':26s} {folder}: {absorbed} points -> {camps} camps "
+                f"x{spec[1]} = {camps * spec[1]} bodies ({spec[0] // 100} m grid, "
+                f"{sum(len(v) for v in per_file.values()) - camps} passed through)")
+        final.update(per_file)
+    return final
+
+
+def regen_blob(regen_src, final, key):
+    return oro.build_object_lump(final[key], regen_src[key][1])
 
 
 def strip_species(objs, excluded):
@@ -812,21 +953,10 @@ def stage3(ours, s667, sza, idx, snap):
     O = lambda rel: oro.Stb(P(ours, rel))
 
     # --- 3a. roster from the spawn lumps
-    regen_src, spawned = {}, set()
-    for _, folder in ZONES:
-        d = os.path.join(src_maps, folder)
-        for name in sorted(os.listdir(d)):
-            if not name.lower().endswith(".ifo"):
-                continue
-            buf, bounds = oro.read_ifo(os.path.join(d, name))
-            off, end = oro.lump_block(bounds, oro.LUMP_REGEN)
-            if off is None or buf[off:off + 4] == b"\0\0\0\0":
-                continue
-            objs, trailing = oro.read_lump(buf, bounds, oro.LUMP_REGEN)
-            objs, dropped = strip_species(objs, EXCLUDE_MONSTERS)
-            regen_src[(folder, name)] = (objs, trailing)
-            for o in objs:
-                spawned.update(oro.regen_mob_ids(o["extra"]))
+    regen_src, spawned = read_spawn_source(s667), set()
+    for objs, _trailing in regen_src.values():
+        for o in objs:
+            spawned.update(oro.regen_mob_ids(o["extra"]))
     spawned -= EXCLUDE_MONSTERS
     src_npc, our_npc = S(r"3DDATA\STB\LIST_NPC.STB"), O(r"3DDATA\STB\LIST_NPC.STB")
     za_npc = S(r"3DDATA\STB\LIST_NPC.STB", sza)
@@ -1016,38 +1146,9 @@ def stage3(ours, s667, sza, idx, snap):
               f"across {len(acts)} monsters; donors clean, "
               f"{len(silent)} pre-existing oddities: {[(n, s, m) for n, s, m, _ in silent]}")
 
-    # --- 3i. spawn lumps: camps for the carpets, pass-through for the rest
-    per_folder = collections.defaultdict(dict)
-    for (folder, name), (objs, trailing) in regen_src.items():
-        per_folder[folder][(folder, name)] = objs
-    final = {}
-    for folder, per_file in sorted(per_folder.items()):
-        spec = CAMP_ZONES.get(folder)
-        if spec:
-            kept_, absorbed, camps = consolidate_carpet(per_file, *spec)
-            print(f"    {'spawn camps':26s} {folder}: {absorbed} carpet points -> {camps} camps "
-                  f"x{spec[1]} = {camps * spec[1]} bodies ({spec[0] // 100} m grid, "
-                  f"{sum(len(v) for v in kept_.values()) - camps} passed through)")
-        else:
-            kept_ = per_file
-        for key, objs in kept_.items():
-            final[key] = objs
-    # escalation sanity: every slot count must stay under the point's cap
-    hot, bosses = [], 0
-    for key, objs in final.items():
-        for o in objs:
-            _iv, cap, _rng, tac = kk.regen_get_params(o["extra"])
-            b, t = kk.regen_roster_of(o["extra"])
-            slots = [(n, c) for n, c in b + t if n >= 1 and c >= 1]
-            if len({n for n, _ in slots}) == 1 and cap == 1:
-                bosses += 1                 # lone boss: slot 0 fills it, by design
-                continue
-            if any(c >= cap for _n, c in slots) or tac != 100:
-                hot.append((key[0], key[1], (cap, tac), slots))
-    print(f"    {'regen sanity':26s} {sum(len(v) for v in final.values())} points, "
-          f"{bosses} lone-boss points, {len(hot)} mixed points with a slot count >= cap")
-    for h in hot[:6]:
-        print(f"    {'':26s} {h}")
+    # --- 3i. spawn lumps: camps everywhere but Muris, bosses held at one alive
+    final = plan_spawns(regen_src)
+    report_spawn_sanity(final)
     files = points = 0
     for (folder, name), objs in sorted(final.items()):
         dp = os.path.join(dst_maps, folder, name)
