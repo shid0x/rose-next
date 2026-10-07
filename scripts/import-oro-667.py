@@ -105,10 +105,15 @@ ATK_SPEED_COL = 14
 # TARGETMARK.TSI beside the focused monster's HP bar (CNameBox::DrawTargetMark).
 # 667 added composite codes -- 42 Leader-Guard, 45 Leader-Ranger, 72 King-Guard,
 # 75 King-Ranger ... -- that fall off the sheet, so those monsters showed no mark.
-# The units digit is the base class; the tens digit (4 leader / 5 elite / 7 king)
-# has no retail sprite. The server only ever tests this column against 900.
+# The units digit is the role, the tens digit the rank (4 leader / 5 captain /
+# 6 sub-boss / 7 king / 8 elite). Kings fold to the crown (11) and elites to the
+# skull (16); leaders, captains and sub-bosses keep their role, since Oro's sit
+# at normal strength on our stats (folding kings to the role put a bow on the
+# Terrasaurus King -- fix-monster-marks.py). The server only tests this col
+# against 900.
 NPC_TYPE_COL = 27
 NPC_TYPE_COMPOSITE_MIN, NPC_TYPE_NPC_MIN = 40, 900
+NPC_TYPE_RANK_FOLD = {7: 11, 8: 16}   # tens digit -> single mark; others fold to the role
 # Bare-handed monsters present their hit through NPC_HAND_HIT_EFFECT (game col 33,
 # a LIST_EFFECT row). 667 left it blank on the Golden Scarabs and the Hungry Desert
 # Scavenger, which lands no visible impact; 403 is the most common retail value.
@@ -661,7 +666,7 @@ def fix_attack_speed(our_npc, za_npc, ids):
 
 
 def fix_presentation(our_npc, ids):
-    """Fold 667's composite type codes to the base class, and give bare-handed
+    """Fold 667's composite type codes to one mark (NPC_TYPE_RANK_FOLD), and give bare-handed
     monsters a hand-hit effect. Oro rows only (>= 2100); idempotent."""
     types, hits = [], []
     for i in ids:
@@ -669,8 +674,9 @@ def fix_presentation(our_npc, ids):
             continue
         t = num(our_npc, i, NPC_TYPE_COL)
         if NPC_TYPE_COMPOSITE_MIN <= t < NPC_TYPE_NPC_MIN and t % 10:
-            our_npc.set(i, NPC_TYPE_COL, str(t % 10))
-            types.append((i, t, t % 10))
+            folded = NPC_TYPE_RANK_FOLD.get(t // 10, t % 10)
+            our_npc.set(i, NPC_TYPE_COL, str(folded))
+            types.append((i, t, folded))
         armed = any(num(our_npc, i, c) for c in (oro.NPC_R_WEAPON_COL, oro.NPC_L_WEAPON_COL))
         if (t < NPC_TYPE_NPC_MIN and not armed and not our_npc.get(i, HAND_HIT_COL).strip()
                 and our_npc.get(i, 7).strip()):

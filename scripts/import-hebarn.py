@@ -156,7 +156,7 @@ C_EFFECTS, C_STRID, C_DEADEVENT, C_PVP = 39, 40, 41, 43
 BOSS_STATS = {C_MON: "BOSS_weilian.mon", C_WALK: 200, C_RUN: 700, C_SIZE: 150,
               C_LV: 240, C_HP: 1500, C_ATK: 3300, C_HIT: 1450, C_DEF: 1001, C_RES: 898,
               C_AVOID: 450, C_ASPD: 100, C_KIND: 1, C_EXP: 250000, C_MONEY: 0, C_RATE: 100,
-              C_REACH: 600, C_TYPE: 11, C_HANDHIT: 403}
+              C_REACH: 600, C_TYPE: 16, C_HANDHIT: 403}   # 16 = elite skull mark (fix-target-marks.py)
 BOSS_BLANK = (C_RHAND, C_LHAND, *C_SELL, C_FACE, C_EDITOR, C_EFFECTS, C_DEADEVENT)
 TALK_STATS = {C_MON: "BOSS_weilian.mon", C_SIZE: 150}
 TALK_BLANK = (C_FACE, C_EDITOR)
@@ -761,6 +761,7 @@ def verify(ours):
     n = oro.Stb(P(ours, NPC_STB_REL))
     check(n.get(TALK, 0) == TALK_NAME.encode() and n.get(TALK, C_TYPE) == b"999", "LIST_NPC TALK row")
     check(n.get(BOSS, 0) == BOSS_NAME.encode() and n.get(BOSS, C_AI) == b(AI_ROW), "LIST_NPC BOSS row")
+    check(n.get(BOSS, C_TYPE) == b(BOSS_STATS[C_TYPE]), "LIST_NPC BOSS type mark")
     drop_row = int(n.get(BOSS, C_DROP) or 0)
     drop = oro.Stb(P(ours, DROP_STB_REL))
     check(drop.get(drop_row, 0) == DROP_LABEL.encode(), f"ITEM_DROP row {drop_row}")
