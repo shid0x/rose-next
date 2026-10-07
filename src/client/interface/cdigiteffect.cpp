@@ -102,8 +102,13 @@ CDigitEffect::Init() {
         ::setMaterialUseLight(hMat, 0); // 라이팅 적용 안함.
 
         //::setMaterialUseAlphaTest( hMat, 1 );
-        //::setMaterialZWrite( hMat, 1 );
-        //::setMaterialZTest( hMat, 1 );
+
+        /// Drawn over the world, like the name label above it. The digit is a world-space
+        /// quad centred over the model's origin, so with the material default (z test and
+        /// z write on) any wide model -- a drake's wings, a golem's shoulders -- that rises
+        /// near its full height in front of that column buried the number in its body.
+        ::setMaterialZWrite(hMat, 0);
+        ::setMaterialZTest(hMat, 0);
 
         ///
         ::setBillboard(m_DigitNode[i].m_hAnimatable, 1);

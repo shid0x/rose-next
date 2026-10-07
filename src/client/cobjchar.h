@@ -930,6 +930,9 @@ public:
     /// NPC의 경우 STB에 강제로 높이가 들어가 있으면 그 높이를 사용한다.
     virtual void GetScreenPOS(D3DVECTOR& PosSCR);
 
+    /// World z of the overhead anchor shared by the name label and the damage digits.
+    float GetOverheadZ();
+
     bool LinkEffectToPOINT(CEffect* pEffect, short nPartIDX, short nPointIDX);
     bool LinkEffectToDUMMY(CEffect* pEffect, short nDummyIDX);
 
@@ -1275,9 +1278,6 @@ public:
 
     /// 지속형의 변경수치 적용을 위해서 현재 적용되어있는 능력수치( 패시브 스킬 포함 )
     virtual int Get_DefaultAbilityValue(int iType);
-
-    /// NPC의 경우 STB에 강제로 높이가 들어가 있으면 그 높이를 사용한다.
-    virtual void GetScreenPOS(D3DVECTOR& PosSCR);
 
     /// <
     /// < End

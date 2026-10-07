@@ -1084,14 +1084,30 @@ CObjCHAR::DeleteExternalEffect(CEffect* pEffect) {
 void
 CObjCHAR::GetScreenPOS(D3DVECTOR& PosSCR) {
     // 모델의 좌표에 키를 더한 위치를 이름출력 위치로 설정
-    ::worldToScreen(m_PosCUR.x,
-        m_PosCUR.y,
-        getPositionZ(m_hNodeMODEL) + m_fStature,
-        &PosSCR.x,
-        &PosSCR.y,
-        &PosSCR.z);
+    ::worldToScreen(m_PosCUR.x, m_PosCUR.y, GetOverheadZ(), &PosSCR.x, &PosSCR.y, &PosSCR.z);
 
     StabilizeLabelPOS(PosSCR);
+}
+
+/// NPC의 경우 STB에 강제로 높이가 들어가 있으면 그 높이를 사용한다.
+/// The STB height (LIST_NPC col 42, absolute cm) may only lift the anchor above the
+/// measured model, never pull it inside: it ignores NPC_SCALE, so a scaled-up row
+/// (Evil Fairy 270 at scale 200, Hebarn 550 at 150, Mega Drake 100 at 400) drew its
+/// name and HP bar in the monster's chest. Rows set *above* the model -- flyers that
+/// hover through animation, which the bind-pose height cannot see -- are unchanged.
+/// The damage digits share this anchor: they used Get_CurPOS().z + m_fStature, which
+/// ignored both col 42 and the model's altitude, so flyers took their hits mid-body.
+float
+CObjCHAR::GetOverheadZ() {
+    float fStature = m_fStature;
+    if (IsNPC()) {
+        float fStbHeight = (float)NPC_HEIGHT(m_nCharIdx);
+        if (fStature < fStbHeight)
+            fStature = fStbHeight;
+    }
+
+    float fBaseZ = m_hNodeMODEL ? ::getPositionZ(m_hNodeMODEL) : m_PosCUR.z;
+    return fBaseZ + fStature;
 }
 
 /// worldToScreen floors to whole pixels so text stays sharp, but the follow camera
@@ -4244,7 +4260,7 @@ CObjCHAR::CreateImmediateDigitEffect(int wDamage) {
     g_UIMed.CreateDamageDigit(Damage.m_wVALUE,
         pos.x,
         pos.y,
-        pos.z + this->m_fStature,
+        GetOverheadZ(),
         this->IsA(OBJ_USER));
 }
 
@@ -4559,7 +4575,7 @@ CObjCHAR::Hitted(CObjCHAR* pFromOBJ,
                 g_UIMed.CreateDamageDigit(0,
                     pos.x,
                     pos.y,
-                    pos.z + m_fStature,
+                    GetOverheadZ(),
                     this->IsA(OBJ_USER));
                 return true;
             }
@@ -4585,7 +4601,7 @@ CObjCHAR::Hitted(CObjCHAR* pFromOBJ,
                 g_UIMed.CreateDamageDigit(0,
                     pos.x,
                     pos.y,
-                    pos.z + m_fStature,
+                    GetOverheadZ(),
                     this->IsA(OBJ_USER));
             }
             return true;
@@ -4610,7 +4626,7 @@ CObjCHAR::Hitted(CObjCHAR* pFromOBJ,
             g_UIMed.CreateDamageDigit(0,
                 pos.x,
                 pos.y,
-                pos.z + m_fStature,
+                GetOverheadZ(),
                 this->IsA(OBJ_USER));
             return true;
         }
@@ -4642,7 +4658,7 @@ CObjCHAR::Hitted(CObjCHAR* pFromOBJ,
         g_UIMed.CreateDamageDigit(stDmage.m_wVALUE,
             pos.x,
             pos.y,
-            pos.z + m_fStature,
+            GetOverheadZ(),
             this->IsA(OBJ_USER));
 
         /// 타격시 흔들림..
@@ -7094,28 +7110,6 @@ CObjMOB::Get_DefaultAbilityValue(int iType) {
     }
 
     return 1;
-}
-
-/// NPC의 경우 STB에 강제로 높이가 들어가 있으면 그 높이를 사용한다.
-/// The STB height (LIST_NPC col 42, absolute cm) may only lift the label above the
-/// measured model, never pull it inside: it ignores NPC_SCALE, so a scaled-up row
-/// (Evil Fairy 270 at scale 200, Hebarn 550 at 150, Mega Drake 100 at 400) drew its
-/// name and HP bar in the monster's chest. Rows set *above* the model -- flyers that
-/// hover through animation, which the bind-pose height cannot see -- are unchanged.
-void
-CObjMOB::GetScreenPOS(D3DVECTOR& PosSCR) {
-    float fStature = (float)NPC_HEIGHT(this->m_nCharIdx);
-    if (fStature < m_fStature)
-        fStature = m_fStature; // 모델의 좌표에 키를 더한 위치를 이름출력 위치로 설정
-
-    ::worldToScreen(m_PosCUR.x,
-        m_PosCUR.y,
-        getPositionZ(m_hNodeMODEL) + fStature,
-        &PosSCR.x,
-        &PosSCR.y,
-        &PosSCR.z);
-
-    StabilizeLabelPOS(PosSCR);
 }
 
 //--------------------------------------------------------------------------------

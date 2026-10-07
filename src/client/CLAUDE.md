@@ -377,7 +377,10 @@ Names are drawn inside the sprite batch that `CGameStateMain::Render_GameMENU` o
 **The underlying rule is not understood** -- the fix matches a working call site rather than explaining why a below-origin rect yields nothing in that batch. `DrawAvatarName`'s gauge branch still draws into `{0, 0, ...}` and is presumably affected the same way; it is hard to notice because it only shows for other players. If this bites again, that is the thread to pull.
 
 **A monster's label height is `max(LIST_NPC col 42, measured model height)`** (2026-10-06,
-`CObjMOB::GetScreenPOS`). Col 42 is an absolute cm override that ignores `NPC_SCALE`, and it used to
+now `CObjCHAR::GetOverheadZ`, 2026-10-07, which the damage digits share -- they used
+`Get_CurPOS().z + m_fStature`, ignoring col 42 and the model's altitude, and their quad was depth
+tested, so a wide model rising near its full height in front of the origin column buried the
+number in its body; `CDigitEffect` now draws with z test and z write off, like the label). Col 42 is an absolute cm override that ignores `NPC_SCALE`, and it used to
 replace the measured height outright, so 26 rows drew their name and bar inside the model: Mega Drake
 (100 cm on an ~885 cm model), Hebarn 4148 (550 vs ~1340), Wolf King, Evil Fairy 2725 (270 at scale
 200), Grandmaster Golem, Deadly Drake, Ikaness Mecha... The other 263 non-zero rows sit *above* the
