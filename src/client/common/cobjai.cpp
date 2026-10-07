@@ -112,6 +112,29 @@ CObjAI::Chg_CurMOTION(tagMOTION* pMotion) {
     return false;
 }
 
+// The engine plays a clip at a whole number of frames a second -- int(rate * fps) in
+// zz_motion_controller::reset_speed -- so a remote attacker's swing ran up to one
+// frame a second slower than the server times it: the Dreadnaught King at 1.15 played
+// at 34 fps against the server's 34.5, 25 ms longer per swing. Every swing then
+// arrived before the previous clip had ended and the cut (StandDownSpentAttackMotion)
+// landed 3-4 frames short of the end, where the trample clip is still 14-19 degrees
+// from its loop pose: the model held that pose under the restart's 500 ms blend, then
+// lurched into the next wind-up (2026-10-07). Play the clip kRemoteSwingLead faster
+// than the server's rate, rounded up to a whole engine fps, so it ends before the next
+// swing arrives and the cut is a fallback again. The action frames land ~3% early,
+// which nothing waits on: the swing's event is queued on receive.
+static const float kRemoteSwingLead = 0.03f;
+
+static float
+RemoteSwingPlayRate(float fRate, const tagMOTION* pMotion) {
+    if (!pMotion || pMotion->m_wFPS == 0 || fRate <= 0.f) {
+        return fRate;
+    }
+    const float fFPS = (float)pMotion->m_wFPS;
+    // +0.01 so the engine's own multiply cannot truncate back below the target.
+    return (ceilf(fRate * fFPS * (1.f + kRemoteSwingLead)) + 0.01f) / fFPS;
+}
+
 //--------------------------------------------------------------------------------
 /// class : CObAI
 /// @param CObjCHAR *pTarget Ÿ�� ������Ʈ
@@ -151,7 +174,19 @@ CObjAI::Start_ATTACK(CObjCHAR* pTarget) {
         const int iAttackRepeatCNT =
             static_cast<CObjCHAR*>(this)->IsLocalAvatarAttacker() ? 0 : 1;
         const float fAttackRate = this->Get_fAttackSPEED();
-        this->Set_MOTION(this->GetANI_Attack(), 0, fAttackRate, true, iAttackRepeatCNT);
+        const float fPlayRate = iAttackRepeatCNT
+            ? RemoteSwingPlayRate(fAttackRate,
+                  static_cast<CObjCHAR*>(this)->Get_MOTION(this->GetANI_Attack()))
+            : fAttackRate;
+        this->Set_MOTION(this->GetANI_Attack(), 0, fPlayRate, true, iAttackRepeatCNT);
+        if (iAttackRepeatCNT) {
+            // Set_MOTION restarted the clip at frame 0, but Chg_CurMOTION zeroes
+            // m_iCurMotionFRAME only when the motion changes. Left on the previous
+            // swing's frame, the next ProcMotionFrame read the restart as "motion
+            // complete" and ProcCMD_ATTACK started this swing a second time, a tick
+            // later (two "attack motion start" lines per swing).
+            m_iCurMotionFRAME = 0;
+        }
 
         // One line per swing start, like "combat swing received". Pairing this with the
         // server's "CombatTrace server combat swing" cadence is what shows whether this
@@ -159,11 +194,12 @@ CObjAI::Start_ATTACK(CObjCHAR* pTarget) {
         // 2026-09-19 observers ran every player at 1.00 (see CObjAVT::Create and
         // CObjCHAR::Get_fAttackSPEED).
         LogString(LOG_DEBUG_,
-            "CombatTrace attack motion start: obj %d rate %.2f synced %d repeat %d\n",
+            "CombatTrace attack motion start: obj %d rate %.2f synced %d repeat %d play %.3f\n",
             static_cast<CObjCHAR*>(this)->Get_INDEX(),
             fAttackRate,
             (int)this->stats.attack_speed,
-            iAttackRepeatCNT);
+            iAttackRepeatCNT,
+            fPlayRate);
 
 #if defined(_DEBUG) && !defined(__SERVER)
         if (m_pCurMOTION->m_nActionPointCNT <= 0) {
