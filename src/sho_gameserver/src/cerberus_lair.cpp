@@ -23,6 +23,16 @@ const char* EXIT_EVENT = "WARP-CERBERUS-LP02";
 constexpr int GATEKEEPER_NPC = 4149;
 constexpr int CERBERUS_AWAKE = 2682;
 constexpr int CERBERUS_ASLEEP = 2683;
+// The Hellhounds Cerberus calls at HOUND_CALL_PCT of its HP. They are spawned here,
+// at the crater, not by its AI: a monster the client creates is put on the highest
+// surface at its spot (CObjMOB::Create -> GetHeightTop), and the fight drifts under
+// the lair's rock arches, so hounds called where Cerberus stood landed on the rock
+// roof -- heard, never seen (2026-10-09). The crater is open sky: Cerberus's own
+// spawn renders there.
+constexpr int HELLHOUND = 2684;
+constexpr int HOUND_CALL_PCT[] = {66, 33};
+constexpr int HOUNDS_PER_CALL = 2;
+constexpr int HOUND_SPREAD = 100; // cm around the crater point
 const char* REGISTER_TRIGGER = "Cerberus-Register";
 const char* SPEAKER = "Yelena";
 // The crater, tsuki's own spawn point (31_30.IFO), world cm.
@@ -107,6 +117,7 @@ CCerberusLair::CCerberusLair():
     m_bReqDraw(false),
     m_bReqReset(false),
     m_bBossSeen(false),
+    m_nHoundCalls(0),
     m_nGateValue(GATE_CLOSED),
     m_dwLairTick(0),
     m_dwLastSweep(0),
@@ -225,6 +236,7 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
     std::vector<CObjCHAR*> mobs;
     std::vector<CObjITEM*> items;
     bool bBossAlive = false;
+    CObjCHAR* pAwake = nullptr;
     pZone->ForEachObject([&](CGameOBJ* pObj) {
         if (pObj->IsUSER()) {
             users.push_back((classUSER*)pObj);
@@ -235,6 +247,8 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
                 const int n = pMob->Get_CharNO();
                 if (n == CERBERUS_AWAKE || n == CERBERUS_ASLEEP)
                     bBossAlive = true;
+                if (n == CERBERUS_AWAKE)
+                    pAwake = pMob;
             }
         } else if (pObj->IsITEM()) {
             items.push_back((CObjITEM*)pObj);
@@ -353,6 +367,21 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
                 }
             }
 
+            // The hounds, once per threshold.
+            if (pAwake && m_nHoundCalls < (int)(sizeof(HOUND_CALL_PCT) / sizeof(int))) {
+                const int nMaxHP = pAwake->Get_MaxHP();
+                if (nMaxHP > 0
+                    && (long long)pAwake->Get_HP() * 100 <= (long long)nMaxHP * HOUND_CALL_PCT[m_nHoundCalls]) {
+                    m_nHoundCalls++;
+                    pZone->RegenCharacter(
+                        CRATER_X, CRATER_Y, HOUND_SPREAD, HELLHOUND, HOUNDS_PER_CALL, TEAMNO_MOB, true);
+                    g_pZoneLIST->Send_gsv_ANNOUNCE_CHAT(LAIR_ZONE,
+                        (char*)"Cerberus howls, and hellhounds answer from the dark!",
+                        (char*)"Cerberus");
+                    LOG_INFO("[cerberus] hounds called ({})", m_nHoundCalls);
+                }
+            }
+
             if (m_bBossSeen && !bBossAlive) {
                 m_State = State::Grace;
                 m_dwGraceUntil = now + GRACE_MS;
@@ -459,6 +488,7 @@ CCerberusLair::Draw() {
     }
     m_State = State::Run;
     m_bBossSeen = false;
+    m_nHoundCalls = 0;
     m_dwRunStart = ::GetTickCount();
     Announce(fmt::format("{} descend{} into the Cerberus Lair.",
         Names(chosen),

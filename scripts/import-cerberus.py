@@ -68,15 +68,42 @@ broadcasts GSV_CHANGE_NPC and swaps model, HP and AI: the AI is looked up from
 the current row every tick, cobjnpc.h). Change_CHAR does not run the created
 pattern, so the awake AI's idle pattern picks the fight up.
 
-The fight (first version)
--------------------------
-Melee, plus skill 3069 (a 5.5 m area hit around Cerberus, power 60, cast on slot
-8 and released on slot 9, `runa_wolf1_action_skill01` -- the slots Hook 516/517
-already cast it on) from the damaged pattern every BITE_EVERY hits taken while
-the target is within BITE_REACH, as Hebarn's stomp. A leash (LEASH m) sends it
-home. Every cast is gated on the target being in range already (Hebarn's lesson:
-a cast ordered from afar makes the server chase first and the client abandons
-the cast after 5 s).
+The fight
+---------
+Melee, plus **Infernal Leap** (LIST_SKILL 7021, a copy of 3069 -- the 5.5 m area
+hit Hook 516/517 cast -- with fire on it: FILE_EFFECT 1882 thornie_firecharge as it
+crouches, 1883 thornie_fireblast where it lands, the Terrasaurus King's effects).
+Cast on slot 8, released on slot 9 (`runa_wolf1_action_skill01`, hit frame 25),
+from the damaged pattern every BITE_EVERY hits taken while the target is within
+BITE_REACH, as Hebarn's stomp. A leash (LEASH m) sends it home. Every cast is gated
+on the target being in range already (Hebarn's lesson: a cast ordered from afar
+makes the server chase first and the client abandons the cast after 5 s).
+
+**Hellhounds** (2026-10-08, "make it cooler"): at 66% and again at 33% HP two
+Hellhounds (LIST_NPC 2684, the Wolf King's runa_wolf3 model, level 150, no loot,
+HELLHOUND.AIP) appear in the crater with a zone shout, and run to the fight. The
+game server spawns them (cerberus_lair.cpp), not Cerberus's AI: the first cut summoned
+them around Cerberus (AIACT20) and the client put them on the rock arches above the
+fight -- a new monster stands on the highest surface at its spot (CObjMOB::Create ->
+GetHeightTop) and the server sends no height. Heard, never seen (2026-10-09). The
+crater is open sky. The controller's reset kills them with everything else. **The glow** (col 39, RRRGGGBBB) is a fiery red on both forms of
+Cerberus and on the hounds.
+
+**Hellfire Breath** (LIST_SKILL 7022, 2026-10-09): Fireball 3604's row and effect
+chain (projectile 476, thornie_firecharge / fireblast, fire hit) with a 15 m range, a
+5 m blast, fired from p_mouth (dummy 7, added to Cerberus's copy of the skeleton --
+see MOUTH; the first cut used Fireball's point 5, p_06, which sits in the spiked
+collar, and the bolt left from mid-body). Cast on slot 6, released on slot 7, `runa_wolf1_status_skill01`,
+whose launch frames 24 and 34 fire two fireballs a cast (multi-hit is
+animation-driven). Burns: Flame Heat (status 58, the Mukuroji's), 70%, 10 s. Every BREATH_EVERY hits taken (var 4) at any target within 14 m -- melee included:
+from p_mouth, ~7 m ahead of and ~7.5 m above Cerberus's centre at size 800, the bolt
+crosses ~10 m down to a fighter standing under the heads. (The first cut fired from the
+collar, right above the body, so a melee target was hit instantly; for one build the
+breath was range-only, which lost the flavour.) Also while chasing: 30% of checks at a
+target 6-14 m away, so a kiter is breathed on rather than run down.
+Power 200 is a first guess, to tune after a fight.
+
+Not taken (offered 2026-10-08): a howl (area slow) and an enrage.
 
 Stats
 -----
@@ -176,26 +203,71 @@ C_NAME, C_WALK, C_RUN, C_SIZE, C_LEVEL, C_HP, C_ATK, C_HIT, C_DEF, C_RES, C_AVOI
     C_ASPD, C_AI, C_EXP, C_DROP, C_MONEY, C_DROPRATE = \
     0, 2, 3, 4, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20
 C_TARGET, C_TYPE, C_DEADEVENT = 25, 27, 41
+C_SIZE, C_RANGE, C_GLOW = 4, 26, 39
+# The hellfire look: LIST_NPC col 39 is a glow around the whole model, decimal
+# RRRGGGBBB (CGameUtil::GetRGBFromString, client CObjMOB::Create), as on the
+# Behemoth King (80050050).
+GLOW = "220070020"
+HOUND_GLOW = "200050010"
 TYPE_SKULL = 16
 # (name, STL key, stats)
 MONSTERS = {
     AWAKE: ("Cerberus", "LCRBMOB2682", {
         C_LEVEL: 155, C_HP: 800, C_ATK: 1005, C_HIT: 492, C_DEF: 601, C_RES: 516,
         C_AVOID: 263, C_ASPD: 110, C_EXP: 16000, C_AI: 2254,
-        C_DROP: 49, C_MONEY: 0, C_DROPRATE: 100}),
+        C_DROP: 49, C_MONEY: 0, C_DROPRATE: 100, C_GLOW: GLOW}),
     ASLEEP: ("Sleeping Cerberus", "LCRBMOB2683", {
         C_WALK: 0, C_RUN: 0,
         C_LEVEL: 155, C_HP: 800, C_ATK: 1005, C_HIT: 492, C_DEF: 601, C_RES: 516,
         C_AVOID: 263, C_ASPD: 110, C_EXP: 0, C_AI: 2253,
-        C_DROP: 0, C_MONEY: 0, C_DROPRATE: 0}),
+        C_DROP: 0, C_MONEY: 0, C_DROPRATE: 0, C_GLOW: GLOW}),
 }
-AI_FILES = {2253: "CERBERUS_SLEEP.AIP", 2254: "CERBERUS.AIP"}
+AI_FILES = {2253: "CERBERUS_SLEEP.AIP", 2254: "CERBERUS.AIP", 2255: "HELLHOUND.AIP"}
 LINES = {   # AI_s.STB, appended; AIACT28 type 1 = zone shout, 0 = local chat
     "wake": "Three heads lift from the ice. Cerberus wakes!",
     "kill": "Cerberus tears its prey apart.",
 }
+
+# ---- the hellhounds: the game server calls two at 66% of Cerberus's HP and two more at
+# 33% (cerberus_lair.cpp HOUND_CALL_PCT), at the crater -- not the AI: see "The fight"
+HOUND = 2684                        # blank here, no CHR entry
+HOUND_NAME, HOUND_STRID = "Hellhound", "LCRBMOB2684"
+HOUND_SEEK, HOUND_LEASH = 55, 70        # m: the whole arena from the crater
+HOUND_TEMPLATE = 1428               # Wolf King: runa_wolf3 model, the Luna wolf family
+# level 150 field monster, the medians import-ulverick.py uses, a little faster
+HOUND_STATS = {C_LEVEL: 150, C_HP: 45, C_ATK: 700, C_HIT: 450, C_DEF: 480, C_RES: 420,
+               C_AVOID: 240, C_ASPD: 115, C_WALK: 250, C_RUN: 800, C_SIZE: 220,
+               C_EXP: 600, C_AI: 2255, C_DROP: 0, C_MONEY: 0, C_DROPRATE: 0,
+               C_TYPE: 3, C_GLOW: HOUND_GLOW}
+
+# ---- Infernal Leap: the jump with fire on it (Hook 516/517 keep 3069 as it was)
+LEAP = 7021                         # one past the end of LIST_SKILL
+LEAP_NAME = "Infernal Leap"
+LEAP_SRC = 3069
+LEAP_CAST_FX, LEAP_HIT_FX = 1882, 1883  # FILE_EFFECT: thornie_firecharge / _fireblast
+SKILL_STB_REL = r"3DDATA\STB\LIST_SKILL.STB"
+SK_NAME, SK_LINE, SK_CAST_FX, SK_CAST_LOC, SK_HIT_FX, SK_HIT_LOC = 0, 1, 56, 57, 74, 75
+SK_RANGE, SK_RADIUS, SK_POWER, SK_STATUS, SK_SUCCESS, SK_DURATION = 6, 8, 9, 11, 13, 14
+SK_CAST_MOTION, SK_SKILL_MOTION, SK_FIRE_LOC = 52, 68, 72
+
+# ---- Hellfire Breath: two fireballs from the snout (2026-10-09, "make it feel like a boss")
+BREATH = 7022
+BREATH_NAME = "Hellfire Breath"
+BREATH_SRC = 3604                   # Fireball (the Terrasaurus King's): projectile 476,
+                                    # firecharge / fireblast / fire hit, its sounds
+BREATH_MOTION = 6                   # cast on slot 6 (casting), released on slot 7:
+                                    # runa_wolf1_status_skill01, launch frames 24 and 34
+BREATH_CELLS = {SK_RANGE: 1500, SK_RADIUS: 500, SK_POWER: 200,
+                SK_CAST_LOC: 7, SK_FIRE_LOC: 7,                   # p_mouth (MOUTH below)
+                SK_STATUS: 58, SK_SUCCESS: 70, SK_DURATION: 10,   # Flame Heat, the
+                SK_CAST_MOTION: BREATH_MOTION,                    # Mukuroji's burn
+                SK_SKILL_MOTION: BREATH_MOTION + 1}
+BREATH_CHASE = (6, 14)              # m: while chasing, it breathes on you instead
+BREATH_CHASE_CHANCE = 30
+BREATH_EVERY = 8                    # hits taken (monster var 4)
+BREATH_REACH = 14                   # m
 WAKE_RANGE = 14                     # m
-BITE = 3069                         # 5.5 m area hit, Hook 516/517's
+BITE = LEAP                         # 5.5 m area hit with fire on it
 BITE_MOTION = 8
 BITE_REACH = 5                      # m
 BITE_EVERY = 12                     # hits taken between two
@@ -268,7 +340,7 @@ DIALOG = {
 BAK_TRACKED = [ZONE_STB_REL, ZONE_STL_REL, WARP_STB_REL, NPC_STB_REL, NPC_STL_REL,
                NPC_CHR_REL, r"3DDATA\NPC\PART_NPC.ZSC", AI_STB_REL, AI_STR_REL,
                EVENT_STB_REL, QSD_REL, r"3DDATA\EVENT\ulngtb_con.ltb",
-               r"3DDATA\STB\ITEM_DROP.STB"]
+               r"3DDATA\STB\ITEM_DROP.STB", SKILL_STB_REL]
 
 CHUNK_CM, GRID_CM, ORIGIN_CM = 16000, 250, 520000
 POS_OFF = 2 + 2 + 4 + 4 + 4 + 4 + 16       # warp, event, type, id, map_x, map_y, quat
@@ -576,6 +648,28 @@ def death_events():
             heb.ev("loot c", [], drops(UNIQUES[2]))]
 
 
+def build_hound_ai():
+    """Spawned by the server at the crater (RegenMOB never runs the created pattern),
+    so the idle search must reach the whole arena: Cerberus leashes at LEASH m."""
+    pats = [
+        (heb.pat("created"), [heb.ev("hunt", [heb.c_enemies_near(HOUND_SEEK)], [heb.a_attack_found()])]),
+        (heb.pat("stop"), [
+            heb.ev("go home", [heb.c_moved_from_spawn(HOUND_LEASH)], [heb.a_run_home(3)]),
+            heb.ev("seek", [heb.c_enemies_near(HOUND_SEEK)], [heb.a_attack_found()]),
+        ]),
+        (heb.pat("attack move"), [
+            heb.ev("leash", [heb.c_moved_from_spawn(HOUND_LEASH)], [heb.a_run_home(3)]),
+        ]),
+        (heb.pat("damaged"), [
+            heb.ev("retaliate", [heb.c_chance(30), heb.c_attacker_not_target()],
+                   [heb.a_attack_attacker()]),
+        ]),
+        (heb.pat("kill"), []),
+        (heb.pat("dead"), []),
+    ]
+    return mon.build_aip((len(pats), 2, 50), b"Hellhound\0", pats, b"")
+
+
 def build_awake_ai(L):
     pats = [
         (heb.pat("created"), [heb.ev("hunt", [heb.c_enemies_near(SEEK)], [heb.a_attack_found()])]),
@@ -583,15 +677,20 @@ def build_awake_ai(L):
             heb.ev("go home", [heb.c_moved_from_spawn(LEASH)], [heb.a_run_home(3)]),
             heb.ev("seek", [heb.c_enemies_near(SEEK)], [heb.a_attack_found()]),
         ]),
-        (heb.pat("attack move"), [
+        (heb.pat("attack move"), [       # runs only while it moves towards its target
             heb.ev("leash", [heb.c_moved_from_spawn(LEASH)], [heb.a_run_home(3)]),
+            heb.ev("breath", [heb.c_chance(BREATH_CHASE_CHANCE), heb.c_target_at_least(BREATH_CHASE[0]),
+                              heb.c_target_within(BREATH_CHASE[1])],
+                   [heb.a_cast(BREATH, BREATH_MOTION)]),
         ]),
-        (heb.pat("damaged"), [
+        (heb.pat("damaged"), [           # first match wins; var 2 = bite, var 4 = breath
             heb.ev("bite", [heb.c_var(2, BITE_EVERY, 2), heb.c_target_within(BITE_REACH)],
-                   [heb.a_cast(BITE, BITE_MOTION), heb.a_set_var(2, 0)]),
+                   [heb.a_cast(BITE, BITE_MOTION), heb.a_set_var(2, 0), heb.a_set_var(4, 1, 6)]),
+            heb.ev("breath", [heb.c_var(4, BREATH_EVERY, 2), heb.c_target_within(BREATH_REACH)],
+                   [heb.a_cast(BREATH, BREATH_MOTION), heb.a_set_var(4, 0), heb.a_set_var(2, 1, 6)]),
             heb.ev("retaliate", [heb.c_chance(20), heb.c_attacker_not_target()],
-                   [heb.a_attack_attacker(), heb.a_set_var(2, 1, 6)]),
-            heb.ev("count", [], [heb.a_set_var(2, 1, 6)]),
+                   [heb.a_attack_attacker(), heb.a_set_var(2, 1, 6), heb.a_set_var(4, 1, 6)]),
+            heb.ev("count", [], [heb.a_set_var(2, 1, 6), heb.a_set_var(4, 1, 6)]),
         ]),
         (heb.pat("kill"), [heb.ev("maul", [heb.c_chance(50)], [heb.a_say(L["kill"], 0)])]),
         (heb.pat("dead"), death_events()),
@@ -639,7 +738,144 @@ def ai_lines(ours, dry):
 
 
 def ai_blobs(line_rows):
-    return {2253: build_sleep_ai(line_rows), 2254: build_awake_ai(line_rows)}
+    return {2253: build_sleep_ai(line_rows), 2254: build_awake_ai(line_rows),
+            2255: build_hound_ai()}
+
+
+def hound_row(d_npc):
+    row = list(d_npc.d[HOUND_TEMPLATE])
+    row[C_NAME] = HOUND_NAME.encode()
+    for c, v in HOUND_STATS.items():
+        row[c] = b(v)
+    for c in (C_TARGET, C_DEADEVENT, *oro.NPC_SELL_TAB_COLS):
+        row[c] = b""
+    row[oro.NPC_STRID_COL] = HOUND_STRID.encode()
+    row[oro.NPC_PVP_COL] = oro.DEFAULT_PVP_STATE
+    if d_npc.get(HOUND, 0).strip():
+        row[C_EXP] = d_npc.get(HOUND, C_EXP)        # rebalance-exp-rewards.py owns it
+    return row
+
+
+# The skeleton is the plain wolf's (WOLF3\RUNA_WOLF3_BONE.ZMD, byte-identical), and
+# none of its dummies is a mouth on Cerberus's three-headed mesh: p_06 (index 5, the
+# Fireball row's firing point) floats inside the spiked collar above the heads, p_05
+# sits 24 units -- about 2 m at size 800 -- inside the middle muzzle. So Cerberus's own
+# copy of the skeleton (CERBERUS\RUNA_WOLF3_BONE.ZMD, which only its CHR entries name)
+# gets an 8th dummy, p_mouth, at the middle head's muzzle tip: HEAD01.ZMS's central
+# vertices end at y -92.5, z 79-117 (mesh space = bind pose, the wolf faces -y). The
+# engine appends its own root dummy after the file's (zz_skeleton.cpp), which moves
+# from index 7 to 8; nothing of Cerberus's names 7 but the breath.
+SKEL_REL = r"3DDATA\NPC\ANIMAL\CERBERUS\RUNA_WOLF3_BONE.ZMD"
+MOUTH = (0.0, -90.0, 95.0)          # bind pose, just inside the tip
+MOUTH_NAME = b"p_mouth"
+MOUTH_PARENT = 4                    # b1_head
+
+
+def _q2m(w, x, y, z):
+    import numpy as np
+    return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                     [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                     [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+
+
+def cerberus_skeleton(src):
+    """tsuki's skeleton with p_mouth appended (ZMD0003, zz_skeleton.cpp layout)."""
+    import numpy as np
+    blob = open(P(src, SKEL_REL), "rb").read()
+    if blob[:7] != b"ZMD0003":
+        raise SystemExit(f"{SKEL_REL}: not a ZMD0003")
+    o = 7
+    nb, = struct.unpack_from("<I", blob, o); o += 4
+    world = []
+    for i in range(nb):
+        parent, = struct.unpack_from("<I", blob, o); o += 4
+        o = blob.index(b"\0", o) + 1
+        pos = np.array(struct.unpack_from("<3f", blob, o)); o += 12
+        rot = _q2m(*struct.unpack_from("<4f", blob, o)); o += 16
+        if i == 0:
+            world.append((rot, pos))
+        else:
+            pr, pp = world[parent]
+            world.append((pr @ rot, pp + pr @ pos))
+    count_at = o
+    nd, = struct.unpack_from("<I", blob, o); o += 4
+    names = []
+    for _ in range(nd):
+        e = blob.index(b"\0", o)
+        names.append(blob[o:e]); o = e + 1 + 4 + 12 + 16
+    if o != len(blob):
+        raise SystemExit(f"{SKEL_REL}: {len(blob) - o} bytes after the dummies")
+    if MOUTH_NAME in names:
+        raise SystemExit(f"{SKEL_REL}: the source already has {MOUTH_NAME!r}")
+    pr, pp = world[MOUTH_PARENT]
+    local = pr.T @ (np.array(MOUTH) - pp)
+    entry = MOUTH_NAME + b"\0" + struct.pack("<I3f4f", MOUTH_PARENT, *local, 1.0, 0.0, 0.0, 0.0)
+    return blob[:count_at] + struct.pack("<I", nd + 1) + blob[count_at + 4:] + entry
+
+
+def breath_row(sk):
+    row = list(sk.d[BREATH_SRC])
+    row[SK_NAME] = BREATH_NAME.encode()
+    row[SK_LINE] = b(BREATH)
+    for c, v in BREATH_CELLS.items():
+        row[c] = b(v)
+    return row
+
+
+def leap_row(sk):
+    row = list(sk.d[LEAP_SRC])
+    row[SK_NAME] = LEAP_NAME.encode()
+    row[SK_LINE] = b(LEAP)
+    row[SK_CAST_FX], row[SK_CAST_LOC] = b(LEAP_CAST_FX), b"999"
+    row[SK_HIT_FX], row[SK_HIT_LOC] = b(LEAP_HIT_FX), b"999"
+    return row
+
+
+def stage2_extras(ours, dry):
+    """The hellhound row, model and STL key, and the Infernal Leap skill row."""
+    d_npc = oro.Stb(P(ours, NPC_STB_REL))
+    cur = d_npc.get(HOUND, 0).decode("latin-1").strip()
+    if cur and cur != HOUND_NAME:
+        raise SystemExit(f"our LIST_NPC row {HOUND} is {cur!r}")
+    want = hound_row(d_npc)
+    if d_npc.d[HOUND] != want:
+        d_npc.d[HOUND] = want
+        d_npc.save(dry)
+        print(f"    {'LIST_NPC.STB':26s} row {HOUND} {HOUND_NAME} (from {HOUND_TEMPLATE})")
+    stl = oro.Stl(P(ours, NPC_STL_REL))
+    if not stl.has(HOUND_STRID):
+        stl.append(HOUND_STRID, HOUND, HOUND_NAME)
+        stl.save(dry)
+        print(f"    {'LIST_NPC_S.STL':26s} +1 key {HOUND_STRID}")
+    chr_ = oro.Chr(P(ours, NPC_CHR_REL))
+    if HOUND >= len(chr_.chars) or chr_.chars[HOUND] is None:
+        if HOUND >= len(chr_.chars):
+            chr_.chars.extend([None] * (HOUND + 1 - len(chr_.chars)))
+        chr_.chars[HOUND] = copy.deepcopy(chr_.chars[HOUND_TEMPLATE])
+        chr_.save(dry)
+        print(f"    {'LIST_NPC.CHR':26s} entry {HOUND} = {HOUND_TEMPLATE}'s model")
+
+    sk = oro.Stb(P(ours, SKILL_STB_REL))
+    if sk.rows <= LEAP:
+        sk.grow_to(LEAP + 1)
+    cur = sk.get(LEAP, 0).decode("latin-1").strip()
+    if cur and cur != LEAP_NAME:
+        raise SystemExit(f"our LIST_SKILL row {LEAP} is {cur!r}")
+    wrote = []
+    for row, name, src, build in ((LEAP, LEAP_NAME, LEAP_SRC, leap_row),
+                                  (BREATH, BREATH_NAME, BREATH_SRC, breath_row)):
+        if sk.rows <= row:
+            sk.grow_to(row + 1)
+        cur = sk.get(row, 0).decode("latin-1").strip()
+        if cur and cur != name:
+            raise SystemExit(f"our LIST_SKILL row {row} is {cur!r}")
+        want = build(sk)
+        if sk.d[row] != want:
+            sk.d[row] = want
+            wrote.append(f"{row} {name} (from {src})")
+    if wrote:
+        sk.save(dry)
+        print(f"    {'LIST_SKILL.STB':26s} rows " + ", ".join(wrote))
 
 
 def stage2(ours, src, dry):
@@ -673,6 +909,9 @@ def stage2(ours, src, dry):
         stl.save(dry)
     print(f"    {'LIST_NPC_S.STL':26s} +{len(names)} keys")
 
+    stage2_extras(ours, dry)
+    changed = write_if_changed(P(ours, SKEL_REL), cerberus_skeleton(src), dry)
+    print(f"    {'RUNA_WOLF3_BONE.ZMD':26s} p_mouth {'written' if changed else 'in place'}")
     line_rows, added = ai_lines(ours, dry)
     print(f"    {'AI_s.STB':26s} +{added} lines, rows {sorted(line_rows.values())}")
     fai = oro.Stb(P(ours, AI_STB_REL))
@@ -702,6 +941,8 @@ def stage2(ours, src, dry):
         chr_.save(dry)
         print(f"    {'LIST_NPC.CHR':26s} cleared orphan entries {cleared}")
     oro.import_characters(ids, ours, src, dry, "Cerberus")
+    if not dry or os.path.isfile(P(ours, SKEL_REL)):
+        write_if_changed(P(ours, SKEL_REL), cerberus_skeleton(src), dry)
 
 
 # ------------------------------------------------------------------- stage 3
@@ -1032,7 +1273,17 @@ def verify(ours, src):
             check(fai.get(row, 0) == rf"3DDATA\AI\{AI_FILES[row]}".encode()
                   and os.path.isfile(p) and open(p, "rb").read() == blob, f"FILE_AI {row} + {AI_FILES[row]}")
     ex = load("balance_trend_exclude", "balance-trend-exclude.py")
-    check(all(ex.excluded(i) for i in MONSTERS), "balance-trend-exclude.py lists both ids")
+    check(all(ex.excluded(i) for i in list(MONSTERS) + [HOUND]),
+          "balance-trend-exclude.py lists the three ids")
+    check(npc.rows > HOUND and npc.d[HOUND] == hound_row(npc), f"LIST_NPC {HOUND} {HOUND_NAME}")
+    check(HOUND < len(chr_.chars) and chr_.chars[HOUND] == chr_.chars[HOUND_TEMPLATE], f"CHR {HOUND}")
+    check(stl.has(HOUND_STRID), HOUND_STRID)
+    sk = oro.Stb(P(ours, SKILL_STB_REL))
+    check(sk.rows > LEAP and sk.d[LEAP] == leap_row(sk), f"LIST_SKILL {LEAP} {LEAP_NAME}")
+    check(sk.rows > BREATH and sk.d[BREATH] == breath_row(sk), f"LIST_SKILL {BREATH} {BREATH_NAME}")
+    sp = P(ours, SKEL_REL)
+    check(os.path.isfile(sp) and open(sp, "rb").read() == cerberus_skeleton(src),
+          "Cerberus skeleton has p_mouth")
     check(fate.qsd_trigger_bytes(open(P(ours, QSD_REL), "rb").read(), REGISTER_TRIGGER)
           == register_trigger(), f"QP401.QSD {REGISTER_TRIGGER}")
     check(npc.rows > GATEKEEPER and npc.d[GATEKEEPER] == gatekeeper_row(npc),

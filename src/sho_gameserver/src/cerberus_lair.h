@@ -76,6 +76,7 @@ private:
     unsigned long m_dwGraceUntil;
     bool m_bReqOpen, m_bReqDraw, m_bReqReset;
     bool m_bBossSeen; // the run has seen Cerberus alive: only then is "none alive" a kill
+    int m_nHoundCalls; // Hellhound calls made this run (HOUND_CALL_PCT)
     short m_nGateValue;
 
     // touched by one thread each (the lair's / the gatekeeper's)
