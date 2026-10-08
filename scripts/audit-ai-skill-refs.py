@@ -589,8 +589,11 @@ def resolve_ci(root, rel):
 def motion_warnings(root):
     """[(npc, name, aip, skill, type, kind, slot, clip, events)] for casts whose
     release clip (CHR slot nMotion+1) carries no frame that presents the skill.
-    kind is "projectile" (bullet never launches) or "payload" (the parked result
-    resolves silently ~3 s late). Read-only; the fix is a CHR slot or --remotion."""
+    kind is "projectile" (bullet never launches) or "payload" (no frame drains the
+    parked result: since 2026-10-08 the client presents it when the cast ends, if
+    that is within 1.5 s of its arrival, and folds it silently otherwise -- so the
+    hit lands at the end of the cast rather than on its own frame). Read-only; the
+    fix is a CHR slot or --remotion."""
     oro = load("import-oro")
     npc = rd.Stb(os.path.join(root, NPC_STB))
     ai = rd.Stb(os.path.join(root, AI_STB))
@@ -650,7 +653,7 @@ def report_motion_warnings(warns):
         return
     nproj = sum(1 for w in warns if w[5] == "projectile")
     print("\nWARNING: %d cast(s) whose release clip (slot nMotion+1) cannot present the skill "
-          "-- %d projectile (bullet never fires), %d payload (result resolves silently ~3 s late).\n"
+          "-- %d projectile (bullet never fires), %d payload (result shown at cast end, or folded if late).\n"
           "   fix = CHR slot (import-karkia.py CHR_MOTION_OVERRIDE) or --remotion; never stripped:"
           % (len(warns), nproj, len(warns) - nproj))
     for r, name, fn, sid, t, kind, slot, clip, ev in warns:
