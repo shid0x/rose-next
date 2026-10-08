@@ -96,16 +96,15 @@ public:
     GameConfig game;
 
 public:
-    ServerConfig(): toml(nullptr) {}
-
-    ~ServerConfig() { toml_free(this->toml); }
-
     bool load(const std::string& path, const std::string& prefix) {
         this->path = path;
 
-        this->toml = toml_load(path.c_str());
+        if (this->toml.ptr) {
+            toml_free(this->toml.ptr);
+        }
+        this->toml.ptr = toml_load(path.c_str());
 
-        if (!this->toml) {
+        if (!this->toml.ptr) {
             // TODO: Save a default toml
             return false;
         }
@@ -150,37 +149,55 @@ public:
     }
 
 private:
-    Toml* toml;
+    /// Owns the parsed file. ServerConfig is copied whole (CLIB_GameSRV::init,
+    /// CThreadGUILD::set_config), and a raw pointer member made every copy free
+    /// the same table: the second free corrupted the heap, so the game server
+    /// died with STATUS_HEAP_CORRUPTION on every shutdown. A copy now starts
+    /// without a table -- the table is only read inside load().
+    struct TomlHandle {
+        Toml* ptr = nullptr;
+
+        TomlHandle() = default;
+        TomlHandle(const TomlHandle&) {}
+        TomlHandle& operator=(const TomlHandle&) { return *this; }
+        ~TomlHandle() {
+            if (ptr) {
+                toml_free(ptr);
+            }
+        }
+    };
+
+    TomlHandle toml;
 
 private:
     bool get_int32(const std::string& table, const std::string& key, int32_t& val) {
         int64_t v = 0;
-        const bool res = toml_get_int(this->toml, table.c_str(), key.c_str(), &v);
+        const bool res = toml_get_int(this->toml.ptr, table.c_str(), key.c_str(), &v);
         val = static_cast<int32_t>(v);
         return res;
     }
 
     bool get_int64(const std::string& table, const std::string& key, int64_t& val) {
-        return toml_get_int(this->toml, table.c_str(), key.c_str(), &val);
+        return toml_get_int(this->toml.ptr, table.c_str(), key.c_str(), &val);
     }
 
     bool get_uint32(const std::string& table, const std::string& key, uint32_t& val) {
         int64_t v = 0;
-        const bool res = toml_get_int(this->toml, table.c_str(), key.c_str(), &v);
+        const bool res = toml_get_int(this->toml.ptr, table.c_str(), key.c_str(), &v);
         val = static_cast<uint32_t>(v);
         return res;
     }
 
     bool get_uint64(const std::string& table, const std::string& key, uint64_t& val) {
         int64_t v = 0;
-        const bool res = toml_get_int(this->toml, table.c_str(), key.c_str(), &v);
+        const bool res = toml_get_int(this->toml.ptr, table.c_str(), key.c_str(), &v);
         val = static_cast<uint64_t>(v);
         return res;
     }
 
     bool get_str(const std::string& table, const std::string& key, std::string& val) {
         FfiString* s = ffi_string_new();
-        bool res = toml_get_str(this->toml, table.c_str(), key.c_str(), s);
+        bool res = toml_get_str(this->toml.ptr, table.c_str(), key.c_str(), s);
         if (!res) {
             return false;
         }

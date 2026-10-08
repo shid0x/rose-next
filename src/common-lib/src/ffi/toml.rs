@@ -26,7 +26,10 @@ pub unsafe extern "C" fn toml_load(path: *const libc::c_char) -> *mut Toml {
 
 #[no_mangle]
 pub unsafe extern "C" fn toml_free(t: *mut Toml) {
-    Box::from_raw(t);
+    if t.is_null() {
+        return;
+    }
+    drop(Box::from_raw(t));
 }
 
 #[no_mangle]

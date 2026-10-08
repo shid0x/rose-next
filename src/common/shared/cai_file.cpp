@@ -1,5 +1,6 @@
 #include "stdAFX.h"
 
+#include <climits>
 #include <mmsystem.h>
 #include "CAI_File.h"
 
@@ -267,11 +268,38 @@ CAI_EVENT::Load(FILE* fp, STBDATA* pSTB, int iLangCol) {
             case AIACT_17:
                 if (sActionH.dwSize != sizeof(AIACT17)) {
                     // 이전 데이타와의 호환성을 고려..btToAttacker멤버가 없으므로...
+                    // Two other layouts exist: the original one without iToOwner
+                    // (20 bytes), and RoseZA's, which stores the five items and
+                    // iToOwner as ints (32 bytes: OR_GMdevourer1.aip,
+                    // OR_kingasper1.aip). Copying dwSize bytes into a 24-byte
+                    // AIACT17 overran the block by 8 for the latter; the heap only
+                    // noticed when the AI list was freed, so the server died with
+                    // STATUS_HEAP_CORRUPTION on every shutdown.
                     AI_ACTION* pOri = m_ppActionLIST[iA];
-                    m_ppActionLIST[iA] = (AI_ACTION*)new AIACT17;
-                    ::CopyMemory(m_ppActionLIST[iA], pOri, sActionH.dwSize);
-                    m_ppActionLIST[iA]->st17.iToOwner = 0;
+                    AIACT17* pNew = (AIACT17*)new BYTE[sizeof(AIACT17)];
+                    ::ZeroMemory(pNew, sizeof(AIACT17));
+                    pNew->dwSize = sActionH.dwSize;
+                    pNew->Type = sActionH.Type;
+
+                    const BYTE* pSrc = (const BYTE*)pOri + sizeof(stActHead);
+                    if (sActionH.dwSize == sizeof(stActHead) + 6 * sizeof(int)) {
+                        const int* piSrc = (const int*)pSrc;
+                        for (int iI = 0; iI < 5; iI++) {
+                            int iItem = piSrc[iI];
+                            pNew->m_ITEMS[iI] = (iItem > 0 && iItem <= SHRT_MAX) ? (short)iItem : 0;
+                        }
+                        pNew->iToOwner = piSrc[5];
+                    } else {
+                        DWORD dwCopy = sActionH.dwSize < sizeof(AIACT17) ? sActionH.dwSize
+                                                                         : sizeof(AIACT17);
+                        if (dwCopy > sizeof(stActHead))
+                            ::CopyMemory(pNew->m_ITEMS, pSrc, dwCopy - sizeof(stActHead));
+                        if (sActionH.dwSize < sizeof(AIACT17))
+                            pNew->iToOwner = 0;
+                    }
+
                     SAFE_DELETE_ARRAY(pOri);
+                    m_ppActionLIST[iA] = (AI_ACTION*)pNew;
                 }
                 break;
             case AIACT_18:
