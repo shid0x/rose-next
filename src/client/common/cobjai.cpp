@@ -1725,12 +1725,37 @@ HasAttackActionFrom(const tagMOTION* pMotion, int iFrom) {
 // played, what is left is follow-through with nothing to present, so the next
 // swing may cut it and start at once. Frames before m_iCurMotionFRAME have been
 // processed (ProcMotionFrame walks [m_iCurMotionFRAME, iFrame)).
+//
+// A short tail is left to finish (2026-10-08). A cut restarts the clip from a pose
+// that is not its first, and the restart's blend holds that pose before lurching
+// into the wind-up -- visible a few frames from the end (Hebarn Officer Pazugenti:
+// 8 of 54 swings cut at frame 58 of 61, 16 degrees out). They came from the
+// server's 10 Hz zone tick: a swing is sent on the tick after it starts, so swings
+// 1.82 s apart arrive 1.7, 1.8 or 1.9 s apart, and an early one beat the clip. Since
+// Start_ATTACK plays remote swings faster than the server's cadence
+// (RemoteSwingPlayRate), waiting for a tail no longer accumulates: the swing starts
+// at most one tick late and the next clip, shorter than the cycle, makes it up.
+static const int kSpentTailWaitMs = 150;
+
 bool
 CObjAI::StandDownSpentAttackMotion() {
     if (!(m_wState & CS_BIT_ATTACK) || !(m_wState & CS_BIT_INT) || !m_pCurMOTION) {
         return false;
     }
     if (HasAttackActionFrom(m_pCurMOTION, m_iCurMotionFRAME)) {
+        return false;
+    }
+
+    const float fFrameRate =
+        m_pCurMOTION->m_wFPS
+        * ::getAnimatableSpeed(static_cast<CObjCHAR*>(this)->GetZMODEL());
+    const int iFramesLeft = (int)m_pCurMOTION->m_wTotalFrame - 1 - m_iCurMotionFRAME;
+    if (fFrameRate > 0.f && iFramesLeft * 1000.f / fFrameRate <= kSpentTailWaitMs) {
+        LogString(LOG_DEBUG_,
+            "CombatTrace spent attack motion left to finish: obj %d frame %d of %d\n",
+            static_cast<CObjCHAR*>(this)->Get_INDEX(),
+            m_iCurMotionFRAME,
+            (int)m_pCurMOTION->m_wTotalFrame);
         return false;
     }
 
