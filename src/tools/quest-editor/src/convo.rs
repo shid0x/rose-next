@@ -1236,6 +1236,12 @@ pub struct TollStrings {
     pub decline_option: i32,
     /// The close line under the refusal.
     pub later_option: i32,
+    /// An opening-hours gate: `(value, closed line)`. The gate is open only while
+    /// the NPC's event value (`QF_getNpcQuestZeroVal`, variable 0, pushed to the
+    /// client by `GSV_SET_EVENT_STATUS`) equals `value`; otherwise the answer to
+    /// "let me through" is the closed line. The trigger should check the same
+    /// value server-side (COND_013 + COND_011), which always passes on the client.
+    pub open_when: Option<(i32, i32)>,
 }
 
 fn toll_prefix(key: &str) -> String {
@@ -1243,8 +1249,37 @@ fn toll_prefix(key: &str) -> String {
 }
 
 /// The Lua source of a toll gate: HAVE / LACK gate the two answers, GO pays.
-pub fn toll_gate_lua(key: &str, trigger: &str) -> String {
+/// With an opening-hours gate, OPEN tests the NPC's event value, HAVE and LACK
+/// both require it, and CLOSED answers when it does not hold.
+pub fn toll_gate_lua(key: &str, trigger: &str, open_when: Option<i32>) -> String {
     let p = toll_prefix(key);
+    if let Some(v) = open_when {
+        return format!(
+            "-- generated toll gate \"{key}\": fires {trigger} while the NPC's event value is {v}\n\
+             function {p}OPEN(E)\n\
+             \tif QF_getNpcQuestZeroVal(QF_getEventOwner(E)) == {v} then return 1 end\n\
+             \treturn 0\n\
+             end\n\
+             function {p}HAVE(E)\n\
+             \tif {p}OPEN(E) == 0 then return 0 end\n\
+             \tif QF_checkQuestCondition(\"{trigger}\") >= 1 then return 1 end\n\
+             \treturn 0\n\
+             end\n\
+             function {p}LACK(E)\n\
+             \tif {p}OPEN(E) == 0 then return 0 end\n\
+             \tif QF_checkQuestCondition(\"{trigger}\") >= 1 then return 0 end\n\
+             \treturn 1\n\
+             end\n\
+             function {p}CLOSED(E)\n\
+             \tif {p}OPEN(E) == 1 then return 0 end\n\
+             \treturn 1\n\
+             end\n\
+             function {p}GO(E)\n\
+             \tQF_doQuestTrigger(\"{trigger}\")\n\
+             \treturn 1\n\
+             end\n"
+        );
+    }
     format!(
         "-- generated toll gate \"{key}\": fires {trigger}\n\
          function {p}HAVE(E)\n\
@@ -1275,8 +1310,24 @@ pub fn toll_gate_lua(key: &str, trigger: &str) -> String {
 ///     CLOSE decline
 /// [4] CLOSE later
 /// ```
+///
+/// With `open_when`, menu 2 gains a third sibling, `NPCSAY closed (check
+/// CLOSED) -> 4`, and HAVE / LACK pass only while the gate is open.
 pub fn build_toll_gate(key: &str, trigger: &str, s: &TollStrings) -> Vec<u8> {
     let p = toll_prefix(key);
+    let mut answers = vec![
+        menu_item(SC_MSG_NPCSAY, 3, &format!("{p}HAVE"), "", s.offer),
+        menu_item(SC_MSG_NPCSAY, 4, &format!("{p}LACK"), "", s.lack),
+    ];
+    if let Some((_, closed)) = s.open_when {
+        answers.push(menu_item(
+            SC_MSG_NPCSAY,
+            4,
+            &format!("{p}CLOSED"),
+            "",
+            closed,
+        ));
+    }
     let messages = vec![ConMsg {
         sn: 0,
         mtype: SC_MSG_PLAYERSELECT,
@@ -1295,12 +1346,7 @@ pub fn build_toll_gate(key: &str, trigger: &str, s: &TollStrings) -> Vec<u8> {
                 menu_item(SC_MSG_CLOSE, -1, "", "", s.bye_option),
             ],
         },
-        ConMenu {
-            items: vec![
-                menu_item(SC_MSG_NPCSAY, 3, &format!("{p}HAVE"), "", s.offer),
-                menu_item(SC_MSG_NPCSAY, 4, &format!("{p}LACK"), "", s.lack),
-            ],
-        },
+        ConMenu { items: answers },
         ConMenu {
             items: vec![
                 menu_item(SC_MSG_CLOSE, -1, "", &format!("{p}GO"), s.accept_option),
@@ -1315,7 +1361,7 @@ pub fn build_toll_gate(key: &str, trigger: &str, s: &TollStrings) -> Vec<u8> {
         &[],
         &messages,
         &menus,
-        toll_gate_lua(key, trigger).as_bytes(),
+        toll_gate_lua(key, trigger, s.open_when.map(|(v, _)| v)).as_bytes(),
     )
 }
 
@@ -1382,6 +1428,7 @@ mod tests {
             accept_option: 6,
             decline_option: 7,
             later_option: 8,
+            open_when: None,
         };
         let bytes = build_toll_gate("ulv", "Ulverick-EnterCave", &s);
         let p = ConFile::parse(&bytes).expect("parse built toll gate");
@@ -1405,6 +1452,46 @@ mod tests {
             assert!(lua.contains(&format!("function {f}(E)")), "{f} missing");
         }
         assert!(lua.contains("QF_doQuestTrigger(\"Ulverick-EnterCave\")"));
+        assert_eq!(p.to_bytes(), bytes);
+    }
+
+    #[test]
+    fn toll_gate_with_opening_hours_has_a_closed_answer() {
+        let s = TollStrings {
+            greeting: 1,
+            ask_option: 2,
+            bye_option: 3,
+            offer: 4,
+            lack: 5,
+            accept_option: 6,
+            decline_option: 7,
+            later_option: 8,
+            open_when: Some((1, 9)),
+        };
+        let bytes = build_toll_gate("crb", "Cerberus-Register", &s);
+        let p = ConFile::parse(&bytes).expect("parse built toll gate");
+        assert_eq!(p.menus.len(), 5);
+        let answers = &p.menus[2].items;
+        assert_eq!(answers.len(), 3);
+        assert_eq!(
+            (
+                answers[2].check_func.as_str(),
+                answers[2].child_menu,
+                answers[2].str_id
+            ),
+            ("QTcrb_CLOSED", 4, 9)
+        );
+        let lua = String::from_utf8(p.lua.clone()).unwrap();
+        assert!(lua.contains("QF_getNpcQuestZeroVal(QF_getEventOwner(E)) == 1"));
+        for f in [
+            "QTcrb_OPEN",
+            "QTcrb_HAVE",
+            "QTcrb_LACK",
+            "QTcrb_CLOSED",
+            "QTcrb_GO",
+        ] {
+            assert!(lua.contains(&format!("function {f}(E)")), "{f} missing");
+        }
         assert_eq!(p.to_bytes(), bytes);
     }
 

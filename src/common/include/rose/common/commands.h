@@ -29,6 +29,7 @@ enum CommandId {
     TELEPORT,
 
     RELOAD_CONFIG,
+    CERBERUS,
 };
 }
 
@@ -65,6 +66,9 @@ const char* TP_USAGE = "Usage: tp <map_id> [x_coord] [y_coord]";
 const char* RELOADCONFIG_HELP = "Reload server game configs.";
 const char* RELOADCONFIG_USAGE = "Usage: reloadconfig";
 
+const char* CERBERUS_HELP = "Drive the Cerberus Lair draw (open registration, draw now, reset).";
+const char* CERBERUS_USAGE = "Usage: cerberus <status|open|draw|reset>";
+
 
 static const std::vector<CommandInfo> commands = {
     {"help", 1, HELP_HELP, HELP_USAGE, CommandContext::Client},
@@ -80,6 +84,7 @@ static const std::vector<CommandInfo> commands = {
     {"tp", 100, TP_HELP, TP_USAGE, CommandContext::Server},
 
     {"reloadconfig", 500, RELOADCONFIG_HELP, RELOADCONFIG_USAGE, CommandContext::Server},
+    {"cerberus", 100, CERBERUS_HELP, CERBERUS_USAGE, CommandContext::Server},
 };
 
 } // namespace Rose::Common

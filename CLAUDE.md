@@ -1294,6 +1294,37 @@ server chase first, and the client abandons a remote cast that has not started w
 the server applies it (cast clip + release hit frame): size stun durations for that, or
 speed the clips up (LIST_SKILL cols 53/69 apply to monster casts on both sides).
 
+### The Cerberus Lair Is A Drawn Instance (zone 49, built and validated in game 2026-10-08)
+
+tsuki's Cerberus Lair as zone 49 (`scripts/import-cerberus.py`, stages 1-4) plus a
+game-server controller (`src/sho_gameserver/src/cerberus_lair.*`); design and status
+in [doc/cerberus-lair-brief.md](doc/cerberus-lair-brief.md). Every hour, on the
+hour, [Arumic Seal Keeper] Yelena (NPC 4149, at the Arumic temple in Arumic Valley)
+opens registration for 10 minutes; at :10 up to five level-140+ registrants are
+drawn, charged 100,000 zuly on arrival, partied and sent in; Cerberus (2682) wakes
+from its sleeping form (2683) by AI action 9; its death plus a minute, or 20
+minutes, evicts everyone; there is no way out before that (no gate, save-point revive
+and warp scrolls refused in the lair: `CCerberusLair::IsLair`). Loot is mostly items
+nothing else drops (importer docstring, "Loot"). Test with
+`/cerberus open|draw|status|reset`.
+
+Things that will bite:
+
+- **The controller owns the boss, not a regen point** (`CRegenPOINT::Reset` cannot
+  force a respawn). The lair's IFO has no spawn point; the C++ spawns the sleeper
+  at `CRATER_X/Y` whenever the lair is idle and empty.
+- **Constants live in both** the importer and `cerberus_lair.cpp` (zone, NPC, rows,
+  landing event, trigger name, fee, crater). Change them together.
+- **`Recv_cli_RELAY_REPLY` now honours only the destination the server last
+  sent** (`classUSER::m_bRelayPENDING`). Before, any client could warp anywhere
+  through that packet. Every server-side recall already goes through
+  `Send_gsv_RELAY_REQ`, which records it.
+- `quest-editor con-toll` gained `--open-when N --closed T`: an opening-hours gate on
+  the NPC's event value 0, read on the client with
+  `QF_getNpcQuestZeroVal(QF_getEventOwner(E))` because COND_011 always passes there.
+- A new party holds `party level / 5 + 4` members: the draw's party starts at level
+  5 (`CParty::Raise_PartyLEV`) so it fits five.
+
 ### Map Files: Readers, Writers And Tools (`scripts/mapgen/`, merged 2026-10-04)
 
 **Reuse these before writing any new parser.** The six map formats (ZON, HIM,

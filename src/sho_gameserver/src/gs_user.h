@@ -133,6 +133,14 @@ public:
     CParty* m_pPartyBUFF;
     short m_nPartyPOS;
 
+    /// The destination of the last GSV_RELAY_REQ: the client echoes it back in
+    /// CLI_RELAY_REPLY, and the reply is only honoured if it matches. Before, the
+    /// zone and position came from the client unchecked, so a modified client could
+    /// warp anywhere -- into the Cerberus Lair among others.
+    bool m_bRelayPENDING = false;
+    short m_nRelayZONE = 0;
+    tPOINTF m_RelayPOS = {0.f, 0.f};
+
     DWORD m_dwCoolTIME[MAX_USEITEM_COOLTIME_TYPE];
 
 public:

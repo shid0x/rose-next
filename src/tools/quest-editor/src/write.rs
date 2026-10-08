@@ -1588,6 +1588,8 @@ pub struct TollText {
     pub accept: String,
     pub decline: String,
     pub later: String,
+    /// Opening hours: `(event value, closed line)`, see `convo::TollStrings`.
+    pub open_when: Option<(i32, String)>,
 }
 
 /// Write (or rewrite) `EVENT/<con_name>` as a toll-gate conversation for a
@@ -1627,6 +1629,10 @@ pub fn write_toll_gate(
         accept_option: put("accept", &text.accept),
         decline_option: put("decline", &text.decline),
         later_option: put("later", &text.later),
+        open_when: text
+            .open_when
+            .as_ref()
+            .map(|(v, closed)| (*v, put("closed", closed))),
     };
     let bytes = crate::convo::build_toll_gate(key, trigger, &strings);
     crate::convo::ConFile::parse(&bytes).context("built toll gate failed to self-parse")?;
@@ -1645,7 +1651,8 @@ pub fn write_toll_gate(
         path.display()
     )];
     changes.push(format!(
-        "UPSERT 8 dialog strings into {}",
+        "UPSERT {} dialog strings into {}",
+        8 + text.open_when.is_some() as usize,
         ltb_path.display()
     ));
 

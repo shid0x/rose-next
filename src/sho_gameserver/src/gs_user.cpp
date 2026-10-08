@@ -4,6 +4,7 @@
 
 #include "CRandom.h"
 #include "CThreadGUILD.h"
+#include "cerberus_lair.h"
 #include "Calculation.h"
 #include "DEF_STB.h"
 #include "GS_ListUSER.h"
@@ -1289,6 +1290,11 @@ classUSER::Use_InventoryITEM(t_PACKET* pPacket) {
             switch (SKILL_TYPE(nSkillIDX)) {
                 case SKILL_TYPE_18: // 워프 !!!
                 {
+                    if (CCerberusLair::IsLair(this->GetZONE()->Get_ZoneNO())) {
+                        /// No way out of the Cerberus Lair (the scroll is kept).
+                        this->send_server_whisper("The seal holds. No scroll carries you out of the lair.");
+                        return true;
+                    }
                     if (SKILL_WARP_PLANET_NO(nSkillIDX)
                         != ZONE_PLANET_NO(this->GetZONE()->Get_ZoneNO())) {
                         /// 워프 아이템은 같은 행성으로만 사용가능하다..
@@ -2212,6 +2218,10 @@ classUSER::Send_gsv_RELAY_REQ(WORD wRelayTYPE, short nZoneGOTO, tPOINTF& PosGOTO
     pCPacket->m_gsv_RELAY_REQ.m_nCallZoneNO = nZoneGOTO;
     pCPacket->m_gsv_RELAY_REQ.m_PosCALL = PosGOTO;
 
+    this->m_nRelayZONE = nZoneGOTO;
+    this->m_RelayPOS = PosGOTO;
+    this->m_bRelayPENDING = true;
+
     this->SendPacket(pCPacket);
     Packet_ReleaseNUnlock(pCPacket);
     return true;
@@ -2223,6 +2233,20 @@ short
 classUSER::Recv_cli_RELAY_REPLY(t_PACKET* pPacket) {
     switch (pPacket->m_cli_RELAY_REPLY.m_wRelayTYPE) {
         case RELAY_TYPE_RECALL:
+            // Honour only the destination this server last sent. A stale reply (a
+            // second request crossed it) is ignored rather than disconnected.
+            if (!this->m_bRelayPENDING
+                || pPacket->m_cli_RELAY_REPLY.m_nCallZoneNO != this->m_nRelayZONE
+                || pPacket->m_cli_RELAY_REPLY.m_PosCALL.x != this->m_RelayPOS.x
+                || pPacket->m_cli_RELAY_REPLY.m_PosCALL.y != this->m_RelayPOS.y) {
+                LOG_WARN("relay reply from {} to zone {} ({}, {}) refused: not what was sent",
+                    this->Get_NAME(),
+                    pPacket->m_cli_RELAY_REPLY.m_nCallZoneNO,
+                    pPacket->m_cli_RELAY_REPLY.m_PosCALL.x,
+                    pPacket->m_cli_RELAY_REPLY.m_PosCALL.y);
+                return RET_OK;
+            }
+            this->m_bRelayPENDING = false;
             return Proc_TELEPORT(pPacket->m_cli_RELAY_REPLY.m_nCallZoneNO, // Recv_cli_RELAY_REPLY
                 pPacket->m_cli_RELAY_REPLY.m_PosCALL);
     }
@@ -2308,6 +2332,11 @@ classUSER::Recv_cli_REVIVE_REQ(BYTE btReviveTYPE, bool bApplyPenalty, bool bSkip
     // 죽을때 걸어놓은 상태만 해지...
     this->m_IngSTATUS.ClearStatusFLAG(ING_FAINTING);
     this->m_dwRecoverTIME = 0;
+
+    // Nobody leaves the Cerberus Lair alive or dead: the saved town (same planet,
+    // Luna) becomes the lair's own revive point.
+    if (REVIVE_TYPE_SAVE_POS == btReviveTYPE && CCerberusLair::IsLair(this->m_nZoneNO))
+        btReviveTYPE = REVIVE_TYPE_REVIVE_POS;
 
     switch (btReviveTYPE) {
         case REVIVE_TYPE_SAVE_POS: // 저장된 부활장소에서 살아나기..
@@ -6098,6 +6127,10 @@ classUSER::Do_QuestTRIGGER(t_HASHKEY HashTRIGGER, short nSelectReward) {
     this->m_iLastEventNpcIDX = 0;
     switch (eResult) {
         case QST_RESULT_SUCCESS:
+            // The register trigger's conditions are the whole check; the draw keeps
+            // the list (doc/cerberus-lair-brief.md).
+            if (CCerberusLair::Instance().IsRegisterTrigger(HashTRIGGER))
+                CCerberusLair::Instance().OnRegister(this);
             return this->Send_gsv_QUEST_REPLY(RESULT_QUEST_REPLY_TRIGGER_SUCCESS,
                 0,
                 (int)HashTRIGGER);

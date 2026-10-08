@@ -27,7 +27,9 @@ SHIBUYA = frozenset({1833, 1947, 1948, 4060, 4061, 4062, 4063, 4064, 4065, 4066,
 # import-ulverick.py stage 2: the Cave of Ulverick's minion and three bosses (MONSTERS).
 ULVERICK = frozenset({531, 532, 533, 534})
 
-EXCLUDED = SHIBUYA | ULVERICK
+CERBERUS = frozenset({2682, 2683})
+
+EXCLUDED = SHIBUYA | ULVERICK | CERBERUS
 
 
 def excluded(row):

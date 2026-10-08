@@ -2,6 +2,7 @@
 
 #include "LIB_gsMAIN.h"
 
+#include "cerberus_lair.h"
 #include "GS_ListUSER.h"
 #include "GS_Party.h"
 #include "GS_ThreadSQL.h"
@@ -220,6 +221,9 @@ CZoneTHREAD::Execute() {
         //---------- Á¸¿¡ ¼öÇàµÉ Æ®¸®°Å...
         if (m_TriggerLIST.GetNodeCount())
             this->Proc_ZoneTRIGGER();
+
+        // the Cerberus Lair draw: acts in the lair's zone and the gatekeeper's only
+        CCerberusLair::Instance().ProcZone(this);
 
         pPacketNODE = m_SendingPacketLIST.GetHeadNode();
         while (pPacketNODE) {

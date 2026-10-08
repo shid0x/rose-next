@@ -121,6 +121,12 @@ public:
 
     int GetMemberCNT() { return this->m_nMemberCNT; }
     BYTE GetPartyLEV() { return this->m_btPartyLEV; }
+    /// A new party is level 1 and holds level / 5 + 4 = 4 members (Add_PartyUSER);
+    /// the Cerberus draw parties five strangers, so it starts theirs at 5.
+    void Raise_PartyLEV(BYTE btMinLEV) {
+        if (this->m_btPartyLEV < btMinLEV)
+            this->m_btPartyLEV = btMinLEV;
+    }
     int GetAverageLEV() { return this->m_iAverageLEV; }
     int GetPartyEXP() { return this->m_iPartyEXP; }
 

@@ -154,6 +154,15 @@ public:
     DWORD GetGlobalFLAG() { return this->m_dwGlobalFLAGS; }
     int GetGameObjCNT() { return m_ObjLIST.GetNodeCount(); }
 
+    /// Visit every object in the zone. Zone thread only, and the callback must not
+    /// add or remove objects (CCerberusLair collects what it needs, then acts).
+    template <class F>
+    void ForEachObject(F&& f) {
+        for (classDLLNODE<CGameOBJ*>* pNODE = m_ObjLIST.GetHeadNode(); pNODE;
+             pNODE = m_ObjLIST.GetNextNode(pNODE))
+            f(pNODE->DATA);
+    }
+
     void BuyITEMs(tagITEM& sITEM) { m_Economy.BuyITEM(sITEM); }
     void SellITEMs(tagITEM* pITEM, int iQuantity) { m_Economy.SellITEM(*pITEM, iQuantity); }
 

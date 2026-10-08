@@ -88,7 +88,8 @@ fn main() -> ExitCode {
             );
             eprintln!(
                 "  quest-editor con-toll <root> <con_file> <key> <trigger> [--greet T] [--ask T]\n\
-                 \x20     [--bye T] [--offer T] [--lack T] [--accept T] [--decline T] [--later T] [--write]\n\
+                 \x20     [--bye T] [--offer T] [--lack T] [--accept T] [--decline T] [--later T]\n\
+                 \x20     [--open-when N --closed T] [--write]\n\
                  \x20                            write a toll-gate dialog: pay the price <trigger>\n\
                  \x20                            checks, or be turned away (no silent failure)"
             );
@@ -840,7 +841,9 @@ fn cmd_con_warp(args: &[String]) -> Result<bool> {
 }
 
 fn cmd_con_toll(args: &[String]) -> Result<bool> {
-    const TEXT_FLAGS: [&str; 8] = [
+    const TEXT_FLAGS: [&str; 10] = [
+        "--open-when",
+        "--closed",
         "--greet",
         "--ask",
         "--bye",
@@ -876,12 +879,14 @@ fn cmd_con_toll(args: &[String]) -> Result<bool> {
     if pos.len() < 4 {
         bail!(
             "usage: con-toll <root> <con_file> <key> <trigger> [--greet T] [--ask T] [--bye T]\n\
-             \x20      [--offer T] [--lack T] [--accept T] [--decline T] [--later T] [--write]\n\
+             \x20      [--offer T] [--lack T] [--accept T] [--decline T] [--later T]\n\
+             \x20      [--open-when N --closed T] [--write]\n\
              \x20  writes EVENT/<con_file> as a toll gate for a dedicated NPC: asked to let you\n\
              \x20  through, it names the price when <trigger>'s conditions pass and turns you\n\
              \x20  away when they do not; paying fires <trigger> (conditions = the price,\n\
              \x20  rewards = take it + REWD_007). The trigger, the LIST_EVENT row and the\n\
-             \x20  placement are the caller's.\n\
+             \x20  placement are the caller's. --open-when N opens the gate only while the\n\
+             \x20  NPC's event value is N and answers --closed otherwise.\n\
              \x20  e.g. con-toll ../data EM29-005.con ulv Ulverick-EnterCave --write"
         );
     }
@@ -897,6 +902,13 @@ fn cmd_con_toll(args: &[String]) -> Result<bool> {
         accept: flag("--accept").unwrap_or_else(|| "Pay and pass.".into()),
         decline: flag("--decline").unwrap_or_else(|| "Not yet.".into()),
         later: flag("--later").unwrap_or_else(|| "I'll be back.".into()),
+        open_when: match flag("--open-when") {
+            Some(v) => Some((
+                v.parse().context("--open-when takes the NPC event value")?,
+                flag("--closed").unwrap_or_else(|| "The way is closed. Come back later.".into()),
+            )),
+            None => None,
+        },
     };
     let report =
         quest_editor::write::write_toll_gate(&root, &pos[1], &pos[2], &pos[3], &text, !write)?;

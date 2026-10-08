@@ -9,6 +9,7 @@
 #include "rose/common/util.h"
 
 #include "LIB_gsMAIN.h"
+#include "cerberus_lair.h"
 #include "GS_USER.h"
 #include "ZoneLIST.h"
 #include "GS_ListUSER.h"
@@ -210,6 +211,29 @@ teleport(classUSER* user, CommandInfo info, const std::vector<std::string>& args
     return true;
 }
 
+bool
+cerberus(classUSER* user, CommandInfo info, const std::vector<std::string>& args) {
+    if (!user) {
+        return false;
+    }
+
+    CCerberusLair& lair = CCerberusLair::Instance();
+    const std::string action = args.size() >= 2 ? args[1] : "status";
+    if (action == "open") {
+        user->send_server_whisper(lair.GmOpen());
+    } else if (action == "draw") {
+        user->send_server_whisper(lair.GmDraw());
+    } else if (action == "reset") {
+        lair.GmReset();
+        user->send_server_whisper("Cerberus: everyone out, lair reset.");
+    } else if (action != "status") {
+        user->send_server_whisper(info.usage);
+        return false;
+    }
+    user->send_server_whisper(lair.GmStatus());
+    return true;
+}
+
 using CommandFunction = std::function<bool(classUSER*, CommandInfo, const std::vector<std::string>&)>;
 static const std::unordered_map<std::string, std::tuple<CommandFunction, CommandInfo>>
     command_registry = {
@@ -223,6 +247,7 @@ static const std::unordered_map<std::string, std::tuple<CommandFunction, Command
         REGISTER_COMMAND(Command::STATS, stats),
         REGISTER_COMMAND(Command::TELEPORT, teleport),
         REGISTER_COMMAND(Command::RELOAD_CONFIG, reload_config),
+        REGISTER_COMMAND(Command::CERBERUS, cerberus),
     };
 
 char* l_szAbility[] = {"STR",

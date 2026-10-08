@@ -37,6 +37,9 @@
     <ClInclude Include="src\cobjevent.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\cerberus_lair.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
     <ClInclude Include="src\cobjitem.h">
       <Filter>Source Files</Filter>
     </ClInclude>
@@ -169,6 +172,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\cgameobj.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\cerberus_lair.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\cheatcmd.cpp">
