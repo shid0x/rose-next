@@ -600,6 +600,12 @@ public:
     /// Can the cast that queued a payload for iSkillIDX still reach its action
     /// frame? False means the payload is stranded and must be swept.
     bool IsSkillCastStillLive(int iSkillIDX);
+    /// Is a non-projectile payload for iSkillIDX still waiting on this caster's
+    /// action frame? (Trace support for a release that never drained it.)
+    bool HasParkedSkillPayload(int iSkillIDX);
+    /// A remote caster whose casts are presented by its own skill motions -- not
+    /// the local player or a mount/rider, whose skill flow is their own.
+    bool IsRemoteSkillCaster();
 
     /// Retire a stranded skill payload: fold the server's HP checkpoint and apply
     /// the status half, but present no damage digit, hit effect or hit sound. A

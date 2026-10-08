@@ -2129,6 +2129,25 @@ CObjCHAR::Set_MOTION(short nActionIdx,
         Attack_END();
     }
 
+    // A skill release replaced while its payload still waits for the release's
+    // action frame: say what replaced it. The ended-cast sweep presents the payload
+    // either way (ProcTimeOutEffectedSkill); this names the path that cut it.
+    if (m_nDoingSkillIDX && m_pCurMOTION && Log::level_enabled(Rose::Common::LogLevel::Debug)
+        && this->Get_MOTION(nActionIdx) != m_pCurMOTION && IsRemoteSkillCaster()
+        && HasParkedSkillPayload(m_nDoingSkillIDX)) {
+        LogString(LOG_DEBUG_,
+            "CombatTrace skill release replaced before its action frame: caster %d skill %d frame %d of %d new_action %d attack %d state 0x%x command %s queue %d\n",
+            this->Get_INDEX(),
+            m_nDoingSkillIDX,
+            m_iCurMotionFRAME,
+            (int)m_pCurMOTION->m_wTotalFrame,
+            (int)nActionIdx,
+            bAttackMotion ? 1 : 0,
+            (unsigned int)Get_STATE(),
+            CommandName(Get_COMMAND()),
+            m_CommandQueue.GetCommandCount());
+    }
+
     const bool bMotionChanged = this->Chg_CurMOTION(this->Get_MOTION(nActionIdx));
     if (bMotionChanged) {
 
@@ -2599,6 +2618,12 @@ const int SKILL_PROC_LIMIT = 1000 * 10;
 // the old 10 s timeout the player experienced as a phantom hit.
 static const DWORD kAbandonedSkillPayloadGraceMs = 3000;
 
+// A remote cast that ended before its action frame drained its payload is
+// presented -- digit, hit effect, sound -- if the payload is younger than this,
+// rather than folded silently at kAbandonedSkillPayloadGraceMs. Past it, a digit
+// would read as a hit that did not happen, so the silent fold stays.
+static const DWORD kEndedCastPresentMs = 1500;
+
 // Is the cast that queued this payload still capable of reaching its action frame?
 //
 // Every abort path leaves m_EffectedSkillList untouched -- SetCMD_MOVE (the chase
@@ -2646,6 +2671,23 @@ CObjCHAR::IsSkillCastStillLive(int iSkillIDX) {
     }
 
     return false;
+}
+
+bool
+CObjCHAR::HasParkedSkillPayload(int iSkillIDX) {
+    for (std::vector<stEFFECT_OF_SKILL>::iterator it = m_EffectedSkillList.begin();
+         it != m_EffectedSkillList.end();
+         ++it) {
+        if (it->iSkillIDX == iSkillIDX && !it->bWaitForProjectileImpact) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool
+CObjCHAR::IsRemoteSkillCaster() {
+    return !this->IsLocalAvatarAttacker() && !this->IsPET() && this->GetPetMode() < 0;
 }
 
 // Resolve a skill payload that will never reach an action frame, without presenting
@@ -2797,13 +2839,46 @@ CObjCHAR::ProcTimeOutEffectedSkill() {
 
         dwElapsedTime = g_GameDATA.GetGameTime() - pEffectOfSkill->m_dwCreateTime;
 
+        const bool bCastEnded = !pEffectOfSkill->bWaitForProjectileImpact
+            && !IsSkillCastStillLive(pEffectOfSkill->iSkillIDX);
+
+        // A remote cast that ended without its action frame draining the payload:
+        // cut by the caster's own next order (Crowned Asper King, 2026-10-08: its
+        // swing replaced the release of a self-cast 3042 at frame 1 of 16, five
+        // frames before the hit, and 297 damage was folded silently 3.8 s later),
+        // or a skill motion that carries no action frame at all. The payload is only
+        // ever parked while its cast is live (Recv_gsv_DAMAGE_OF_SKILL), so a cast
+        // that is over now has just ended. Present it while that is still the
+        // moment -- the player sees the number with the cast, never a bar drop with
+        // no cause -- and leave older ones to the silent fold below. One per call
+        // and return: a lethal payload reaches Dead(), which may touch this list.
+        if (bCastEnded && dwElapsedTime < kEndedCastPresentMs && IsRemoteSkillCaster()) {
+            stEFFECT_OF_SKILL EffectOfSkill = *pEffectOfSkill;
+            m_EffectedSkillList.erase(begin);
+            if (m_EffectedSkillList.empty()) {
+                SetEffectedSkillFlag(false);
+            }
+            uniDAMAGE Damage;
+            Damage.m_wDamage = EffectOfSkill.EffectOfSkill.m_wDamage;
+            const int iDamageVALUE = Damage.m_wVALUE; // bitfield: see ResolveEffectedSkillSilently
+            LogString(LOG_DEBUG_,
+                "CombatTrace ended cast payload presented: caster %d target %d skill %d type %d damage %d hp_after %d age %u\n",
+                this->Get_INDEX(),
+                static_cast<int>(EffectOfSkill.EffectOfSkill.m_wObjectIDX),
+                EffectOfSkill.iSkillIDX,
+                SKILL_TYPE(EffectOfSkill.iSkillIDX),
+                EffectOfSkill.bDamageOfSkill ? iDamageVALUE : 0,
+                EffectOfSkill.EffectOfSkill.m_iHP_AFTER,
+                (unsigned int)dwElapsedTime);
+            ProcOneEffectedSkill(&EffectOfSkill);
+            return;
+        }
+
         // The cast is over and the action frame never came. Resolving here rather
         // than at SKILL_PROC_LIMIT is the whole fix for the phantom hit: a payload
         // left to the 10 s timeout used to be presented in full, digit and sound and
         // all, long after the monster had disengaged.
-        const bool bCastAbandoned = !pEffectOfSkill->bWaitForProjectileImpact
-            && dwElapsedTime >= kAbandonedSkillPayloadGraceMs
-            && !IsSkillCastStillLive(pEffectOfSkill->iSkillIDX);
+        const bool bCastAbandoned = bCastEnded && dwElapsedTime >= kAbandonedSkillPayloadGraceMs;
 
         if (dwElapsedTime > SKILL_PROC_LIMIT || bCastAbandoned) {
             const bool bTimedOutWaitingForProjectile = pEffectOfSkill->bWaitForProjectileImpact;
@@ -5609,6 +5684,19 @@ CObjCHAR::Proc(void) {
         /// 항상 ActionSkillIDX 를 스킬 액션 시작시 DoingSkill 에 등록시키고 모션이 끝나면 리셋..(
         /// 모션프레임에서 스킬번호를 참조해야하기 때문에 )
         //--------------------------------------------------------------------------------
+        // The release played to its end and its payload is still parked: its action
+        // frame never drained it (no such frame in the clip, or a frame the handler
+        // ignored). The sibling of "skill release replaced before its action frame".
+        if (m_nDoingSkillIDX && Log::level_enabled(Rose::Common::LogLevel::Debug)
+            && IsRemoteSkillCaster() && HasParkedSkillPayload(m_nDoingSkillIDX)) {
+            LogString(LOG_DEBUG_,
+                "CombatTrace skill release ended with its payload parked: caster %d skill %d frames %d state 0x%x command %s\n",
+                this->Get_INDEX(),
+                m_nDoingSkillIDX,
+                m_pCurMOTION ? (int)m_pCurMOTION->m_wTotalFrame : -1,
+                (unsigned int)Get_STATE(),
+                CommandName(Get_COMMAND()));
+        }
         m_nDoingSkillIDX = 0;
 
 //박지호::카트 공격시 캐릭터를 않힌다.
