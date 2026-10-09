@@ -8,9 +8,15 @@
 #include "../../util/Localizing.h"
 #include "tgamectrl/resourcemgr.h"
 #include "zz_interface.h"
+namespace {
+/// Space between the text and the edges of its panel.
+const int kPanelPadding = 8;
+} // namespace
+
 CSystemMsgDlg::CSystemMsgDlg(void) {
     m_hFont = g_GameDATA.m_hFONT[FONT_NORMAL];
     m_dwShowTime = 0;
+    m_iPanelWidth = 0;
 }
 
 CSystemMsgDlg::~CSystemMsgDlg(void) {}
@@ -22,20 +28,22 @@ CSystemMsgDlg::Draw() {
     if (m_stTitle.empty() || m_stMsg.empty())
         return;
 
+    // The panel hugs the text, centred in the space the message was split for.
+    const int iPanelX = m_sPosition.x + (m_iWidth - m_iPanelWidth) / 2;
     int iLineCount = m_Notice.GetLineCount();
     int iPosY = m_sPosition.y + 3;
     for (int i = 0; i < iLineCount; ++i) {
         // Scaled, not widened: Draw(width) widens the atlas source rect, which
         // clips at ID_BLACK_PANEL's 512 px and capped the banner there.
-        g_DrawImpl.DrawFitW(m_sPosition.x,
+        g_DrawImpl.DrawFitW(iPanelX,
             iPosY,
             IMAGE_RES_UI,
             m_iImageIndex,
-            m_iWidth,
+            m_iPanelWidth,
             D3DCOLOR_ARGB(128, 255, 255, 255));
         // DrawFitW leaves a scaled transform: the text gets the translation only.
         D3DXMATRIX mat;
-        D3DXMatrixTranslation(&mat, (float)m_sPosition.x, (float)iPosY, 0);
+        D3DXMatrixTranslation(&mat, (float)(iPanelX + kPanelPadding - 2), (float)iPosY, 0);
         ::setTransformSprite(mat);
         ::drawFontf(m_hFont, true, 2, 2, m_Color, "%s", m_Notice.GetString(i));
         iPosY += 17;
@@ -134,8 +142,14 @@ CSystemMsgDlg::SetMessage(const char* szTitle,
 
     m_Notice.Split(FONT_NORMAL,
         (char*)TempString.c_str(),
-        m_iWidth,
+        m_iWidth - 2 * kPanelPadding,
         CLocalizing::GetSingleton().GetCurrentCodePageNO());
+
+    // The panel is as wide as the longest line, measured in the font it is drawn in.
+    int iTextWidth = 0;
+    for (int i = 0; i < m_Notice.GetLineCount(); ++i)
+        iTextWidth = (std::max)(iTextWidth, (int)getFontTextExtent(m_hFont, m_Notice.GetString(i)).cx);
+    m_iPanelWidth = (std::min)(m_iWidth, iTextWidth + 2 * kPanelPadding);
 
     Show();
     return true;

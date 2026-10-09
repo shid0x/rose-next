@@ -42,5 +42,6 @@ protected:
     std::string m_stTitle; /// 제목 스트링
     std::string m_stMsg; /// 내용 스트링
     int m_iImageIndex; /// 배경에 그려질 이미지 그래픽 ID
+    int m_iPanelWidth; /// background width: the longest line plus padding
 };
 #endif
