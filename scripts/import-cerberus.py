@@ -109,8 +109,11 @@ Stats
 -----
 Level 155 (Luna's open fields top out at the Behemoth King, 142). Our spawned
 monsters' medians at 147-155 (import-ulverick.py: HP column 38, ATK 718, HIT
-447, DEF 501, RES 430, AVOID 239) scaled for a five-player boss: HP x20 (column
-800, 124k), ATK x1.4, HIT/AVOID x1.1, DEF/RES x1.2. Seeded, to be tuned in game.
+447, DEF 501, RES 430, AVOID 239) scaled for a five-player boss: ATK x1.4, HIT/AVOID x1.1, DEF/RES x1.2.
+HP column CERBERUS_HP: first 800 (124k, x20 the median), which one tester killed alone
+in ~2 min; 2000 (310k) since 2026-10-09. Infernal Leap LEAP_POWER 140 (~680 a hit; 3069's
+60 read ~290, too weak) over a 10 m radius (LEAP_RADIUS: 5.5 m missed everyone at the
+heads); the breath stays at 200 (~930).
 EXP is only seeded too: rebalance-exp-rewards.py owns the column. Type 16, the
 skull (unique boss, fix-monster-marks.py's policy). Both ids are in
 balance-trend-exclude.py (level 155 sits in the 60-199 window every balance pass
@@ -203,6 +206,9 @@ C_NAME, C_WALK, C_RUN, C_SIZE, C_LEVEL, C_HP, C_ATK, C_HIT, C_DEF, C_RES, C_AVOI
     C_ASPD, C_AI, C_EXP, C_DROP, C_MONEY, C_DROPRATE = \
     0, 2, 3, 4, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20
 C_TARGET, C_TYPE, C_DEADEVENT = 25, 27, 41
+# HP column (max HP = level x column). 800 (124k) fell to one player in ~2 min on the
+# first tests; 2000 (310k) is ~4-5 min for five players at the testers' pace (2026-10-09).
+CERBERUS_HP = 2000
 C_SIZE, C_RANGE, C_GLOW = 4, 26, 39
 # The hellfire look: LIST_NPC col 39 is a glow around the whole model, decimal
 # RRRGGGBBB (CGameUtil::GetRGBFromString, client CObjMOB::Create), as on the
@@ -213,12 +219,12 @@ TYPE_SKULL = 16
 # (name, STL key, stats)
 MONSTERS = {
     AWAKE: ("Cerberus", "LCRBMOB2682", {
-        C_LEVEL: 155, C_HP: 800, C_ATK: 1005, C_HIT: 492, C_DEF: 601, C_RES: 516,
+        C_LEVEL: 155, C_HP: CERBERUS_HP, C_ATK: 1005, C_HIT: 492, C_DEF: 601, C_RES: 516,
         C_AVOID: 263, C_ASPD: 110, C_EXP: 16000, C_AI: 2254,
         C_DROP: 49, C_MONEY: 0, C_DROPRATE: 100, C_GLOW: GLOW}),
     ASLEEP: ("Sleeping Cerberus", "LCRBMOB2683", {
         C_WALK: 0, C_RUN: 0,
-        C_LEVEL: 155, C_HP: 800, C_ATK: 1005, C_HIT: 492, C_DEF: 601, C_RES: 516,
+        C_LEVEL: 155, C_HP: CERBERUS_HP, C_ATK: 1005, C_HIT: 492, C_DEF: 601, C_RES: 516,
         C_AVOID: 263, C_ASPD: 110, C_EXP: 0, C_AI: 2253,
         C_DROP: 0, C_MONEY: 0, C_DROPRATE: 0, C_GLOW: GLOW}),
 }
@@ -244,6 +250,14 @@ HOUND_STATS = {C_LEVEL: 150, C_HP: 45, C_ATK: 700, C_HIT: 450, C_DEF: 480, C_RES
 LEAP = 7021                         # one past the end of LIST_SKILL
 LEAP_NAME = "Infernal Leap"
 LEAP_SRC = 3069
+LEAP_POWER = 140                    # 3069 is 60 (~290); ~680 a hit, all within LEAP_RADIUS
+# Type 17 hits around the caster's own position (CObjCHAR::Skill_DamageToAROUND(m_PosCUR)),
+# with no allowance for its size. At size 800 Cerberus's heads are ~7.4 m ahead of that
+# point and its tail ~15 m behind, so 3069's 5.5 m reached only players standing in its
+# chest (a melee player closes to ~3-4 m of the centre: its range ignores the target's
+# size) and missed everyone at the heads and flanks. 10 m covers the body, not the
+# ranged players behind it (2026-10-09).
+LEAP_RADIUS = 1000
 LEAP_CAST_FX, LEAP_HIT_FX = 1882, 1883  # FILE_EFFECT: thornie_firecharge / _fireblast
 SKILL_STB_REL = r"3DDATA\STB\LIST_SKILL.STB"
 SK_NAME, SK_LINE, SK_CAST_FX, SK_CAST_LOC, SK_HIT_FX, SK_HIT_LOC = 0, 1, 56, 57, 74, 75
@@ -269,7 +283,7 @@ BREATH_REACH = 14                   # m
 WAKE_RANGE = 14                     # m
 BITE = LEAP                         # 5.5 m area hit with fire on it
 BITE_MOTION = 8
-BITE_REACH = 5                      # m
+BITE_REACH = 9                      # m: the leap fires when its target is this close
 BITE_EVERY = 12                     # hits taken between two
 LEASH = 45                          # m from the spawn point
 SEEK = 30                           # m
@@ -826,6 +840,8 @@ def leap_row(sk):
     row = list(sk.d[LEAP_SRC])
     row[SK_NAME] = LEAP_NAME.encode()
     row[SK_LINE] = b(LEAP)
+    row[SK_POWER] = b(LEAP_POWER)
+    row[SK_RADIUS] = b(LEAP_RADIUS)
     row[SK_CAST_FX], row[SK_CAST_LOC] = b(LEAP_CAST_FX), b"999"
     row[SK_HIT_FX], row[SK_HIT_LOC] = b(LEAP_HIT_FX), b"999"
     return row
