@@ -226,7 +226,7 @@ AWAKE, ASLEEP = 2682, 2683
 C_NAME, C_WALK, C_RUN, C_SIZE, C_LEVEL, C_HP, C_ATK, C_HIT, C_DEF, C_RES, C_AVOID, \
     C_ASPD, C_AI, C_EXP, C_DROP, C_MONEY, C_DROPRATE = \
     0, 2, 3, 4, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20
-C_TARGET, C_TYPE, C_DEADEVENT = 25, 27, 41
+C_TARGET, C_TYPE, C_DEADEVENT, C_HEIGHT = 25, 27, 41, 42
 # HP column (max HP = level x column). 800 (124k) fell to one player in ~2 min on the
 # first tests; 2000 (310k) is ~4-5 min for five players at the testers' pace (2026-10-09).
 CERBERUS_HP = 2000
@@ -909,6 +909,14 @@ def extra_row(d_npc, i):
     row[C_NAME] = name.encode()
     for c, v in stats.items():
         row[c] = b(v)
+    # The name/HP-bar height (col 42, absolute cm) is the template's at the template's
+    # size; the client takes the higher of it and the measured model, so a copy at
+    # another size must scale it. The Warden (the Lunar Keeper's 370 at twice its size)
+    # drew its name inside the floating body; the Hellhounds (the Wolf King's 400 at
+    # 220/400) drew theirs high above (2026-10-09).
+    t_size, t_height = d_npc.get(template, C_SIZE).strip(), d_npc.get(template, C_HEIGHT).strip()
+    if C_SIZE in stats and t_size.isdigit() and int(t_size) and t_height.isdigit():
+        row[C_HEIGHT] = b(round(int(t_height) * int(stats[C_SIZE]) / int(t_size)))
     for c in (C_TARGET, C_DEADEVENT, *oro.NPC_SELL_TAB_COLS):
         row[c] = b""
     row[oro.NPC_STRID_COL] = strid.encode()
