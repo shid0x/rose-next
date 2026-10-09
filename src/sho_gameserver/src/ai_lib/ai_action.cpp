@@ -824,9 +824,13 @@ F_AIACT28(stActHead* pActDATA, t_AIPARAM* pEVENT) {
     pEVENT->m_pSourCHAR->Say_MESSAGE(pAct->szMsg);
 #else
     char* szMSG = pAct->szMsg;
+    // The overhead bubble is this local chat, sent for every kind (2026-10-09). The
+    // client used to make it up itself from its own copy of the AI, which stubs every
+    // condition past 26 to true and rolls its own dice, so a monster "spoke" on hits
+    // the server never acted on, and refreshed the bubble on nearly every one.
+    pEVENT->m_pSourCHAR->Send_gsv_CHAT(szMSG);
     switch (pAct->btMsgType) {
         case 0:
-            pEVENT->m_pSourCHAR->Send_gsv_CHAT(szMSG);
             break;
         case 1:
             pEVENT->m_pSourCHAR->Send_gsv_SHOUT(szMSG);

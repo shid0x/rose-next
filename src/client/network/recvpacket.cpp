@@ -963,6 +963,13 @@ CRecvPACKET::Recv_gsv_CHAT() {
 #ifdef __VIRTUAL_SERVER
         g_Cheat.DoCheat(szMsg);
 #endif
+    } else if (CObjCHAR* pSpeaker = g_pObjMGR->Get_ClientCharOBJ(m_pRecvPacket->m_gsv_CHAT.m_wObjectIDX, false)) {
+        // A monster's or NPC's AI line (AIACT28): the bubble only, red as monster
+        // speech always was. A shouted or announced line also reaches the chat
+        // through its own packet.
+        szMsg = Packet_GetStringPtr(m_pRecvPacket, nOffset);
+        if (szMsg && szMsg[0] && pSpeaker->Get_TYPE() != OBJ_AVATAR && pSpeaker->Get_TYPE() != OBJ_USER)
+            g_UIMed.AddChatMsg(m_pRecvPacket->m_gsv_CHAT.m_wObjectIDX, szMsg, g_dwRED);
     }
 }
 

@@ -1294,6 +1294,15 @@ server chase first, and the client abandons a remote cast that has not started w
 the server applies it (cast clip + release hit frame): size stun durations for that, or
 speed the clips up (LIST_SKILL cols 53/69 apply to monster casts on both sides).
 
+**Monster speech (AI action 28) is the server's** (2026-10-09): the overhead bubble is a
+local chat the server sends for every line (`Recv_gsv_CHAT` shows a monster's as a red
+bubble only). The client used to raise it from its own copy of the AI, whose conditions
+past 26 (monster variables included) are stubs returning true and whose dice are not the
+server's -- a line gated on a variable fired on almost every hit. Casting effects (LIST_SKILL
+cols 56-67) play only on clip event frames 44/64/74/84; most monster clips have none, so a
+spell that hits nobody shows nothing unless the caster gets clip copies with them (the
+Warden of the Seal's `SEAL_CLIPS` in `import-cerberus.py`).
+
 ### The Cerberus Lair Is A Drawn Instance (zone 49, built and validated in game 2026-10-08)
 
 tsuki's Cerberus Lair as zone 49 (`scripts/import-cerberus.py`, stages 1-4) plus a

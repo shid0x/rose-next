@@ -120,7 +120,9 @@ puts the sleeping Cerberus in the crater only when the Warden dies.
   Burst 7023 (Infernal Leap's base 3069): 8 m around itself, power 200, Area Slow's
   status 15 with AT_SPEED -40% for 6 s, after a half-speed wind-up with lightning
   gathering and a zone shout ("seal" line). Cast at 66% and 33% HP (var 3) and on 50%
-  of every 14th hit (var 2), always only when its target is inside the 8 m. Its table
+  of every 14th hit (var 2), always only when its target is inside the 8 m; a scripted
+  cast also waits SEAL_GAP counted hits after the last one, or a free burst just above
+  66% was followed by the 66% one mid-wind-up (two shouts, one spell). Its table
   967: lv145-155 armour (Cedric, Joker, Silentwalker, Bomber) and gems [4]/[5], about
   half each; the uniques stay on Cerberus.
 
@@ -341,7 +343,23 @@ SEAL_SRC = 3069
 SEAL_MOTION = 8
 SEAL_REACH = 8                      # m: the target must be inside the burst for it to be cast
 SEAL_EVERY = 14                     # hits taken between the free casts (monster var 2)
+SEAL_GAP = 4                        # counted hits since the last burst before a scripted one:
+                                    # a free burst at 67% HP followed by the 66% one while it
+                                    # was still winding up gave two shouts for one spell
 SEAL_CALLS = ((66, 0, 1), (33, 1, 2))   # (HP %, var 3 before, after): the scripted casts
+# The client plays a skill's casting effects (cols 56-67) only on clip event frames
+# 44/64/74/84, and no electgost clip has any: the lightning wind-up and the shockwave
+# never showed, so a burst that hit nobody (out of reach, or a level-240 tester)
+# looked like a shout and nothing (2026-10-09). The Warden gets its own copies of the
+# two clips with those events added; the Lunar Keeper keeps the originals. The server
+# ignores both events (it counts only attack frames). Event 44 = casting effect 0
+# (cols 56-58), 74 = casting effect 2 (cols 62-64).
+SEAL_CLIPS = {   # CHR slot: (source clip, the Warden's copy, {frame: event})
+    SEAL_MOTION: (r"3Ddata\MOTION\NPC\electgost\electgost_run.ZMO",
+                  r"3Ddata\MOTION\NPC\electgost\electgost_seal_cast.ZMO", {1: 44}),
+    SEAL_MOTION + 1: (r"3Ddata\MOTION\NPC\electgost\electgost_skill.ZMO",
+                      r"3Ddata\MOTION\NPC\electgost\electgost_seal_burst.ZMO", {26: 74}),
+}
 SEAL_CELLS = {SK_RADIUS: 800, SK_POWER: 200,
               SK_STATUS: 15, SK_SUCCESS: 100, SK_DURATION: 6,     # Area Slow's status 15,
               21: 23, 23: 40,                                    # AT_SPEED -40% (3610's)
@@ -774,7 +792,7 @@ def build_warden_ai(L):
         ]),
         (heb.pat("damaged"), [         # first match wins; var 3 = scripted casts, var 2 = hits
             *[heb.ev(f"seal {pct}", [heb.c_hp_at_most(pct), heb.c_var(3, before),
-                                     heb.c_target_within(SEAL_REACH)],
+                                     heb.c_var(2, SEAL_GAP, 2), heb.c_target_within(SEAL_REACH)],
                      burst() + [heb.a_set_var(3, after), heb.a_set_var(2, 0)])
               for pct, before, after in SEAL_CALLS],
             heb.ev("seal", [heb.c_var(2, SEAL_EVERY, 2), heb.c_chance(50),
@@ -904,6 +922,61 @@ def hound_row(d_npc):
     return extra_row(d_npc, HOUND)
 
 
+def zmo_with_events(data, events):
+    """A .ZMO's bytes with {frame: event} written into its event trailer (EZMO/3ZMO:
+    the table's offset at len-8, then u16 frame count and one short per frame)."""
+    if data[-4:] not in (b"EZMO", b"3ZMO"):
+        raise SystemExit("clip has no event trailer")
+    off, = struct.unpack_from("<I", data, len(data) - 8)
+    n, = struct.unpack_from("<H", data, off)
+    out = bytearray(data)
+    for frame, ev in events.items():
+        if not 0 <= frame < n:
+            raise SystemExit(f"frame {frame} outside the clip's {n}")
+        cur, = struct.unpack_from("<h", out, off + 2 + 2 * frame)
+        if cur not in (0, ev):
+            raise SystemExit(f"frame {frame} already carries event {cur}")
+        struct.pack_into("<h", out, off + 2 + 2 * frame, ev)
+    return bytes(out)
+
+
+def warden_chr_entry(chr_):
+    """The Warden's CHR entry: the Lunar Keeper's, with SEAL_CLIPS in slots 8/9."""
+    e = copy.deepcopy(chr_.chars[WARDEN_TEMPLATE])
+    want = {}
+    for slot, (_src, dst, _ev) in SEAL_CLIPS.items():
+        key = dst.encode("latin-1")
+        hit = [i for i, m in enumerate(chr_.motions) if m.lower() == key.lower()]
+        want[slot] = hit[0] if hit else None
+    e["anims"] = [(slot, want.get(slot, a) if want.get(slot) is not None else a)
+                  for slot, a in e["anims"]]
+    return e
+
+
+def stage2_seal_clips(ours, dry):
+    for slot, (src, dst, events) in SEAL_CLIPS.items():
+        want = zmo_with_events(open(P(ours, src), "rb").read(), events)
+        path = P(ours, dst)
+        if os.path.exists(path) and open(path, "rb").read() == want:
+            continue
+        if not dry:
+            open(path, "wb").write(want)
+        print(f"    {os.path.basename(dst):26s} written (events {events})")
+    chr_ = oro.Chr(P(ours, NPC_CHR_REL))
+    added = []
+    for _slot, (_src, dst, _ev) in SEAL_CLIPS.items():
+        key = dst.encode("latin-1")
+        if not any(m.lower() == key.lower() for m in chr_.motions):
+            chr_.motions.append(key)
+            added.append(len(chr_.motions) - 1)
+    entry = warden_chr_entry(chr_)
+    if added or chr_.chars[WARDEN] != entry:
+        chr_.chars[WARDEN] = entry
+        chr_.save(dry)
+        print(f"    {'LIST_NPC.CHR':26s} entry {WARDEN} slots {sorted(SEAL_CLIPS)} -> its own clips"
+              f"{f' (motions +{added})' if added else ''}")
+
+
 def seal_row(sk):
     row = list(sk.d[SEAL_SRC])
     row[SK_NAME] = SEAL_NAME.encode()
@@ -1022,6 +1095,7 @@ def stage2_extras(ours, dry):
         stl.save(dry)
     if chr_dirty:
         chr_.save(dry)
+    stage2_seal_clips(ours, dry)
 
     sk = oro.Stb(P(ours, SKILL_STB_REL))
     if sk.rows <= LEAP:
@@ -1482,7 +1556,16 @@ def verify(ours, src):
           "balance-trend-exclude.py lists every Cerberus Lair monster")
     for i, (name, strid, template, _) in sorted(EXTRAS.items()):
         check(npc.rows > i and npc.d[i] == extra_row(npc, i), f"LIST_NPC {i} {name}")
-        check(i < len(chr_.chars) and chr_.chars[i] == chr_.chars[template], f"CHR {i}")
+        want = warden_chr_entry(chr_) if i == WARDEN else chr_.chars[template]
+        check(i < len(chr_.chars) and chr_.chars[i] == want, f"CHR {i}")
+        if i == WARDEN:
+            for slot, (clip, dst, events) in SEAL_CLIPS.items():
+                anims = dict(chr_.chars[i]["anims"])
+                ok = (os.path.exists(P(ours, dst))
+                      and open(P(ours, dst), "rb").read()
+                      == zmo_with_events(open(P(ours, clip), "rb").read(), events)
+                      and chr_.motions[anims[slot]].lower() == dst.encode("latin-1").lower())
+                check(ok, f"Warden slot {slot} = {os.path.basename(dst)} with events {events}")
         check(stl.has(strid), strid)
     sk = oro.Stb(P(ours, SKILL_STB_REL))
     check(sk.rows > LEAP and sk.d[LEAP] == leap_row(sk), f"LIST_SKILL {LEAP} {LEAP_NAME}")

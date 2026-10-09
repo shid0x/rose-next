@@ -738,7 +738,12 @@ F_AIACT28(stActHead* pActDATA, t_AIPARAM* pEVENT) {
     AIACT28_STR* pAct = (AIACT28_STR*)pActDATA;
 
 #ifndef __SERVER
-    pEVENT->m_pSourCHAR->Say_MESSAGE(pAct->szMsg);
+    // Nothing here: the server sends the line as local chat from the monster and
+    // Recv_gsv_CHAT shows the bubble (2026-10-09). This copy of the AI cannot know
+    // when the server's fires -- conditions past 26 (monster variables included) are
+    // stubs that return true and its dice are not the server's -- so the bubble
+    // it raised came on hits the server never acted on.
+    (void)pAct;
 #else
     char* szMSG = pAct->szMsg;
     switch (pAct->btMsgType) {
