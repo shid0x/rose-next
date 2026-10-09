@@ -25,12 +25,18 @@ CSystemMsgDlg::Draw() {
     int iLineCount = m_Notice.GetLineCount();
     int iPosY = m_sPosition.y + 3;
     for (int i = 0; i < iLineCount; ++i) {
-        g_DrawImpl.Draw(m_sPosition.x,
+        // Scaled, not widened: Draw(width) widens the atlas source rect, which
+        // clips at ID_BLACK_PANEL's 512 px and capped the banner there.
+        g_DrawImpl.DrawFitW(m_sPosition.x,
             iPosY,
-            m_iWidth,
             IMAGE_RES_UI,
             m_iImageIndex,
+            m_iWidth,
             D3DCOLOR_ARGB(128, 255, 255, 255));
+        // DrawFitW leaves a scaled transform: the text gets the translation only.
+        D3DXMATRIX mat;
+        D3DXMatrixTranslation(&mat, (float)m_sPosition.x, (float)iPosY, 0);
+        ::setTransformSprite(mat);
         ::drawFontf(m_hFont, true, 2, 2, m_Color, "%s", m_Notice.GetString(i));
         iPosY += 17;
     }
@@ -89,21 +95,25 @@ CSystemMsgDlg::SetMessage(const char* szTitle,
 
     m_dwMsgSetTime = g_GameDATA.GetGameTime();
 
+    // The whole width between the status panel and the minimap, centred: the same
+    // margin both sides covers the classic and the UI2 layouts (UI2's minimap is
+    // wider than the classic dialog). It used to stop at 512 px, the background
+    // sprite's width, which broke a server announcement in three on a wide screen.
     int iBaseInfoDlgWidth = 252;
-    int iMapDlgWidth = 192;
-    int iImageMaxWidth = 512;
-    int iPanelWidth = 0;
+    int iMapDlgWidth = 260;
 
     CTDialog* pDlg = g_itMGR.FindDlg(DLG_TYPE_MINIMAP);
-    if (pDlg)
+    if (pDlg && pDlg->GetWidth() > iMapDlgWidth)
         iMapDlgWidth = pDlg->GetWidth();
 
-    m_iWidth = g_pCApp->GetWIDTH() - iMapDlgWidth - iBaseInfoDlgWidth;
-
-    if (m_iWidth > iImageMaxWidth)
-        m_iWidth = iImageMaxWidth;
-
-    m_sPosition.x = iBaseInfoDlgWidth;
+    const int iMargin = (std::max)(iBaseInfoDlgWidth, iMapDlgWidth);
+    m_iWidth = g_pCApp->GetWIDTH() - 2 * iMargin;
+    if (m_iWidth < 512) { // a narrow window: fall back to the old placement
+        m_iWidth = (std::min)(512, (std::max)(64, g_pCApp->GetWIDTH() - iBaseInfoDlgWidth - iMapDlgWidth));
+        m_sPosition.x = iBaseInfoDlgWidth;
+    } else {
+        m_sPosition.x = iMargin;
+    }
 
 #ifdef _NEWUI
     m_sPosition.y = 30;
