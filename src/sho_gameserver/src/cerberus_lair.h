@@ -12,14 +12,15 @@ class classUSER;
 ///
 /// Every hour, on the hour, the gatekeeper in Arumic Valley opens registration
 /// for ten minutes; at ten past, up to five of the players who signed are drawn,
-/// put in a party and sent into the lair, where Cerberus sleeps. Its death (plus a
+/// put in a party and sent into the lair: two packs of whelps, the Warden of the
+/// Seal, and once the Warden falls, Cerberus asleep in the crater. Its death (plus a
 /// minute to loot) or a time limit sends everyone back to the temple door, and
 /// the lair is reset for the next hour.
 ///
 /// Threads. ProcZone runs in every zone thread; it acts in two of them only:
 ///   * the lair's thread owns the run -- the draw, arrivals (the fee is charged
-///     there, in the player's own thread by then), evictions, the reset, the
-///     sleeping Cerberus (spawned here, never by a regen point: a point cannot be
+///     there, in the player's own thread by then), evictions, the reset, and every
+///     monster of a run (spawned here, never by a regen point: a point cannot be
 ///     made to respawn on demand, CRegenPOINT::Reset only zeroes its count);
 ///   * the gatekeeper's zone mirrors the open/closed state into the NPC's event
 ///     value 0, which the register trigger (COND_011) and the dialog read.
@@ -76,6 +77,9 @@ private:
     unsigned long m_dwGraceUntil;
     bool m_bReqOpen, m_bReqDraw, m_bReqReset;
     bool m_bBossSeen; // the run has seen Cerberus alive: only then is "none alive" a kill
+    bool m_bRunSpawned; // the whelps and the Warden are out
+    bool m_bWardenSeen; // the Warden has been seen alive: its absence is then a kill
+    bool m_bSealBroken; // the Warden is dead and Cerberus was put in the crater
     int m_nHoundCalls; // Hellhound calls made this run (HOUND_CALL_PCT)
     short m_nGateValue;
 

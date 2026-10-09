@@ -105,6 +105,25 @@ Power 200 is a first guess, to tune after a fight.
 
 Not taken (offered 2026-10-08): a howl (area slow) and an enrage.
 
+The way in (2026-10-09)
+-----------------------
+The user asked for "a few hellhound whelps at first, small fun trash", then a mid-boss
+"nothing too hard, maybe one big spell, a warm-up", with Cerberus gated behind it.
+The controller spawns all of it when a run starts (cerberus_lair.cpp RUN_SPAWNS) and
+puts the sleeping Cerberus in the crater only when the Warden dies.
+- Hellhound Whelp 2680: Shadow Wolf 338's model at size 130, a red glow, lv146 with
+  modest stats; a hit whelp calls up to five idle whelps within 15 m (AIACT18). Two
+  packs of three. LP04's drop table 376 (Luna materials).
+- Warden of the Seal 2681: the Lunar Keeper 386's floating ghost at size 360, a cold
+  blue glow and the gold star, lv152, HP column 490 (~74k, a quarter of Cerberus).
+  Its normal attack is the Keeper's electric bolt (weapon 1079). Its spell is Seal
+  Burst 7023 (Infernal Leap's base 3069): 8 m around itself, power 200, Area Slow's
+  status 15 with AT_SPEED -40% for 6 s, after a half-speed wind-up with lightning
+  gathering and a zone shout ("seal" line). Cast at 66% and 33% HP (var 3) and on 50%
+  of every 14th hit (var 2), always only when its target is inside the 8 m. Its table
+  967: lv145-155 armour (Cedric, Joker, Silentwalker, Bomber) and gems [4]/[5], about
+  half each; the uniques stay on Cerberus.
+
 Stats
 -----
 Level 155 (Luna's open fields top out at the Behemoth King, 142). Our spawned
@@ -228,10 +247,12 @@ MONSTERS = {
         C_AVOID: 263, C_ASPD: 110, C_EXP: 0, C_AI: 2253,
         C_DROP: 0, C_MONEY: 0, C_DROPRATE: 0, C_GLOW: GLOW}),
 }
-AI_FILES = {2253: "CERBERUS_SLEEP.AIP", 2254: "CERBERUS.AIP", 2255: "HELLHOUND.AIP"}
+AI_FILES = {2253: "CERBERUS_SLEEP.AIP", 2254: "CERBERUS.AIP", 2255: "HELLHOUND.AIP",
+            2256: "HELLWHELP.AIP", 2257: "SEALWARDEN.AIP"}
 LINES = {   # AI_s.STB, appended; AIACT28 type 1 = zone shout, 0 = local chat
     "wake": "Three heads lift from the ice. Cerberus wakes!",
     "kill": "Cerberus tears its prey apart.",
+    "seal": "The Warden draws on the seal's power... stand back!",
 }
 
 # ---- the hellhounds: the game server calls two at 66% of Cerberus's HP and two more at
@@ -245,6 +266,34 @@ HOUND_STATS = {C_LEVEL: 150, C_HP: 45, C_ATK: 700, C_HIT: 450, C_DEF: 480, C_RES
                C_AVOID: 240, C_ASPD: 115, C_WALK: 250, C_RUN: 800, C_SIZE: 220,
                C_EXP: 600, C_AI: 2255, C_DROP: 0, C_MONEY: 0, C_DROPRATE: 0,
                C_TYPE: 3, C_GLOW: HOUND_GLOW}
+
+# ---- the way in (2026-10-09): two packs of Hellhound Whelps -- small, fun trash that
+# calls its litter -- then the Warden of the Seal, a mid-boss whose death lets Cerberus
+# into the crater. cerberus_lair.cpp spawns all of them when a run starts (WHELP_PACK_*,
+# WARDEN_X/Y there: the frozen river, the clearing past it, the crater rim) and the
+# sleeping Cerberus only once the Warden has fallen.
+WHELP, WARDEN = 2680, 2681          # blank here, no CHR entry
+WHELP_TEMPLATE = 338                # Shadow Wolf: the blue Luna wolf (bluewolf_bone)
+WARDEN_TEMPLATE = 386               # Lunar Keeper: the floating electric ghost; its row's
+                                    # weapon 1079 is its ranged bolt, kept as the normal attack
+WARDEN_DROP_TABLE = 967             # blank and unreferenced
+WARDEN_DROP_LABEL = "BOSS Warden of the Seal (lv152)"
+WHELP_STATS = {C_LEVEL: 146, C_HP: 21, C_ATK: 600, C_HIT: 430, C_DEF: 450, C_RES: 400,
+               C_AVOID: 230, C_ASPD: 120, C_WALK: 250, C_RUN: 800, C_SIZE: 130,
+               C_EXP: 300, C_AI: 2256, C_DROP: 376, C_MONEY: 15, C_DROPRATE: 60,
+               C_TYPE: 1, C_GLOW: "150030010"}      # LP04's Dreadnaught table: Luna materials
+WARDEN_STATS = {C_LEVEL: 152, C_HP: 490, C_ATK: 900, C_HIT: 480, C_DEF: 580, C_RES: 500,
+                C_AVOID: 250, C_ASPD: 100, C_SIZE: 360,
+                C_EXP: 6000, C_AI: 2257, C_DROP: WARDEN_DROP_TABLE, C_MONEY: 0, C_DROPRATE: 100,
+                C_TYPE: 10, C_GLOW: "060140230"}    # ~74k HP, a quarter of Cerberus; gold star
+WHELP_SEEK, WHELP_CALL = 15, 15     # m: aggro, and how far a hit whelp calls its litter
+WARDEN_SEEK, WARDEN_LEASH = 25, 35  # m
+# name, STL key, template row, stats -- built by extra_row()
+EXTRAS = {
+    HOUND: (HOUND_NAME, HOUND_STRID, HOUND_TEMPLATE, HOUND_STATS),
+    WHELP: ("Hellhound Whelp", "LCRBMOB2680", WHELP_TEMPLATE, WHELP_STATS),
+    WARDEN: ("Warden of the Seal", "LCRBMOB2681", WARDEN_TEMPLATE, WARDEN_STATS),
+}
 
 # ---- Infernal Leap: the jump with fire on it (Hook 516/517 keep 3069 as it was)
 LEAP = 7021                         # one past the end of LIST_SKILL
@@ -279,6 +328,27 @@ BREATH_CELLS = {SK_RANGE: 1500, SK_RADIUS: 500, SK_POWER: 200,
 BREATH_CHASE = (6, 14)              # m: while chasing, it breathes on you instead
 BREATH_CHASE_CHANCE = 30
 BREATH_EVERY = 8                    # hits taken (monster var 4)
+
+# ---- Seal Burst: the Warden's one big spell. An area hit around itself (type 17, Infernal
+# Leap's base 3069) with a slow, behind a long wind-up: the cast clip (slot 8, the
+# electgost's floating "run" -- the model has no casting clip) at half speed, a zone
+# shout, and Voltage Jolt's lightning gathering on it. Released on electgost_skill (slot
+# 9, frames 24/34: frame 24 presents the payload). Whoever steps out of the 8 m during
+# the wind-up takes nothing.
+SEAL = 7023
+SEAL_NAME = "Seal Burst"
+SEAL_SRC = 3069
+SEAL_MOTION = 8
+SEAL_REACH = 8                      # m: the target must be inside the burst for it to be cast
+SEAL_EVERY = 14                     # hits taken between the free casts (monster var 2)
+SEAL_CALLS = ((66, 0, 1), (33, 1, 2))   # (HP %, var 3 before, after): the scripted casts
+SEAL_CELLS = {SK_RADIUS: 800, SK_POWER: 200,
+              SK_STATUS: 15, SK_SUCCESS: 100, SK_DURATION: 6,     # Area Slow's status 15,
+              21: 23, 23: 40,                                    # AT_SPEED -40% (3610's)
+              SK_CAST_MOTION: SEAL_MOTION, 53: 50, SK_SKILL_MOTION: SEAL_MOTION + 1,
+              SK_CAST_FX: 1635, SK_CAST_LOC: 999,                # _lighting_casting_01
+              62: 400, 63: 999, 64: 131,                         # shockwave_01 + 3598's sound
+              SK_HIT_FX: 1634, SK_HIT_LOC: 999, 76: 1572}        # _lighting_hit_01 + its sound
 BREATH_REACH = 14                   # m
 WAKE_RANGE = 14                     # m
 BITE = LEAP                         # 5.5 m area hit with fire on it
@@ -662,6 +732,64 @@ def death_events():
             heb.ev("loot c", [], drops(UNIQUES[2]))]
 
 
+def a_call_pack(npc, how_many, metres):     # AIACT18: same-row monsters with no target join in
+    return heb._act(18, struct.pack("<HHi", npc, how_many, metres))
+
+
+def build_whelp_ai():
+    """Spawned by the server (no created pattern). A short aggro; a hit whelp calls its
+    litter (AIACT18 reaches only whelps with no target yet)."""
+    pats = [
+        (heb.pat("created"), []),
+        (heb.pat("stop"), [
+            heb.ev("go home", [heb.c_moved_from_spawn(LEASH)], [heb.a_run_home(3)]),
+            heb.ev("seek", [heb.c_enemies_near(WHELP_SEEK)], [heb.a_attack_found()]),
+        ]),
+        (heb.pat("attack move"), [
+            heb.ev("leash", [heb.c_moved_from_spawn(LEASH)], [heb.a_run_home(3)]),
+        ]),
+        (heb.pat("damaged"), [
+            heb.ev("call the litter", [], [a_call_pack(WHELP, 5, WHELP_CALL)]),
+        ]),
+        (heb.pat("kill"), []),
+        (heb.pat("dead"), []),
+    ]
+    # idle check every 2 s, the damaged pattern on every hit (the call is the point)
+    return mon.build_aip((len(pats), 2, 100), b"Hellhound Whelp\0", pats, b"")
+
+
+def build_warden_ai(L):
+    """Seal Burst at 66% and 33% of its HP and every SEAL_EVERY hits taken, always with a
+    zone shout first and only while its target is inside the burst."""
+    def burst():
+        return [heb.a_say(L["seal"], 1), heb.a_cast(SEAL, SEAL_MOTION)]
+    pats = [
+        (heb.pat("created"), []),
+        (heb.pat("stop"), [
+            heb.ev("go home", [heb.c_moved_from_spawn(WARDEN_LEASH)], [heb.a_run_home(3)]),
+            heb.ev("seek", [heb.c_enemies_near(WARDEN_SEEK)], [heb.a_attack_found()]),
+        ]),
+        (heb.pat("attack move"), [
+            heb.ev("leash", [heb.c_moved_from_spawn(WARDEN_LEASH)], [heb.a_run_home(3)]),
+        ]),
+        (heb.pat("damaged"), [         # first match wins; var 3 = scripted casts, var 2 = hits
+            *[heb.ev(f"seal {pct}", [heb.c_hp_at_most(pct), heb.c_var(3, before),
+                                     heb.c_target_within(SEAL_REACH)],
+                     burst() + [heb.a_set_var(3, after), heb.a_set_var(2, 0)])
+              for pct, before, after in SEAL_CALLS],
+            heb.ev("seal", [heb.c_var(2, SEAL_EVERY, 2), heb.c_chance(50),
+                            heb.c_target_within(SEAL_REACH)],
+                   burst() + [heb.a_set_var(2, 0)]),
+            heb.ev("retaliate", [heb.c_chance(20), heb.c_attacker_not_target()],
+                   [heb.a_attack_attacker(), heb.a_set_var(2, 1, 6)]),
+            heb.ev("count", [], [heb.a_set_var(2, 1, 6)]),
+        ]),
+        (heb.pat("kill"), []),
+        (heb.pat("dead"), []),
+    ]
+    return mon.build_aip((len(pats), 2, 50), b"Warden of the Seal\0", pats, b"")
+
+
 def build_hound_ai():
     """Spawned by the server at the crater (RegenMOB never runs the created pattern),
     so the idle search must reach the whole arena: Cerberus leashes at LEASH m."""
@@ -753,20 +881,35 @@ def ai_lines(ours, dry):
 
 def ai_blobs(line_rows):
     return {2253: build_sleep_ai(line_rows), 2254: build_awake_ai(line_rows),
-            2255: build_hound_ai()}
+            2255: build_hound_ai(), 2256: build_whelp_ai(), 2257: build_warden_ai(line_rows)}
 
 
-def hound_row(d_npc):
-    row = list(d_npc.d[HOUND_TEMPLATE])
-    row[C_NAME] = HOUND_NAME.encode()
-    for c, v in HOUND_STATS.items():
+def extra_row(d_npc, i):
+    """One of EXTRAS: its template's row with our name, stats and STL key."""
+    name, strid, template, stats = EXTRAS[i]
+    row = list(d_npc.d[template])
+    row[C_NAME] = name.encode()
+    for c, v in stats.items():
         row[c] = b(v)
     for c in (C_TARGET, C_DEADEVENT, *oro.NPC_SELL_TAB_COLS):
         row[c] = b""
-    row[oro.NPC_STRID_COL] = HOUND_STRID.encode()
+    row[oro.NPC_STRID_COL] = strid.encode()
     row[oro.NPC_PVP_COL] = oro.DEFAULT_PVP_STATE
-    if d_npc.get(HOUND, 0).strip():
-        row[C_EXP] = d_npc.get(HOUND, C_EXP)        # rebalance-exp-rewards.py owns it
+    if d_npc.get(i, 0).strip():
+        row[C_EXP] = d_npc.get(i, C_EXP)            # rebalance-exp-rewards.py owns it
+    return row
+
+
+def hound_row(d_npc):
+    return extra_row(d_npc, HOUND)
+
+
+def seal_row(sk):
+    row = list(sk.d[SEAL_SRC])
+    row[SK_NAME] = SEAL_NAME.encode()
+    row[SK_LINE] = b(SEAL)
+    for c, v in SEAL_CELLS.items():
+        row[c] = b(v)
     return row
 
 
@@ -848,28 +991,37 @@ def leap_row(sk):
 
 
 def stage2_extras(ours, dry):
-    """The hellhound row, model and STL key, and the Infernal Leap skill row."""
+    """The extra monsters (hounds, whelps, Warden): rows, models, STL keys; and the
+    Infernal Leap / Hellfire Breath / Seal Burst skill rows."""
     d_npc = oro.Stb(P(ours, NPC_STB_REL))
-    cur = d_npc.get(HOUND, 0).decode("latin-1").strip()
-    if cur and cur != HOUND_NAME:
-        raise SystemExit(f"our LIST_NPC row {HOUND} is {cur!r}")
-    want = hound_row(d_npc)
-    if d_npc.d[HOUND] != want:
-        d_npc.d[HOUND] = want
-        d_npc.save(dry)
-        print(f"    {'LIST_NPC.STB':26s} row {HOUND} {HOUND_NAME} (from {HOUND_TEMPLATE})")
     stl = oro.Stl(P(ours, NPC_STL_REL))
-    if not stl.has(HOUND_STRID):
-        stl.append(HOUND_STRID, HOUND, HOUND_NAME)
-        stl.save(dry)
-        print(f"    {'LIST_NPC_S.STL':26s} +1 key {HOUND_STRID}")
     chr_ = oro.Chr(P(ours, NPC_CHR_REL))
-    if HOUND >= len(chr_.chars) or chr_.chars[HOUND] is None:
-        if HOUND >= len(chr_.chars):
-            chr_.chars.extend([None] * (HOUND + 1 - len(chr_.chars)))
-        chr_.chars[HOUND] = copy.deepcopy(chr_.chars[HOUND_TEMPLATE])
+    npc_dirty = stl_dirty = chr_dirty = False
+    for i, (name, strid, template, _) in sorted(EXTRAS.items()):
+        cur = d_npc.get(i, 0).decode("latin-1").strip()
+        if cur and cur != name:
+            raise SystemExit(f"our LIST_NPC row {i} is {cur!r}")
+        want = extra_row(d_npc, i)
+        if d_npc.d[i] != want:
+            d_npc.d[i] = want
+            npc_dirty = True
+            print(f"    {'LIST_NPC.STB':26s} row {i} {name} (from {template})")
+        if not stl.has(strid):
+            stl.append(strid, i, name)
+            stl_dirty = True
+            print(f"    {'LIST_NPC_S.STL':26s} +1 key {strid}")
+        if i >= len(chr_.chars) or chr_.chars[i] is None:
+            if i >= len(chr_.chars):
+                chr_.chars.extend([None] * (i + 1 - len(chr_.chars)))
+            chr_.chars[i] = copy.deepcopy(chr_.chars[template])
+            chr_dirty = True
+            print(f"    {'LIST_NPC.CHR':26s} entry {i} = {template}'s model")
+    if npc_dirty:
+        d_npc.save(dry)
+    if stl_dirty:
+        stl.save(dry)
+    if chr_dirty:
         chr_.save(dry)
-        print(f"    {'LIST_NPC.CHR':26s} entry {HOUND} = {HOUND_TEMPLATE}'s model")
 
     sk = oro.Stb(P(ours, SKILL_STB_REL))
     if sk.rows <= LEAP:
@@ -879,7 +1031,8 @@ def stage2_extras(ours, dry):
         raise SystemExit(f"our LIST_SKILL row {LEAP} is {cur!r}")
     wrote = []
     for row, name, src, build in ((LEAP, LEAP_NAME, LEAP_SRC, leap_row),
-                                  (BREATH, BREATH_NAME, BREATH_SRC, breath_row)):
+                                  (BREATH, BREATH_NAME, BREATH_SRC, breath_row),
+                                  (SEAL, SEAL_NAME, SEAL_SRC, seal_row)):
         if sk.rows <= row:
             sk.grow_to(row + 1)
         cur = sk.get(row, 0).decode("latin-1").strip()
@@ -1155,12 +1308,40 @@ def drop_table():
     return common, groups
 
 
+def warden_table():
+    """The Warden's loot: lv155 armour and grade [4]/[5] gems -- a warm-up, the uniques
+    stay on Cerberus. Every roll uses it (col 20 = 100, no money)."""
+    common = [("redirect", 1), ("redirect", 2), ("redirect", 3)] * 4          # armour ~40%
+    common += [(T_GEM, n) for n in (304, 314, 324, 334, 344, 354, 364, 374)]   # all eight [4]
+    common += [(T_GEM, n) for n in (305, 315, 325, 365)]       # Garnet, Ruby, Sapphire, Diamond [5]
+    common += [(T_GEM, n) for n in (304, 314, 324, 334, 344, 364)]             # fills slot 29
+    groups = {
+        # Cedric Armor, Joker Vest, Silentwalker Chest, Bomber Vest, Cedric Band
+        1: [(T_BODY, 39), (T_BODY, 69), (T_BODY, 99), (T_BODY, 129), (T_CAP, 39)],
+        # Cedric / Joker / Silentwalker / Bomber Gloves, Cedric Boots
+        2: [(T_ARMS, 39), (T_ARMS, 69), (T_ARMS, 99), (T_ARMS, 129), (T_FOOT, 39)],
+        # Joker Shoes, Silentwalker Boots, Bomber Shoes, Joker Bonnet, Silentwalker Head
+        3: [(T_FOOT, 69), (T_FOOT, 99), (T_FOOT, 129), (T_CAP, 69), (T_CAP, 99)],
+    }
+    return common, groups
+
+
+def warden_row_cells(cols):
+    row = [b""] * cols
+    row[0] = WARDEN_DROP_LABEL.encode()
+    for slot, v in dropkit.build_row(*warden_table()).items():
+        row[1 + slot] = str(v).encode()
+    return row
+
+
 def all_loot():
     """Every (type, no) Cerberus can give, table and death drops."""
     common, groups = drop_table()
     out = [e for e in common if e[0] != "redirect"] + [e for g in groups.values() for e in g]
     out += [(T_WEAPON, n) for g in UNIQUES for n in g] + [(T_BACK, n) for n in BACK_DROP]
     out += [(T_GEM, n) for n in GEM5_DROP + GEM6_DROP]
+    wc, wg = warden_table()
+    out += [e for e in wc if e[0] != "redirect"] + [e for g in wg.values() for e in g]
     return out
 
 
@@ -1187,8 +1368,8 @@ def simulate(cells, n=300000, seed=7):
     """Get_DropITEM at level parity with col 20 = 100 (add-oro-drops.simulate's model)."""
     import random
     rnd, counts = random.Random(seed), collections.Counter()
-    kinds = {T_WEAPON: "weapon lv160-170", T_BACK: "wings / back shield", T_GEM: "gem [6]/[7]",
-             T_BODY: "armour lv165", T_ARMS: "armour lv165"}
+    kinds = {T_WEAPON: "weapon", T_BACK: "wings / back shield", T_GEM: "gem",
+             T_BODY: "armour", T_ARMS: "armour", T_CAP: "armour", T_FOOT: "armour"}
     for _ in range(n):
         drop_var = int((100 + 100 - (1 + rnd.randrange(100)) - 16 * 3.5 - 10) * 0.38)
         if drop_var <= 0:
@@ -1218,16 +1399,24 @@ def stage4(ours, src, dry):
     print("      + one of " + ", ".join(names[(T_BACK, n)] for n in BACK_DROP))
     print("      + one of " + ", ".join(names[(T_GEM, n)] for n in GEM5_DROP))
     print("      + one of " + ", ".join(names[(T_GEM, n)] for n in GEM6_DROP))
+    wc, wg = warden_table()
+    print("    Warden: " + ", ".join(names[e] for e in [x for x in wc if x[0] != "redirect"]
+                                    + [x for g in wg.values() for x in g]))
+    for k, v in simulate(dropkit.build_row(wc, wg)).items():
+        print(f"      {k:22s} {v * 100:5.1f}% of kills")
     d = oro.Stb(P(ours, DROP_STB_REL))
-    want = drop_row_cells(d.cols)
-    if d.d[DROP_TABLE] == want:
-        print(f"    {'ITEM_DROP.STB':26s} row {DROP_TABLE} already in place")
-        return
-    if any(x.strip() for x in d.d[DROP_TABLE]) and d.get(DROP_TABLE, 0) != DROP_LABEL.encode():
-        raise SystemExit(f"ITEM_DROP row {DROP_TABLE} holds a table we did not author: {d.get(DROP_TABLE, 0)!r}")
-    d.d[DROP_TABLE] = want
-    d.save(dry)
-    print(f"    {'ITEM_DROP.STB':26s} row {DROP_TABLE} written")
+    wrote = []
+    for row, label, want in ((DROP_TABLE, DROP_LABEL, drop_row_cells(d.cols)),
+                             (WARDEN_DROP_TABLE, WARDEN_DROP_LABEL, warden_row_cells(d.cols))):
+        if d.d[row] == want:
+            continue
+        if any(x.strip() for x in d.d[row]) and d.get(row, 0) != label.encode():
+            raise SystemExit(f"ITEM_DROP row {row} holds a table we did not author: {d.get(row, 0)!r}")
+        d.d[row] = want
+        wrote.append(row)
+    if wrote:
+        d.save(dry)
+    print(f"    {'ITEM_DROP.STB':26s} rows {wrote or 'already in place'}")
 
 
 # --------------------------------------------------------------------- verify
@@ -1289,14 +1478,16 @@ def verify(ours, src):
             check(fai.get(row, 0) == rf"3DDATA\AI\{AI_FILES[row]}".encode()
                   and os.path.isfile(p) and open(p, "rb").read() == blob, f"FILE_AI {row} + {AI_FILES[row]}")
     ex = load("balance_trend_exclude", "balance-trend-exclude.py")
-    check(all(ex.excluded(i) for i in list(MONSTERS) + [HOUND]),
-          "balance-trend-exclude.py lists the three ids")
-    check(npc.rows > HOUND and npc.d[HOUND] == hound_row(npc), f"LIST_NPC {HOUND} {HOUND_NAME}")
-    check(HOUND < len(chr_.chars) and chr_.chars[HOUND] == chr_.chars[HOUND_TEMPLATE], f"CHR {HOUND}")
-    check(stl.has(HOUND_STRID), HOUND_STRID)
+    check(all(ex.excluded(i) for i in list(MONSTERS) + list(EXTRAS)),
+          "balance-trend-exclude.py lists every Cerberus Lair monster")
+    for i, (name, strid, template, _) in sorted(EXTRAS.items()):
+        check(npc.rows > i and npc.d[i] == extra_row(npc, i), f"LIST_NPC {i} {name}")
+        check(i < len(chr_.chars) and chr_.chars[i] == chr_.chars[template], f"CHR {i}")
+        check(stl.has(strid), strid)
     sk = oro.Stb(P(ours, SKILL_STB_REL))
     check(sk.rows > LEAP and sk.d[LEAP] == leap_row(sk), f"LIST_SKILL {LEAP} {LEAP_NAME}")
     check(sk.rows > BREATH and sk.d[BREATH] == breath_row(sk), f"LIST_SKILL {BREATH} {BREATH_NAME}")
+    check(sk.rows > SEAL and sk.d[SEAL] == seal_row(sk), f"LIST_SKILL {SEAL} {SEAL_NAME}")
     sp = P(ours, SKEL_REL)
     check(os.path.isfile(sp) and open(sp, "rb").read() == cerberus_skeleton(src),
           "Cerberus skeleton has p_mouth")
@@ -1319,6 +1510,8 @@ def verify(ours, src):
           == [(want["name"], want["fixed"], want["extra"])], "gatekeeper placed at the temple door")
     d = oro.Stb(P(ours, DROP_STB_REL))
     check(d.d[DROP_TABLE] == drop_row_cells(d.cols), f"ITEM_DROP row {DROP_TABLE} (Cerberus)")
+    check(d.d[WARDEN_DROP_TABLE] == warden_row_cells(d.cols),
+          f"ITEM_DROP row {WARDEN_DROP_TABLE} (Warden of the Seal)")
     item_names(ours)                       # exits on a blank item row
     print("verify " + ("OK" if not bad else f"FAILED ({bad})"))
     return 1 if bad else 0

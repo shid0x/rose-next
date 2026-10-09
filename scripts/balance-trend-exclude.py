@@ -27,8 +27,9 @@ SHIBUYA = frozenset({1833, 1947, 1948, 4060, 4061, 4062, 4063, 4064, 4065, 4066,
 # import-ulverick.py stage 2: the Cave of Ulverick's minion and three bosses (MONSTERS).
 ULVERICK = frozenset({531, 532, 533, 534})
 
-# import-cerberus.py stage 2: Cerberus awake and asleep, and the Hellhounds it calls.
-CERBERUS = frozenset({2682, 2683, 2684})
+# import-cerberus.py stage 2: the Hellhound Whelps and the Warden of the Seal on the way
+# in, Cerberus awake and asleep, and the Hellhounds it calls.
+CERBERUS = frozenset({2680, 2681, 2682, 2683, 2684})
 
 EXCLUDED = SHIBUYA | ULVERICK | CERBERUS
 

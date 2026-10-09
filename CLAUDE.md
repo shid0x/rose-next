@@ -1301,8 +1301,10 @@ game-server controller (`src/sho_gameserver/src/cerberus_lair.*`); design and st
 in [doc/cerberus-lair-brief.md](doc/cerberus-lair-brief.md). Every hour, on the
 hour, [Arumic Seal Keeper] Yelena (NPC 4149, at the Arumic temple in Arumic Valley)
 opens registration for 10 minutes; at :10 up to five level-140+ registrants are
-drawn, charged 100,000 zuly on arrival, partied and sent in; Cerberus (2682) wakes
-from its sleeping form (2683) by AI action 9; its death plus a minute, or 20
+drawn, charged 100,000 zuly on arrival, partied and sent in; two packs of Hellhound
+Whelps (2680) and the Warden of the Seal (2681, Seal Burst 7023) stand in the way,
+and the Warden's death puts Cerberus in the crater, where it wakes (2683 -> 2682)
+by AI action 9; its death plus a minute, or 20
 minutes, evicts everyone; there is no way out before that (no gate, save-point revive
 and warp scrolls refused in the lair: `CCerberusLair::IsLair`). Loot is mostly items
 nothing else drops (importer docstring, "Loot"). Test with
@@ -1310,9 +1312,10 @@ nothing else drops (importer docstring, "Loot"). Test with
 
 Things that will bite:
 
-- **The controller owns the boss, not a regen point** (`CRegenPOINT::Reset` cannot
-  force a respawn). The lair's IFO has no spawn point; the C++ spawns the sleeper
-  at `CRATER_X/Y` whenever the lair is idle and empty.
+- **The controller owns every monster, not a regen point** (`CRegenPOINT::Reset`
+  cannot force a respawn). The lair's IFO has no spawn point; the C++ spawns the
+  whelps and the Warden when a run starts (`RUN_SPAWNS`) and the sleeper at
+  `CRATER_X/Y` once the Warden is dead; between runs the lair is kept empty.
 - **Constants live in both** the importer and `cerberus_lair.cpp` (zone, NPC, rows,
   landing event, trigger name, fee, crater). Change them together.
 - **`Recv_cli_RELAY_REPLY` now honours only the destination the server last

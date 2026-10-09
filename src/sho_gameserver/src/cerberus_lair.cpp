@@ -33,6 +33,21 @@ constexpr int HELLHOUND = 2684;
 constexpr int HOUND_CALL_PCT[] = {66, 33};
 constexpr int HOUNDS_PER_CALL = 2;
 constexpr int HOUND_SPREAD = 100; // cm around the crater point
+// The way in, spawned when a run starts: two packs of whelps, then the Warden of the
+// Seal on the crater rim. Cerberus is put in the crater only once the Warden falls.
+// World cm, picked on open walkable ground (heights and editor shots, 2026-10-09).
+constexpr int WHELP = 2680;
+constexpr int WARDEN = 2681;
+struct SpawnAt {
+    float x, y;
+    int range; // cm; 0 is not allowed by RegenCharacter
+    int npc, count;
+};
+constexpr SpawnAt RUN_SPAWNS[] = {
+    {489800.f, 547600.f, 200, WHELP, 3}, // the clearing in the pines, south of the entrance
+    {499000.f, 548900.f, 200, WHELP, 3}, // the open ice south of the river (placed in game)
+    {503200.f, 553700.f, 1, WARDEN, 1}, // open snow before the crater rim
+};
 const char* REGISTER_TRIGGER = "Cerberus-Register";
 const char* SPEAKER = "Yelena";
 // The crater, tsuki's own spawn point (31_30.IFO), world cm.
@@ -117,6 +132,9 @@ CCerberusLair::CCerberusLair():
     m_bReqDraw(false),
     m_bReqReset(false),
     m_bBossSeen(false),
+    m_bRunSpawned(false),
+    m_bWardenSeen(false),
+    m_bSealBroken(false),
     m_nHoundCalls(0),
     m_nGateValue(GATE_CLOSED),
     m_dwLairTick(0),
@@ -235,7 +253,7 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
     std::vector<classUSER*> users;
     std::vector<CObjCHAR*> mobs;
     std::vector<CObjITEM*> items;
-    bool bBossAlive = false;
+    bool bBossAlive = false, bWardenAlive = false;
     CObjCHAR* pAwake = nullptr;
     pZone->ForEachObject([&](CGameOBJ* pObj) {
         if (pObj->IsUSER()) {
@@ -249,6 +267,8 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
                     bBossAlive = true;
                 if (n == CERBERUS_AWAKE)
                     pAwake = pMob;
+                if (n == WARDEN)
+                    bWardenAlive = true;
             }
         } else if (pObj->IsITEM()) {
             items.push_back((CObjITEM*)pObj);
@@ -281,15 +301,11 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
                 }
             }
         }
-        // The sleeper, once the lair is empty of monsters.
-        if (!bBossAlive && Reached(now, m_dwLastSpawn + RESPAWN_MS)) {
+        // Between runs the lair stays empty: a run spawns its own monsters.
+        if (!mobs.empty() && Reached(now, m_dwLastSpawn + RESPAWN_MS)) {
             m_dwLastSpawn = now;
-            if (mobs.empty()) {
-                pZone->RegenCharacter(CRATER_X, CRATER_Y, 1, CERBERUS_ASLEEP, 1, TEAMNO_MOB, true);
-            } else {
-                for (CObjCHAR* pMob: mobs)
-                    pMob->Add_DAMAGE(pMob->Get_HP() + 1);
-            }
+            for (CObjCHAR* pMob: mobs)
+                pMob->Add_DAMAGE(pMob->Get_HP() + 1);
         }
     }
 
@@ -345,8 +361,8 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
                     }
                     pUSER->Add_MoneyNSend(-FEE);
                     Whisper(pUSER,
-                        fmt::format("{} zuly taken. Cerberus sleeps in the crater to the east. "
-                                    "You have {} minutes.",
+                        fmt::format("{} zuly taken. Cerberus sleeps in the crater to the east, "
+                                    "behind the Warden of the Seal. You have {} minutes.",
                             FEE,
                             RUN_LIMIT_MS / 60000));
                     LOG_INFO("[cerberus] {} arrived and paid", pUSER->Get_NAME());
@@ -354,16 +370,44 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
                 nInside++;
             }
 
-            // A draw right after a reset can beat the sleeper's respawn: put it in
-            // the crater, and count a kill only once Cerberus has been seen alive.
-            if (!m_bBossSeen) {
+            // The way in, once whatever the last run left is gone.
+            if (!m_bRunSpawned && Reached(now, m_dwLastSpawn + RESPAWN_MS)) {
+                m_dwLastSpawn = now;
+                if (mobs.empty()) {
+                    for (const SpawnAt& at: RUN_SPAWNS)
+                        pZone->RegenCharacter(at.x, at.y, at.range, at.npc, at.count, TEAMNO_MOB, true);
+                    m_bRunSpawned = true;
+                    LOG_INFO("[cerberus] whelps and Warden spawned");
+                } else {
+                    for (CObjCHAR* pMob: mobs)
+                        pMob->Add_DAMAGE(pMob->Get_HP() + 1);
+                }
+            }
+
+            // The Warden's death breaks the seal: Cerberus appears in the crater. A
+            // kill counts only once each has been seen alive.
+            if (m_bRunSpawned && !m_bWardenSeen) {
+                if (bWardenAlive) {
+                    m_bWardenSeen = true;
+                } else if (Reached(now, m_dwLastSpawn + RESPAWN_MS)) {
+                    m_dwLastSpawn = now; // its spawn failed: try again
+                    pZone->RegenCharacter(RUN_SPAWNS[2].x, RUN_SPAWNS[2].y, 1, WARDEN, 1, TEAMNO_MOB, true);
+                }
+            } else if (m_bWardenSeen && !bWardenAlive && !m_bSealBroken) {
+                m_bSealBroken = true;
+                m_dwLastSpawn = now;
+                pZone->RegenCharacter(CRATER_X, CRATER_Y, 1, CERBERUS_ASLEEP, 1, TEAMNO_MOB, true);
+                g_pZoneLIST->Send_gsv_ANNOUNCE_CHAT(LAIR_ZONE,
+                    (char*)"The Warden falls and the seal breaks. Something stirs in the crater...",
+                    (char*)SPEAKER);
+                LOG_INFO("[cerberus] Warden killed, Cerberus in the crater");
+            }
+            if (m_bSealBroken && !m_bBossSeen) {
                 if (bBossAlive) {
                     m_bBossSeen = true;
                 } else if (Reached(now, m_dwLastSpawn + RESPAWN_MS)) {
                     m_dwLastSpawn = now;
-                    if (mobs.empty())
-                        pZone->RegenCharacter(
-                            CRATER_X, CRATER_Y, 1, CERBERUS_ASLEEP, 1, TEAMNO_MOB, true);
+                    pZone->RegenCharacter(CRATER_X, CRATER_Y, 1, CERBERUS_ASLEEP, 1, TEAMNO_MOB, true);
                 }
             }
 
@@ -488,6 +532,9 @@ CCerberusLair::Draw() {
     }
     m_State = State::Run;
     m_bBossSeen = false;
+    m_bRunSpawned = false;
+    m_bWardenSeen = false;
+    m_bSealBroken = false;
     m_nHoundCalls = 0;
     m_dwRunStart = ::GetTickCount();
     Announce(fmt::format("{} descend{} into the Cerberus Lair.",
@@ -515,7 +562,7 @@ CCerberusLair::EndRun(const std::vector<classUSER*>& users,
         pItem->m_iRemainTIME = 0;
     m_Roster.clear();
     m_State = State::Idle;
-    m_dwLastSpawn = ::GetTickCount(); // the sleeper returns once the bodies are gone
+    m_dwLastSpawn = ::GetTickCount();
     m_dwLastSweep = ::GetTickCount(); // give the relays time before sweeping again
 }
 
@@ -531,7 +578,13 @@ CCerberusLair::GmStatus() {
     if (m_State == State::Open)
         s += fmt::format(", draw in {} s", (long)(m_dwOpenUntil - now) / 1000);
     if (m_State == State::Run)
-        s += fmt::format(", run {} s old", (now - m_dwRunStart) / 1000);
+        s += fmt::format(", run {} s old, {}",
+            (now - m_dwRunStart) / 1000,
+            m_bBossSeen        ? "Cerberus up"
+                : m_bSealBroken ? "seal broken"
+                : m_bWardenSeen ? "Warden up"
+                : m_bRunSpawned ? "spawning"
+                                : "waiting to spawn");
     for (const Entry& e: m_Roster)
         s += fmt::format(" | {}{}", e.name, e.arrived ? "" : " (on the way)");
     return s;
