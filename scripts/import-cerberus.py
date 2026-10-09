@@ -193,6 +193,8 @@ ZONE_STB_REL = r"3DDATA\STB\LIST_ZONE.STB"
 ZONE_STL_REL = r"3DDATA\STB\LIST_ZONE_S.STL"
 ZONE_NAME_COL, ZONE_JOIN_COL, ZONE_STL_COL, ZONE_WEATHER_COL = 0, 22, 26, 27
 ZONE_WEATHER = b"1"                 # Arumic Valley's own (LP02, row 53)
+ZONE_MUSIC_DAY_COL, ZONE_MUSIC_NIGHT_COL = 5, 6
+ZONE_MUSIC = rb"Sound\BGM\cerberuslair.ogg"   # our own track, loose in Sound\BGM
 MAPS_REL = r"3DDATA\MAPS\LUNAR\CERBERUS"
 ZON_NAME = "CERBERUS.ZON"
 LAIR_FOLDER = MAPS_REL.upper().split("MAPS\\", 1)[1]     # as warp_users names it
@@ -582,6 +584,7 @@ def zone_row(s_z, d_z):
     row[ZONE_JOIN_COL] = b""
     row[ZONE_STL_COL] = ZONE_STL_KEY.encode()
     row[ZONE_WEATHER_COL] = ZONE_WEATHER
+    row[ZONE_MUSIC_DAY_COL] = row[ZONE_MUSIC_NIGHT_COL] = ZONE_MUSIC
     return row
 
 
