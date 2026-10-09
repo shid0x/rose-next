@@ -116,6 +116,12 @@ row's col 16.
   runs its own copy of the AI on every hit it shows, but its conditions past 26
   (monster variables included) are stubs that return true and its dice are not the
   server's. Never rely on the client's copy for anything a player sees.
+- **Action 02 is the other speech action: client-only chatter.** The server ignores it;
+  each client says the line from its own copy of the AI, so players see different
+  lines at different moments (the Jelly Beans' "appears / hit / dies" lines). Use it
+  for mood lines with no mechanic behind them: it costs the server nothing, and it is
+  the only way a line fires when a regen spawn appears, since the server never runs
+  "created" for those. A line that warns about a mechanic must be action 28.
 - **Condition 17 ("select NPC N") is a server-wide lookup**: an AI copied from an
   instance can reach its controller NPC anywhere on the server.
 - **Every monster or skill id an AI names must exist here.** A `Change_CHAR` (action 9)
