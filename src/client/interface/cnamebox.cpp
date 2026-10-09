@@ -24,6 +24,24 @@ const D3DCOLOR g_dwBlueName = D3DCOLOR_ARGB(255, 137, 243, 255);
 const D3DCOLOR g_dwLightBlueName = D3DCOLOR_ARGB(255, 202, 243, 255);
 const D3DCOLOR g_dwGrayName = D3DCOLOR_ARGB(255, 217, 217, 217);
 
+/// One HP value in the compact form the overhead gauge falls back to when the exact
+/// "HP/max" is wider than the gauge: 999, 12.3k, 310k, 1.5M, 12M. Rounded down, so a
+/// monster one point short of full never reads as full (99,999 -> 99.9k, not 100k).
+static void
+FormatCompactHP(int iValue, char* szOut, size_t nSize) {
+    if (iValue < 1000)
+        _snprintf(szOut, nSize, "%d", iValue);
+    else if (iValue < 100000)
+        _snprintf(szOut, nSize, "%d.%dk", iValue / 1000, (iValue / 100) % 10);
+    else if (iValue < 1000000)
+        _snprintf(szOut, nSize, "%dk", iValue / 1000);
+    else if (iValue < 10000000)
+        _snprintf(szOut, nSize, "%d.%dM", iValue / 1000000, (iValue / 100000) % 10);
+    else
+        _snprintf(szOut, nSize, "%dM", iValue / 1000000);
+    szOut[nSize - 1] = '\0';
+}
+
 /// 클랜 레벨에 따른 표시 색상을 구하는 함수
 inline DWORD
 GetClanNameColor(int iClanLevel) {
@@ -337,6 +355,18 @@ CNameBox::DrawMobName(float x, float y, float z, CObjCHAR* pCharOBJ, bool bTarge
             char szHP[32];
             _snprintf(szHP, sizeof(szHP), "%d/%d", iHP, iMaxHP);
             szHP[sizeof(szHP) - 1] = '\0';
+
+            // The text is centred in the gauge's own width and clipped to it: a boss's
+            // "100000/310000" lost a digit at each end and read as "10000/31000".
+            // Exact numbers when they fit, k/M suffixes when they do not.
+            if (getFontTextExtent(g_GameDATA.m_hFONT[FONT_OUTLINE_11_BOLD], szHP).cx
+                > iWidthGuage - 4) {
+                char szCur[16], szMax[16];
+                FormatCompactHP(iHP, szCur, sizeof(szCur));
+                FormatCompactHP(iMaxHP, szMax, sizeof(szMax));
+                _snprintf(szHP, sizeof(szHP), "%s/%s", szCur, szMax);
+                szHP[sizeof(szHP) - 1] = '\0';
+            }
 
             const int iHeightGuage = 16;
             D3DXMATRIX matHP;
