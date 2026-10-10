@@ -183,6 +183,10 @@ CNetwork::Proc_ZonePacket() {
             Recv_gsv_ANNOUNCE_CHAT();
             break;
 
+        case GSV_ZONE_OBJECTS:
+            Recv_gsv_ZONE_OBJECTS();
+            break;
+
         case GSV_GM_COMMAND:
             Recv_gsv_GM_COMMAND();
             break;

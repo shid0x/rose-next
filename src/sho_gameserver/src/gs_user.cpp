@@ -1574,6 +1574,10 @@ classUSER::Send_gsv_JOIN_ZONE(CZoneTHREAD* pZONE) {
 
     this->SendPacket(pCPacket);
 
+    // The zone's dynamic objects that stand (the Cerberus Lair's ice wall): after
+    // the join reply, before the sector objects.
+    pZONE->SendZoneObjects(this);
+
     this->send_update_stats_all();
 
     Packet_ReleaseNUnlock(pCPacket);

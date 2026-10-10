@@ -397,6 +397,13 @@ using namespace Rose::Common;
 #define GSV_EQUIP_COSTUME_ITEM 0x07f0
 #define CLI_EQUIP_COSTUME_ITEM 0x07f0
 
+// Dynamic zone objects (2026-10-10): map decorations the server puts up and takes
+// down mid-game (the Cerberus Lair's ice wall). One packet per group: its state and
+// its placements, m_btCount x tagZONE_OBJECT after the header. Sent to the zone when
+// a group changes and to a player on every zone entry (Send_gsv_JOIN_ZONE). The
+// client builds them as ordinary collidable map objects; the server enforces nothing.
+#define GSV_ZONE_OBJECTS 0x07f1
+
 struct cli_CHECK_AUTH: public t_PACKETHEADER {};
 
 struct srv_CHECK_AUTH: public t_PACKETHEADER {
@@ -1120,6 +1127,20 @@ struct cli_SUMMON_CONTROL: public t_PACKETHEADER {
 };
 #define SUMMON_CTRL_MOVE 0x00
 #define SUMMON_CTRL_ATTACK 0x01
+
+// One placed decoration of a dynamic zone object group (GSV_ZONE_OBJECTS).
+struct tagZONE_OBJECT {
+    WORD m_wObjID; // kind 0: the zone's LIST_DECO_*.ZSC object (LIST_ZONE col 11)
+    BYTE m_btKind; // 0 = zone decoration; 1 = invisible collision panel (LIST_DECO_SPECIAL object 2)
+    float m_fX, m_fY, m_fZ; // world cm
+    WORD m_wRotDeg; // rotation about Z, degrees
+    WORD m_wScaleX, m_wScaleY, m_wScaleZ; // percent, 100 = 1.0
+};
+struct gsv_ZONE_OBJECTS: public t_PACKETHEADER {
+    BYTE m_btGroup;
+    BYTE m_btState; // 1 = present, 0 = gone (the client fades it out)
+    BYTE m_btCount; // tagZONE_OBJECT records that follow
+};
 
 // 자신의 현재 경험치를 갱신한다.
 struct gsv_SETEXP: public t_PACKETHEADER {
@@ -2916,6 +2937,7 @@ struct t_PACKET {
 
         cli_SUMMON_CMD m_cli_SUMMON_CMD;
         cli_SUMMON_CONTROL m_cli_SUMMON_CONTROL;
+        gsv_ZONE_OBJECTS m_gsv_ZONE_OBJECTS;
         // gsv_SUMMON_CMD			m_gsv_SUMMON_CMD;
         gsv_PATSTATE_CHANGE m_gsv_PATSTATE_CHANGE;
 

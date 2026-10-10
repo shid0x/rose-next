@@ -16,6 +16,12 @@
 
 #include "ZoneFILE.h"
 #include "ZoneSECTOR.h"
+
+#include <map>
+#include <mutex>
+#include <vector>
+
+class classUSER;
 //---------------------------------------------------------------------------
 
 struct tagZoneTRIGGER {
@@ -81,6 +87,18 @@ private:
     CCriticalSection m_csTriggerLIST;
     classSLLIST<tagZoneTRIGGER> m_TriggerLIST;
     void Proc_ZoneTRIGGER();
+
+    /// Dynamic zone objects (GSV_ZONE_OBJECTS): per group, its placements and
+    /// whether it stands. Empty in every zone that never sets one. Read by the
+    /// join path on the packet thread, written by whoever drives the zone.
+    struct ZoneObjectGroup {
+        std::vector<tagZONE_OBJECT> placements;
+        bool bOn = false;
+    };
+    std::mutex m_ZoneObjectsMutex;
+    std::map<BYTE, ZoneObjectGroup> m_ZoneObjects;
+    static void FillZoneObjectsPacket(classPACKET* pCPacket, BYTE btGroup, bool bOn,
+        const tagZONE_OBJECT* pObjs, int iCount);
 
 protected:
     CZoneTHREAD* GetZonePTR() { return this; }
@@ -168,6 +186,13 @@ public:
 
     bool SendShout(CGameOBJ* pGameOBJ, classPACKET* pCPacket, int iTeamNo = 0);
     bool SendPacketToZONE(t_PACKET* pSendPacket);
+
+    /// Put a dynamic object group up (bOn) or down, remember it, and tell the zone.
+    /// Any thread. A group that is down is simply not sent to new arrivals.
+    void SetZoneObjects(BYTE btGroup, const tagZONE_OBJECT* pObjs, int iCount, bool bOn);
+    /// The groups that stand, to a player who just joined (Send_gsv_JOIN_ZONE).
+    void SendZoneObjects(classUSER* pUSER);
+    bool IsZoneObjectsOn(BYTE btGroup);
 
     void Send_EconomyDATA();
     void Send_GLOBAL_FLAG();

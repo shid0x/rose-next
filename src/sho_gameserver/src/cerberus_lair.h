@@ -40,6 +40,7 @@ public:
     std::string GmStatus();
     std::string GmOpen(); // refused unless idle; returns what happened
     std::string GmDraw(); // refused unless registration is open
+    std::string GmWall(bool bUp); // the ice wall, without a run
     void GmReset();
 
     /// The lair zone: no way out but the controller's (no save-point revive, no
@@ -59,8 +60,10 @@ private:
 
     void ProcLair(CZoneTHREAD* pZone);
     void SyncGatekeeper(CZoneTHREAD* pZone);
-    void Draw();
-    void EndRun(const std::vector<classUSER*>& users,
+    void Draw(CZoneTHREAD* pZone);
+    void SetWall(CZoneTHREAD* pZone, bool bUp);
+    void EndRun(CZoneTHREAD* pZone,
+        const std::vector<classUSER*>& users,
         const std::vector<class CObjCHAR*>& mobs,
         const std::vector<class CObjITEM*>& items);
     void Evict(classUSER* pUSER);
@@ -80,6 +83,7 @@ private:
     bool m_bRunSpawned; // the whelps and the Warden are out
     bool m_bWardenSeen; // the Warden has been seen alive: its absence is then a kill
     bool m_bSealBroken; // the Warden is dead and Cerberus was put in the crater
+    bool m_bWallUp; // the ice wall stands (GSV_ZONE_OBJECTS group WALL_GROUP)
     int m_nHoundCalls; // Hellhound calls made this run (HOUND_CALL_PCT)
     short m_nGateValue;
 

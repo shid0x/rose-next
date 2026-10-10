@@ -48,6 +48,48 @@ constexpr SpawnAt RUN_SPAWNS[] = {
     {499000.f, 548900.f, 200, WHELP, 3}, // the open ice south of the river (placed in game)
     {503200.f, 553700.f, 1, WARDEN, 1}, // open snow before the crater rim
 };
+// The ice wall between the Warden and the crater: dynamic zone objects
+// (GSV_ZONE_OBJECTS), up from the draw until the Warden dies: invisible collision
+// panels along the ridge (the map's own kind of invisible wall) and Luna ice
+// crystals across the southern gap, the one place it is meant to be seen. The
+// placements are scripts/cerberus-wall.py's, which proves with a flood fill over
+// the lair's real collision that they seal the crater. Re-run it with --emit after
+// any change here or to the lair's objects.
+constexpr BYTE WALL_GROUP = 1;
+// scripts/cerberus-wall.py --spacing 5 --seed 7 --emit: 30 pieces
+const tagZONE_OBJECT ICE_WALL[] = {   // id, kind (1 = invisible panel), world cm, rotation deg, scale % x/y/z
+    {2, 1, 506800.f, 558820.f, 735.f, 270, 639, 1454, 555},
+    {2, 1, 506800.f, 558050.f, 737.f, 270, 639, 1454, 555},
+    {2, 1, 506800.f, 557280.f, 589.f, 270, 639, 1454, 555},
+    {2, 1, 506800.f, 556520.f, 610.f, 270, 639, 1454, 555},
+    {2, 1, 506800.f, 555750.f, 694.f, 270, 639, 1454, 555},
+    {2, 1, 506800.f, 554980.f, 489.f, 270, 639, 1454, 555},
+    {2, 1, 506800.f, 553450.f, 236.f, 270, 639, 1454, 555},
+    {2, 1, 506800.f, 552680.f, 370.f, 270, 639, 1454, 555},
+    {2, 1, 506800.f, 551920.f, 391.f, 270, 639, 1454, 555},
+    {2, 1, 506800.f, 550380.f, 229.f, 270, 639, 1454, 555},
+    {48, 0, 506720.f, 549840.f, 143.f, 150, 100, 100, 100},
+    {50, 0, 507100.f, 550040.f, 521.f, 60, 100, 100, 60},
+    {48, 0, 507170.f, 549620.f, 160.f, 180, 100, 100, 100},
+    {48, 0, 507550.f, 549820.f, 338.f, 300, 100, 100, 100},
+    {50, 0, 507620.f, 549400.f, 119.f, 15, 100, 100, 60},
+    {48, 0, 508000.f, 549600.f, 199.f, 30, 100, 100, 100},
+    {48, 0, 508060.f, 549170.f, 99.f, 255, 100, 100, 100},
+    {50, 0, 508440.f, 549370.f, 89.f, 45, 100, 100, 60},
+    {48, 0, 508510.f, 548950.f, 50.f, 165, 100, 100, 100},
+    {48, 0, 508890.f, 549150.f, 66.f, 270, 100, 100, 100},
+    {50, 0, 508960.f, 548730.f, 33.f, 15, 100, 100, 60},
+    {48, 0, 509340.f, 548930.f, 40.f, 240, 100, 100, 100},
+    {48, 0, 509410.f, 548500.f, 8.f, 90, 100, 100, 100},
+    {50, 0, 509790.f, 548700.f, 0.f, 15, 100, 100, 60},
+    {48, 0, 509850.f, 548280.f, 2.f, 30, 100, 100, 100},
+    {48, 0, 510230.f, 548480.f, 0.f, 195, 100, 100, 100},
+    {50, 0, 510300.f, 548050.f, 5.f, 195, 100, 100, 60},
+    {48, 0, 510680.f, 548260.f, 16.f, 30, 100, 100, 100},
+    {48, 0, 510750.f, 547830.f, 14.f, 105, 100, 100, 100},
+    {50, 0, 511130.f, 548030.f, 67.f, 30, 100, 100, 60},
+};
+constexpr int ICE_WALL_COUNT = (int)(sizeof(ICE_WALL) / sizeof(ICE_WALL[0]));
 const char* REGISTER_TRIGGER = "Cerberus-Register";
 const char* SPEAKER = "Yelena";
 // The crater, tsuki's own spawn point (31_30.IFO), world cm.
@@ -135,6 +177,7 @@ CCerberusLair::CCerberusLair():
     m_bRunSpawned(false),
     m_bWardenSeen(false),
     m_bSealBroken(false),
+    m_bWallUp(false),
     m_nHoundCalls(0),
     m_nGateValue(GATE_CLOSED),
     m_dwLairTick(0),
@@ -255,6 +298,7 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
     std::vector<CObjITEM*> items;
     bool bBossAlive = false, bWardenAlive = false;
     CObjCHAR* pAwake = nullptr;
+    CObjCHAR* pSleeper = nullptr;
     pZone->ForEachObject([&](CGameOBJ* pObj) {
         if (pObj->IsUSER()) {
             users.push_back((classUSER*)pObj);
@@ -267,6 +311,8 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
                     bBossAlive = true;
                 if (n == CERBERUS_AWAKE)
                     pAwake = pMob;
+                if (n == CERBERUS_ASLEEP)
+                    pSleeper = pMob;
                 if (n == WARDEN)
                     bWardenAlive = true;
             }
@@ -281,7 +327,7 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
         m_bReqReset = false;
         m_Registered.clear();
         m_nGateValue = GATE_CLOSED;
-        this->EndRun(users, mobs, items);
+        this->EndRun(pZone, users, mobs, items);
         LOG_INFO("[cerberus] reset by a GM");
         return;
     }
@@ -335,7 +381,7 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
         case State::Open:
             if (Reached(now, m_dwOpenUntil) || m_bReqDraw) {
                 m_bReqDraw = false;
-                this->Draw();
+                this->Draw(pZone);
             }
             break;
 
@@ -376,8 +422,14 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
                 if (mobs.empty()) {
                     for (const SpawnAt& at: RUN_SPAWNS)
                         pZone->RegenCharacter(at.x, at.y, at.range, at.npc, at.count, TEAMNO_MOB, true);
+                    // Cerberus sleeps in full view from the start, behind the ice wall.
+                    // On the neutral team until the seal breaks: allied with everyone,
+                    // so nobody can hit it (a Hawk Shot reaches the crater from the
+                    // ridge, and a hit wakes it) and its "enemies near" wake finds
+                    // nothing. The seal break swaps it for the hostile sleeper.
+                    pZone->RegenCharacter(CRATER_X, CRATER_Y, 1, CERBERUS_ASLEEP, 1, TEAMNO_NPC, true);
                     m_bRunSpawned = true;
-                    LOG_INFO("[cerberus] whelps and Warden spawned");
+                    LOG_INFO("[cerberus] whelps, Warden and the sleeping Cerberus spawned");
                 } else {
                     for (CObjCHAR* pMob: mobs)
                         pMob->Add_DAMAGE(pMob->Get_HP() + 1);
@@ -395,20 +447,32 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
                 }
             } else if (m_bWardenSeen && !bWardenAlive && !m_bSealBroken) {
                 m_bSealBroken = true;
+                m_bBossSeen = false; // counts the hostile Cerberus only, from here on
                 m_dwLastSpawn = now;
+                this->SetWall(pZone, false);
+                // The neutral sleeper goes silently (the remove packet, no death) and
+                // the hostile one takes its place: the GM "npc DEL" pattern.
+                if (pSleeper) {
+                    pZone->Sub_DIRECT(pSleeper);
+                    delete pSleeper;
+                    pSleeper = nullptr;
+                }
                 pZone->RegenCharacter(CRATER_X, CRATER_Y, 1, CERBERUS_ASLEEP, 1, TEAMNO_MOB, true);
                 g_pZoneLIST->Send_gsv_ANNOUNCE_CHAT(LAIR_ZONE,
-                    (char*)"The Warden falls and the seal breaks. Something stirs in the crater...",
+                    (char*)"The Warden falls and the seal breaks. The ice gives way: Cerberus can be reached.",
                     (char*)SPEAKER);
-                LOG_INFO("[cerberus] Warden killed, Cerberus in the crater");
+                LOG_INFO("[cerberus] Warden killed, seal broken, Cerberus hostile");
             }
-            if (m_bSealBroken && !m_bBossSeen) {
-                if (bBossAlive) {
-                    m_bBossSeen = true;
-                } else if (Reached(now, m_dwLastSpawn + RESPAWN_MS)) {
-                    m_dwLastSpawn = now;
-                    pZone->RegenCharacter(CRATER_X, CRATER_Y, 1, CERBERUS_ASLEEP, 1, TEAMNO_MOB, true);
-                }
+            // The sleeper is kept in the crater in both phases; a kill counts only once
+            // the seal is broken and the hostile Cerberus has been seen alive.
+            const bool bHostileBoss = pAwake || (pSleeper && pSleeper->Get_TeamNO() == TEAMNO_MOB);
+            if (m_bSealBroken && bHostileBoss)
+                m_bBossSeen = true;
+            if (m_bRunSpawned && !bBossAlive && (!m_bSealBroken || !m_bBossSeen)
+                && Reached(now, m_dwLastSpawn + RESPAWN_MS)) {
+                m_dwLastSpawn = now; // gone before it could count (a GM kill, a failed spawn)
+                pZone->RegenCharacter(CRATER_X, CRATER_Y, 1, CERBERUS_ASLEEP, 1,
+                    m_bSealBroken ? TEAMNO_MOB : TEAMNO_NPC, true);
             }
 
             // The hounds, once per threshold.
@@ -426,7 +490,7 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
                 }
             }
 
-            if (m_bBossSeen && !bBossAlive) {
+            if (m_bSealBroken && m_bBossSeen && !bBossAlive) {
                 m_State = State::Grace;
                 m_dwGraceUntil = now + GRACE_MS;
                 std::vector<classUSER*> winners;
@@ -444,10 +508,10 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
             } else if (Reached(now, m_dwRunStart + RUN_LIMIT_MS)) {
                 Announce("Cerberus still stands. The seal closes and casts the challengers out.");
                 LOG_INFO("[cerberus] run timed out");
-                this->EndRun(users, mobs, items);
+                this->EndRun(pZone, users, mobs, items);
             } else if (nInside == 0 && Reached(now, m_dwRunStart + ARRIVAL_MS)) {
                 LOG_INFO("[cerberus] nobody left in the lair, ending the run");
-                this->EndRun(users, mobs, items);
+                this->EndRun(pZone, users, mobs, items);
             }
             break;
         }
@@ -460,7 +524,7 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
                 }
             }
             if (Reached(now, m_dwGraceUntil))
-                this->EndRun(users, mobs, items);
+                this->EndRun(pZone, users, mobs, items);
             break;
     }
 }
@@ -469,7 +533,7 @@ CCerberusLair::ProcLair(CZoneTHREAD* pZone) {
 /// Under m_Mutex, from the lair's thread. Only reads the drawn players and sends
 /// them packets; their money is taken when they arrive, in the lair's thread.
 void
-CCerberusLair::Draw() {
+CCerberusLair::Draw(CZoneTHREAD* pZone) {
     m_nGateValue = GATE_CLOSED;
     m_State = State::Idle;
 
@@ -536,6 +600,8 @@ CCerberusLair::Draw() {
     m_bWardenSeen = false;
     m_bSealBroken = false;
     m_nHoundCalls = 0;
+    // Up before anyone arrives: the join path sends it to each arrival.
+    this->SetWall(pZone, true);
     m_dwRunStart = ::GetTickCount();
     Announce(fmt::format("{} descend{} into the Cerberus Lair.",
         Names(chosen),
@@ -546,9 +612,22 @@ CCerberusLair::Draw() {
 //-------------------------------------------------------------------------------------------------
 /// Under m_Mutex, from the lair's thread: everyone out, the lair reset.
 void
-CCerberusLair::EndRun(const std::vector<classUSER*>& users,
+CCerberusLair::SetWall(CZoneTHREAD* pZone, bool bUp) {
+    if (m_bWallUp == bUp)
+        return;
+    m_bWallUp = bUp;
+    pZone->SetZoneObjects(WALL_GROUP, ICE_WALL, ICE_WALL_COUNT, bUp);
+    LOG_INFO("[cerberus] ice wall {}", bUp ? "up" : "down");
+}
+
+//-------------------------------------------------------------------------------------------------
+/// Under m_Mutex, from the lair's thread: everyone out, the lair reset.
+void
+CCerberusLair::EndRun(CZoneTHREAD* pZone,
+    const std::vector<classUSER*>& users,
     const std::vector<CObjCHAR*>& mobs,
     const std::vector<CObjITEM*>& items) {
+    this->SetWall(pZone, false);
     for (classUSER* pUSER: users) {
         if (this->FindRoster(pUSER->m_dwDBID) || !IsGM(pUSER)) {
             Whisper(pUSER, "The seal closes. You are sent back to the temple.");
@@ -585,9 +664,22 @@ CCerberusLair::GmStatus() {
                 : m_bWardenSeen ? "Warden up"
                 : m_bRunSpawned ? "spawning"
                                 : "waiting to spawn");
+    s += m_bWallUp ? ", ice wall up" : ", ice wall down";
     for (const Entry& e: m_Roster)
         s += fmt::format(" | {}{}", e.name, e.arrived ? "" : " (on the way)");
     return s;
+}
+
+/// The wall on its own, for testing: any state, any thread (the zone registry and
+/// the broadcast are thread-safe).
+std::string
+CCerberusLair::GmWall(bool bUp) {
+    CZoneTHREAD* pZone = g_pZoneLIST->GetZONE(LAIR_ZONE);
+    if (!pZone)
+        return "Cerberus: the lair zone is not loaded.";
+    std::lock_guard<std::mutex> lock(m_Mutex);
+    this->SetWall(pZone, bUp);
+    return bUp ? "Cerberus: ice wall up." : "Cerberus: ice wall down (fading).";
 }
 
 /// A GM request is taken only in the state it applies to. It used to be latched:

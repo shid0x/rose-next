@@ -2,6 +2,8 @@
     $Header: /Client/OBJECT.cpp 68    05-08-30 5:18p Gioend $
 */
 #include "stdAFX.h"
+
+#include "zoneobjects.h"
 #include "network/cnetwork.h"
 
 #include "OBJECT.h"
@@ -220,6 +222,7 @@ CObjectMANAGER::Set_EmptySlot(short nSlotNO, WORD wServerObjectIndex, CGameOBJ* 
 //-------------------------------------------------------------------------------------------------
 void
 CObjectMANAGER::Clear(short nExceptObjIndex) {
+    CZoneObjects::Instance().Forget(); // every object goes: drop the dynamic ones' bookkeeping
     if (g_pNet) {
         g_pNet->tuning_preview.set_active(false);
         g_pNet->tuning_preview.invalidate();
@@ -999,6 +1002,7 @@ CObjectMANAGER::Get_NextCHAR() {
 
 void
 CObjectMANAGER::ProcOBJECT() {
+    CZoneObjects::Instance().Update(); // dynamic zone objects: the fades
     /*
         static int iO;
         for (iO=MIN_OBJECTS; iO<MAX_CLIENT_OBJECTS; iO++) {

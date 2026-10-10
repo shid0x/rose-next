@@ -392,6 +392,7 @@
     <ClCompile Include="GameData\Event\CTEventUpgrade.cpp" />
     <ClCompile Include="AppMsgQ.cpp" />
     <ClCompile Include="BoneEffectBudget.cpp" />
+    <ClCompile Include="zoneobjects.cpp" />
     <ClCompile Include="CAvatarState.cpp" />
     <ClCompile Include="CGameOBJ.cpp" />
     <ClCompile Include="CJustModelAVT.cpp" />
@@ -840,6 +841,7 @@
     <ClInclude Include="GameData\Event\CTEventUpgrade.h" />
     <ClInclude Include="AppMsgQ.h" />
     <ClInclude Include="BoneEffectBudget.h" />
+    <ClInclude Include="zoneobjects.h" />
     <ClInclude Include="CAvatarState.h" />
     <ClInclude Include="CGameOBJ.h" />
     <ClInclude Include="CJustModelAVT.h" />

@@ -33,8 +33,11 @@ The server log lines are prefixed `[cerberus]`.
   **Warden of the Seal** (2681, a lv152 mini-boss, ~74k HP) before the crater rim.
   Its one big spell, **Seal Burst** (7023), is an 8 m burst with a 40% slow behind
   a slow wind-up and a zone shout, cast at 66% and 33% of its HP and now and then.
-- **Cerberus appears only when the Warden dies**, asleep in the crater. Coming
-  close, or hitting it, wakes it.
+- **Cerberus sleeps in full view in the crater from the start**, behind an ice wall
+  that seals the crater until the Warden dies (invisible collision panels on the
+  ridge, ice crystals across the southern gap; [cerberus-ice-wall.md](cerberus-ice-wall.md)).
+  While sealed it cannot be targeted (neutral team); when the Warden falls the wall
+  fades and it becomes hostile. Coming close, or hitting it, wakes it.
 - **Death inside revives inside**, at the lair's entrance (`restore`).
 - **Cerberus dies**: a zone announcement, about 60 s to pick up the loot, then
   everyone is teleported back to the temple door. A run that lasts too long
@@ -64,8 +67,8 @@ Imported by `scripts/import-cerberus.py` from the tsuki dump.
   `runa_wolf1` motions, both byte-identical; only `NPC\ANIMAL\CERBERUS` (4 meshes,
   3 textures) and the sleeping clip are new.
 - **No regen point.** tsuki's one point in the crater is emptied; the controller
-  spawns every monster of a run itself: the whelps and the Warden when the run
-  starts (`RUN_SPAWNS`), the sleeper at that position (`CRATER_X/Y`) once the
+  spawns every monster of a run itself when the run starts (`RUN_SPAWNS`, and the
+  neutral sleeper at `CRATER_X/Y`), and swaps the sleeper for a hostile one once the
   Warden is dead. Between runs the lair is empty. A regen point cannot be made to respawn on demand
   (`CRegenPOINT::Reset` only zeroes its count and still waits a full interval).
 - **No way out.** tsuki's `cerberus_warp` event object is dead (no QSD has it) and
@@ -98,7 +101,7 @@ local clock.
 | IDLE | between runs | gatekeeper event value 0 |
 | OPEN | :00-:10 | announcement; event value 1; the register trigger adds players to an in-memory list |
 | DRAW | :10 | random pick of up to 5 online registrants who can pay; fee taken; party formed; teleport |
-| RUN | until the kill or 20 min | spawns the whelps and the Warden, then Cerberus once the Warden dies; logins into the lair from anyone not in the run are sent out |
+| RUN | until the kill or 20 min | raises the ice wall; spawns the whelps, the Warden and the neutral sleeping Cerberus; on the Warden's death drops the wall and swaps in the hostile sleeper; logins into the lair from anyone not in the run are sent out |
 | GRACE | kill + 60 s | announcement; loot time |
 | EVICT, RESET | then | everyone in the lair to the temple door; kill all monsters, delete ground items, reset the regen point; IDLE |
 
@@ -144,8 +147,10 @@ before :10 opens registration for what is left of the window.
 5. The boss kit (glow, Infernal Leap, Hellfire Breath, Hellhounds) and balance.
    **Done, validated.**
 6. The way in: whelps, the Warden of the Seal (Seal Burst, loot table 967:
-   lv145-155 armour and gems [4]/[5]), Cerberus gated on the Warden. **Built
-   2026-10-09, untested.**
+   lv145-155 armour and gems [4]/[5]), Cerberus gated on the Warden. **Validated
+   2026-10-09.**
+7. The ice wall (dynamic zone objects, `GSV_ZONE_OBJECTS`) and Cerberus asleep in
+   view from the start. **Validated 2026-10-10.**
 
 ## 5. Things that will bite
 

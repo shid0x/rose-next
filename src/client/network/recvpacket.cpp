@@ -8,6 +8,7 @@
 
 #include "../CClientStorage.h"
 #include "../CJustModelAVT.h"
+#include "../zoneobjects.h"
 #include "../SqliteDB.h"
 
 #include "system/cgame.h"
@@ -195,6 +196,25 @@ CRecvPACKET::Recv_srv_ANNOUNCE_TEXT() {
 }
 
 //-------------------------------------------------------------------------------------------------
+/// Dynamic zone objects (the Cerberus Lair's ice wall): a group's state and its
+/// placements, which CZoneObjects builds as collidable map decorations.
+void
+CRecvPACKET::Recv_gsv_ZONE_OBJECTS() {
+    const gsv_ZONE_OBJECTS& head = m_pRecvPacket->m_gsv_ZONE_OBJECTS;
+    const int nCount = head.m_btCount;
+    if (m_pRecvPacket->m_HEADER.m_nSize < (short)(sizeof(gsv_ZONE_OBJECTS) + nCount * sizeof(tagZONE_OBJECT)))
+        return;
+    const tagZONE_OBJECT* pRecs = (const tagZONE_OBJECT*)((const BYTE*)m_pRecvPacket + sizeof(gsv_ZONE_OBJECTS));
+    std::vector<CZoneObjects::Spec> specs;
+    specs.reserve(nCount);
+    for (int i = 0; i < nCount; i++) {
+        CZoneObjects::Spec s = {pRecs[i].m_wObjID, pRecs[i].m_btKind, pRecs[i].m_fX, pRecs[i].m_fY,
+            pRecs[i].m_fZ, pRecs[i].m_wRotDeg, pRecs[i].m_wScaleX, pRecs[i].m_wScaleY, pRecs[i].m_wScaleZ};
+        specs.push_back(s);
+    }
+    CZoneObjects::Instance().Apply(head.m_btGroup, head.m_btState != 0, specs);
+}
+
 void
 CRecvPACKET::Recv_gsv_ANNOUNCE_CHAT() {
     short nOffset = sizeof(t_PACKETHEADER);

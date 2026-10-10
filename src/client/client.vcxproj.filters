@@ -518,6 +518,9 @@
     <ClCompile Include="BoneEffectBudget.cpp">
       <Filter>Source Files\OBJECT</Filter>
     </ClCompile>
+    <ClCompile Include="zoneobjects.cpp">
+      <Filter>Source Files\OBJECT</Filter>
+    </ClCompile>
     <ClCompile Include="CJustModelAVT.cpp">
       <Filter>Source Files\OBJECT</Filter>
     </ClCompile>
@@ -1691,6 +1694,9 @@
       <Filter>Source Files\OBJECT</Filter>
     </ClInclude>
     <ClInclude Include="BoneEffectBudget.h">
+      <Filter>Source Files\OBJECT</Filter>
+    </ClInclude>
+    <ClInclude Include="zoneobjects.h">
       <Filter>Source Files\OBJECT</Filter>
     </ClInclude>
     <ClInclude Include="CObjCART.h">

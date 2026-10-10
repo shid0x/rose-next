@@ -66,8 +66,8 @@ const char* TP_USAGE = "Usage: tp <map_id> [x_coord] [y_coord]";
 const char* RELOADCONFIG_HELP = "Reload server game configs.";
 const char* RELOADCONFIG_USAGE = "Usage: reloadconfig";
 
-const char* CERBERUS_HELP = "Drive the Cerberus Lair draw (open registration, draw now, reset).";
-const char* CERBERUS_USAGE = "Usage: cerberus <status|open|draw|reset>";
+const char* CERBERUS_HELP = "Drive the Cerberus Lair draw (open registration, draw now, reset, ice wall).";
+const char* CERBERUS_USAGE = "Usage: cerberus <status|open|draw|reset|wall up|wall down>";
 
 
 static const std::vector<CommandInfo> commands = {

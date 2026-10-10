@@ -226,6 +226,13 @@ cerberus(classUSER* user, CommandInfo info, const std::vector<std::string>& args
     } else if (action == "reset") {
         lair.GmReset();
         user->send_server_whisper("Cerberus: everyone out, lair reset.");
+    } else if (action == "wall") {
+        const std::string which = args.size() >= 3 ? args[2] : "";
+        if (which != "up" && which != "down") {
+            user->send_server_whisper(info.usage);
+            return false;
+        }
+        user->send_server_whisper(lair.GmWall(which == "up"));
     } else if (action != "status") {
         user->send_server_whisper(info.usage);
         return false;

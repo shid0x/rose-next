@@ -3,6 +3,7 @@
 #include "LIB_gsMAIN.h"
 
 #include "cerberus_lair.h"
+#include "GS_USER.h"
 #include "GS_ListUSER.h"
 #include "GS_Party.h"
 #include "GS_ThreadSQL.h"
@@ -443,6 +444,60 @@ CZoneTHREAD::SendPacketToZONE(t_PACKET* pSendPacket) {
 }
 
 //-------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------
+void
+CZoneTHREAD::FillZoneObjectsPacket(classPACKET* pCPacket, BYTE btGroup, bool bOn,
+    const tagZONE_OBJECT* pObjs, int iCount) {
+    pCPacket->m_HEADER.m_wType = GSV_ZONE_OBJECTS;
+    pCPacket->m_HEADER.m_nSize = sizeof(gsv_ZONE_OBJECTS);
+    pCPacket->m_gsv_ZONE_OBJECTS.m_btGroup = btGroup;
+    pCPacket->m_gsv_ZONE_OBJECTS.m_btState = bOn ? 1 : 0;
+    pCPacket->m_gsv_ZONE_OBJECTS.m_btCount = (BYTE)iCount;
+    if (iCount > 0)
+        pCPacket->AppendData((void*)pObjs, (short)(iCount * sizeof(tagZONE_OBJECT)));
+}
+
+void
+CZoneTHREAD::SetZoneObjects(BYTE btGroup, const tagZONE_OBJECT* pObjs, int iCount, bool bOn) {
+    if (iCount < 0 || iCount > 50)
+        return; // 50 x 18 bytes stays well inside a packet
+    {
+        std::lock_guard<std::mutex> lock(m_ZoneObjectsMutex);
+        ZoneObjectGroup& group = m_ZoneObjects[btGroup];
+        group.placements.assign(pObjs, pObjs + iCount);
+        group.bOn = bOn;
+    }
+    classPACKET* pCPacket = Packet_AllocNLock();
+    if (!pCPacket)
+        return;
+    FillZoneObjectsPacket(pCPacket, btGroup, bOn, pObjs, iCount);
+    this->SendPacketToZONE(pCPacket);
+    Packet_ReleaseNUnlock(pCPacket);
+}
+
+void
+CZoneTHREAD::SendZoneObjects(classUSER* pUSER) {
+    std::lock_guard<std::mutex> lock(m_ZoneObjectsMutex);
+    for (const auto& it: m_ZoneObjects) {
+        const ZoneObjectGroup& group = it.second;
+        if (!group.bOn || group.placements.empty())
+            continue;
+        classPACKET* pCPacket = Packet_AllocNLock();
+        if (!pCPacket)
+            return;
+        FillZoneObjectsPacket(pCPacket, it.first, true, group.placements.data(), (int)group.placements.size());
+        pUSER->SendPacket(pCPacket);
+        Packet_ReleaseNUnlock(pCPacket);
+    }
+}
+
+bool
+CZoneTHREAD::IsZoneObjectsOn(BYTE btGroup) {
+    std::lock_guard<std::mutex> lock(m_ZoneObjectsMutex);
+    auto it = m_ZoneObjects.find(btGroup);
+    return it != m_ZoneObjects.end() && it->second.bOn;
+}
+
 void
 CZoneTHREAD::Send_EconomyDATA() {
     t_PACKET* pPacket = (t_PACKET*)new char[MAX_PACKET_SIZE];
