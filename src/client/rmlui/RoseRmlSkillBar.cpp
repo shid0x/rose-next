@@ -26,6 +26,7 @@
 #include "rose/common/log.h"
 
 #include <math.h>
+#include <memory>
 #include <stdio.h>
 #include <stdarg.h>
 
@@ -97,6 +98,25 @@ RoseRmlSkillBar::BarForSlot(int iSlot) {
                                                                        : g_itMGR.GetQuickBAR_EXT();
 }
 
+namespace {
+
+/// CHotIconSlot::GetHotIcon builds a new icon on every call and the caller owns
+/// it (the classic CQuickBAR hands it to a CSlot, which deletes it on the next
+/// UpdateHotIconSlot). The skill bar asked for 16 a frame and kept none: ~13 MB
+/// a minute, measured with UMDH on 2026-11-02, and the likeliest cause of the
+/// testers' std::bad_alloc crashes the day before.
+///
+/// A sampled icon is held until the next sample of the same slot replaces it
+/// rather than deleted at once: CIconItem refcounts the shared socket texture
+/// and unloads it at zero, so a create-then-delete every frame could reload it
+/// every frame. unique_ptr::reset stores the new icon before deleting the old
+/// one, so the count never dips. Released in Shutdown(), while the engine is
+/// still up -- never at static teardown.
+std::unique_ptr<CIcon> s_SampledIcons[2][HOT_ICONS_PER_PAGE];
+
+} // namespace
+
+/// The caller owns the result.
 CIcon*
 RoseRmlSkillBar::IconForSlot(int iSlot) {
     if (g_pAVATAR == NULL || iSlot < 0 || iSlot >= MAX_HOT_ICONS)
@@ -163,7 +183,8 @@ RoseRmlSkillBar::Initialise(Rml::Context* pContext, const std::string& strAssetD
             m_iPressSlot = -1;
             if (!bClick)
                 return;
-            if (CIcon* pIcon = IconForSlot(iSlot))
+            std::unique_ptr<CIcon> pIcon(IconForSlot(iSlot));
+            if (pIcon)
                 pIcon->ExecuteCommand();
         });
 
@@ -196,6 +217,11 @@ RoseRmlSkillBar::Initialise(Rml::Context* pContext, const std::string& strAssetD
 
 void
 RoseRmlSkillBar::Shutdown() {
+    for (int iRow = 0; iRow < 2; ++iRow) {
+        for (int i = 0; i < HOT_ICONS_PER_PAGE; ++i)
+            s_SampledIcons[iRow][i].reset();
+    }
+
     /// The context owns the document; it is torn down with Rml::Shutdown().
     m_pDocument = NULL;
     m_pContext = NULL;
@@ -231,7 +257,9 @@ RoseRmlSkillBar::SampleRow(CQuickBAR* pBar, bool bCtrl, std::vector<SlotVM>& out
         vm.count = 0;
         vm.key = bCtrl ? Printf("^F%d", i + 1) : Printf("F%d", i + 1);
 
-        CIcon* pIcon = pBar ? IconForSlot(vm.index) : NULL;
+        std::unique_ptr<CIcon>& held = s_SampledIcons[bCtrl ? 1 : 0][i];
+        held.reset(pBar ? IconForSlot(vm.index) : NULL);
+        CIcon* pIcon = held.get();
         int iModule = 0, iGraphic = 0;
         if (pIcon != NULL && pIcon->GetSprite(iModule, iGraphic)
             && RoseRmlIcons::Resolve(iModule, iGraphic, vm.src, vm.rect)) {
@@ -328,7 +356,7 @@ RoseRmlSkillBar::UpdateDragStart() {
     const int iSlot = m_iPressSlot;
     m_iPressSlot = -1; /// whatever happens, the release is no longer a click
 
-    CIcon* pIcon = IconForSlot(iSlot);
+    std::unique_ptr<CIcon> pIcon(IconForSlot(iSlot));
     CQuickBAR* pBar = BarForSlot(iSlot);
     if (pIcon == NULL || pBar == NULL || !pIcon->IsEnable())
         return;
@@ -338,7 +366,7 @@ RoseRmlSkillBar::UpdateDragStart() {
     CDragItem* pDragItem = pBar->GetDragItem();
     if (pDragItem == NULL)
         return;
-    pDragItem->SetIcon(pIcon);
+    pDragItem->SetIcon(pIcon.get());
     CDragNDropMgr::GetInstance().DragStart(pDragItem);
 }
 
@@ -357,7 +385,7 @@ RoseRmlSkillBar::UpdateTooltip() {
         }
     }
 
-    CIcon* pIcon = IconForSlot(iSlot);
+    std::unique_ptr<CIcon> pIcon(IconForSlot(iSlot));
     CQuickBAR* pBar = BarForSlot(iSlot);
     if (pIcon == NULL || pBar == NULL)
         return;

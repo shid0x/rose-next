@@ -252,6 +252,14 @@ The client installs `CrashHandler` (`src/client/CrashHandler.cpp`, from `winmain
   then (4 GB on 64-bit Windows); the `.txt` now carries a `memory :` line and the thrown type,
   `client.log` a `Memory (...)` line per zone and per minute, and the debug HUD a `Mem:` row.
   Task Manager's "Memory" column is the working set and says nothing about this.
+- **A climbing `Memory (periodic ...)` line is a leak until shown otherwise -- find it with UMDH,
+  not by reading code.** Admin, once: `gflags.exe /i rosenext.exe +ust` (Debuggers\x86); start the
+  client; `umdh -p:<pid> -f:a.txt`, wait two minutes, `umdh -p:<pid> -f:b.txt`, then
+  `umdh a.txt b.txt -f:diff.txt` with `_NT_SYMBOL_PATH=bin\release`. The diff ranks allocation
+  stacks by growth. Each snapshot freezes the game ~15 s. Turn it off after (`-ust`): every
+  allocation records a stack. It found the UI2 skill bar leaking ~13 MB/min (2026-11-02:
+  `CHotIconSlot::GetHotIcon` returns a new icon the caller owns) and `STBDATA::get_cstr`
+  copying every string it returned.
 - For a **freeze, don't kill the process**: `cdb -pv -p <pid>` attaches non-invasively and works even with cdb already attached.
 - Check `triggervfs.dll` in the game folder matches `bin/release` before trusting its frames: a stale copy resolves to nonsense (`VGetVfsNames+0x…`). It was stale until 2026-10-22 (redeployed with the archive-first `FileExists`); if it drifts again, disassemble the caller rather than trusting the symbol.
 - **`client.log` survives a crash; `error.txt` does not.** The engine log is buffered, so a hard crash loses the whole session and the file still ends at the *previous* run's `log: end.` — which reads as "it never launched". The Rust-side `client.log` flushes per record, so read it first to see how far startup actually got.
