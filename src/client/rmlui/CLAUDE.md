@@ -41,8 +41,10 @@ switch: `kReplacedDialogs` (legacy `DLG_TYPE_*` hidden from the outside every fr
 `kReplacedPieces` (HUD draws that are not dialogs, e.g. `CEndurancePack::Draw`, gated at their
 call site). The first two converted were the status panel (`DLG_TYPE_INFO` → `RoseRmlStatusPanel`,
 667 compact layout) and the buff strip (`PIECE_BUFF_BAR` → `RoseRmlBuffBar`: buffs, summon/fuel
-gauges, worn gear); the sections below cover the rest. Shared helpers: `RoseRmlLayout` (drag position saved in `[UI_LAYOUT]`,
-clamped on screen) and `RoseRmlIcons` (a legacy TSI sprite → `<img src rect>`, loaded through the
+gauges, worn gear); the sections below cover the rest. Shared helpers: `RoseRmlLayout` (drag position saved in `[UI_LAYOUT]`
+as an **anchor**, `minimap=R-250,T0`: the panel's top-left corner hangs from the left/centre/right and top/middle/bottom
+point its centre's third of the screen picks, offset in dp, so a layout holds at any resolution and UI scale and can be
+shared as text; old `x,y` pixel values are converted on the first run; clamped on screen) and `RoseRmlIcons` (a legacy TSI sprite → `<img src rect>`, loaded through the
 VFS — no atlas re-cutting). Things that will bite:
 
 - **RmlUi fires `click` after a drag and has no drag threshold**, so a panel that is both a

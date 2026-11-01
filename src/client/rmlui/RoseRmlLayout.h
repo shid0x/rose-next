@@ -5,11 +5,19 @@
  * Where the player put each RmlUi panel, and how big the panels are.
  *
  * Position: a panel is dragged by a <handle move_target> in its markup; this
- * remembers the result in rose-next.ini ( [UI_LAYOUT] <key>=x,y ) and puts it
- * back on the next run. The stylesheet's left/top stay the default for a
- * player who never moved anything. Positions are screen pixels, so a saved
- * spot can fall off a smaller screen after a resolution change -- Clamp()
- * pulls the panel back inside.
+ * remembers the result in rose-next.ini and puts it back on the next run. The
+ * stylesheet's left/top ( or the panel's PlaceDefault ) stay the default for a
+ * player who never moved anything.
+ *
+ * A saved spot is an anchor, not pixels: [UI_LAYOUT] <key>=R-250,T0 hangs the
+ * panel's top-left corner 250 dp left of the right edge, at the top. Each axis
+ * anchors to the near edge or the middle ( L/C/R, T/M/B ), picked by the third
+ * of the screen the panel's centre is in when it is dropped, and offsets are
+ * dp. So a layout holds at any resolution and UI scale -- a panel on the right
+ * edge stays there on a wider screen -- and a [UI_LAYOUT] section can be copied
+ * between players as is. A resolution or scale change re-places every anchored
+ * panel; Clamp() still keeps panels on screen. Older clients saved "x,y" screen
+ * pixels: those are converted, from where the panel stands, on the first run.
  *
  * Scale: every stylesheet measures in dp, not px, so one ratio on the context
  * ( [VIDEO] UI_SCALE, percent ) scales every panel, fonts included, and the
@@ -39,6 +47,11 @@ void Track(Rml::Element* pPanel, const char* pszKey);
 /// Save where a tracked panel is now ( what a drag's end does ), for a panel
 /// that moves another way: the chat's top edge follows its resize grip.
 void SavePosition(Rml::Element* pPanel, const char* pszKey);
+
+/// Every frame, before the context lays out: re-places anchored panels after a
+/// resolution or UI-scale change, and converts saved pixel positions of older
+/// clients once their panels have a size.
+void Update();
 
 /// The element under the mouse, if it belongs to pDocument; NULL otherwise.
 /// Panels find their cells by walking up to an attribute ( slot-kind ... ), and

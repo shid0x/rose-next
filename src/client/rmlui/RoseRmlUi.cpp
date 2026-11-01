@@ -831,6 +831,8 @@ Update() {
     UI_TIMED("chat", g_Chat.Update());
     UI_TIMED("numinput", g_NumberInput.Update());
     UI_TIMED("msgbox", g_MessageBox.Update());
+    /// Saved panel spots, after a resolution or UI-scale change.
+    UI_TIMED("layout", RoseRmlLayout::Update());
     /// Data bindings, styles and layout of every document.
     UI_TIMED("rml-update", g_pContext->Update());
 }

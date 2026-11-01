@@ -10,9 +10,11 @@
 
 #include "rose/common/log.h"
 
+#include <ctype.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <string>
 #include <vector>
 
@@ -25,11 +27,34 @@ Rml::Context* g_pContext = NULL;
 int g_iScale = 100;
 bool g_bLocked = false;
 
+/// A saved spot: the screen point a panel's top-left corner hangs from, per
+/// axis ( L / C / R, T / M / B ), and how far from it, in dp. "R-250,T0" is a
+/// panel 250 dp left of the right edge, at the top: on a wider screen it is
+/// still against the right edge, and at another UI scale its offset scales
+/// with it -- so a layout holds on any screen and can be shared as text.
+struct Anchor {
+    char cX;
+    char cY;
+    int iX;
+    int iY;
+};
+
 struct TrackedPanel {
     Rml::Element* pPanel;
     std::string strKey;
+    /// anchor holds the saved spot.
+    bool bAnchored;
+    Anchor anchor;
+    /// Saved as "x,y" screen pixels by an older client: converted from where
+    /// the panel stands once it has a size ( Update ).
+    bool bLegacy;
 };
 std::vector<TrackedPanel> g_Tracked;
+
+/// What the anchors were last applied for: a new screen size or UI scale
+/// puts every anchored panel back on its anchor.
+Rml::Vector2i g_LastView(0, 0);
+int g_iLastScale = 0;
 
 /// Always whole pixels: a panel on a fractional position samples every image
 /// and glyph between two texels, which reads as blur.
@@ -37,6 +62,88 @@ void
 SetPosition(Rml::Element* pPanel, float x, float y) {
     pPanel->SetProperty(Rml::PropertyId::Left, Rml::Property(floorf(x), Rml::Unit::PX));
     pPanel->SetProperty(Rml::PropertyId::Top, Rml::Property(floorf(y), Rml::Unit::PX));
+}
+
+/// The anchor point on one axis: 0, the middle, or the far edge.
+float
+Base(char cAnchor, int iSize) {
+    if (cAnchor == 'C' || cAnchor == 'M')
+        return iSize * 0.5f;
+    if (cAnchor == 'R' || cAnchor == 'B')
+        return (float)iSize;
+    return 0.0f;
+}
+
+/// The third of the screen a panel's centre is in names its anchor.
+char
+Pick(float fCentre, int iSize, const char* pszThree) {
+    if (fCentre < iSize / 3.0f)
+        return pszThree[0];
+    if (fCentre > iSize * 2.0f / 3.0f)
+        return pszThree[2];
+    return pszThree[1];
+}
+
+/// "R-250,T0". An older client's "x,y" ( pixels ) is not one.
+bool
+ParseAnchor(const char* pszValue, Anchor& out) {
+    char cX = 0, cY = 0;
+    int x = 0, y = 0;
+    if (sscanf(pszValue, " %c%d , %c%d", &cX, &x, &cY, &y) != 4)
+        return false;
+    cX = (char)toupper((unsigned char)cX);
+    cY = (char)toupper((unsigned char)cY);
+    if (strchr("LCR", cX) == NULL || strchr("TMB", cY) == NULL)
+        return false;
+    out.cX = cX;
+    out.cY = cY;
+    out.iX = x;
+    out.iY = y;
+    return true;
+}
+
+float
+ScaleRatio() {
+    return g_iScale / 100.0f;
+}
+
+/// The anchor of a panel where it stands now ( needs its size: after layout ).
+Anchor
+AnchorOf(Rml::Element* pPanel, const Rml::Vector2i& view) {
+    const Rml::Vector2f pos = pPanel->GetAbsoluteOffset(Rml::BoxArea::Border);
+    const Rml::Vector2f size = pPanel->GetBox().GetSize(Rml::BoxArea::Border);
+    const float fRatio = ScaleRatio();
+    Anchor a;
+    a.cX = Pick(pos.x + size.x * 0.5f, view.x, "LCR");
+    a.cY = Pick(pos.y + size.y * 0.5f, view.y, "TMB");
+    a.iX = (int)floorf((pos.x - Base(a.cX, view.x)) / fRatio + 0.5f);
+    a.iY = (int)floorf((pos.y - Base(a.cY, view.y)) / fRatio + 0.5f);
+    return a;
+}
+
+void
+WriteAnchor(const char* pszKey, const Anchor& a) {
+    char szBuf[32];
+    _snprintf(szBuf, sizeof(szBuf), "%c%d,%c%d", a.cX, a.iX, a.cY, a.iY);
+    szBuf[sizeof(szBuf) - 1] = '\0';
+    WritePrivateProfileStringA(kSection, pszKey, szBuf, kIniPath);
+}
+
+void
+ApplyAnchor(const TrackedPanel& tracked, const Rml::Vector2i& view) {
+    const float fRatio = ScaleRatio();
+    SetPosition(tracked.pPanel,
+        Base(tracked.anchor.cX, view.x) + tracked.anchor.iX * fRatio,
+        Base(tracked.anchor.cY, view.y) + tracked.anchor.iY * fRatio);
+}
+
+TrackedPanel*
+FindTracked(Rml::Element* pPanel) {
+    for (TrackedPanel& tracked : g_Tracked) {
+        if (tracked.pPanel == pPanel)
+            return &tracked;
+    }
+    return NULL;
 }
 
 int
@@ -117,13 +224,46 @@ Initialise(Rml::Context* pContext) {
 
 void
 SavePosition(Rml::Element* pPanel, const char* pszKey) {
-    if (pPanel == NULL || pszKey == NULL)
+    if (pPanel == NULL || pszKey == NULL || pPanel->GetContext() == NULL)
         return;
-    const Rml::Vector2f pos = pPanel->GetAbsoluteOffset(Rml::BoxArea::Border);
-    char szBuf[32];
-    _snprintf(szBuf, sizeof(szBuf), "%d,%d", (int)pos.x, (int)pos.y);
-    szBuf[sizeof(szBuf) - 1] = '\0';
-    WritePrivateProfileStringA(kSection, pszKey, szBuf, kIniPath);
+    const Anchor a = AnchorOf(pPanel, pPanel->GetContext()->GetDimensions());
+    WriteAnchor(pszKey, a);
+    if (TrackedPanel* pTracked = FindTracked(pPanel)) {
+        pTracked->anchor = a;
+        pTracked->bAnchored = true;
+        pTracked->bLegacy = false;
+    }
+}
+
+void
+Update() {
+    if (g_pContext == NULL)
+        return;
+    const Rml::Vector2i view = g_pContext->GetDimensions();
+    if (view.x <= 0 || view.y <= 0)
+        return;
+    const bool bChanged = view != g_LastView || g_iScale != g_iLastScale;
+    g_LastView = view;
+    g_iLastScale = g_iScale;
+
+    for (TrackedPanel& tracked : g_Tracked) {
+        if (tracked.bAnchored) {
+            if (bChanged)
+                ApplyAnchor(tracked, view);
+            continue;
+        }
+        if (!tracked.bLegacy)
+            continue;
+        /// The pixels were this screen's: where the panel stands now is what
+        /// the player arranged, so its anchor keeps the layout as it is.
+        const Rml::Vector2f size = tracked.pPanel->GetBox().GetSize(Rml::BoxArea::Border);
+        if (size.x <= 0.0f || size.y <= 0.0f)
+            continue;
+        tracked.anchor = AnchorOf(tracked.pPanel, view);
+        tracked.bAnchored = true;
+        tracked.bLegacy = false;
+        WriteAnchor(tracked.strKey.c_str(), tracked.anchor);
+    }
 }
 
 void
@@ -137,17 +277,28 @@ Track(Rml::Element* pPanel, const char* pszKey) {
     if (pPanel == NULL || pszKey == NULL)
         return;
 
-    char szBuf[32] = {0};
-    GetPrivateProfileStringA(kSection, pszKey, "", szBuf, sizeof(szBuf), kIniPath);
-    int x = 0, y = 0;
-    if (szBuf[0] != '\0' && sscanf(szBuf, "%d,%d", &x, &y) == 2)
-        SetPosition(pPanel, (float)x, (float)y);
-
-    pPanel->AddEventListener(Rml::EventId::Dragend, new SaveOnDragEnd(pszKey));
-
     TrackedPanel tracked;
     tracked.pPanel = pPanel;
     tracked.strKey = pszKey;
+    tracked.bAnchored = false;
+    tracked.anchor = Anchor();
+    tracked.bLegacy = false;
+
+    char szBuf[32] = {0};
+    GetPrivateProfileStringA(kSection, pszKey, "", szBuf, sizeof(szBuf), kIniPath);
+    int x = 0, y = 0;
+    if (szBuf[0] != '\0' && ParseAnchor(szBuf, tracked.anchor)) {
+        tracked.bAnchored = true;
+        /// Placed now so the panel's own default never applies; Update
+        /// places it again once the UI scale is read.
+        if (pPanel->GetContext() != NULL)
+            ApplyAnchor(tracked, pPanel->GetContext()->GetDimensions());
+    } else if (szBuf[0] != '\0' && sscanf(szBuf, "%d,%d", &x, &y) == 2) {
+        SetPosition(pPanel, (float)x, (float)y);
+        tracked.bLegacy = true;
+    }
+
+    pPanel->AddEventListener(Rml::EventId::Dragend, new SaveOnDragEnd(pszKey));
     g_Tracked.push_back(tracked);
 }
 
@@ -182,11 +333,13 @@ Clamp(Rml::Element* pPanel, int iViewportW, int iViewportH) {
 
 void
 Reset() {
-    for (const TrackedPanel& tracked : g_Tracked) {
+    for (TrackedPanel& tracked : g_Tracked) {
         /// A drag or a restore writes left/top inline; removing them hands the
         /// panel back to its stylesheet.
         tracked.pPanel->RemoveProperty(Rml::PropertyId::Left);
         tracked.pPanel->RemoveProperty(Rml::PropertyId::Top);
+        tracked.bAnchored = false;
+        tracked.bLegacy = false;
         WritePrivateProfileStringA(kSection, tracked.strKey.c_str(), NULL, kIniPath);
     }
     LOG_INFO("[rmlui] panel layout reset ({} panels)", g_Tracked.size());
@@ -212,7 +365,7 @@ GetScale() {
 
 float
 GetScaleRatio() {
-    return g_iScale / 100.0f;
+    return ScaleRatio();
 }
 
 void
