@@ -2271,7 +2271,16 @@ CObjCHAR::Skill_DamageToAROUND(tPOINTF& PosCENTER) {
             } else
                 btResult = 0;
 
-            if (sDamage.m_wDamage || btResult) {
+            // A monster's area skill that misses still says so: the 0-damage result
+            // is sent and the client shows MISS when the skill goes off. Sending only
+            // what landed left a clean miss with no digit at all, and the monster's
+            // next swing's MISS a second later read as the area's, late (Cerberus's
+            // breath, 2026-11-01). Players' and their summons' area skills still
+            // send only what landed.
+            const bool bMonsterMiss =
+                !sDamage.m_wDamage && !btResult && !this->IsUSER() && !this->GetCallerUsrIDX();
+
+            if (sDamage.m_wDamage || btResult || bMonsterMiss) {
                 sDamage.m_wDamage |= DMG_BIT_IMMEDIATE; // 스킬 뎀쥐는 즉각 반응...
                 pFindCHAR->Send_gsv_DAMAGE_OF_SKILL(this->Get_INDEX(),
                     Get_ActiveSKILL(),

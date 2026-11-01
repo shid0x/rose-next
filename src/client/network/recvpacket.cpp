@@ -3504,7 +3504,9 @@ CRecvPACKET::Recv_gsv_DAMAGE_OF_SKILL() {
         // "skill damage queued" logged at receive, the caster no longer holding the skill
         // in m_nActiveSkillIDX / m_nToDoSkillIDX -- and showed only the digit: no hit
         // effect, no hit sound.
-        pEffectedChar->ShowSkillHitFeedback(iSkillIDX);
+        if (!CObjCHAR::IsAreaSkillMiss(damageOfSkill)) {
+            pEffectedChar->ShowSkillHitFeedback(iSkillIDX);
+        }
     }
 }
 

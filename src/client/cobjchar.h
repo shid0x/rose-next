@@ -728,6 +728,10 @@ public:
     /// PushCombatDamageEvent.
     void ConvertDamageOfSkillToDamage(gsv_DAMAGE_OF_SKILL stDamageOfSkill, uint32_t arrivalSeq = 0);
     static bool IsProjectilePresentedSkillDamage(int iSkillIDX);
+    /// True for an area skill (type 7/17) payload that landed nothing: no damage, no
+    /// status. The server sends one when a monster's area skill misses; it shows its
+    /// MISS digit but no hit effect or hit sound.
+    static bool IsAreaSkillMiss(const gsv_DAMAGE_OF_SKILL& stDamageOfSkill);
 
     /// Monotonic client-side arrival-order counter for HP-authoritative packets.
     /// Used to detect a sync/heal that supersedes a deferred damage checkpoint.

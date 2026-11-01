@@ -3268,7 +3268,9 @@ CObjCHAR::ProcOneEffectedSkill(stEFFECT_OF_SKILL* pEffectOfSkill) {
         /// Damage of skill 에 실려오는 스킬적용결과 반영..
         ProcEffectOfSkillInDamageOfSkill(iSkillIDX, iObjIDX, pChar, pEffectOfSkill);
 
-        pChar->ShowSkillHitFeedback(iSkillIDX);
+        if (!IsAreaSkillMiss(pEffectOfSkill->EffectOfSkill)) {
+            pChar->ShowSkillHitFeedback(iSkillIDX);
+        }
 
     } else /// 지속성이거나.. 상태를 바꾸는 스킬..
     {
@@ -4555,6 +4557,15 @@ CObjCHAR::IsProjectilePresentedSkillDamage(int iSkillIDX) {
     // case where the melee fire animation has no action frame 25 hit moment.
     const int iSkillType = SKILL_TYPE(iSkillIDX);
     return Rose::Combat::is_projectile_presented_skill(iSkillType, SKILL_BULLET_NO(iSkillIDX));
+}
+
+bool
+CObjCHAR::IsAreaSkillMiss(const gsv_DAMAGE_OF_SKILL& stDamageOfSkill) {
+    const int iSkillType = SKILL_TYPE(stDamageOfSkill.m_nSkillIDX);
+    if (iSkillType != SKILL_ACTION_AREA_TARGET && iSkillType != SKILL_ACTION_SELF_DAMAGE) {
+        return false;
+    }
+    return stDamageOfSkill.m_Damage.m_wVALUE == 0 && stDamageOfSkill.m_btSuccessBITS == 0;
 }
 
 //--------------------------------------------------------------------------------
