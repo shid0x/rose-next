@@ -66,6 +66,7 @@ CObjAI::CObjAI(): stats({}) {
     m_iRestoreTargetIDX = 0;
 
     m_iWaitLoopCnt = 0;
+    m_dwCastHoldSince = 0;
 }
 
 //--------------------------------------------------------------------------------
@@ -370,6 +371,9 @@ CObjAI::ProcSkillCastingLoop(CObjCHAR* pTarget) {
                                                   // SKILL_ANI_CASTING_REPEAT_CNT( m_nActiveSkillIDX
                                                   //) ) )
                     {
+                        if (HoldMobCastEnd()) {
+                            return 1;
+                        }
                         m_iWaitLoopCnt++;
                         if (this->GetANI_CastingRepeat()) {
                             /// ��ų �ֹ� ���� !!!
@@ -391,9 +395,52 @@ CObjAI::ProcSkillCastingLoop(CObjCHAR* pTarget) {
         }
     }
 
+    if (m_dwCastHoldSince) {
+        LogString(LOG_DEBUG_,
+            "CombatTrace casting end held: obj %d %u ms\n",
+            this->Get_INDEX(),
+            (unsigned int)(g_GameDATA.GetGameTime() - m_dwCastHoldSince));
+        m_dwCastHoldSince = 0;
+    }
     m_iWaitLoopCnt = 0;
 
     return 5;
+}
+
+// A monster's casting clip has ended and the server's result is not in yet. The retail
+// path replays the clip (a monster's GetANI_CastingRepeat is its casting clip), and a
+// restart blends from the current pose toward the clip's opening frames by (t/500 ms)^2
+// on *every rendered frame* (zz_motion_controller::get_blend_weight, applied per bone by
+// zz_model) -- at 180 FPS two thirds of the way in 167 ms, a third at 60. The result
+// lands a tick or so after the clip ends (130-170 ms on a local server), so every cast
+// twitched back toward its opening pose before its release, and one that ends in the air
+// -- the Revived Quarantine Officers' retargeted Berserk, a 3 m leap -- dropped toward the
+// ground and rose again, "the animation twice" (2026-11-01).
+// Hold the last frame instead. The clip played once (repeat 1), so the animatable has
+// stopped on it. The frame cursor goes to that frame, so ProcMotionFrame has no event left
+// to re-fire and reports the end again next tick, which brings the caster back here until
+// the result is in; ProcQueuedCommand applies nothing meanwhile (m_bCastingSTART). A
+// result that never comes falls back to the replay after kMobCastHoldMs.
+bool
+CObjAI::HoldMobCastEnd() {
+    static const DWORD kMobCastHoldMs = 500;
+    if (!this->IsA(OBJ_MOB) || m_iWaitLoopCnt > 0 || !m_pCurMOTION || !m_pCurMOTION->m_wTotalFrame) {
+        return false;
+    }
+    const DWORD now = g_GameDATA.GetGameTime();
+    if (m_dwCastHoldSince == 0) {
+        m_dwCastHoldSince = now ? now : 1;
+    } else if (now - m_dwCastHoldSince >= kMobCastHoldMs) {
+        LogString(LOG_DEBUG_,
+            "CombatTrace casting hold gave way to the repeat: obj %d after %u ms\n",
+            this->Get_INDEX(),
+            (unsigned int)(now - m_dwCastHoldSince));
+        m_dwCastHoldSince = 0;
+        return false;
+    }
+    this->m_wState = CS_CASTING;
+    m_iCurMotionFRAME = m_pCurMOTION->m_wTotalFrame - 1;
+    return true;
 }
 
 //----------------------------------------------------------------------------------------------------
@@ -1901,9 +1948,10 @@ CObjAI::EndSpentSkillMotion(bool bCommandQueued) {
         // repeat until past its last one: the Revived Quarantine Officers' Berserk was
         // cut at frame 10 of 28 every time (charge-up at 9), Tornado at 23 of 33 (64 at
         // 11 and 22) -- a third of the wind-up replayed with its effect, "the animation
-        // twice" (2026-11-01). Cut on the start instead: the restart blends in at
-        // (t/500 ms)^2, so a cut within ~150 ms barely leaves the end-of-cast pose.
-        // Monsters only: a player's repeat is its own looping clip.
+        // twice" (2026-11-01). Cut on the start instead. Since the same day a monster
+        // normally holds its ended clip rather than replaying it (HoldMobCastEnd), so this
+        // cut is for the replay a missing result falls back to. Monsters only: a
+        // player's repeat is its own looping clip.
         bSkipCastingFx = this->IsA(OBJ_MOB);
     } else {
         return false;

@@ -345,6 +345,9 @@ public:
     WORD CommandToRestoreAfterSkill();
     int ProcSkillCastingAction(int iServerTarget, CObjCHAR* pTarget);
     int ProcSkillCastingLoop(CObjCHAR* pTarget);
+    /// A monster whose casting clip ended before the server's result holds that clip's
+    /// last frame instead of replaying it, for up to kMobCastHoldMs. True while it holds.
+    bool HoldMobCastEnd();
     int ProcSkillAction(CObjCHAR* pTarget); ///< 실제 스킬 액션동작을 한다.
 
     bool Goto_TARGET(CObjCHAR* pTarget, int iRange);
@@ -379,6 +382,9 @@ public:
     int m_iCastingStartTime; /// 디버깅을 위한 변수...
 
     int m_iWaitLoopCnt; /// 서버로부터의 결과를 기다리며..
+    /// Tick a monster's ended casting clip began holding its last frame (HoldMobCastEnd;
+    /// 0 = not holding).
+    DWORD m_dwCastHoldSince;
 
     int m_SkillActionState; ///< 현재 스킬의 동작상태( 캐스팅중인가? 대기 루프 중인가? 실제 액션
                             ///< 중인가? )

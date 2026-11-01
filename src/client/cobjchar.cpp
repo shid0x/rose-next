@@ -2401,6 +2401,7 @@ CObjCHAR::Casting_END() {
     m_nActiveSkillIDX = 0;
     m_nToDoSkillIDX = 0;
     m_bSkillAimActive = false;
+    m_dwCastHoldSince = 0; // a hold the cast ended under (HoldMobCastEnd)
 }
 
 //--------------------------------------------------------------------------------
