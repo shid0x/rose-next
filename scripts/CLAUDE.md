@@ -98,6 +98,12 @@ LTB cell can carry a stale non-zero position; `Stb.s()` does not strip.
 
 Our `data/` is a translated iROSE dump with gaps; the reference dumps in `C:\Users\Thomas\Desktop\Testclients\` (QQ-iROSE, RoseZA, titanRose) are intact, so diffing a single field across all three is a fast, high-confidence way to find and fix them. The repair scripts below are idempotent, take `--dry-run`, and verify after writing; the audits among them are read-only. `data/` is gitignored, so **the script is the only committed record of the change** — put the reasoning in its docstring.
 
+- `scripts/fix-zms-bone-slots.py` (2026-11-01) — **run after importing a skinned model from another
+  dump.** Some exporters write 0xFFFF in an unused (weight 0) bone slot; `load_mesh_8` resolved every
+  slot through the mesh's bone table unchecked, so tsuki's Cerberus `HEAD01.ZMS` crashed the client in
+  the lair (only when the page 128 KB past the table was unmapped -- most loads read garbage and went
+  on). The engine now clamps and logs once; the script zeroes the slots in `data/` (originals in
+  `build/zms-bone-slots/orig/`) and reports, without touching, a bad slot that carries weight.
 - `scripts/audit-spawned-npcs.py` (2026-10-12) — **run after any import that touches monsters, NPCs, AI or
   maps**; read-only, two seconds for the whole game. Walks every zone row's REGEN and MOB lumps, follows
   every AI action that spawns or morphs into a monster (Change_CHAR, Create_PET, CallToAttack, Summon,

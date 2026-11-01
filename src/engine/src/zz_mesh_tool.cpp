@@ -608,6 +608,7 @@ bool zz_mesh_tool::load_mesh_8 ( const char * file_name, zz_mesh * mesh, bool te
 	float weights[4];
 	float big_weight;
 	uint16 big_index;
+	bool bad_slot_logged = false;
 
 	if (format.use_skin()) {
 		blend_sum = 0.0f;
@@ -670,16 +671,37 @@ bool zz_mesh_tool::load_mesh_8 ( const char * file_name, zz_mesh * mesh, bool te
 				xyzw.y = xyzw.z = xyzw.w = 0.0f;
 			}
 
-			// set max bone index
-			assert(usxyzw.x < mesh->bone_indices.size());
-			assert(usxyzw.y < mesh->bone_indices.size());
-			assert(usxyzw.z < mesh->bone_indices.size());
-			assert(usxyzw.w < mesh->bone_indices.size());
+			// A slot past the mesh's own bone table (some exporters write 0xFFFF for an
+			// unused influence; tsuki's Cerberus HEAD01.ZMS did) would index bone_indices
+			// out of bounds just below -- a crash whenever that page is unmapped -- and
+			// hand the shader a palette entry it does not have. load_mesh_6 has guarded
+			// this all along (DEBUG_MESHFILE is always on); this one never did. Bind such
+			// a slot to 0, which is what a classic mesh holds in an unused slot.
+			if (mesh->bone_indices.empty()) {
+				usxyzw.x = usxyzw.y = usxyzw.z = usxyzw.w = 0;
+			}
+			else {
+				const size_t bone_count = mesh->bone_indices.size();
+				// Named fields, not ushort_array: usvec4 declares that array [3].
+				unsigned short * slots[4] = { &usxyzw.x, &usxyzw.y, &usxyzw.z, &usxyzw.w };
+				bool clamped = false;
+				for (j = 0; j < 4; j++) {
+					if (*slots[j] >= bone_count) {
+						*slots[j] = 0;
+						clamped = true;
+					}
+				}
+				if (clamped && !bad_slot_logged) {
+					ZZ_LOG("mesh_tool: load_mesh(%s): vertex %d has a bone slot >= num_bones(%d); bound to 0.\n",
+						file_name, i, (int)bone_count);
+					bad_slot_logged = true;
+				}
 
-			bone_index = mesh->bone_indices[usxyzw.x]; max_bone_index = (bone_index > max_bone_index) ? bone_index : max_bone_index;
-			bone_index = mesh->bone_indices[usxyzw.y]; max_bone_index = (bone_index > max_bone_index) ? bone_index : max_bone_index;
-			bone_index = mesh->bone_indices[usxyzw.z]; max_bone_index = (bone_index > max_bone_index) ? bone_index : max_bone_index;
-			bone_index = mesh->bone_indices[usxyzw.w]; max_bone_index = (bone_index > max_bone_index) ? bone_index : max_bone_index;
+				bone_index = mesh->bone_indices[usxyzw.x]; max_bone_index = (bone_index > max_bone_index) ? bone_index : max_bone_index;
+				bone_index = mesh->bone_indices[usxyzw.y]; max_bone_index = (bone_index > max_bone_index) ? bone_index : max_bone_index;
+				bone_index = mesh->bone_indices[usxyzw.z]; max_bone_index = (bone_index > max_bone_index) ? bone_index : max_bone_index;
+				bone_index = mesh->bone_indices[usxyzw.w]; max_bone_index = (bone_index > max_bone_index) ? bone_index : max_bone_index;
+			}
 
 			mesh->set_blend_weight(i, xyzw);
 			mesh->set_blend_index(i, vec4((float)(usxyzw.x), (float)(usxyzw.y), (float)(usxyzw.z), (float)(usxyzw.w)));
