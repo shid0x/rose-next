@@ -62,6 +62,21 @@ if ($config -eq "release") {
 
 & cargo +$rust_toolchain build @cargo_args
 
+# The launcher and its publisher (src/launcher: ChronicRose.exe, rose-patch.exe)
+# are not in the public repo, so they are their own workspace: built when the
+# folder is there, skipped in a clone without it. Built from inside the folder
+# so src/.cargo/config puts them in bin/ beside everything else.
+$launcher_dir = Join-Path $rose_next_root "src/launcher"
+if (Test-Path (Join-Path $launcher_dir "Cargo.toml")) {
+  Push-Location $launcher_dir
+  $launcher_args = @()
+  if ($config -eq "release") {
+    $launcher_args += "--release"
+  }
+  & cargo +$rust_toolchain build @launcher_args
+  Pop-Location
+}
+
 # -- Build C++ projects
 & MSBuild.exe "-p:Configuration=$config;Platform=x86" -maxCpuCount -v:minimal $rose_next_root\rose-next.sln
 if (!$?) {

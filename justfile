@@ -4,6 +4,8 @@ CONFIG := env_var_or_default("CONFIG", "release")
 
 ROOT := env_var_or_default("ROOT", justfile_directory())
 SCRIPTS := ROOT + "/scripts"
+# rose-patch's folder: patch.toml, the signing key, the served www/ (outside the repo)
+PATCH := env_var_or_default("PATCH_DIR", ROOT + "/../patch-server")
 
 
 # Build all code and assets
@@ -68,6 +70,22 @@ purge-cache:
 # Open Rose Dev Studio, the STB/STL editor (optionally with files to open)
 studio *files:
     pythonw {{ROOT}}/src/tools/dev-studio/run.pyw {{files}}
+
+# Publish the launch folder as the next version players' launchers download (optional news text)
+patch-publish news="":
+    {{ROOT}}/bin/release/rose-patch.exe publish --config "{{PATCH}}/patch.toml" {{ if news == "" { "" } else { "--message \"" + news + "\"" } }}
+
+# Serve the published client to players' launchers (keep it running)
+patch-serve:
+    {{ROOT}}/bin/release/rose-patch.exe serve --config "{{PATCH}}/patch.toml"
+
+# Set the launcher's news text ("" clears it)
+patch-news text:
+    {{ROOT}}/bin/release/rose-patch.exe message --config "{{PATCH}}/patch.toml" "{{text}}"
+
+# What the patch server is publishing now
+patch-status:
+    {{ROOT}}/bin/release/rose-patch.exe status --config "{{PATCH}}/patch.toml"
 
 # Create distribution
 # TODO: Refactor dist script

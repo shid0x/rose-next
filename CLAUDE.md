@@ -76,6 +76,10 @@ src/
 ├── engine/              # 3D engine (D3D9Ex rendering)
 ├── tgamectrl/           # UI control framework
 ├── pipeline/            # Rust asset pipeline tool
+├── launcher/            # ChronicRose.exe (players' launcher + patcher) and rose-patch.exe
+│                       # (publish/serve the client as signed FastCDC chunks); see its README.md.
+│                       # PRIVATE: gitignored, never pushed; its own cargo workspace (excluded
+│                       # from src/Cargo.toml), built by scripts/build.ps1 only when present
 ├── tools/               # Standalone Rust dev tools (workspace members)
 │   ├── vfs-browser/     # rose-vfs: TUI browser for data.idx / .vfs (ratatui + rfd)
 │   ├── npc-shop-editor/ # egui editor for LIST_NPC/LIST_SELL shop tabs (COW on shared rows)
@@ -139,6 +143,11 @@ just loginserver release    # Run individual server
 - Servers look for data in `data/` (configurable in server.toml)
 - A/B test two client builds in the real game: `scripts/ab-build.ps1 stage <name>` / `use <name>` / `toggle`. `rosenext.exe` imports `znzin.dll` by name, so the exe+dll must be swapped as a **pair** — never rename one half. See the header for the HUD-labelling and vsync caveats.
 - Auto-connect: `rosenext.exe --server 127.0.0.1 --username user --password pass --auto-connect-server 1 --auto-connect-channel 1 --auto-connect-character CharName`
+- Players update through the launcher: `just patch-publish ["news"]` publishes `ROSEProject` as the
+  next version, `just patch-serve` serves it (TCP 29080). Settings, the **secret signing key** and
+  the store live in `Desktop\Rose\patch-server\` (outside the repo). `src/launcher/README.md` has
+  the design and its traps (an exe named "*patch*" needs its `asInvoker` manifest or Windows
+  demands elevation).
 
 ## Where The Detail Lives
 

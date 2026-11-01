@@ -6,6 +6,9 @@ members = [
     "tools/npc-shop-editor",
     "tools/quest-editor"
 ]
+# launcher/ (ChronicRose.exe + rose-patch.exe) is not in the public repo: a
+# member that is missing would stop the whole workspace building in a clone,
+# so it is its own workspace, built by scripts/build.ps1 when it is there.
 exclude = [
     "launcher",
     "server"

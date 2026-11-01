@@ -37,6 +37,11 @@ data/*/*
 !data/*/.gitkeep
 Exes/*
 !Exes/server.toml
+
+# The launcher and its publisher (ChronicRose.exe, rose-patch.exe) stay out of the
+# public repo. src/launcher is its own cargo workspace, built by scripts/build.ps1
+# when the folder is there.
+/src/launcher/
 /originalfiles/
 /rose-offline/
 # Python
