@@ -245,6 +245,13 @@ The client installs `CrashHandler` (`src/client/CrashHandler.cpp`, from `winmain
   in `int 29h`, which runs no exception filter and no VEH. `client.log` just stops.
   The debug script still catches it (`c0000409`, look for `_invalid_parameter` on
   the stack) -- reach for it straight away rather than reading code.
+- **`0xE06D7363` with a 0-byte `.dmp` is out of address space**, not a missing handler:
+  `std::bad_alloc`, and `MiniDumpWriteDump` itself had no memory left (three such crashes on
+  two testers' machines, 2026-11-01). Resolve the `.txt`'s stack offsets with `ln` in
+  `cdb -z bin\release\znzin.dll` / `rosenext.exe`. The client is `/LARGEADDRESSAWARE` since
+  then (4 GB on 64-bit Windows); the `.txt` now carries a `memory :` line and the thrown type,
+  `client.log` a `Memory (...)` line per zone and per minute, and the debug HUD a `Mem:` row.
+  Task Manager's "Memory" column is the working set and says nothing about this.
 - For a **freeze, don't kill the process**: `cdb -pv -p <pid>` attaches non-invasively and works even with cdb already attached.
 - Check `triggervfs.dll` in the game folder matches `bin/release` before trusting its frames: a stale copy resolves to nonsense (`VGetVfsNames+0x…`). It was stale until 2026-10-22 (redeployed with the archive-first `FileExists`); if it drifts again, disassemble the caller rather than trusting the symbol.
 - **`client.log` survives a crash; `error.txt` does not.** The engine log is buffered, so a hard crash loses the whole session and the file still ends at the *previous* run's `log: end.` — which reads as "it never launched". The Rust-side `client.log` flushes per record, so read it first to see how far startup actually got.

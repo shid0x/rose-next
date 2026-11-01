@@ -300,7 +300,10 @@ void zz_script_lua::set_param_string (const char * val)
 void zz_script_lua::set_param_hnode (void * val)
 {
 	assert(L);
-	lua_pushnumber(L, double(reinterpret_cast<int>(val)));
+	// Unsigned, as HNODE is everywhere else: the client is large-address-aware, and a
+	// node above 2 GB pushed as int would reach the script negative and come back
+	// through get_param_uint's (unsigned int) of a negative double.
+	lua_pushnumber(L, double(reinterpret_cast<unsigned int>(val)));
 	param_count++;
 }
 

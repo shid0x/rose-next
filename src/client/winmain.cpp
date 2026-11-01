@@ -2,6 +2,7 @@
 
 #include "CApplication.h"
 #include "CrashHandler.h"
+#include "ProcessMemory.h"
 #include "Game.h"
 #include "Network/CNetwork.h"
 #include "Util/VFSManager.h"
@@ -288,6 +289,8 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCmdLine, int nCmd
     // an intermittent fault could only be caught by playing under cdb and hoping it
     // happened while you were there.
     Rose::Client::InstallCrashHandler();
+    // "/4095 MB" here (not 2047) is the proof the exe is large-address-aware on this machine.
+    Rose::Client::LogProcessMemory("startup", 0);
 
     VHANDLE hVFS = OpenVFS("data.idx", "r");
 

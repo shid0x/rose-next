@@ -114,6 +114,7 @@
       <SubSystem>Windows</SubSystem>
       <MapExports />
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+      <LargeAddressAware>true</LargeAddressAware>
     </Link>
     <PostBuildEvent>
       <Command>pwsh.exe -File $(SolutionDir)scripts\post-build.ps1 -config debug</Command>
@@ -172,6 +173,7 @@
       </ImportLibrary>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
       <AdditionalOptions>/MACHINE:I386 %(AdditionalOptions)</AdditionalOptions>
+      <LargeAddressAware>true</LargeAddressAware>
     </Link>
     <PostBuildEvent>
       <Message>
@@ -337,6 +339,7 @@
     <ClCompile Include="Terrain\PatchManager.cpp" />
     <ClCompile Include="CApplication.cpp" />
     <ClCompile Include="CrashHandler.cpp" />
+    <ClCompile Include="ProcessMemory.cpp" />
     <ClCompile Include="StdAfx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='release|Win32'">Create</PrecompiledHeader>
@@ -793,6 +796,7 @@
     <ClInclude Include="Terrain\TerrainDef.h" />
     <ClInclude Include="CApplication.h" />
     <ClInclude Include="CrashHandler.h" />
+    <ClInclude Include="ProcessMemory.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="StdAfx.h" />
     <ClInclude Include="gamecommon\CDelegatedObservable.h" />

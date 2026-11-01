@@ -1,6 +1,7 @@
 #include "stdafx.h"
 
 #include "CrashHandler.h"
+#include "ProcessMemory.h"
 
 #include "rose/common/log.h"
 
@@ -38,6 +39,14 @@ MiniDumpWriteDumpFn g_pfnMiniDumpWriteDump = NULL;
 MINIDUMP_TYPE g_eDumpType = MiniDumpNormal;
 LONG g_lHandlerEntered = 0;
 LPTOP_LEVEL_EXCEPTION_FILTER g_pPreviousFilter = NULL;
+
+/// Address space held back for the dump writer. An out-of-memory crash
+/// (std::bad_alloc) arrives with the address space full, and MiniDumpWriteDump
+/// allocates as it works: on 2026-11-01 all three such crashes left a 0-byte .dmp.
+/// Reserved only, never committed, so it costs address space and no RAM; released
+/// at fault time, right before the dump is written.
+const SIZE_T kEmergencyReserveBytes = 32 * 1024 * 1024;
+void* g_pEmergencyReserve = NULL;
 
 void
 AppendText(char* szBuffer, int iCapacity, int* piLength, const char* szText) {
@@ -101,6 +110,53 @@ ExceptionName(DWORD dwCode) {
     }
 }
 
+/// The decorated name of a thrown C++ type, e.g. ".?AVbad_alloc@std@@".
+///
+/// An unhandled throw otherwise reads as 0xE06D7363 and nothing else. On x86 the
+/// record's third parameter is the compiler's _ThrowInfo, which leads through a
+/// catchable-type array to a TypeDescriptor whose name is the decorated type --
+/// absolute pointers all the way (x64 stores image-relative offsets instead).
+/// Every hop is read-checked: this runs in a process that has already failed.
+bool
+ThrownTypeName(const EXCEPTION_RECORD* pRecord, char* szOut, int iCapacity) {
+    szOut[0] = '\0';
+#if defined(_M_IX86)
+    if (pRecord->ExceptionCode != 0xE06D7363 || pRecord->NumberParameters < 3) {
+        return false;
+    }
+    // _ThrowInfo { attributes, pmfnUnwind, pForwardCompat, pCatchableTypeArray }
+    const DWORD* pThrowInfo = (const DWORD*)pRecord->ExceptionInformation[2];
+    if (pThrowInfo == NULL || ::IsBadReadPtr(pThrowInfo, 4 * sizeof(DWORD))) {
+        return false;
+    }
+    // _CatchableTypeArray { nCatchableTypes, arrayOfCatchableTypes[] }; [0] is the thrown type
+    const DWORD* pTypeArray = (const DWORD*)pThrowInfo[3];
+    if (pTypeArray == NULL || ::IsBadReadPtr(pTypeArray, 2 * sizeof(DWORD)) || pTypeArray[0] == 0) {
+        return false;
+    }
+    // _CatchableType { properties, pType, ... }
+    const DWORD* pCatchable = (const DWORD*)pTypeArray[1];
+    if (pCatchable == NULL || ::IsBadReadPtr(pCatchable, 2 * sizeof(DWORD))) {
+        return false;
+    }
+    // TypeDescriptor { pVFTable, spare, name[] }
+    const char* pTypeDescriptor = (const char*)pCatchable[1];
+    if (pTypeDescriptor == NULL || ::IsBadReadPtr(pTypeDescriptor, 2 * sizeof(DWORD) + 1)) {
+        return false;
+    }
+    const char* szName = pTypeDescriptor + 2 * sizeof(DWORD);
+    if (::IsBadStringPtrA(szName, (UINT_PTR)iCapacity)) {
+        return false;
+    }
+    ::lstrcpynA(szOut, szName, iCapacity);
+    return szOut[0] != '\0';
+#else
+    (void)pRecord;
+    (void)iCapacity;
+    return false;
+#endif
+}
+
 void
 WriteSummaryFile(const char* szPath, EXCEPTION_POINTERS* pExceptionInfo, const char* szDumpName) {
     HANDLE hFile = ::CreateFileA(
@@ -136,6 +192,11 @@ WriteSummaryFile(const char* szPath, EXCEPTION_POINTERS* pExceptionInfo, const c
         ExceptionName(pRecord->ExceptionCode));
     AppendText(szBuffer, sizeof(szBuffer), &iLength, szLine);
 
+    if (ThrownTypeName(pRecord, szWhere, 256)) {
+        ::wsprintfA(szLine, "thrown type: %s\r\n", szWhere);
+        AppendText(szBuffer, sizeof(szBuffer), &iLength, szLine);
+    }
+
     DescribeAddress(pRecord->ExceptionAddress, szWhere, sizeof(szWhere));
     ::wsprintfA(szLine, "faulted at : %s\r\n", szWhere);
     AppendText(szBuffer, sizeof(szBuffer), &iLength, szLine);
@@ -154,7 +215,20 @@ WriteSummaryFile(const char* szPath, EXCEPTION_POINTERS* pExceptionInfo, const c
         AppendText(szBuffer, sizeof(szBuffer), &iLength, szLine);
     }
 
-    ::wsprintfA(szLine, "thread     : %u\r\n\r\n", (unsigned int)::GetCurrentThreadId());
+    ::wsprintfA(szLine, "thread     : %u\r\n", (unsigned int)::GetCurrentThreadId());
+    AppendText(szBuffer, sizeof(szBuffer), &iLength, szLine);
+
+    // Taken before the emergency reserve is released, so it is the state that
+    // failed. The 2026-11-01 testers' std::bad_alloc crashes left 0-byte dumps --
+    // MiniDumpWriteDump needs memory too -- and nothing said the address space was
+    // full; this line says so on its own.
+    Rose::Client::ProcessMemory stMem;
+    Rose::Client::SampleProcessMemory(stMem, true);
+    ::wsprintfA(szLine,
+        "memory     : address space %u/%u MB used (image %u, mapped %u, private %u), "
+        "largest free block %u MB, commit %u MB\r\n\r\n",
+        stMem.va_used_mb, stMem.va_total_mb, stMem.image_mb, stMem.mapped_mb, stMem.private_va_mb,
+        stMem.largest_free_mb, stMem.private_mb);
     AppendText(szBuffer, sizeof(szBuffer), &iLength, szLine);
 
 #if defined(_M_IX86)
@@ -279,6 +353,11 @@ CrashFilter(EXCEPTION_POINTERS* pExceptionInfo) {
     // client.log and error.txt -- and beside the crash-*.log cdb writes.
     WriteSummaryFile(szTextName, pExceptionInfo, szDumpName);
 
+    if (g_pEmergencyReserve != NULL) {
+        ::VirtualFree(g_pEmergencyReserve, 0, MEM_RELEASE);
+        g_pEmergencyReserve = NULL;
+    }
+
     if (g_pfnMiniDumpWriteDump != NULL) {
         HANDLE hFile = ::CreateFileA(szDumpName, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS,
             FILE_ATTRIBUTE_NORMAL, NULL);
@@ -324,16 +403,19 @@ ResolveDumpType(bool* pbEnabled) {
 
     *pbEnabled = (0 != ::strcmp(szMode, "off")) && (0 != ::strcmp(szMode, "0"));
 
+    // MiniDumpWithFullMemoryInfo in both: the region list (base, size, state,
+    // type), not the memory itself -- a few hundred KB that make `!address
+    // -summary` work, so a dump says how full the address space was.
     if (0 == ::strcmp(szMode, "full")) {
-        return (MINIDUMP_TYPE)(MiniDumpWithFullMemory | MiniDumpWithHandleData
+        return (MINIDUMP_TYPE)(MiniDumpWithFullMemory | MiniDumpWithFullMemoryInfo | MiniDumpWithHandleData
             | MiniDumpWithUnloadedModules | MiniDumpWithProcessThreadData | MiniDumpWithThreadInfo);
     }
 
     // Default. Stacks plus globals and thread state -- enough to name the faulting
     // code and read most of what it was working on, at tens of MB rather than the
     // whole 32-bit address space.
-    return (MINIDUMP_TYPE)(MiniDumpWithDataSegs | MiniDumpWithHandleData | MiniDumpWithUnloadedModules
-        | MiniDumpWithProcessThreadData | MiniDumpWithThreadInfo);
+    return (MINIDUMP_TYPE)(MiniDumpWithDataSegs | MiniDumpWithFullMemoryInfo | MiniDumpWithHandleData
+        | MiniDumpWithUnloadedModules | MiniDumpWithProcessThreadData | MiniDumpWithThreadInfo);
 }
 
 } // namespace
@@ -357,6 +439,8 @@ InstallCrashHandler(void) {
         g_pfnMiniDumpWriteDump =
             (MiniDumpWriteDumpFn)::GetProcAddress(g_hDbgHelp, "MiniDumpWriteDump");
     }
+
+    g_pEmergencyReserve = ::VirtualAlloc(NULL, kEmergencyReserveBytes, MEM_RESERVE, PAGE_NOACCESS);
 
     g_pPreviousFilter = ::SetUnhandledExceptionFilter(CrashFilter);
 

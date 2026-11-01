@@ -9,6 +9,7 @@
 
 #include "bullet.h"
 #include "BoneEffectBudget.h"
+#include "ProcessMemory.h"
 #include "rmlui/RoseRmlUi.h"
 #include "ccamera.h"
 #include "cclientstorage.h"
@@ -112,6 +113,7 @@ CGameStateMain::Update(bool bLostFocus) {
 
     CParty::GetInstance().Update();
     CSkillCommandDelay::GetSingleton().Proc();
+    Rose::Client::TickProcessMemoryLog(g_pTerrain->GetZoneNO());
     // processing  ...
 
     /// SFX
@@ -606,6 +608,25 @@ CGameStateMain::Render_GameMENU() {
             ::getParticleBatchFallback(),
             ::getParticleBatchSavedDrawCalls());
         nRowY += kDebugRowStride;
+
+        /// Address space, not RAM, is what a 32-bit client runs out of -- see
+        /// ProcessMemory.h. Red within 256 MB of the ceiling.
+        {
+            unsigned int uiPeakVa = 0;
+            const Rose::Client::ProcessMemory& mem = Rose::Client::GetHudProcessMemory(&uiPeakVa);
+            ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
+                false,
+                kDebugX,
+                nRowY,
+                (mem.va_used_mb + 256 >= mem.va_total_mb) ? g_dwRED : g_dwYELLOW,
+                "Mem: VA %u/%u MB (peak %u)  commit %u MB  ws %u MB",
+                mem.va_used_mb,
+                mem.va_total_mb,
+                uiPeakVa,
+                mem.private_mb,
+                mem.working_set_mb);
+            nRowY += kDebugRowStride;
+        }
 
         /// Resource loads forced to run synchronously at first-render time
         /// instead of being amortised by the engine's lazy entrance line --

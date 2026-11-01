@@ -16,13 +16,18 @@ namespace Client {
 ///
 /// Installing this makes the *next* crash capture itself during ordinary play:
 ///   <cwd>\crash-YYYYMMDD-HHMMSS.dmp   minidump, openable in WinDbg/VS
-///   <cwd>\crash-YYYYMMDD-HHMMSS.txt   one page: exception, faulting module+RVA,
-///                                     registers, and both clocks for correlating
-///                                     against client.log
+///   <cwd>\crash-YYYYMMDD-HHMMSS.txt   one page: exception (and the thrown C++
+///                                     type), faulting module+RVA, registers,
+///                                     address-space use, and both clocks for
+///                                     correlating against client.log
+///
+/// It holds 32 MB of address space in reserve and frees it at fault time, so an
+/// out-of-memory crash still has room to write its dump.
 ///
 /// Call once, as early in WinMain as possible. Configuration comes from
 /// [LOG] CRASHDUMP in rose-next.ini (ROSE_CRASHDUMP overrides):
-///   normal (default) - stacks, data segments, thread/handle data. Tens of MB.
+///   normal (default) - stacks, data segments, thread/handle data, the memory map
+///                      (for `!address -summary`). Tens of MB.
 ///   full             - adds the entire address space. Hundreds of MB; use when
 ///                      a normal dump did not carry the memory you needed.
 ///   off              - do not install the filter at all.
