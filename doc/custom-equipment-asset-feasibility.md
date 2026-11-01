@@ -140,10 +140,10 @@ The engine also mixes units: ZMD translations are multiplied by `ZZ_SCALE_IN` (0
 
 ### C. Treat Revise as a starting point requiring qualification
 
-Two concrete issues are visible in its current [ZMD implementation](../Revise/Revise.Files/ZMD/BoneFile.cs):
+Two concrete issues are visible in its current [ZMD implementation](https://github.com/jackwakefield/Revise/blob/master/Revise.Files/ZMD/BoneFile.cs):
 
 - The dummy-loading loop calls `DummyBones.Clear()` instead of adding the decoded dummy.
-- The dummy writer emits the parent integer before the name terminator, whereas the reader/engine expect the terminated name before the parent. `WriteString` itself does not terminate strings. [BinaryWriter extensions](../Revise/Revise.Extensions/BinaryWriter.cs).
+- The dummy writer emits the parent integer before the name terminator, whereas the reader/engine expect the terminated name before the parent. `WriteString` itself does not terminate strings. [BinaryWriter extensions](https://github.com/jackwakefield/Revise/blob/master/Revise.Extensions/BinaryWriter.cs).
 
 These are findings from source inspection, not a runtime test of Revise. They are enough to reject an assumption that its skeleton round trip is already production-ready. Reusing the original ZMD files avoids rewriting them for initial equipment, but any Blender importer still needs to reconstruct the attachment points correctly. No Revise changes were made.
 

@@ -4,7 +4,7 @@ What a loadable zone is made of, how the files reference each other, and the
 exact binary layouts, as read from the code that consumes them. Line
 references are to the tree as of 2026-10-02. **The client and server loaders
 are the authority**; the xadet editor (`xadet/rose-online-map-editor/Map
-Editor/Engine/FileManager/Map/*.cs`) and Revise (`Revise/Revise.Files/`) are
+Editor/Engine/FileManager/Map/*.cs`) and Revise ([github.com/jackwakefield/Revise](https://github.com/jackwakefield/Revise), `Revise.Files/`; the local copy was removed on 2026-11-01) are
 second opinions and differ from the game in places, called out below.
 
 Paths below are abbreviated:
