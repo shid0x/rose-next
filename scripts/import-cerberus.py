@@ -116,8 +116,9 @@ The user asked for "a few hellhound whelps at first, small fun trash", then a mi
 The controller spawns all of it when a run starts (cerberus_lair.cpp RUN_SPAWNS) and
 puts the sleeping Cerberus in the crater only when the Warden dies.
 - Hellhound Whelp 2680: Shadow Wolf 338's model at size 130, a red glow, lv146 with
-  modest stats; a hit whelp calls up to five idle whelps within 15 m (AIACT18). Two
-  packs of three. LP04's drop table 376 (Luna materials).
+  modest stats; a hit whelp turns on whoever hit it if it has no target (AIACT15;
+  2026-11-01, a shot from beyond its 15 m seek went unanswered), and calls up to five
+  idle whelps within 15 m (AIACT18). Two packs of three. LP04's drop table 376 (Luna materials).
 - Warden of the Seal 2681: the Lunar Keeper 386's floating ghost at size 360, a cold
   blue glow and the gold star, lv152, HP column 490 (~74k, a quarter of Cerberus).
   Its normal attack is the Keeper's electric bolt (weapon 1079). Its spell is Seal
@@ -806,7 +807,13 @@ def a_call_pack(npc, how_many, metres):     # AIACT18: same-row monsters with no
 
 def build_whelp_ai():
     """Spawned by the server (no created pattern). A short aggro; a hit whelp calls its
-    litter (AIACT18 reaches only whelps with no target yet)."""
+    litter (AIACT18 reaches only whelps with no target yet).
+
+    A whelp hit with no target turns on whoever hit it, then calls the litter onto them.
+    The call alone did nothing then -- AIACT18 sends the litter at the caller's own
+    target and returns when it has none -- and the server never retaliates on its own,
+    so an Artisan shooting from beyond the 15 m seek was never answered (2026-11-01).
+    A whelp that already has a target keeps it, as before."""
     pats = [
         (heb.pat("created"), []),
         (heb.pat("stop"), [
@@ -816,8 +823,11 @@ def build_whelp_ai():
         (heb.pat("attack move"), [
             heb.ev("leash", [heb.c_moved_from_spawn(LEASH)], [heb.a_run_home(3)]),
         ]),
-        (heb.pat("damaged"), [
-            heb.ev("call the litter", [], [a_call_pack(WHELP, 5, WHELP_CALL)]),
+        (heb.pat("damaged"), [           # first match wins; target >= 0 m = has one
+            heb.ev("call the litter", [heb.c_target_at_least(0)],
+                   [a_call_pack(WHELP, 5, WHELP_CALL)]),
+            heb.ev("turn on the shooter", [],
+                   [heb.a_attack_attacker(), a_call_pack(WHELP, 5, WHELP_CALL)]),
         ]),
         (heb.pat("kill"), []),
         (heb.pat("dead"), []),
