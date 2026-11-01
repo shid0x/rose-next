@@ -1848,15 +1848,22 @@ CObjAI::StandDownSpentAttackMotion() {
 
 // Any frame event at all at or after iFrom? A skill release carries its payload on
 // many event kinds (launch, hit, effect, sound), so none of them may be cut.
+// bSkipCastingFx leaves out the casting-effect frames (44/64/74/84, ShowCastingEffect:
+// cosmetic only) -- for a monster's casting repeat, which has already played them.
 static bool
-HasFrameEventFrom(const tagMOTION* pMotion, int iFrom) {
+HasFrameEventFrom(const tagMOTION* pMotion, int iFrom, bool bSkipCastingFx = false) {
     if (!pMotion || !pMotion->m_pFrameEvent) {
         return false;
     }
     for (int iL = iFrom < 0 ? 0 : iFrom; iL < pMotion->m_wTotalFrame; iL++) {
-        if (pMotion->m_pFrameEvent[iL]) {
-            return true;
+        const short nEvent = pMotion->m_pFrameEvent[iL];
+        if (!nEvent) {
+            continue;
         }
+        if (bSkipCastingFx && (nEvent == 44 || nEvent == 64 || nEvent == 74 || nEvent == 84)) {
+            continue;
+        }
+        return true;
     }
     return false;
 }
@@ -1877,6 +1884,7 @@ CObjAI::EndSpentSkillMotion(bool bCommandQueued) {
         return false;
     }
     const char* szWhat;
+    bool bSkipCastingFx = false;
     if (m_nDoingSkillIDX && (m_wState == CS_NEXT_STOP2 || m_wState == CS_NEXT_STOP)) {
         // CS_NEXT_STOP is any order applied mid-motion; only an attack counts. A cast
         // applied that way leaves the same state (fairy 687, 21:00:33: cut at frame
@@ -1888,10 +1896,19 @@ CObjAI::EndSpentSkillMotion(bool bCommandQueued) {
         szWhat = "skill action";
     } else if (m_wState == CS_CASTING && m_iWaitLoopCnt > 0 && bCanActionActiveSkill()) {
         szWhat = "casting repeat";
+        // A monster's repeat is its casting clip again (GetANI_CastingRepeat), so its
+        // casting-effect frames have played once already. Waiting for them held the
+        // repeat until past its last one: the Revived Quarantine Officers' Berserk was
+        // cut at frame 10 of 28 every time (charge-up at 9), Tornado at 23 of 33 (64 at
+        // 11 and 22) -- a third of the wind-up replayed with its effect, "the animation
+        // twice" (2026-11-01). Cut on the start instead: the restart blends in at
+        // (t/500 ms)^2, so a cut within ~150 ms barely leaves the end-of-cast pose.
+        // Monsters only: a player's repeat is its own looping clip.
+        bSkipCastingFx = this->IsA(OBJ_MOB);
     } else {
         return false;
     }
-    if (HasFrameEventFrom(m_pCurMOTION, m_iCurMotionFRAME)) {
+    if (HasFrameEventFrom(m_pCurMOTION, m_iCurMotionFRAME, bSkipCastingFx)) {
         return false;
     }
 
