@@ -69,18 +69,19 @@ STBDATA::set_value(size_t row_idx, size_t col_idx, std::string_view val) {
     return true;
 }
 
+/// The table's own string, not a copy: valid as long as the table (they are loaded
+/// once and never reloaded). This used to return a fresh `new char[]` on every
+/// call, and none of the ~200 callers (NPC_NAME, ITEM_NAME, ZONE_NAME, ...) ever
+/// freed it -- monster nameplates, zone names and NPC quest icons leaked on every
+/// lookup, client and server alike (UMDH, 2026-11-02). No caller writes through it
+/// or frees it; keep it that way. `char*` only because the legacy callers expect it.
 char*
 STBDATA::get_cstr(size_t row_idx, size_t col_idx) {
     const std::string& val = this->value(row_idx, col_idx);
     if (val.empty()) {
         return nullptr;
     }
-
-    size_t size = val.size();
-    char* cstr = new char[size + 1];
-    std::memcpy(cstr, val.c_str(), size);
-    cstr[size] = '\0';
-    return cstr;
+    return const_cast<char*>(val.c_str());
 }
 
 int16_t
