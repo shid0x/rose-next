@@ -136,7 +136,12 @@ row's col 16.
   instance can reach its controller NPC anywhere on the server.
 - **Every monster or skill id an AI names must exist here.** A `Change_CHAR` (action 9)
   to a blank row crashed the client; a cast of a blank skill played a cast motion for
-  nothing. Run `audit-ai-monster-refs.py` and `audit-ai-skill-refs.py` after writing AI.
+  nothing. Run `audit-ai-monster-refs.py` and `audit-ai-skill-refs.py` after writing AI,
+  **with `--dry-run` first: without a flag they fix what they flag**. The skill audit
+  compares an imported AI file (`kh_`, `kak_`, `ks_`, `or_`... prefixes) against its source
+  dump and strips a cast whose skill is a different type there -- so a new row of ours at
+  an id the dump has blank reads as a MISMATCH and its casts are deleted (the Quarantine
+  Officers' Tornado, 2026-11-01). Add such rows to the audit's `DELIBERATE` before running it.
 - Call-for-help (action 18) wakes only same-id monsters with no target, within the
   given metres.
 

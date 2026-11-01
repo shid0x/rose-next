@@ -1218,6 +1218,16 @@ the `AICOND_07` gating its event — the same way the source data disables its o
 dead events — via `AIP_DISABLE_SKILLS` in the importer, so a re-run cannot restore
 it. One byte to put back.
 
+**Back on (2026-11-01), `scripts/fix-quarantine-officer-skills.py`.** The missing
+presentation was the release clip: the plain swing filled in above carries only event
+21, and an area payload drains on 24/34/25/35/26/10/20/56/66, so nothing showed the
+hit. And 1090 is the *player's* rank 10 -- power 501, 14 m -- about 1,000-1,250 a cast
+at these levels. Both officers now cast on slots 8/9, which hold the player's own
+Tornado clips retargeted onto their skeleton, and a monster row of their own (7202: 7 m,
+power 200) at 4% of hits taken, gated on range. Their Berserk keeps slots 6/7, which
+now hold the player's Berserk clips the same way (it had shown its buff only at the end
+of the plain swing). Re-run that script after the importer's AI or CHR stages.
+
 Worth noting what makes it the odd one out: 1090 is one of only **two re-pointed
 skills**, meaning one of *our player* skills handed to a monster rather than a row
 ported from Jrose. Its sibling 361 Berserk is a self-buff and presents its own

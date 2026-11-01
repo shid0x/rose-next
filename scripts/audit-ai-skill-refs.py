@@ -209,7 +209,8 @@ PREFIX_DUMP = {"kh_": "Jrose", "kak_": "Jrose", "ks_": "Jrose", "or_": "RoseZA",
 # CAST_REMAP, which rebuilds those AI files with the casts re-pointed at our tail.
 DELIBERATE = {"Jrose": {361, 1090, 3613, 3616, 3627, 3686, 3711, 3771, 3779, 3780, 3781,
                         7015, 7016, 7017, 7018,
-                        7201},          # import-amphisbaena.py: Jrose's 3096 (a silence)
+                        7201,           # import-amphisbaena.py: Jrose's 3096 (a silence)
+                        7202},          # fix-quarantine-officer-skills.py: the officers' own Tornado
               "RoseZA": set()}
 
 TARGET_LABEL = {0: "cond-char", 1: "cur-target", 2: "self"}

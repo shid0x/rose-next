@@ -414,6 +414,14 @@ SKILL_REPOINT = {716: 361, 846: 1090}
 #   present a hit on a target it was never authored to reach. Left as a known
 #   unknown rather than chased -- removing it costs one AI action on one monster.
 #
+#   Explained and brought back 2026-11-01 by fix-quarantine-officer-skills.py: the
+#   release clip was a plain swing (event 21 only: nothing presents an area hit), and
+#   1090 is the player's power 501 / 14 m. That script gives both officers the
+#   player's own Tornado clips on slots 8/9 (retargeted) and a monster row of their
+#   own (7202), and the player's Berserk clips on 6/7. It stays disabled HERE on
+#   purpose -- the event this stage writes still names 1090 on slots 6/7 -- so re-run
+#   that script after this stage (and after a CHR stage, which puts back 6/7).
+#
 # NOT disabled, for contrast: 3613 Karkia Stun on Murilo (2715/2696) was also never
 # seen in game, but that one is fully explained without a defect -- 35% damaged-rate
 # x a 10% roll x "target has no harmful status" is ~3.5% of hits taken, and its
