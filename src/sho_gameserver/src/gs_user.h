@@ -141,6 +141,12 @@ public:
     short m_nRelayZONE = 0;
     tPOINTF m_RelayPOS = {0.f, 0.f};
 
+    /// GetTickCount() before which no monster can stun this player again: the stun's
+    /// end plus server.toml [game] stun_immunity_ms (CObjCHAR::Skill_ApplyIngSTATUS).
+    DWORD m_dwStunImmuneUNTIL = 0;
+    /// GetTickCount() at which this player's stun ends, 0 = none (CObjCHAR::Proc_IngSTATUS).
+    DWORD m_dwStunENDS = 0;
+
     DWORD m_dwCoolTIME[MAX_USEITEM_COOLTIME_TYPE];
 
 public:

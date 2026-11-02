@@ -63,6 +63,7 @@
 #include "../Game.h"
 #include "../Bullet.h"
 #include "../CSkyDome.h"
+#include "../stunfeedback.h"
 #include "../util/Localizing.h"
 #include <resource.h>
 
@@ -413,6 +414,7 @@ CGame::Exit() {
             g_GameDATA.m_hFONT[i] = NULL;
         }
     }
+    CStunFeedback::Instance().UnloadFont();
 
     //----------------------------------------------------------------------------------------
     /// clear music resource
@@ -799,6 +801,8 @@ CGame::MakeFont() {
         1,
         D3DCOLOR_ARGB(255, 255, 255, 255),
         D3DCOLOR_ARGB(255, 0, 0, 0));
+
+    CStunFeedback::Instance().LoadFont(szFont, iCharSet);
 }
 
 void

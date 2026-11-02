@@ -40,13 +40,17 @@ struct GameConfig {
     uint32_t base_move_speed;
     uint32_t base_hit_rate;
     uint32_t base_crit;
+    /// After a monster's stun ends, how long a player cannot be stunned by a monster
+    /// again (CObjCHAR::Skill_ApplyIngSTATUS). 0 turns the rule off.
+    uint32_t stun_immunity_ms;
 
     GameConfig():
         base_attack_power(0),
         base_attack_speed(0),
         base_move_speed(0),
         base_hit_rate(0),
-        base_crit(0) {}
+        base_crit(0),
+        stun_immunity_ms(10000) {}
 };
 
 } // namespace Common

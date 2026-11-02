@@ -14,6 +14,7 @@
 #include "Dlgs/ChattingDlg.h"
 #include "../System/CGame.h"
 #include "CTDrawImpl.h"
+#include "../stunfeedback.h"
 
 int CEndurancePack::m_iDrawIconCnt = 0;
 std::map<int, int> CEndurancePack::m_StateFlagTable;
@@ -785,6 +786,9 @@ CEndurancePack::DeleteEntityByStateType(int iStateType) {
 
         m_dwStateFlag &= ~c_dwIngFLAG[iStateType]; /// 상태 플래그 리셋..
 
+        if (iStateType == ING_FAINTING && m_pObjCHAR == g_pAVATAR)
+            CStunFeedback::Instance().OnAvatarStunEnded();
+
         {
             switch (iStateType) {
                 case ING_INC_MOV_SPD:
@@ -1107,6 +1111,8 @@ CEnduranceSkill::CreateEnduranceEntity(CObjCHAR* pObjCHAR,
 
         /// 기절
         case ING_FAINTING: {
+            if (m_pObjCHAR == g_pAVATAR)
+                CStunFeedback::Instance().OnAvatarStunned(); // before the stop drops the fight
             m_pObjCHAR->CancelInterruptedCombatSwingPresentation("faint");
 
             /// 이미 캐스팅이 시작되었고, 결과를 받지 못ㅎㅆ다면.. 캐스팅 취소....

@@ -678,6 +678,8 @@ class Fight:
         self.p_summon_slot = None  # which summon a summon cast refills
         self.last_cast = {}       # skill row -> accept time
         self.last_any_cast = -10 ** 9
+        self.p_stun_immune_until = -10 ** 9  # no monster stun lands on the player before
+        self.p_stun_ends = None   # a player's stun ends on its duration (Proc_IngSTATUS)
         # sim.play: a typical player reacts late and refreshes buffs/debuffs late
         self.play = sim.play
         self.react_ms = 0         # this cast's extra reaction delay (drawn per cast)
@@ -952,6 +954,12 @@ class Fight:
                     rec["state_tries"] += 1
                 continue
             rec["state_tries"] += 1
+            # Skill_ApplyIngSTATUS: a monster's stun does not land on a player within
+            # server.toml stun_immunity_ms of the last one ending
+            stun_guard = (target is self.p and caster is not self.p
+                          and gd.state_type(stb_row) == _FAINT and gd.server.stun_immunity_ms)
+            if stun_guard and self.t < self.p_stun_immune_until:
+                continue
             if sk.success:
                 if gd.state_harmful(stb_row):
                     if not F.harmful_state_lands(self.rng, sk.success, caster.level,
@@ -963,6 +971,10 @@ class Fight:
             if not target.st.can_apply(gd, stb_row, value):
                 continue
             ing = target.st.apply(gd, stb_row, sk.duration, value, sk.row)
+            if ing == _FAINT and target is self.p:
+                self.p_stun_ends = self.t + sk.duration * 1000
+                if stun_guard:
+                    self.p_stun_immune_until = self.p_stun_ends + gd.server.stun_immunity_ms
             if ing == _TAUNT and mob is not None:
                 # Skill_ApplyIngSTATUS: a landed Taunt turns the target on its caster
                 mob.taunter = caster
@@ -1200,6 +1212,14 @@ class Fight:
                 lg.result = "timeout"
                 break
             self.t += TICK_MS
+            if self.p_stun_ends is not None:
+                # CObjCHAR::Proc_IngSTATUS: a player's stun ends when its duration is up,
+                # not on the status tick after
+                if not self.p.st.is_set(_FAINT):
+                    self.p_stun_ends = None
+                elif self.t >= self.p_stun_ends:
+                    self.p_stun_ends = None
+                    self.p.st.clear(_FAINT)
             if self.p.st.ticks:
                 for ing, tk in self.p.st.ticks.items():
                     if tk is not None:

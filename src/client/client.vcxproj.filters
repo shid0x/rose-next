@@ -524,6 +524,9 @@
     <ClCompile Include="groundtelegraph.cpp">
       <Filter>Source Files\OBJECT</Filter>
     </ClCompile>
+    <ClCompile Include="stunfeedback.cpp">
+      <Filter>Source Files\OBJECT</Filter>
+    </ClCompile>
     <ClCompile Include="zoneobjects.cpp">
       <Filter>Source Files\OBJECT</Filter>
     </ClCompile>
@@ -1709,6 +1712,9 @@
       <Filter>Source Files\OBJECT</Filter>
     </ClInclude>
     <ClInclude Include="groundtelegraph.h">
+      <Filter>Source Files\OBJECT</Filter>
+    </ClInclude>
+    <ClInclude Include="stunfeedback.h">
       <Filter>Source Files\OBJECT</Filter>
     </ClInclude>
     <ClInclude Include="zoneobjects.h">

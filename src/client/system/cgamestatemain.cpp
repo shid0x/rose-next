@@ -9,6 +9,7 @@
 
 #include "bullet.h"
 #include "BoneEffectBudget.h"
+#include "stunfeedback.h"
 #include "ProcessMemory.h"
 #include "rmlui/RoseRmlUi.h"
 #include "ccamera.h"
@@ -351,6 +352,8 @@ CGameStateMain::Render_GameMENU() {
     /// SFX
     CSFXManager::GetSingleton().Draw();
     // CTutorialEventManager::GetSingleton().Draw();
+
+    CStunFeedback::Instance().Draw();
     ::endSprite();
 
     /// Streaming spike diagnostic. OFF by default -- enable with

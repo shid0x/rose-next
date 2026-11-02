@@ -144,6 +144,11 @@ public:
         this->get_uint32("game", "base_attack_speed", this->game.base_attack_speed);
         this->get_uint32("game", "base_hit", this->game.base_hit_rate);
         this->get_uint32("game", "base_crit", this->game.base_crit);
+        // get_uint32 writes 0 for a missing key; this one keeps its default instead.
+        uint32_t stun_immunity_ms = 0;
+        if (this->get_uint32("game", "stun_immunity_ms", stun_immunity_ms)) {
+            this->game.stun_immunity_ms = stun_immunity_ms;
+        }
 
         return true;
     }

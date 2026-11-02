@@ -2048,6 +2048,25 @@ CObjCHAR::Skill_ApplyIngSTATUS(short nSkillIDX, CObjCHAR* pSpeller, int iAdjustI
             continue;
         }
 
+        // A monster's stun does not land on a player who has just come out of one. The
+        // boss stuns (Kera / Golem Stun Blast, Stun Blast, Hellfire Stomp) have no success
+        // roll and cover 12-30 m, and a monster's casts come from its hit reactions, so with
+        // a group hitting the boss they came often enough to chain one stun into the next.
+        // The window caps a player's stunned time whatever the group size. Players'
+        // stuns (PvP) and their summons' are not affected.
+        classUSER* pStunUSER = NULL;
+        if (ING_FAINTING == STATE_TYPE(nIngSTB) && this->IsUSER() && !pSpeller->IsUSER()
+            && !pSpeller->GetCallerUsrIDX() && server_config().game.stun_immunity_ms) {
+            pStunUSER = static_cast<classUSER*>(this);
+            if ((int)(pStunUSER->m_dwStunImmuneUNTIL - ::GetTickCount()) > 0) {
+                LogString(LOG_DEBUG_,
+                    "SkillStatusTrace stun immune: caster %d target %d skill %d, %d ms left\n",
+                    pSpeller->Get_INDEX(), this->Get_INDEX(), nSkillIDX,
+                    (int)(pStunUSER->m_dwStunImmuneUNTIL - ::GetTickCount()));
+                continue;
+            }
+        }
+
         if (SKILL_SUCCESS_RATIO(nSkillIDX)) {
             if (STATE_PRIFITS_LOSSES(nIngSTB)) {
                 if (SKILL_SUCCESS_RATIO(nSkillIDX)
@@ -2094,6 +2113,18 @@ CObjCHAR::Skill_ApplyIngSTATUS(short nSkillIDX, CObjCHAR* pSpeller, int iAdjustI
             // 명령을 STOP으로 바꿀꺼... 기절, 수면 걸리면 정지 명령 설정...
             this->Del_ActiveSKILL();
             CObjAI::SetCMD_STOP();
+        }
+        if (ING_FAINTING == STATE_TYPE(nIngSTB) && this->IsUSER()) {
+            // A player's stun ends when its duration is up (Proc_IngSTATUS), not on the
+            // once-a-second status tick after the count runs out, up to a second later.
+            classUSER* pUSER = static_cast<classUSER*>(this);
+            pUSER->m_dwStunENDS = ::GetTickCount() + SKILL_DURATION(nSkillIDX) * 1000;
+            if (!pUSER->m_dwStunENDS)
+                pUSER->m_dwStunENDS = 1; // 0 means none
+            if (pStunUSER) {
+                pStunUSER->m_dwStunImmuneUNTIL =
+                    pUSER->m_dwStunENDS + server_config().game.stun_immunity_ms;
+            }
         }
         if (bTraceStatus) {
             LogString(LOG_DEBUG_,
@@ -2770,6 +2801,20 @@ CObjCHAR::Proc_IngSTATUS(DWORD dwPassTime) {
     }
 
     DWORD dwClearedFLAGS = this->m_IngSTATUS.Proc(this, dwPassTime);
+
+    // A player's stun ends on its duration, not on the next status tick: the tick came up
+    // to a second later, and the client's STUNNED bar ran out before the player could act.
+    if (user && user->m_dwStunENDS) {
+        const int iPastMs = (int)(::GetTickCount() - user->m_dwStunENDS);
+        if (!this->m_IngSTATUS.IsSET(FLAG_ING_FAINTING) || iPastMs > 2000) {
+            user->m_dwStunENDS = 0; // ended another way, or this faint is not that stun (death)
+        } else if (iPastMs >= 0) {
+            user->m_dwStunENDS = 0;
+            this->m_IngSTATUS.ClearSTATUS(ING_FAINTING);
+            dwClearedFLAGS |= FLAG_ING_FAINTING;
+        }
+    }
+
     if (dwClearedFLAGS) {
         const DWORD dwSpeedFLAGS =
             FLAG_ING_INC_MOV_SPEED | FLAG_ING_DEC_MOV_SPEED | FLAG_ING_INC_ATK_SPEED

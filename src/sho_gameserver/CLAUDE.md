@@ -89,6 +89,32 @@ could not attack (tester report: castle gear vs a player revived in view). The s
 as a miss now (damage 0). The client has no code for this status: no icon says the target is
 protected.
 
+### Monster Stuns Do Not Chain On A Player (2026-11-02)
+
+Players reported bosses stunning almost nonstop, worst in groups. Two causes in the data:
+the boss stuns (Kera Stun Blast 3595, Golem Stun Blast 3582, Stun Blast 3611, Hellfire Stomp
+7019) have success ratio 0, which `Skill_ApplyIngSTATUS` reads as "no roll, always lands",
+on a 12-30 m circle around the boss; and a monster casts from its damaged pattern, which runs
+on a share of every hit it takes, so five players hitting the boss make it cast about five
+times as often. A stun could then land the moment the last one ended. Now a monster's stun
+does not land on a player until `server.toml [game] stun_immunity_ms` (default 10000; 0 =
+off) after the previous one ended (`classUSER::m_dwStunImmuneUNTIL`, set when a stun lands
+to its end + the window). The damage still lands, only the status is skipped
+(`SkillStatusTrace stun immune` in the debug log). That caps a player's stunned time at
+D / (D + window) whatever the group size: 23% for a 3 s stun, 33% for a 5 s one. PvP stuns
+and a player's summons are not held back.
+
+**A player's stun ends exactly on its duration** (any caster, PvP included). `StatusEffects::
+Proc` clears statuses on a once-a-second tick, on the tick after the count runs out, so a
+stun used to last its duration plus 0-1 s, and the client's STUNNED bar (which runs the
+duration from the packet's arrival) ran out before the player could act (user, 2026-11-02).
+`Skill_ApplyIngSTATUS` stamps `classUSER::m_dwStunENDS` and `Proc_IngSTATUS` clears the
+stun that frame (zone tick, 100 ms) and sends it with the tick's other clears; a faint
+whose stamp is more than 2 s past (the death faint `Dead()` sets) is left to the old rule.
+Monsters' stuns still end on the tick. `scripts/combatsim` mirrors both rules (solo, 220
+Champion: Moss Golem 18% -> 13% of the fight stunned, Executor Kera 14% -> 7%). The client
+shows the stun and resumes the attack after it (`src/client/stunfeedback.*`).
+
 ### Combat Presentation Packet Rules
 
 - `DamageEvent` fields: `event_id`, `defender_seq`, `attacker_id`, `defender_id`, `raw_damage`, `damage_value`, `hp_after`, `presentation_kind`, `lethal`, `skill_id`, `source_attacker_id`. The last two (0 = unknown) are **display metadata for the client damage meter only** — neither server combat logic nor client presentation may branch on them; presentation keys on `attacker_id`.

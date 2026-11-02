@@ -216,6 +216,33 @@ kept its heal-over-time icon (`CEnduranceItem` never ends by itself) for good. I
 now. `Recv_gsv_CLEAR_STATUS` reads no more HP/MP values than the packet carries and applies HP
 through `Reconcile_HP`; `Recv_tag_ADJ_STATUS` skips both potion types (it compared a row to a type).
 
+## Stun Feedback (2026-11-02)
+
+`CStunFeedback` (`stunfeedback.*`), for the local player only. Players could not see they were
+stunned in a crowd (the status effect is a small particle at the feet) and had to re-attack after
+every stun. Two jobs:
+
+- **Alert.** "STUNNED" in amber (its own 32 px outline font, loaded with the game fonts in
+  `CGame::MakeFont`) pops in above the middle of the screen, with a bar that runs down for the
+  stun's duration. `Draw` (end of the HUD sprite block in `Render_GameMENU`, so classic and UI2
+  both show it) reads the avatar's `ING_FAINTING` entity itself, so whatever ends the status ends
+  the alert. The bar runs from the status's start, which `ApplyEffectOfSkill` backdates to the
+  packet's arrival, and the server ends a player's stun exactly on its duration (it used to
+  end on its next status tick, up to a second late, and the bar ran out first). The pop-in
+  keys off when the alert first shows, not that backdated start.
+- **Back to the fight.** A stun stops the avatar on both sides (`SetCMD_STOP`), which drops the
+  attack. `CEnduranceSkill::CreateEnduranceEntity` calls `OnAvatarStunned` *before* that stop and
+  it records the monster the avatar (or its mount) was attacking, walking to or casting at; a
+  stun landing on a stun keeps the first record. `CEndurancePack::DeleteEntityByStateType` calls
+  `OnAvatarStunEnded`, which sends `CLI_ATTACK` like the attack key would -- the selected monster
+  if it is a live enemy (the player may have picked another during the stun), else the one
+  recorded -- unless the avatar is dead or pending death, still asleep, or no longer in
+  `CMD_STOP` (a new order stands). Log: `CombatTrace stun ended, attack resumed`. Monsters only:
+  PvP targets are not resumed.
+
+The server keeps stuns from chaining (`stun_immunity_ms`, see the gameserver CLAUDE.md "Monster
+Stuns Do Not Chain On A Player").
+
 ## Bone-Attached Particle Budgeting
 
 Character model bone effects created by `CCharMODEL::CreateBoneEFFECT` are passive cosmetic effects and are registered with `CBoneEffectBudget` (`BoneEffectBudget.cpp/h`) using owner, NPC id, bone index, and effect hash. So are the ZSC dummy-point effects of equipped parts (`CObjCHAR::New_ModelDummyEFFECT`: imported backs, moving weapon pieces). Registration is intentionally narrow: do not add skill particles, hit effects, bullets, terrain/weather effects, item-table weapon effects, or general `g_pEffectLIST` effects to `BoneFx`.

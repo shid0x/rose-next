@@ -97,6 +97,7 @@ class GameServerConfig:
         self.path = path
         self.base_attack_power = self.base_attack_speed = self.base_hit = 0
         self.base_move_speed = 0
+        self.stun_immunity_ms = 10000
         if path and os.path.exists(path):
             self._load(path)
 
@@ -118,6 +119,8 @@ class GameServerConfig:
         self.base_attack_speed = int(g.get("base_attack_speed", 0))
         self.base_hit = int(g.get("base_hit", 0))           # -> game.base_hit_rate
         self.base_move_speed = int(g.get("base_move_speed", 0))
+        # a missing key keeps the server's default (server_config.h)
+        self.stun_immunity_ms = int(g.get("stun_immunity_ms", 10000))
 
 
 def default_server_toml():

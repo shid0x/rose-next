@@ -35,6 +35,7 @@ base_attack_power = 0
 base_attack_speed = 0
 base_hit = 0
 base_crit = 0
+stun_immunity_ms = 10000  # after a monster's stun ends, no monster can stun that player for this long (0 = off)
 # Height rules (doc/pathfinding-and-z-plan.md, Phase 3). Every key is optional: these are the
 # defaults. Needs the zone walk grids (scripts/nav-bake.py); a zone without one stays 2D.
 # GMs can change them live with /nav set.
