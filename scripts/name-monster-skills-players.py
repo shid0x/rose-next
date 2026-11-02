@@ -81,7 +81,7 @@ NAMES = {
     3581: "Moss Carapace", 3585: "Prisoner's Rage",
     # -- auras that weaken what stands near the caster, and self sacrifices
     3001: "Aura of Weakness", 3003: "Aura of Confusion", 3004: "Aura of Frailty",
-    3557: "Deep Slumber", 3599: "Reckless Abandon",
+    3557: "Torpor", 3599: "Reckless Abandon",
     # -- debuffs
     2941: "Enfeeble", 2942: "Sluggish Curse", 2943: "Blinding Haze", 2944: "Armor Break",
     2945: "Hex of Frailty", 2948: "Ensnare", 2953: "Moon Glare", 2954: "Rend Armor",
