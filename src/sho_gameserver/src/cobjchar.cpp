@@ -1623,6 +1623,14 @@ CObjCHAR::Apply_DAMAGE(CObjCHAR* pTarget,
     uniDAMAGE& sDamage,
     CObjITEM** ppOutITEM,
     bool bDropItem) {
+    // Dealing damage ends the attacker's own revive protection (30 s after a revive in a
+    // PvP zone, Recv_cli_REVIVE_REQ). This lived in Give_DAMAGE only, which normal swings
+    // (Attack_START) and most skills never call, so a revived player could fight while
+    // nobody could hurt them.
+    if (this->m_IngSTATUS.IsSET(FLAG_ING_REVIVE)) {
+        this->m_IngSTATUS.ExpireSTATUS(ING_REVIVE);
+    }
+
     if (pTarget->m_IngSTATUS.IsSET(FLAG_ING_REVIVE)) {
         // 타겟이 죽었다가 금방 부활한 상태면... 뎀지 안들어 오게...
         return SEND_DAMAGE_TO_NULL;
@@ -1823,10 +1831,6 @@ CObjCHAR::Give_DAMAGE(CObjCHAR* pTarget,
     bool bDropItem,
     Packets::DamagePresentationKind kind,
     short nSkillIDX) {
-    if (this->m_IngSTATUS.IsSET(FLAG_ING_REVIVE)) {
-        this->m_IngSTATUS.ExpireSTATUS(ING_REVIVE);
-    }
-
     CObjITEM* pOutITEM = NULL;
 
     switch (Apply_DAMAGE(pTarget, sDamage, &pOutITEM, bDropItem)) {
@@ -2605,9 +2609,14 @@ CObjCHAR::Attack_START(CObjCHAR* pTarget) {
     if (pOutITEM) {
         pOutITEM->SetACTIVE();
     }
-    if (applyResult != SEND_DAMAGE_TO_NULL) {
-        this->Send_combat_swing(pTarget, sDamage);
+    // A target under revive protection takes nothing: send the swing as a miss. The
+    // client starts an attack swing only on a CombatSwing, so sending none left the
+    // attacker standing beside the target for the whole protection, looking unable to
+    // attack (castle gear vs a player revived in view, 2026-11-02).
+    if (applyResult == SEND_DAMAGE_TO_NULL) {
+        sDamage.m_wDamage = 0;
     }
+    this->Send_combat_swing(pTarget, sDamage);
 
     // 공격자 무기 수명 감소...
     this->Dec_WeaponLife();

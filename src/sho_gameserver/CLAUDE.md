@@ -76,6 +76,19 @@ Live combat is server-authoritative. The client presents server damage events; i
 
 `ZONE_PVP_STATE` (LIST_ZONE col 18): 0 none, 1 `AllExceptClan` (Junon/Luna Clan Field, Colosseum), 2 `AllExceptParty`, 3 `All`, 11 clan house (safe). In a clan field the zone's entry trigger runs `REWD_020` → `Set_TeamNoFromClanIDX()` (team = `100 + ClanID`), and the **client** decides "enemy" from that team number alone (it has no `Is_ALLIED` override) — so it simply never sends `CLI_ATTACK` / `CLI_TARGET_SKILL` at a clan mate. That was the *only* enforcement: `CObjAVT::Is_ALLIED`'s clan branch tested `GetGUILD()`, an un-overridden stub that always returns NULL (`CGuild` is a bare forward declaration), so server-side a clan mate was an enemy. Invisible for targeted attacks, but an AOE has no client-side target to filter — victims come from a purely spatial sweep (`FindFirstCHAR`) gated only by `Skill_IsPassFilter` → `!Is_ALLIED` — so AOEs hit clan mates (alpha test #2, 2026-09-22). `Is_ALLIED` now compares `GetClanID()` and falls back to the team-number compare, so the server agrees with the client for clanless players and GM team overrides too; `SKILL_TARGET_FILTER_GUILD` uses the clan id as well (it could never pass before), and `CObjAI::can_attack` refuses a user attacking an allied user, so a crafted packet cannot do what the client UI refuses. Do not add a virtual `GetClanID` to `CObjCHAR` for this — vtable change in the widest header; cast to `CObjAVT` after an `IsUSER()` test.
 
+### Revive Protection In PvP Zones (2026-11-02)
+
+A player revived in a PvP zone carries `FLAG_ING_REVIVE` (LIST_STATUS row 57, 30 one-second
+ticks, `Recv_cli_REVIVE_REQ`): `Apply_DAMAGE` turns every hit on them into
+`SEND_DAMAGE_TO_NULL`, and dealing damage ends it. That second rule lived in `Give_DAMAGE`,
+which normal swings (`Attack_START`) and the area / single-target skill loops never call, so a
+revived player could swing at others for 30 s while nobody could hurt them. It is at the top
+of `Apply_DAMAGE` now. `Attack_START` used to send no `CombatSwing` for a protected target,
+and the client starts a swing only on one, so the attacker stood beside its target as if it
+could not attack (tester report: castle gear vs a player revived in view). The swing goes out
+as a miss now (damage 0). The client has no code for this status: no icon says the target is
+protected.
+
 ### Combat Presentation Packet Rules
 
 - `DamageEvent` fields: `event_id`, `defender_seq`, `attacker_id`, `defender_id`, `raw_damage`, `damage_value`, `hp_after`, `presentation_kind`, `lethal`, `skill_id`, `source_attacker_id`. The last two (0 = unknown) are **display metadata for the client damage meter only** — neither server combat logic nor client presentation may branch on them; presentation keys on `attacker_id`.
