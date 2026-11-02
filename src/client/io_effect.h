@@ -248,6 +248,9 @@ public:
     void SetPOSITION(D3DVECTOR& Position) {
         ::setPosition(m_hRootNODEs[0], Position.x, Position.y, Position.z);
     }
+    void SetROTATION(D3DXQUATERNION& Rotation) {
+        ::setQuaternion(m_hRootNODEs[0], Rotation.w, Rotation.x, Rotation.y, Rotation.z);
+    }
     int GetPOSITION(D3DVECTOR* Position) {
         return ::getPosition(m_hRootNODEs[0], (float*)Position);
     }

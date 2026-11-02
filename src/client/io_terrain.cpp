@@ -1466,6 +1466,7 @@ CMAP_PATCH::InsertToScene(void) {
                 pEftNode->DATA.m_pEffect = g_pEffectLIST->Add_EFFECT(pEftNode->DATA.m_HashKEY);
                 if (pEftNode->DATA.m_pEffect) {
                     pEftNode->DATA.m_pEffect->SetPOSITION(pEftNode->DATA.m_Positon);
+                    pEftNode->DATA.m_pEffect->SetROTATION(pEftNode->DATA.m_Rotation);
                     pEftNode->DATA.m_pEffect->InsertToScene();
                 } else {
                     assert(0 && "Insert to scene a terrain effect is failed");
@@ -1768,7 +1769,7 @@ CMAP::~CMAP() {
 }
 
 void
-CMAP::AddEffect(D3DVECTOR& Position, char* szEffectFile) {
+CMAP::AddEffect(D3DVECTOR& Position, D3DXQUATERNION& Rotation, char* szEffectFile) {
     short nPatchX, nPatchY;
 
     nPatchX = (short)(Position.x - (m_nZoneMapXIDX * nGRID_SIZE * GRID_COUNT_PER_MAP_AXIS))
@@ -1782,6 +1783,7 @@ CMAP::AddEffect(D3DVECTOR& Position, char* szEffectFile) {
     sMapEFT.m_HashKEY = g_pEffectLIST->Add_EffectFILE(szEffectFile);
     sMapEFT.m_pEffect = NULL;
     sMapEFT.m_Positon = Position;
+    sMapEFT.m_Rotation = Rotation;
 
     m_PATCH[nPatchY][nPatchX].m_EffectLIST.AllocNAppend(sMapEFT);
 }
@@ -2188,7 +2190,7 @@ CMAP::ReadObjINFO(CFileSystem* pFileSystem, long lOffset, int iLumpType) {
                 pFileSystem->Read(szName, sizeof(char) * cNameLen); // sound file name ..
                 szName[cNameLen] = 0;
 
-                this->AddEffect(Position, szName);
+                this->AddEffect(Position, Rotate, szName);
                 continue;
             }
             case LUMP_TERRAIN_SOUND: {

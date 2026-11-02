@@ -43,6 +43,7 @@ struct tagMAPEFT {
     t_HASHKEY m_HashKEY;
     CEffect* m_pEffect;
     D3DXVECTOR3 m_Positon;
+    D3DXQUATERNION m_Rotation; ///< the IFO placement's; mappers turn waterfalls and the like
 };
 
 //----------------------------------------------------------------------------------------------------
@@ -281,7 +282,7 @@ public:
 
     void
     AddSound(D3DVECTOR& Position, char* szSoundFile, unsigned int uiInterval, unsigned uiRange);
-    void AddEffect(D3DVECTOR& Position, char* szEffectFile);
+    void AddEffect(D3DVECTOR& Position, D3DXQUATERNION& Rotation, char* szEffectFile);
 
     CMAP_PATCH* GetPatchFromWorld(float fWorldX, float fWorldY);
     void CompareSizePath2ObjAll();
