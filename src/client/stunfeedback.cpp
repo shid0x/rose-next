@@ -56,7 +56,8 @@ CStunFeedback::Instance() {
 }
 
 CStunFeedback::CStunFeedback():
-    m_iFightServerIDX(0), m_hFont(0), m_pShownStun(NULL), m_dwShownAt(0) {}
+    m_bWasFighting(false), m_iFightServerIDX(0), m_hFont(0), m_pShownStun(NULL),
+    m_dwShownAt(0) {}
 
 void
 CStunFeedback::OnAvatarStunned() {
@@ -67,44 +68,66 @@ CStunFeedback::OnAvatarStunned() {
     if (g_pAVATAR->m_EndurancePack.GetStateFlag() & FLAG_ING_FAINTING)
         return;
 
-    m_iFightServerIDX = 0;
     CObjCHAR* pFighter = Fighter();
+    const int iServerIDX = pFighter->Get_TargetIDX();
+    const bool bOnMob = AttackableMob(g_pObjMGR->Get_ClientObjectIndex(iServerIDX)) != NULL;
+    m_iFightServerIDX = bOnMob ? iServerIDX : 0;
     switch (pFighter->Get_COMMAND()) {
         case CMD_ATTACK: // swinging
         case CMD_MOVE: // walking to swing: a walk with a monster target is an attack walk
-        case CMD_SKILL2OBJ: // casting at it
+            m_bWasFighting = bOnMob;
+            break;
+        case CMD_SKILL2OBJ:
+        case CMD_SKILL2SELF:
+        case CMD_SKILL2POS:
+            // A skill used mid-attack (a buff, a ground skill) saves the attack to put back
+            // after it (CommandToRestoreAfterSkill); a skill cast at a monster is a fight too.
+            m_bWasFighting = pFighter->Get_BECOMMAND() == CMD_ATTACK
+                || (pFighter->Get_COMMAND() == CMD_SKILL2OBJ && bOnMob);
             break;
         default:
-            return;
+            m_bWasFighting = false;
+            break;
     }
-    const int iServerIDX = pFighter->Get_TargetIDX();
-    if (AttackableMob(g_pObjMGR->Get_ClientObjectIndex(iServerIDX)))
-        m_iFightServerIDX = iServerIDX;
 }
 
 void
 CStunFeedback::OnAvatarStunEnded() {
+    const bool bWasFighting = m_bWasFighting;
     const int iFightServerIDX = m_iFightServerIDX;
+    m_bWasFighting = false;
     m_iFightServerIDX = 0;
-    if (iFightServerIDX == 0 || g_pAVATAR == NULL)
-        return;
-    if (g_pAVATAR->Get_HP() <= 0 || g_pAVATAR->HasPendingAuthoritativeDeath())
-        return;
-    if (g_pAVATAR->m_EndurancePack.GetStateFlag() & FLAG_ING_SLEEP)
-        return;
-    // Anything the player ordered since (a move, a cast) stands.
-    if (Fighter()->Get_COMMAND() != CMD_STOP)
-        return;
-    if (g_pAVATAR->GetPetMode() >= 0 && !g_pAVATAR->CanAttackPetMode())
+    if (g_pAVATAR == NULL)
         return;
 
-    // The monster they have selected -- they may have picked another one while stunned --
-    // else the one they were fighting.
-    CObjCHAR* pTarget = AttackableMob(g_UserInputSystem.GetCurrentTarget());
-    if (pTarget == NULL)
-        pTarget = AttackableMob(g_pObjMGR->Get_ClientObjectIndex(iFightServerIDX));
-    if (pTarget == NULL)
+    const char* szWhyNot = NULL;
+    CObjCHAR* pTarget = NULL;
+    if (!bWasFighting) {
+        szWhyNot = "not fighting when stunned";
+    } else if (g_pAVATAR->Get_HP() <= 0 || g_pAVATAR->HasPendingAuthoritativeDeath()) {
+        szWhyNot = "dead";
+    } else if (g_pAVATAR->m_EndurancePack.GetStateFlag() & FLAG_ING_SLEEP) {
+        szWhyNot = "asleep";
+    } else if (Fighter()->Get_COMMAND() != CMD_STOP) {
+        szWhyNot = "new order"; // anything the player ordered since (a move, a cast) stands
+    } else if (g_pAVATAR->GetPetMode() >= 0 && !g_pAVATAR->CanAttackPetMode()) {
+        szWhyNot = "mount cannot attack";
+    } else {
+        // The monster they have selected -- they may have picked another one while
+        // stunned -- else the one they were fighting.
+        pTarget = AttackableMob(g_UserInputSystem.GetCurrentTarget());
+        if (pTarget == NULL)
+            pTarget = AttackableMob(g_pObjMGR->Get_ClientObjectIndex(iFightServerIDX));
+        if (pTarget == NULL)
+            szWhyNot = "no live monster selected or fought";
+    }
+    if (szWhyNot) {
+        LogString(LOG_DEBUG_,
+            "CombatTrace stun ended, no attack resumed: %s (command %d)\n",
+            szWhyNot,
+            (int)Fighter()->Get_COMMAND());
         return;
+    }
 
     LogString(LOG_DEBUG_,
         "CombatTrace stun ended, attack resumed: target %d\n",

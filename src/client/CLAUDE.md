@@ -232,13 +232,16 @@ every stun. Two jobs:
   keys off when the alert first shows, not that backdated start.
 - **Back to the fight.** A stun stops the avatar on both sides (`SetCMD_STOP`), which drops the
   attack. `CEnduranceSkill::CreateEnduranceEntity` calls `OnAvatarStunned` *before* that stop and
-  it records the monster the avatar (or its mount) was attacking, walking to or casting at; a
-  stun landing on a stun keeps the first record. `CEndurancePack::DeleteEntityByStateType` calls
+  it records whether the avatar (or its mount) was fighting: attacking or walking to a monster,
+  casting at one, or casting anything while the skill holds an attack to restore
+  (`Get_BECOMMAND() == CMD_ATTACK`: a buff or ground skill used mid-fight -- missed at first, the
+  user's one stun with no resume), plus the monster's index when the command had one; a stun
+  landing on a stun keeps the first record. `CEndurancePack::DeleteEntityByStateType` calls
   `OnAvatarStunEnded`, which sends `CLI_ATTACK` like the attack key would -- the selected monster
   if it is a live enemy (the player may have picked another during the stun), else the one
   recorded -- unless the avatar is dead or pending death, still asleep, or no longer in
-  `CMD_STOP` (a new order stands). Log: `CombatTrace stun ended, attack resumed`. Monsters only:
-  PvP targets are not resumed.
+  `CMD_STOP` (a new order stands). Log: `CombatTrace stun ended, attack resumed`, or `... no
+  attack resumed: <reason>`. Monsters only: PvP targets are not resumed.
 
 The server keeps stuns from chaining (`stun_immunity_ms`, see the gameserver CLAUDE.md "Monster
 Stuns Do Not Chain On A Player").

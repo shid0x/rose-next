@@ -35,7 +35,9 @@ public:
 private:
     CStunFeedback();
 
-    /// Server index of the monster the avatar was fighting when the stun landed, 0 = none.
+    /// The avatar was fighting when the stun landed, and the monster's server index if it had
+    /// one in hand (0 for a ground skill cast mid-attack: the selection says which).
+    bool m_bWasFighting;
     int m_iFightServerIDX;
     unsigned int m_hFont; ///< HNODE (zz_interface.h); 32 px outline, loaded with the game fonts
     /// The stun status last drawn and when it first was: its start time is backdated to the
