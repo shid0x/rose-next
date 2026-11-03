@@ -9,6 +9,7 @@
 #include "GS_ThreadSQL.h"
 #include "ZoneLIST.h"
 #include "nav/nav_settings.h"
+#include "wisdom_escort.h"
 
 //-------------------------------------------------------------------------------------------------
 
@@ -236,6 +237,8 @@ CZoneTHREAD::Execute() {
 
         // the Cerberus Lair draw: acts in the lair's zone and the gatekeeper's only
         CCerberusLair::Instance().ProcZone(this);
+        // the Wisdom Tree escort: acts in the Forest of Wisdom only
+        CWisdomEscort::Instance().ProcZone(this);
 
         m_NavMeter.EndProc(*this, iTickMOBs);
 

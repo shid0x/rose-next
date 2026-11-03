@@ -17,6 +17,7 @@
 #include "IO_Quest.h"
 #include "GS_SocketLSV.h"
 #include "GS_ThreadSQL.h"
+#include "wisdom_escort.h"
 
 using namespace Rose;
 using namespace Rose::Common;
@@ -250,6 +251,28 @@ nav(classUSER* user, CommandInfo info, const std::vector<std::string>& args) {
     return Nav::Probe::Command(*user, info.usage, args);
 }
 
+bool
+escort(classUSER* user, CommandInfo info, const std::vector<std::string>& args) {
+    if (!user) {
+        return false;
+    }
+
+    CWisdomEscort& run = CWisdomEscort::Instance();
+    const std::string action = args.size() >= 2 ? args[1] : "status";
+    if (action == "start") {
+        user->send_server_whisper(run.GmStart(user));
+    } else if (action == "stop") {
+        user->send_server_whisper(run.GmStop());
+    } else if (action == "skip") {
+        user->send_server_whisper(run.GmSkip());
+    } else if (action != "status") {
+        user->send_server_whisper(info.usage);
+        return false;
+    }
+    user->send_server_whisper(run.GmStatus());
+    return true;
+}
+
 using CommandFunction = std::function<bool(classUSER*, CommandInfo, const std::vector<std::string>&)>;
 static const std::unordered_map<std::string, std::tuple<CommandFunction, CommandInfo>>
     command_registry = {
@@ -265,6 +288,7 @@ static const std::unordered_map<std::string, std::tuple<CommandFunction, Command
         REGISTER_COMMAND(Command::RELOAD_CONFIG, reload_config),
         REGISTER_COMMAND(Command::CERBERUS, cerberus),
         REGISTER_COMMAND(Command::NAV, nav),
+        REGISTER_COMMAND(Command::ESCORT, escort),
     };
 
 char* l_szAbility[] = {"STR",

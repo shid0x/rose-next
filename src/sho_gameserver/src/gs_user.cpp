@@ -14,6 +14,7 @@
 #include "GS_USER.h"
 #include "IO_Quest.h"
 #include "ZoneLIST.h"
+#include "wisdom_escort.h"
 
 #include "rose/common/util.h"
 #include "rose/network/packets/update_stats_generated.h"
@@ -6214,6 +6215,10 @@ classUSER::Do_QuestTRIGGER(t_HASHKEY HashTRIGGER, short nSelectReward) {
             // the list (doc/cerberus-lair-brief.md).
             if (CCerberusLair::Instance().IsRegisterTrigger(HashTRIGGER))
                 CCerberusLair::Instance().OnRegister(this);
+            // The Wisdom Tree escort's start: the trigger checks the keeper is free
+            // and the level (doc/wisdom-tree-escort-brief.md).
+            if (CWisdomEscort::Instance().IsStartTrigger(HashTRIGGER))
+                CWisdomEscort::Instance().OnStart(this);
             return this->Send_gsv_QUEST_REPLY(RESULT_QUEST_REPLY_TRIGGER_SUCCESS,
                 0,
                 (int)HashTRIGGER);

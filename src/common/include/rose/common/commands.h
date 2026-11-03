@@ -31,6 +31,7 @@ enum CommandId {
     RELOAD_CONFIG,
     CERBERUS,
     NAV,
+    ESCORT,
 };
 }
 
@@ -73,6 +74,9 @@ const char* CERBERUS_USAGE = "Usage: cerberus <status|open|draw|reset|wall up|wa
 const char* NAV_HELP = "Pathfinding and Z: the floors under you and your target; route probe; tick stats.";
 const char* NAV_USAGE = "Usage: nav [here|aoe [radius m]|spawns|walk|path [go]|set [aoe|base|slope|aggro|roofs|walls|reach|path|lead|cells|z|range|giveup value | zones list]|rec|mark|trail [lead_ms] [walk|run] [chase]|stats]";
 
+const char* ESCORT_HELP = "Drive the Wisdom Tree escort (Forest of Wisdom): start a run for your party, stop it, skip ahead.";
+const char* ESCORT_USAGE = "Usage: escort <status|start|stop|skip>";
+
 
 static const std::vector<CommandInfo> commands = {
     {"help", 1, HELP_HELP, HELP_USAGE, CommandContext::Client},
@@ -90,6 +94,7 @@ static const std::vector<CommandInfo> commands = {
     {"reloadconfig", 500, RELOADCONFIG_HELP, RELOADCONFIG_USAGE, CommandContext::Server},
     {"cerberus", 100, CERBERUS_HELP, CERBERUS_USAGE, CommandContext::Server},
     {"nav", 100, NAV_HELP, NAV_USAGE, CommandContext::Server},
+    {"escort", 100, ESCORT_HELP, ESCORT_USAGE, CommandContext::Server},
 };
 
 } // namespace Rose::Common

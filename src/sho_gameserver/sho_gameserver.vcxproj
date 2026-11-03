@@ -41,6 +41,7 @@
     <ClInclude Include="src\cobjchar.h" />
     <ClInclude Include="src\cobjevent.h" />
     <ClInclude Include="src\cerberus_lair.h" />
+    <ClInclude Include="src\wisdom_escort.h" />
     <ClInclude Include="src\cobjitem.h" />
     <ClInclude Include="src\cobjnpc.h" />
     <ClInclude Include="src\common\cobjai.h" />
@@ -84,6 +85,7 @@
     <ClCompile Include="src\cchatroom.cpp" />
     <ClCompile Include="src\cgameobj.cpp" />
     <ClCompile Include="src\cerberus_lair.cpp" />
+    <ClCompile Include="src\wisdom_escort.cpp" />
     <ClCompile Include="src\cheatcmd.cpp" />
     <ClCompile Include="src\network.cpp" />
     <ClCompile Include="src\nav\nav_settings.cpp" />
