@@ -3,8 +3,11 @@
 
 #include <string>
 #include <list>
+#include <vector>
 
-const int CHAT_DISPLAY_TIME = 270;
+/// How long a player's bubble stays, in milliseconds (2026-11-03). It counted 270 frames:
+/// 4.5 s at the 60 FPS the game was made for, under 1.5 s at today's frame rates.
+const DWORD CHAT_DISPLAY_MS = 3000;
 const int MAX_CHAT_BOX = 100;
 
 class CChatBox;
@@ -42,12 +45,19 @@ class CChatBox {
 private:
     int m_iCharIndex;
 
-    /// Display time
-    int m_iDisplayTime;
-
     /// 챗 대화..
     std::string m_strText;
     DWORD m_Color;
+
+    /// When the line was set (it stays CHAT_DISPLAY_MS, an NPC's line longer when long).
+    DWORD m_dwShownAt;
+
+    /// NPC and monster speech (DrawSpeech): its layout, wrapped once on the first draw.
+    bool m_bLaidOut;
+    std::vector<std::string> m_Lines;
+    int m_iTextW;
+
+    bool DrawSpeech(class CObjCHAR* pCHAR, const D3DVECTOR& PosSCR, HNODE* backTexture);
 
 public:
     CChatBox();
@@ -57,13 +67,12 @@ public:
 
     void SetMember(int iCharIndex, const char* Msg, DWORD Color = 0);
 
-    void SetText(const char* pStr) {
-        m_strText = std::string(pStr);
-        m_iDisplayTime = CHAT_DISPLAY_TIME;
-    }
+    void SetText(const char* pStr) { this->SetText(std::string(pStr)); }
     void SetText(std::string str) {
         m_strText = str;
-        m_iDisplayTime = CHAT_DISPLAY_TIME;
+        m_dwShownAt = ::GetTickCount();
+        m_bLaidOut = false;
+        m_Lines.clear();
     }
 
     bool Draw(HNODE* backTexture);

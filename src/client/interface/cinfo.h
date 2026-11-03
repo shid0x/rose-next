@@ -24,6 +24,11 @@ const D3DCOLOR g_dwBlueToolTip = D3DCOLOR_ARGB(255, 100, 200, 255);
 #define INFO_ADD_PRICE_REPAIR 0x10000000
 #define INFO_ADD_PRICE_APPRAISAL 0x20000000
 
+/// Word-wraps text to a pixel width (explicit line breaks kept; a word longer than the
+/// width is cut by character, code-page aware). Tooltips and NPC speech bubbles.
+std::vector<std::string>
+WrapTextToWidth(const char* pszText, HNODE hFont, int iMaxWidthPx, WORD wCodePage);
+
 /**
  * 툴팁시스템및 드랍되어 있는 아이템의 이름표시( CTRL키가 눌렸을때 )에 사용되는 스트링 표시 Class
  *	- 화면밖으로 표시가 나가지 않도록 위치 조정 기능

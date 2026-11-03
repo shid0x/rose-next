@@ -40,6 +40,7 @@ StripTipMarkup(const char* pszTxt) {
     }
     return out;
 }
+} // namespace
 
 ///명시적 개행을 지원하고, 단어(공백) 단위로 픽셀 너비에 맞춰 자른다.
 ///공백 없이 너무 긴 어절( CJK 등 )은 글자 단위( 코드페이지 인식 )로 자른다
@@ -113,7 +114,6 @@ WrapTextToWidth(const char* pszText, HNODE hFont, int iMaxWidthPx, WORD wCodePag
 
     return lines;
 }
-} // namespace
 
 CInfo::CInfo(void) {
     Clear();
