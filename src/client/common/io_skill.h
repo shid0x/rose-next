@@ -198,7 +198,14 @@ enum enumSKILL_TAGER_FILTER {
 // 2026-10-18 it marks a monster skill whose area is drawn on the ground while it is cast
 // (client groundtelegraph.cpp): 1 = telegraph.
 #define SKILL_TELEGRAPH(I) g_SkillList.m_SkillDATA.get_int32(I, 83)
-#define SKILL_AREA_HIT_SOUND(I) g_SkillList.m_SkillDATA.get_int32(I, 84) //	지역 타격 효과음
+// Col 84 was the area hit sound, read by nothing and blank in every row. Since 2026-11-03 it
+// makes a frontal strip (SKILL_SCOPE_FRONTAL) a fan of strips from the caster: lines * 1000 +
+// degrees between two neighbours, the middle one on the aim (3030 = three strips 30 degrees
+// apart). The server hits what stands in any of them (Skill_DamageToAROUND); the client draws
+// each (groundtelegraph.cpp).
+#define SKILL_FAN(I) g_SkillList.m_SkillDATA.get_int32(I, 84)
+#define SKILL_FAN_LINES(I) (SKILL_SCOPE_FRONTAL(I) ? SKILL_FAN(I) / 1000 : 0)
+#define SKILL_FAN_DEGREES(I) (SKILL_FAN(I) % 1000)
 
 #define SKILL_LEVELUP_NEED_ZULY(I) g_SkillList.m_SkillDATA.get_int32(I, 85)
 

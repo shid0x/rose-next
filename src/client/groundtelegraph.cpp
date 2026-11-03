@@ -536,6 +536,26 @@ CGroundTelegraphs::AddOutline(const Telegraph& t, unsigned long rgb, unsigned lo
 
 void
 CGroundTelegraphs::AddTelegraph(const Telegraph& t, unsigned long now) {
+    // A fan (SKILL_FAN, 2026-11-03): the strip once per line, turned round the caster, the
+    // middle one on the aim -- as the server measures it.
+    const int nLines = t.shape == SHAPE_STRIP ? SKILL_FAN_LINES(t.nSkillIDX) : 0;
+    if (nLines < 2) {
+        this->AddTelegraphShape(t, now);
+        return;
+    }
+    const float fStep = SKILL_FAN_DEGREES(t.nSkillIDX) * PI / 180.f;
+    for (int i = 0; i < nLines; ++i) {
+        const float fTurn = (i - (nLines - 1) * 0.5f) * fStep;
+        const float c = cosf(fTurn), s = sinf(fTurn);
+        Telegraph line = t;
+        line.fDirX = t.fDirX * c - t.fDirY * s;
+        line.fDirY = t.fDirX * s + t.fDirY * c;
+        this->AddTelegraphShape(line, now);
+    }
+}
+
+void
+CGroundTelegraphs::AddTelegraphShape(const Telegraph& t, unsigned long now) {
     const float L = t.fLength;
 
     if (t.dwFiredAt) { // the hit: a flash that fades

@@ -2217,9 +2217,14 @@ CObjCHAR::Skill_DamageToAROUND(tPOINTF& PosCENTER) {
     // stood on when the cast began (Casting_START). Aimed at the caster's own feet (a
     // type-17 skill) there is no direction, and either falls back to a circle of its length
     // around the caster.
+    // A fan (SKILL_FAN, io_skill.h; 2026-11-03) is that strip several times over, turned
+    // round the caster: what stands in any of them is hit, and the search is a circle
+    // around the caster that holds them all.
     const short nSkillIDX = Get_ActiveSKILL();
     const bool bCone = SKILL_SCOPE_CONE(nSkillIDX);
     bool bAimed = SKILL_SCOPE_AIMED(nSkillIDX);
+    const int iFanLINES = SKILL_FAN_LINES(nSkillIDX);
+    const float fFanSTEP = SKILL_FAN_DEGREES(nSkillIDX) * 3.14159265f / 180.f;
     tPOINTF PosSEARCH = PosCENTER;
     int iSearchDIST = SKILL_SCOPE_RADIUS(nSkillIDX);
     float fDirX = 0, fDirY = 0, fLength = 0, fHalfWidth = 0, fCosHalfAngle = -1.f;
@@ -2239,6 +2244,11 @@ CObjCHAR::Skill_DamageToAROUND(tPOINTF& PosCENTER) {
             const int iAngle = SKILL_SCOPE_ANGLE(nSkillIDX);
             if (iAngle < 360)
                 fCosHalfAngle = cosf(iAngle * 0.5f * 3.14159265f / 180.f);
+        } else if (iFanLINES > 1) {
+            fDirX /= fAim;
+            fDirY /= fAim;
+            PosSEARCH = m_PosCUR;
+            iSearchDIST = (int)ceilf(sqrtf(fLength * fLength + fHalfWidth * fHalfWidth));
         } else {
             fDirX /= fAim;
             fDirY /= fAim;
@@ -2290,6 +2300,16 @@ CObjCHAR::Skill_DamageToAROUND(tPOINTF& PosCENTER) {
             if (bCone) {
                 const float fDist = sqrtf(fX * fX + fY * fY);
                 bInside = fDist <= fLength && (fDist < 1.f || fAhead >= fDist * fCosHalfAngle);
+            } else if (iFanLINES > 1) {
+                bInside = false;
+                for (int iLine = 0; iLine < iFanLINES && !bInside; iLine++) {
+                    const float fTurn = (iLine - (iFanLINES - 1) * 0.5f) * fFanSTEP;
+                    const float fC = cosf(fTurn), fS = sinf(fTurn);
+                    const float fLX = fDirX * fC - fDirY * fS, fLY = fDirX * fS + fDirY * fC;
+                    const float fLineAhead = fX * fLX + fY * fLY;
+                    bInside = fLineAhead >= 0.f && fLineAhead <= fLength
+                              && fabsf(fX * fLY - fY * fLX) <= fHalfWidth;
+                }
             } else {
                 const float fAside = fabsf(fX * fDirY - fY * fDirX);
                 bInside = fAhead >= 0.f && fAhead <= fLength && fAside <= fHalfWidth;

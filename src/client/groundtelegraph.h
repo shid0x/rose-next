@@ -24,6 +24,8 @@ class CObjCHAR;
 ///   - a cone (SKILL_SCOPE_CONE) or a frontal strip (SKILL_SCOPE_FRONTAL) from the
 ///     caster toward the spot the server aimed it at when the cast began, sent with
 ///     GSV_SKILL_START (CObjAI::m_PosSkillAIM). The fill runs out from the caster.
+///   - a fan of strips (SKILL_FAN, 2026-11-03): that strip once per line, turned round
+///     the caster, the middle one on the aim.
 /// Monsters do not move while casting, so the shape stays where the cast began.
 ///
 /// The geometry follows the terrain (CTERRAIN::GetHeight per vertex, lifted a little)
@@ -122,7 +124,9 @@ private:
         unsigned long cEdge, unsigned long cInner);
     /// The whole shape out to fReach along it (the fill), one colour.
     void AddArea(const Telegraph& t, float fFrom, float fReach, unsigned long c0, unsigned long c1);
+    /// A cast's area; a fan (SKILL_FAN) as one strip per line.
     void AddTelegraph(const Telegraph& t, unsigned long now);
+    void AddTelegraphShape(const Telegraph& t, unsigned long now);
 
     std::vector<Telegraph> m_List;
     std::vector<float> m_XYZ; // this frame's triangles
