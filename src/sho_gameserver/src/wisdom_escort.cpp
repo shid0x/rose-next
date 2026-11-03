@@ -6,7 +6,6 @@
 #include <cmath>
 
 #include "CObjNPC.h"
-#include "Calculation.h"
 #include "GS_ListUSER.h"
 #include "GS_Party.h"
 #include "GS_ThreadZONE.h"
@@ -115,11 +114,13 @@ constexpr unsigned long REISSUE_MS = 5 * 1000; // re-issue a walk this often whi
 constexpr unsigned long RETRY_MS = 1000; // and at most this often while stopped
 constexpr unsigned long QUEST_SWEEP_MS = 2 * 1000;
 
-// The reward: placeholders until the user picks one (the brief, "Open points").
+// The reward, the user's (2026-11-03): 50,000 zuly and the Insect Wings (Flame), a back
+// item. Item numbers past 999 need the type/number Init: the packed type * 1000 + number
+// cannot hold them.
 constexpr int MIN_LEVEL = 40; // the start trigger checks it too
-constexpr int REWARD_EXP_PCT = 5; // of the EXP the player's level needs, at most at level...
-constexpr int REWARD_EXP_LEVEL_CAP = 70;
-constexpr int REWARD_ZULY = 10000;
+constexpr int REWARD_ZULY = 50000;
+constexpr unsigned int REWARD_ITEM_TYPE = 6; // LIST_BACK
+constexpr unsigned int REWARD_ITEM_NO = 1026; // Insect Wings (Flame)
 constexpr unsigned long REWARD_COOLDOWN_MS = 60 * 60 * 1000;
 
 constexpr short KEEPER_FREE = 0;
@@ -627,14 +628,19 @@ CWisdomEscort::Succeed(CObjCHAR* pEscort, const std::vector<classUSER*>& roster)
             continue;
         }
         m_RewardedAt[pUSER->m_dwDBID] = now;
-        const int iLevel = (std::min)((int)pUSER->Get_LEVEL(), REWARD_EXP_LEVEL_CAP);
-        const __int64 iExp = CCal::Get_NeedRawEXP(iLevel) * REWARD_EXP_PCT / 100;
-        pUSER->Add_EXP(iExp, false, 0);
-        // GSV_REWARD_MONEY, not the plain money update: the client prints it as a quest
-        // reward (purple, "You have received ... zuly"), where the plain one was a
-        // system line nobody noticed
+        // Both as a quest gives them: GSV_REWARD_MONEY and GSV_REWARD_ITEM, which the
+        // client prints as quest rewards (purple) -- the plain money update was a system
+        // line nobody noticed. A full bag gets the item at the player's feet
+        // (Add_ItemNSend -> Save_ItemToFILED).
         pUSER->Add_MoneyNSend(REWARD_ZULY, GSV_REWARD_MONEY);
-        LOG_INFO("[escort] rewarded {}: {} EXP, {} zuly", pUSER->Get_NAME(), iExp, REWARD_ZULY);
+        tagITEM sItem;
+        sItem.Init(REWARD_ITEM_TYPE, REWARD_ITEM_NO);
+        if (sItem.GetTYPE())
+            pUSER->Add_ItemNSend(sItem);
+        else
+            LOG_WARN("[escort] reward item {}:{} is not in the tables", REWARD_ITEM_TYPE, REWARD_ITEM_NO);
+        LOG_INFO("[escort] rewarded {}: {} zuly, item {}:{}", pUSER->Get_NAME(), REWARD_ZULY,
+            REWARD_ITEM_TYPE, REWARD_ITEM_NO);
     }
     for (classUSER* pUSER: roster) {
         if (HasQuest(pUSER))

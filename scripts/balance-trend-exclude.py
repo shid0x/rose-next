@@ -43,8 +43,12 @@ CORE_GUARDIAN = frozenset({2337})
 # import-amphisbaena.py: the Amphisbaena and the four monsters its AI summons.
 AMPHISBAENA = frozenset({2911, 2914, 2915, 2920, 2921})
 
+# import-wisdom-escort.py: the Tree Keeper's escort twin and the four ambushers, copies
+# of forest monsters; the Grunter Blightchief (lv60) is a Grunter King at 3/4 of its HP.
+WISDOM_ESCORT = frozenset({225, 226, 227, 228, 229})
+
 EXCLUDED = (SHIBUYA | ULVERICK | CERBERUS | NECROMANCER | SHADOW_SOLDIER | CORE_GUARDIAN
-            | AMPHISBAENA)
+            | AMPHISBAENA | WISDOM_ESCORT)
 
 
 def excluded(row):

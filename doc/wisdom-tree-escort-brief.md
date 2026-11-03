@@ -1,7 +1,9 @@
 # Wisdom Tree escort: implementation brief
 
-Status (2026-11-03): **tested twice in game; the second round of feedback is built,
-not yet retested.** Not committed.
+Status (2026-11-03): **validated in game and committed (0a84cd82).** Since then,
+built and not yet tested:
+- the Blightchief at 3/4 of the Grunter King's HP, 33,000;
+- the real reward (section 5).
 
 Second test: "it's better". The second round:
 - **The keeper at the tree holds his bow**, as on the round (LIST_NPC 1132 col 5).
@@ -202,10 +204,11 @@ Grunter AI would change every Grunter in the forest.
 - The keeper's name, look and lines. His overhead lines are monster speech, so the
   client draws the bubble in red (`Recv_gsv_CHAT`); the lines that matter also go to
   the roster as whispers.
-- The Blightchief is a full Grunter King clone: 44,000 HP, more than a level-55 party
-  may want for the last wave. Tune it after the test.
-- The reward. Placeholder for v1: EXP and zuly from the controller, with a whisper;
-  once an hour per player, kept in memory (a restart forgets it).
+- The reward is the user's (2026-11-03): 50,000 zuly and the Insect Wings (Flame),
+  LIST_BACK 1026. Both are given as quest rewards (purple lines); a full bag gets
+  the wings at the player's feet. There is no EXP reward. It is once an hour per
+  player, kept in memory (a restart forgets it), so the wings can be had every hour:
+  open whether they should be once per character.
 - A level cap: high-level players can help, but should they earn the reward?
 - Later: an objective line in UI2 ("Stop 3/6"), and the keeper's HP shown with the
   party.

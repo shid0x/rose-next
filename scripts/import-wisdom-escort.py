@@ -41,9 +41,10 @@ What it writes:
   * LIST_NPC 226-229, the ambushers, each a copy of a forest monster with its own
     AI and a sickly green glow: Blight Grunter (136 Grunter Warrior), Blight
     Smouly (52 Elder Smouly), Withered Guardian (208 Guardian Tree), Grunter
-    Blightchief (209 Grunter King). New rows on purpose: AI is per row, and the
-    forest's own monsters keep theirs. Their template's EXP and drops stay; the
-    death trigger (col 41) and target col 25 are cleared.
+    Blightchief (209 Grunter King, at 3/4 of its HP: 33,000). New rows on purpose: AI
+    is per row, and the forest's own monsters keep theirs. Their template's EXP and
+    drops stay; the death trigger (col 41) and target col 25 are cleared. All five are
+    in balance-trend-exclude.py (the Blightchief is level 60, inside the trend window).
   * Four AI files (FILE_AI 2265-2268), appended:
     - WISDOM_KEEPER.AIP: every second while stopped, attack an enemy within 12 m;
       when hit, 40% to turn on the attacker. No leash, no wander: the server
@@ -211,6 +212,10 @@ AMBUSHERS = (
     (CHIEF, 209, "Grunter Blightchief", "LWTKMOB0229", CHIEF_AI_ROW),
 )
 BLIGHT_GLOW = "080170030"           # RRRGGGBBB: a sickly green
+# Cells an ambusher does not take from its template. The Blightchief came out a Grunter
+# King to the point (43,980 HP), and the last wave brings four adds besides: the user
+# asked for "a bit" less after the third test -- 3/4, 33,000.
+AMBUSHER_STATS = {CHIEF: {C_HP: 550}}
 
 # ---- the two bosses' attacks (2026-11-03, after the first test: "make those two
 # encounters a bit more interesting"). Both are drawn on the ground while they are cast
@@ -511,6 +516,8 @@ def ambusher_row(n, row_no, template, name, strid, ai_row):
     row[C_NAME] = name.encode("latin-1")
     row[C_AI] = b(ai_row)
     row[C_GLOW] = BLIGHT_GLOW.encode()
+    for c, v in AMBUSHER_STATS.get(row_no, {}).items():
+        row[c] = b(v)
     for c in (C_TARGET, C_DEADEVENT, *oro.NPC_SELL_TAB_COLS):
         row[c] = b""
     row[oro.NPC_STRID_COL] = strid.encode()
