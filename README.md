@@ -440,7 +440,8 @@ base_crit = 0
 | [doc/rmlui-evaluation.md](doc/rmlui-evaluation.md) | Why RmlUi, what the D3D9 backend implements, the authoring palette, the traps. |
 | [doc/combat-display-fix.md](doc/combat-display-fix.md) | Server-authoritative damage presentation. |
 | [doc/balance-analysis.md](doc/balance-analysis.md) | The combat formulas, the level gate, and the balance plan the passes implement. |
-| [doc/making-monsters.md](doc/making-monsters.md) | Adding a monster: row, model, skills, animation events and AI, as a checklist. |
+| [doc/making-monsters.md](doc/making-monsters.md) | Adding a monster: row, model, skills, animation events and AI, as a checklist; an attack players dodge. |
+| [doc/making-events.md](doc/making-events.md) | A server-run event: the controller, monsters from code, an NPC ally, the dialog NPC, the quest wrapper, rewards, map placement. |
 | [docs/mapgen/PLAN.md](docs/mapgen/PLAN.md), [FORMATS.md](docs/mapgen/FORMATS.md) | The map generator and the binary layout of every map format. |
 | [doc/relighting-maps.md](doc/relighting-maps.md) | Baking lightmaps for an existing or edited zone. |
 | [doc/zsc-bounding-boxes.md](doc/zsc-bounding-boxes.md) | Why every ZSC bounding box is wrong and how culling works around it. |

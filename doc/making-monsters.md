@@ -2,12 +2,15 @@
 
 A checklist and a list of traps, gathered while building the Cerberus Lair
 (Cerberus, Hellhounds, Hellhound Whelps, the Warden of the Seal), Hebarn, the Cave
-of Ulverick and the Oro/Karkia imports. Every trap here cost a test round at least
-once. `scripts/import-cerberus.py` is the worked example: most rules below have a
-named constant or function there.
+of Ulverick, the Oro/Karkia imports and the Wisdom Tree escort. Every trap here cost
+a test round at least once. `scripts/import-cerberus.py` is the worked example: most
+rules below have a named constant or function there. Section 6 is a recipe for a boss
+attack players dodge.
 
 Importing a monster from another dump? The order of work is in
 [importing-monsters.md](importing-monsters.md); this file is the traps to check along the way.
+Building the event around it (a controller, an ally NPC, a quest, rewards)? See
+[making-events.md](making-events.md).
 
 `data/` is not in git, so **the import script is the only record** of a monster.
 Write the row, the model, the AI and the skills from a script, never by hand, and put
@@ -51,9 +54,22 @@ the reasoning in its docstring.
   (`fix-npc-hand-models.py --verify`).
 - Normal attack clips present on **frame 21 (melee) or 22/23 (bow/gun)**. A bare-handed
   monster on a 22/23 clip has no projectile to fire (`fix-zmo-attack-frames.py`).
+- **The right-hand weapon hangs on the skeleton's dummy `p_00`**, town NPCs included
+  (a dialog NPC shows its col 5 weapon too). A clip that shoots on 22 wants a bow
+  there: the forest's Ranger Clowns carry theirs in col 5, and so does the Tree Keeper
+  (`import-wisdom-escort.py`). A weapon with a bullet (LIST_WEAPON col 38) makes the
+  attack a projectile on both sides, landing on impact.
 
 ## 3. Animations and skills (the part that breaks quietly)
 
+- **CHR slots are `MOB_ANI_*`** (`datatype.h`): 0 stop, 1 walk, 2 attack, 3 hit, 4 die,
+  5 run, 6/7 the first cast and its release, 8/9 the second. **A town NPC's entry often
+  fills 1-4 with idle clips** (a crying clip as its walk): read the slots
+  (`rosefmt.chr`, `rosefmt.zmo.events`) before giving a town NPC's look a fight. A
+  mesh can borrow another entry's motions when the skeleton is the same (the Tree
+  Keeper: Ranger Paul's mesh, Kay's robber motions).
+- **Which skill a monster casts, on which slots**: `combat-sim.py ai --mob <row>`
+  prints its AI file as rules. The Grunter King's axe (Strike 2988) is on slots 8/9.
 - **A cast uses two CHR slots**: the AI's `nMotion` is the casting clip, `nMotion + 1`
   the release. Only the **release clip's event frames** make the skill land on screen:
   24/34 launch a projectile, 26 fires, 25 hits; a payload (area hit, status) drains on
@@ -83,6 +99,13 @@ the reasoning in its docstring.
 - **Cast speed**: cols 53 (cast) and 69 (release) scale the clips for monster casts on
   both sides. A status shows 1-3 s after the server applies it (cast clip + release
   frame): size stun and slow durations for that.
+- **The server multiplies a skill's damage by the release clip's attack frames.** The
+  Grunter King's axe clip swings twice (hits on 16 and 38), so as a release it hits
+  twice as hard. To keep one hit, clear the second swing's events in the monster's own
+  copy; the second swing still plays, as animation only.
+- **The server lands a skill when its release clip starts**, not on the clip's hit
+  frame: Do_SKILL sets the motion and runs Skill_START at once. A release whose hit
+  comes late puts the damage on screen before the blow. Section 6 has the fix.
 
 ## 4. Skill rows (LIST_SKILL.STB)
 
@@ -145,20 +168,86 @@ row's col 16.
 - Call-for-help (action 18) wakes only same-id monsters with no target, within the
   given metres.
 
-## 6. Spawning
+## 6. An attack to dodge (a telegraphed cast)
+
+A boss attack drawn on the ground while it winds up, which a player who moves in time
+avoids. Worked examples:
+- the Warden's Seal Burst and Cerberus's Hellfire Breath (`import-cerberus.py`);
+- the Wisdom Tree escort's Rootquake and Blight Cleaver (`import-wisdom-escort.py`,
+  `SKILLS`, `build_clips`, `boss_ai`).
+
+**1. Pick the shape.** The client draws exactly what the server measures
+(`CObjCHAR::Skill_DamageToAROUND`, `src/client/groundtelegraph.h`). Copy the row named
+here, then overwrite:
+
+| Shape | Type (col 5) | SKILL_SCOPE (col 8) | Copy | In use |
+|---|---|---|---|---|
+| circle round the caster | 17 | radius, cm | Seal Burst 7023 (40% slow) | Rootquake 7203 |
+| strip ahead | 7 | length x 10000 + width, cm | Charge 3603 | Terrasaurus Charge |
+| cone ahead | 7 | 100000000 + length x 10000 + degrees | Hellfire Breath 7022 | Cerberus |
+| fan of strips | 7 | a strip, and col 84 = lines x 1000 + degrees apart | Charge 3603 | Blight Cleaver 7204 |
+
+The radius counts from the caster's centre: add the body of a big model. A type-7
+shape is aimed where the target stood when the cast began and stays there, so a player
+who moves once it shows gets out. Fan lines overlap near the caster: 2 m lines 30
+degrees apart leave gaps from about 6 m out.
+
+**2. Draw it and time it.**
+- Col 83 = 1 puts the shape on the ground for the whole cast clip.
+- The cast clip at col 53's speed is the dodge window; about 2 s reads well (31 frames
+  at 50%, 12 frames at 20%).
+- Col 6, the range, is how near the target must be for the cast to start without a
+  chase first.
+
+**3. Make the blow land with the damage.** The server lands the skill when the release
+clip starts (section 3), so the release must start at the impact. If the model's skill
+clip is one long swing, split it at the impact frame (`rosefmt.zmo.sliced`): the raise
+becomes the cast clip, played slowly, and the rest becomes the release. Examples:
+Cerberus's breath, the Blightchief's axe. Write both as the monster's own clips and
+repoint its CHR slots (`CLIP_SLOTS` in `import-wisdom-escort.py`). In the release:
+- **24 on the impact** (the area's payload);
+- **74 on the impact** for casting effect 2 (cols 62-64), something on the ground:
+  Earthsplitter's fissure 3003, the Warden's `shockwave_01` 400;
+- **44 on the cast clip's first frame** for casting effect 0 (cols 56-58);
+- clear any second swing's events (section 3, attack frames multiply damage).
+
+**4. Size the damage by measuring it.**
+- `combat-sim.py new --job 121 --level 55 -o b.json`, then
+  `combat-sim.py run b.json --mob <row>`, lists every cast's damage on a typical build.
+- A hit that takes 30-45% of a typical player's HP, against 5-10% for a normal swing,
+  reads as "should have moved" without killing.
+- The simulator does not know the fan; it measures one strip.
+
+**5. Cast it from the AI.**
+- Every N hits the monster takes: monster variable 2, counted by every "damaged"
+  event, the pull included, or the count skips hits.
+- Gate it on the target being inside the shape (`c_target_within`).
+- Optionally also cast it in "attack move" on a target running off (a chance and
+  `c_target_at_least`).
+- `boss_ai()` in `import-wisdom-escort.py` does all three. Then run
+  `audit-ai-skill-refs.py --dry-run`.
+
+**6. Test it with a character within 30 levels of the monster.**
+- Above that, magic hits for 0 and the status is resisted (section 4).
+- An ally NPC cannot dodge: an escort takes every area attack, so give it the HP.
+
+## 7. Spawning
 
 - **The client puts a new monster on the highest surface at its spot**
   (`GetHeightTop`); the server sends no height. Spawned under rock arches or a roof, it
   stands on the roof: heard, never seen. AI summons land where the summoner stands, so
   summon from code at an open-sky point instead (the Cerberus Hellhounds).
-- **A zone with no `.MOV` blocks every cell**, which silently kills leashing, wandering
-  and fleeing while chasing still works.
+- **Leashing, wandering and fleeing walk only where the zone's walk grid reaches**
+  (`.lnav`, `scripts/nav-bake.py`; the `.MOV` files are retired). A zone not baked yet
+  has no check at all. Chasing ignores the grid (`src/sho_gameserver/CLAUDE.md`,
+  "Walkability").
 - Regen points are an escalation state machine, not a list: see CLAUDE.md, "Monster
   Spawning: A Regen Point's Cap Is Not A Cap". Never derive a population from the caps.
 - A spawn point must be on walkable ground near the surface; check it against the map
-  (the `.MOV` grid and the heightfield, `scripts/mapgen`) before placing it.
+  (the walk grid, `rosefmt.lnav`, and the heightfield) before placing it.
+  [making-events.md](making-events.md) section 7 has the arithmetic.
 
-## 7. Deploying and testing
+## 8. Deploying and testing
 
 - **Server-read data needs a server restart**: LIST_NPC.STB, **LIST_NPC.CHR** (the server
   loads it too), LIST_SKILL.STB, FILE_AI.STB, AI_s.STB, the `.AIP` files, ITEM_DROP.STB.

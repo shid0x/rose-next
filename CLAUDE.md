@@ -180,8 +180,11 @@ file before working in that area.
   pass (server.toml's ATK/HIT/ASPD bonuses are 0 since 2026-10-15; the weapons carry them),
   and lessons from the zone imports. "I can't hit this monster" is
   usually the level gate in `Get_SuccessRATE` (`src/common/calculation.cpp`), not
-  HIT/AVOID. Before adding a monster, read `doc/making-monsters.md`; to import one from
-  another dump, follow `doc/importing-monsters.md` (start from `import-shadow-soldier.py`).
+  HIT/AVOID. Before adding a monster, read `doc/making-monsters.md` (section 6: an attack
+  players dodge); to import one from another dump, follow `doc/importing-monsters.md`
+  (start from `import-shadow-soldier.py`). To build a server-run event (an instance, an
+  escort, an NPC who fights with players, a quest wrapper, rewards), read
+  `doc/making-events.md`.
 - **Rose Dev Studio** -- `src/tools/dev-studio/CLAUDE.md` (STL text is UTF-8; STB
   cells decode per cell).
 - **Zones** -- `doc/zones/`: `oro.md` (never re-run `import-oro-667.py --stage 3` to
