@@ -397,6 +397,10 @@ void
 IT_MGR::SetInterfaceHidden(bool bHidden, const char* pszReason) {
     if (g_GameDATA.m_bNoUI == bHidden)
         return;
+    /// Hidden only in the normal interface state: the death window and the
+    /// like must stay visible ( ChangeState shows the interface on leaving it ).
+    if (bHidden && GetState() != STATE_NORMAL)
+        return;
 
     g_GameDATA.m_bNoUI = bHidden;
     /// The no-UI cursor is the original team's filming cursor ( a 2 px red

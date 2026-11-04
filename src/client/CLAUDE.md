@@ -218,7 +218,8 @@ through `Reconcile_HP`; `Recv_tag_ADJ_STATUS` skips both potion types (it compar
 
 ## Screenshot Mode: Alt+H Hides The Interface (2026-11-04)
 
-Alt+H hides or shows the whole interface; Escape shows it again; dying (any IT state other than
+Alt+H (or Hide, next to UI on the UI2 status panel) hides or shows the whole interface; Escape shows it again; it
+hides only in `STATE_NORMAL`, and dying (any IT state other than
 `STATE_NORMAL`), an NPC conversation (`IT_MGR::OpenQueryDLG`) and leaving `CGameStateMain` (a zone
 change too) bring it back. Alt+H opened Help before (UI2 dropped Help). It is the original team's
 GM-only `g_GameDATA.m_bNoUI` -- the `~` dev window's "Disable UI" and the no-UI cheat set it too --

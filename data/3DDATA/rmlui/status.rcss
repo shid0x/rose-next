@@ -123,3 +123,20 @@
     padding-right: 8dp;
     font-size: 10dp;
 }
+
+/* Hide sits in its tip's wrapper, not straight in the flex row like UI, so
+   it would stay inline -- and an inline box ignores height. As a block it
+   takes .menu's 18dp, as UI does. */
+.hide .menu {
+    display: block;
+}
+
+/* Hide's tip opens just above the button row, over the panel's own bars:
+   under it lies the buff strip, another document that could draw over the
+   tip. Pinned to the panel's right edge, since left at auto would cap its
+   width at what is left right of the button. 24dp = the button row ( 18dp )
+   + the panel's bottom padding ( 4dp ) + a 2dp gap. */
+.hidetip {
+    right: 0dp;
+    bottom: 24dp;
+}

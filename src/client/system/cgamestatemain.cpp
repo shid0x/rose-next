@@ -966,15 +966,11 @@ CGameStateMain::ProcKeyboardInput(UINT uiMsg, WPARAM wParam, LPARAM lParam) {
     /// shows it again ( a player who forgot the key is never stuck ). Taken
     /// before the interface sees the key: Alt+H used to open the Help window,
     /// which UI2 dropped. Keys keep working while it is hidden ( skills, for
-    /// action shots ). Hidden only in the normal interface state: the death
-    /// window and the like must stay visible.
+    /// action shots ). The UI2 menu bar's Hide button does the same.
     if (uiMsg == WM_SYSKEYDOWN && !(lParam & (1 << 30))) { /// not auto-repeat
         unsigned int oemScan = int(lParam & (0xff << 16)) >> 16;
         if (MapVirtualKey(oemScan, 1) == 0x48) { // 'h'
-            if (g_itMGR.IsInterfaceHidden())
-                g_itMGR.SetInterfaceHidden(false, "Alt+H");
-            else if (g_itMGR.GetState() == IT_MGR::STATE_NORMAL)
-                g_itMGR.SetInterfaceHidden(true, "Alt+H");
+            g_itMGR.SetInterfaceHidden(!g_itMGR.IsInterfaceHidden(), "Alt+H");
             return 1;
         }
     }

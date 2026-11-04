@@ -18,8 +18,9 @@
  *
  * Dropped from the classic menu: dragging an entry out to make a desktop
  * shortcut icon ( as for the inventory ), the Game Info button, which did
- * nothing, and Help ( the help / tutorial window, of no use -- Alt+H still
- * opens it ). The tutorial's blink on Help has nothing to land on.
+ * nothing, and Help ( the help / tutorial window, of no use; Alt+H, which
+ * opened it, hides the interface now ). The tutorial's blink on Help has
+ * nothing to land on.
  */
 
 #include <RmlUi/Core/DataModelHandle.h>

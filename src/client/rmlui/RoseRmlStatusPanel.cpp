@@ -125,6 +125,19 @@ RoseRmlStatusPanel::Initialise(Rml::Context* pContext, const std::string& strAss
             RoseRmlUi::ToggleInterfaceOptions();
         });
 
+    /// Screenshot mode, as Alt+H ( IT_MGR::SetInterfaceHidden ). Same bubbling
+    /// guard, and a press that moved the panel is a move: RmlUi still clicks
+    /// the button the cursor was dragged along with.
+    constructor.BindEventCallback("hide_ui",
+        [this](Rml::DataModelHandle, Rml::Event& ev, const Rml::VariantList&) {
+            ev.StopPropagation();
+            const int dx = ev.GetParameter<int>("mouse_x", 0) - m_iPressX;
+            const int dy = ev.GetParameter<int>("mouse_y", 0) - m_iPressY;
+            if (abs(dx) >= kClickSlop || abs(dy) >= kClickSlop)
+                return;
+            g_itMGR.SetInterfaceHidden(true, "status panel");
+        });
+
     m_Model = constructor.GetModelHandle();
 
     const std::string strDoc = strAssetDir + "status.rml";
