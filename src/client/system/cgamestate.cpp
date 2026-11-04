@@ -8,6 +8,7 @@
 #include "interface/CDragNDropMgr.h"
 #include "interface/CToolTipMgr.h"
 #include "System/CGame.h"
+#include "../Game.h"
 
 CGameState::CGameState(void):
     m_iStateID(0),
@@ -92,6 +93,12 @@ CGameState::render_dev_ui(void) {
     /// beginSprite()/endSprite() block -- the renderer's state guard assumes it
     /// owns the device for the duration of the pass.
     RoseRmlUi::Update();
+
+    /// Screenshot mode ( Alt+H, IT_MGR::SetInterfaceHidden ): the panels keep
+    /// updating but nothing of UI2 is drawn.
+    if (g_GameDATA.m_bNoUI)
+        return;
+
     RoseRmlUi::Render();
 
     /// The tooltip, classic or UI2's, is drawn over the RmlUi panels under UI2

@@ -331,13 +331,7 @@ classPARSESTR::DoCheat(char* pCheatCode, bool bServerCheate) {
                 return CHEAT_RESULT_CLIENT;
             } break;
             case CHEAT_NO_UI: {
-                // if( !CGame::GetInstance().GetRight() )
-                g_GameDATA.m_bNoUI = !g_GameDATA.m_bNoUI;
-                if (g_GameDATA.m_bNoUI)
-                    CCursor::GetInstance().SetCursorType(CCursor::CURSOR_NOUI);
-                else
-                    CCursor::GetInstance().SetCursorType(CCursor::CURSOR_DEFAULT);
-
+                g_itMGR.SetInterfaceHidden(!g_itMGR.IsInterfaceHidden(), "cheat");
                 return CHEAT_RESULT_CLIENT;
             } break;
             case CHEAT_FREE: {

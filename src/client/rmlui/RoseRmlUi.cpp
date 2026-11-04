@@ -514,6 +514,10 @@ bool
 IsPointOverPanel(int x, int y) {
     if (g_pContext == NULL)
         return false;
+    /// Screenshot mode ( Alt+H ): nothing is drawn, so nothing is solid --
+    /// presses, wheel and the cursor all belong to the world.
+    if (g_GameDATA.m_bNoUI)
+        return false;
 
     const float fx = (float)x;
     const float fy = (float)y;
@@ -1410,6 +1414,12 @@ ProcessWndMsg(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam) {
             ForgetReleasedWorldButtons();
             if (g_uWorldButtons != 0)
                 return false;
+            /// Screenshot mode: no hover on panels nobody can see ( a hover
+            /// left from before the hide is dropped ).
+            if (g_GameDATA.m_bNoUI) {
+                g_pContext->ProcessMouseLeave();
+                return false;
+            }
             /// Otherwise RmlUi always sees the move -- an in-progress panel
             /// drag has to keep tracking once the cursor leaves the panel.
             /// Only the consume decision depends on where the cursor is.

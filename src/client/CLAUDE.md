@@ -216,6 +216,28 @@ kept its heal-over-time icon (`CEnduranceItem` never ends by itself) for good. I
 now. `Recv_gsv_CLEAR_STATUS` reads no more HP/MP values than the packet carries and applies HP
 through `Reconcile_HP`; `Recv_tag_ADJ_STATUS` skips both potion types (it compared a row to a type).
 
+## Screenshot Mode: Alt+H Hides The Interface (2026-11-04)
+
+Alt+H hides or shows the whole interface; Escape shows it again; dying (any IT state other than
+`STATE_NORMAL`), an NPC conversation (`IT_MGR::OpenQueryDLG`) and leaving `CGameStateMain` (a zone
+change too) bring it back. Alt+H opened Help before (UI2 dropped Help). It is the original team's
+GM-only `g_GameDATA.m_bNoUI` -- the `~` dev window's "Disable UI" and the no-UI cheat set it too --
+made player-facing; go through `IT_MGR::SetInterfaceHidden` (cursor + a `client.log` line). The
+no-UI cursor (`Res\noui01.cur`) is a 2 px red dot. What the flag has to cover, since the pieces do not
+share one draw call:
+- `Render_GameMENU`: classic dialogs, overhead names, speech bubbles, overlay panels (and their 3D
+  puppets), stun alert, debug HUD. The UI2 pass is separate (`CGameState::render_dev_ui`), and
+  **damage digits are scene nodes** (`CDigitEffect`), drawn by `renderScene` -- none are created
+  while hidden (`CUIMediator::CreateDamageDigit`).
+- **`IT_MGR::Update` is logic as well as drawing** (the command queue, `HideReplacedDialogs`, each
+  dialog's `Update`, where classic dialogs apply craft/upgrade results), and `CViewMSG::Draw` empties
+  the per-frame name list. Skipping `Render_GameMENU` skipped both; the hidden branch runs
+  `IT_MGR::UpdateHidden` (with the mouse off-screen, so no hover/tooltip) and `g_pViewMSG->Clear()`.
+- Mouse: classic dialogs (`ProcMouseInput` already skipped `MsgProc`), UI2 (`IsPointOverPanel`),
+  the overlay panels in `ProcWndMsgInstant` and `IT_MGR::IsMouseOnInterface` all let the world have
+  it. Keys still reach the interface (skills for action shots; Enter types into an unseen chat).
+- Left visible on purpose: world effects, the click marker, skill-aim previews and boss telegraphs.
+
 ## Stun Feedback (2026-11-02)
 
 `CStunFeedback` (`stunfeedback.*`), for the local player only. Players could not see they were

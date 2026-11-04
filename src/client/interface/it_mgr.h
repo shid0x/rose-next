@@ -128,6 +128,16 @@ public:
     UINT MsgProc(UINT uiMsg, WPARAM wParam, LPARAM lParam);
     void Update();
 
+    /// Screenshot mode: the whole interface hidden ( Alt+H; Escape brings it
+    /// back ). The flag is g_GameDATA.m_bNoUI, which the dev window's
+    /// "Disable UI" and the no-UI cheat also set. Hidden = nothing drawn and
+    /// no mouse input taken by any window, classic or UI2; the interface's
+    /// per-frame logic still runs ( UpdateHidden ).
+    void SetInterfaceHidden(bool bHidden, const char* pszReason);
+    bool IsInterfaceHidden() const;
+    /// Update()'s logic without its drawing, while the interface is hidden.
+    void UpdateHidden();
+
     ///코딩시에는 이곳에서 하고나서 안정화되면 CRecvPacket으로 이동시키자
     /// bool PacketProc( t_PACKET * pRecvPacket );
     // void RegToolTip( const CInfo& Info );
@@ -135,6 +145,8 @@ public:
     void InitDLG();
     void FreeDLG();
     void DrawDLGs(POINT ptMouse);
+    /// DrawDLGs' first half: every dialog's and icon's per-frame Update.
+    void UpdateDLGs(POINT ptMouse);
 
     CChatDLG* GetChatDLG();
     CDialogDlg* GetQueryDLG();

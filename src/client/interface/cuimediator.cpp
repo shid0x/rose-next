@@ -63,6 +63,11 @@ CUIMediator::DrawAvataName(CObjCHAR* pCharOBJ) {
 
 void
 CUIMediator::CreateDamageDigit(int iPoint, float x, float y, float z, bool bIsUSER) {
+    /// The digits are scene nodes, so hiding the interface ( Alt+H ) does not
+    /// hide them: none are made while it is hidden. Display only -- nothing
+    /// else reads them.
+    if (g_GameDATA.m_bNoUI)
+        return;
     m_DigitEffect.CreateDigitEffect(iPoint, x, y, z, bIsUSER);
 }
 

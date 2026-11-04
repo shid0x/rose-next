@@ -212,9 +212,9 @@ CITStateNormal::ProcessHotKeyAutoEnter(unsigned uiMsg, WPARAM wParam, LPARAM lPa
                 case 0x43: // 'c'
                     g_itMGR.OpenDialog(DLG_TYPE_COMMUNITY);
                     return true;
-                case 0x48: // h
-                    g_itMGR.OpenDialog(DLG_TYPE_HELP);
-                    return true;
+                /// 'h' hides the interface now ( screenshot mode ), taken
+                /// before this in CGameStateMain::ProcKeyboardInput. Help
+                /// stays on the classic menu.
                 case 0x49: // 'i'
                 case 0x56: // 'v' /// 2004 / 1 / 26 / Navy /추가( SYSTEM + I가 한손으로 누르기
                            // 힘들다는 의견으로 )

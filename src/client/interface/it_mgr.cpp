@@ -379,6 +379,38 @@ IT_MGR::Update() {
 }
 
 void
+IT_MGR::UpdateHidden() {
+    /// Nothing is under the mouse while nothing is drawn: no hover, no tooltip,
+    /// no mouse-over dialog for IsMouseOnInterface to report.
+    const POINT ptNowhere = {-32768, -32768};
+
+    /// Update()'s logic: the command queue, the UI2 hiding, and each dialog's
+    /// per-frame Update ( a hidden UI must not stall a craft or upgrade
+    /// result, which classic dialogs apply there ).
+    ProcCommand();
+    RoseUi2::HideReplacedDialogs();
+    UpdateDLGs(ptNowhere);
+    m_pCurrState->Update(ptNowhere);
+}
+
+void
+IT_MGR::SetInterfaceHidden(bool bHidden, const char* pszReason) {
+    if (g_GameDATA.m_bNoUI == bHidden)
+        return;
+
+    g_GameDATA.m_bNoUI = bHidden;
+    /// The no-UI cursor is the original team's filming cursor ( a 2 px red
+    /// dot, Res\noui01.cur ); CCursorStateDx keeps it while the flag is set.
+    CCursor::GetInstance().SetCursorType(bHidden ? CCursor::CURSOR_NOUI : CCursor::CURSOR_DEFAULT);
+    LOG_INFO("Interface {} ({})", bHidden ? "hidden" : "shown", pszReason ? pszReason : "?");
+}
+
+bool
+IT_MGR::IsInterfaceHidden() const {
+    return g_GameDATA.m_bNoUI;
+}
+
+void
 IT_MGR::InitDLG() {
     CBankWindowDlg* pBankWindowDlg = new CBankWindowDlg;
     pBankWindowDlg->Create(DIALOG_FILENAME[DLG_TYPE_BANKWINDOW]);
@@ -671,7 +703,7 @@ IT_MGR::FreeDLG() {
 }
 
 void
-IT_MGR::DrawDLGs(POINT ptMouse) {
+IT_MGR::UpdateDLGs(POINT ptMouse) {
     g_HelpMgr.UpdateFrame();
 
     /// Control���� ���������� ó���ϴ� ���� �ʱ�ȭ
@@ -679,13 +711,16 @@ IT_MGR::DrawDLGs(POINT ptMouse) {
     CWinCtrl::SetProcessMouseOver(false);
     CWinCtrl::SetProcessMouseOverCtrl(NULL);
     CTDialog::SetProcessMouseOverDialog(NULL);
-    ///
-    CTDialog* pDlg = NULL;
 
     for_each(m_Dlgs.rbegin(), m_Dlgs.rend(), [ptMouse](auto d) { d->Update(ptMouse); });
     for_each(m_Icons.rbegin(), m_Icons.rend(), [ptMouse](auto i) { i->Update(ptMouse); });
     if (!RoseUi2::IsPieceReplaced(RoseUi2::PIECE_NOTIFY_BUTTONS))
         m_pNotifyButtonDlg->Update(ptMouse);
+}
+
+void
+IT_MGR::DrawDLGs(POINT ptMouse) {
+    UpdateDLGs(ptMouse);
 
     for_each(m_Icons.begin(), m_Icons.end(), [](auto i) { i->Draw(); });
     for_each(m_Dlgs.begin(), m_Dlgs.end(), [](auto d) { d->Draw(); });
@@ -803,6 +838,10 @@ IT_MGR::OpenQueryDLG(short nSX,
     int iEventOwner,
     int iEventDlgType) {
     CDialogDlg* pDlg = NULL;
+
+    /// An NPC conversation ( or an item's question ) is something the player
+    /// has to read and answer.
+    SetInterfaceHidden(false, "conversation opened");
 
     switch (iEventDlgType) {
         /// NPC ��ȭâ
@@ -1551,6 +1590,9 @@ IT_MGR::CloseDialog(int iDlgType) {
 
 bool
 IT_MGR::IsMouseOnInterface() {
+    /// Hidden ( screenshot mode ): the world under every window is the world's.
+    if (IsInterfaceHidden())
+        return false;
     if (CTDialog::GetProcessMouseOverDialog() || CDragNDropMgr::GetInstance().IsDraging())
         return true;
     /// UI2 panels are interface too ( RoseRmlUi ).
@@ -1763,6 +1805,10 @@ IT_MGR::ChangeState(int iIndex) {
             m_pCurrState = m_pStates[iIndex];
             m_pCurrState->Enter();
         }
+        /// Every other state needs its window: the death window, the logout
+        /// countdown, repair and appraisal.
+        if (iIndex != STATE_NORMAL)
+            SetInterfaceHidden(false, "interface state changed");
     }
 }
 int

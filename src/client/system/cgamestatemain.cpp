@@ -187,6 +187,15 @@ CGameStateMain::Update(bool bLostFocus) {
             FrameProfiler::Begin(FrameProfiler::SLOT_UI);
             if (!g_GameDATA.m_bNoUI) {
                 Render_GameMENU();
+            } else {
+                /// Screenshot mode ( Alt+H ): nothing drawn, but the interface
+                /// keeps running. The overhead-name list is emptied by its
+                /// Draw, so it is emptied here instead. Inside a sprite batch
+                /// like IT_MGR::Update's, in case a dialog's Update draws.
+                g_pViewMSG->Clear();
+                ::beginSprite(D3DXSPRITE_ALPHABLEND);
+                g_itMGR.UpdateHidden();
+                ::endSprite();
             }
 
             this->render_dev_ui();
@@ -299,6 +308,10 @@ CGameStateMain::Enter(int iPrevStateID) {
 
 int
 CGameStateMain::Leave(int iNextStateID) {
+    /// Screenshot mode ends with the game state: a zone change arrives with
+    /// the interface, and the character select reads the same flag.
+    g_itMGR.SetInterfaceHidden(false, "left the game state");
+
     g_pTerrain->SetMapPrefetchEnabled(false);
 
     g_pCamera->Detach();
@@ -949,6 +962,27 @@ CGameStateMain::ProcKeyboardInput(UINT uiMsg, WPARAM wParam, LPARAM lParam) {
             break;
     }
 
+    /// Screenshot mode: Alt+H hides or shows the whole interface, and Escape
+    /// shows it again ( a player who forgot the key is never stuck ). Taken
+    /// before the interface sees the key: Alt+H used to open the Help window,
+    /// which UI2 dropped. Keys keep working while it is hidden ( skills, for
+    /// action shots ). Hidden only in the normal interface state: the death
+    /// window and the like must stay visible.
+    if (uiMsg == WM_SYSKEYDOWN && !(lParam & (1 << 30))) { /// not auto-repeat
+        unsigned int oemScan = int(lParam & (0xff << 16)) >> 16;
+        if (MapVirtualKey(oemScan, 1) == 0x48) { // 'h'
+            if (g_itMGR.IsInterfaceHidden())
+                g_itMGR.SetInterfaceHidden(false, "Alt+H");
+            else if (g_itMGR.GetState() == IT_MGR::STATE_NORMAL)
+                g_itMGR.SetInterfaceHidden(true, "Alt+H");
+            return 1;
+        }
+    }
+    if (uiMsg == WM_KEYDOWN && wParam == VK_ESCAPE && g_itMGR.IsInterfaceHidden()) {
+        g_itMGR.SetInterfaceHidden(false, "Escape");
+        return 1;
+    }
+
     if (g_itMGR.MsgProc(uiMsg, wParam, lParam))
         return 1;
 
@@ -1040,14 +1074,6 @@ CGameStateMain::ProcKeyboardInput(UINT uiMsg, WPARAM wParam, LPARAM lParam) {
 #endif
                     }
                     break;
-
-                /// 'H'
-                // case 0x48:
-                //	if( CGame::GetInstance().GetRight() )
-                //	{
-                //		g_GameDATA.m_bNoUI = !g_GameDATA.m_bNoUI;
-                //	}
-                //	break;
 
                 /// 'D'
                 case 0x44:
@@ -1571,8 +1597,13 @@ CGameStateMain::ProcWndMsgInstant(unsigned uiMsg, WPARAM wParam, LPARAM lParam) 
     }
 
     POINT ptMouse = {LOWORD(lParam), HIWORD(lParam)};
+    /// The overlay panels below are not drawn in screenshot mode, so they take
+    /// no clicks either: the world gets them.
+    const bool bPanelsShown = !g_itMGR.IsInterfaceHidden();
     switch (uiMsg) {
         case WM_LBUTTONDOWN: {
+            if (!bPanelsShown)
+                break;
             // 아이템 미리보기 패널( 맨 위에 그려짐 ) — 클릭 전부 소비( 닫기 / 드래그 시작 )
             if (g_UIMed.ItemPreviewLButtonDown(ptMouse.x, ptMouse.y))
                 return 1;
@@ -1590,6 +1621,8 @@ CGameStateMain::ProcWndMsgInstant(unsigned uiMsg, WPARAM wParam, LPARAM lParam) 
             break;
         }
         case WM_LBUTTONUP: {
+            if (!bPanelsShown)
+                break;
             if (g_UIMed.ItemPreviewLButtonUp(ptMouse.x, ptMouse.y))
                 return 1;
             if (g_UIMed.MonsterInspectorLButtonUp(ptMouse.x, ptMouse.y))
@@ -1603,19 +1636,21 @@ CGameStateMain::ProcWndMsgInstant(unsigned uiMsg, WPARAM wParam, LPARAM lParam) 
         case WM_MOUSEMOVE: {
             // 몬스터 인스펙터: hover 좌표 추적( 드랍 아이콘 이름 표시용, 소비하지 않음 ).
             // 드래그 중일 때만 이동을 소비한다.
-            if (g_UIMed.ItemPreviewMouseMove(ptMouse.x, ptMouse.y))
-                return 1;
-            if (g_UIMed.MonsterInspectorMouseMove(ptMouse.x, ptMouse.y))
-                return 1;
-            // 데미지 미터 패널 드래그 중이면 좌버튼 이동을 패널 이동으로 소비한다.
-            if ((wParam & MK_LBUTTON) && g_UIMed.IsDamageMeterDragging()) {
-                g_UIMed.DamageMeterMouseMove(ptMouse.x, ptMouse.y);
-                return 1;
-            }
-            // 소환몹 패널 드래그 중이면 좌버튼 이동을 패널 이동으로 소비한다.
-            if ((wParam & MK_LBUTTON) && g_UIMed.IsSummonPanelDragging()) {
-                g_UIMed.SummonPanelMouseMove(ptMouse.x, ptMouse.y);
-                return 1;
+            if (bPanelsShown) {
+                if (g_UIMed.ItemPreviewMouseMove(ptMouse.x, ptMouse.y))
+                    return 1;
+                if (g_UIMed.MonsterInspectorMouseMove(ptMouse.x, ptMouse.y))
+                    return 1;
+                // 데미지 미터 패널 드래그 중이면 좌버튼 이동을 패널 이동으로 소비한다.
+                if ((wParam & MK_LBUTTON) && g_UIMed.IsDamageMeterDragging()) {
+                    g_UIMed.DamageMeterMouseMove(ptMouse.x, ptMouse.y);
+                    return 1;
+                }
+                // 소환몹 패널 드래그 중이면 좌버튼 이동을 패널 이동으로 소비한다.
+                if ((wParam & MK_LBUTTON) && g_UIMed.IsSummonPanelDragging()) {
+                    g_UIMed.SummonPanelMouseMove(ptMouse.x, ptMouse.y);
+                    return 1;
+                }
             }
 #ifdef _DEBUG
             if (g_GameDATA.m_bObserverCameraMode) {
