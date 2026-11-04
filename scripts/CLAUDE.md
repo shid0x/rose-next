@@ -896,6 +896,14 @@ Things that will bite:
 ## Lessons From Zone Imports
 
 General traps found while importing a particular zone; the zone histories are in `doc/zones/`.
+**Importing a map follows [doc/importing-maps.md](../doc/importing-maps.md)** (survey,
+rows, map folder, repairs, walk grid, checks, first test); China Rose maps go through
+`import-china-rose.py`, one spec per map.
+
+- **A source map's ids name the source's tables.** China Rose's HA gate named WARP row
+  38, which is ours too -- Anima Lake -> Junon Polis: kept as shipped, the gate would
+  have teleported players there. Every WARP / REGEN / MOB / MORPH id and the zone row's
+  sky row is re-pointed, held back or dropped, never copied (2026-11-04).
 
 - **667's `NPC_TYPE` codes are composite** — 42 Leader-Guard, 53, 72 King-Guard, 75 King-Ranger … — and `CNameBox::DrawTargetMark` uses that column *directly* as a sprite index into `TARGETMARK.TSI` (36 sprites), so those monsters showed no mark beside the focus bar. The importer folds kings (7x) to the crown (11) and elites (8x) to the skull (16), and the other composites (leader/captain/sub-boss) to the units digit (the role); the server only compares the column against 900. Bare-handed monsters present their hit through `NPC_HAND_HIT_EFFECT` (game col 33, a `LIST_EFFECT` row): 667 left it blank on the Golden Scarabs and the Hungry Desert Scavenger, which landed no visible impact; 403 is the retail default and the importer fills it.
 

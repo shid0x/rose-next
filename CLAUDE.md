@@ -188,6 +188,9 @@ file before working in that area.
   `doc/making-events.md`.
 - **Rose Dev Studio** -- `src/tools/dev-studio/CLAUDE.md` (STL text is UTF-8; STB
   cells decode per cell).
+- **Importing a map** -- `doc/importing-maps.md`: survey, rows, map folder, repairs, the
+  walk grid (`nav-bake.py`), checks, test; China Rose's traps (its WARP/REGEN/morph ids
+  name its own tables, a 128 px minimap, filler chunks) and `scripts/import-china-rose.py`.
 - **Zones** -- `doc/zones/`: `oro.md` (never re-run `import-oro-667.py --stage 3` to
   change spawns -- it rewrites the Oro monster rows and undoes the balance, drop and
   mark passes; use `fix-oro-spawn-density.py`), `skaaj.md`, `shibuya.md` (`--stage 3`
