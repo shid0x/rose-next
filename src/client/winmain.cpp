@@ -134,6 +134,15 @@ Init_DEVICE(void) {
     LOG_INFO("Transparency AA requested: {} ([VIDEO] TRANSPARENCY_AA; error.txt has the result)",
         transparency_aa == 1 ? "supersampling" : (transparency_aa == 2 ? "alpha-to-coverage" : "off"));
 
+    // Two-pass alpha parts ([VIDEO] FOLIAGE_TWO_PASS, 1 = on, the default): a blended,
+    // alpha-tested part draws its solid core with depth and its soft edge without, so two
+    // mis-sorted alpha parts show no pale outline (Haian Coast's canopies, 2026-11-04).
+    // 0 = the old single draw. "/alphasplit" flips it live for an A/B.
+    const int foliage_two_pass =
+        (int)::GetPrivateProfileIntA("VIDEO", "FOLIAGE_TWO_PASS", 1, "./rose-next.ini");
+    ::setFoliageTwoPass(foliage_two_pass);
+    LOG_INFO("Two-pass alpha parts: {} ([VIDEO] FOLIAGE_TWO_PASS)", foliage_two_pass ? "on" : "off");
+
     // Borderless takes this branch too, and correctly: it is a windowed device, and
     // CreateWND already snapped the window to the monitor, so the client rect *is* the
     // monitor size. Do not "fix" this to use Resolution.iWidth/iHeight -- a backbuffer that

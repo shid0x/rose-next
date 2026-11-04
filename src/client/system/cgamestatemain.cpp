@@ -612,6 +612,17 @@ CGameStateMain::Render_GameMENU() {
             ::getParticleBatchSavedDrawCalls());
         nRowY += kDebugRowStride;
 
+        /// Two-pass alpha parts: the extra draw calls they cost this frame
+        /// ( 0 while "/alphasplit" has them off ).
+        ::drawFontf(g_GameDATA.m_hFONT[FONT_NORMAL],
+            false,
+            kDebugX,
+            nRowY,
+            g_dwYELLOW,
+            "AlphaSplit: draws=%d",
+            ::getFoliageSplitDraws());
+        nRowY += kDebugRowStride;
+
         /// Address space, not RAM, is what a 32-bit client runs out of -- see
         /// ProcessMemory.h. Red within 256 MB of the ceiling.
         {

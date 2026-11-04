@@ -325,6 +325,17 @@ int setTransparencyAntiAliasing ( int iMode );
 ZZ_SCRIPT
 int getTransparencyAntiAliasingStatus ( );
 
+/// Two-pass alpha parts ([VIDEO] FOLIAGE_TWO_PASS): a blended, alpha-tested part
+/// draws its solid core with depth, then its soft edge without, so a mis-sorted
+/// pair of alpha parts shows no pale outline. 1 = on (default), 0 = off; applies
+/// at the next draw. Returns the previous setting.
+ZZ_SCRIPT
+int setFoliageTwoPass ( int bUse );
+
+/// Alpha parts drawn split since the last call (the debug HUD's count).
+ZZ_SCRIPT
+int getFoliageSplitDraws ( );
+
 // whether use octree cull or not
 // returns old value (true : 1, false : 0)
 ZZ_SCRIPT

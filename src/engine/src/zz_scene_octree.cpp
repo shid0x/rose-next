@@ -374,16 +374,33 @@ void zz_scene_octree::render_opaque ()
 #endif
 }
 
+void zz_arm_foliage_split (bool armed); // zz_renderer_d3d.cpp
+
+// Two-pass alpha parts (zz_renderer_d3d.cpp, FOLIAGE_CORE_ALPHA): a node may be split
+// only in single-pass rendering (the multipass lightmap pass blends on top of pass 0)
+// and only when it stands wholly nearer than the alpha fog, whose distance fade is
+// carried by the blend. The centre of mass lies inside the bounding sphere, so its
+// distance plus twice the radius bounds the node's farthest point.
+static bool foliage_split_allowed (zz_visible * vis, const zz_render_state * rs)
+{
+	if (rs->use_multipass) return false;
+	if (!rs->use_alpha_fog) return true;
+	return sqrtf(vis->get_camdist_square()) + 2.0f * vis->get_radius() < rs->alpha_fog_start;
+}
+
 void zz_scene_octree::render_transparent ()
 {
 	num_delayed = (int)delayed_nodes.size();
 
 	PROFILER_RENDER_SUB(Prender_transparent, "scene_octree: render_transparent(%d)\n", num_delayed);
 
+	const zz_render_state * rs = znzin->get_rs();
+
 #ifdef DRAW_BBOX
 	if (znzin->get_rs()->use_draw_bounding_volume) {
 		for (zz_vislist::iterator it = delayed_nodes.begin(), it_end = delayed_nodes.end(); it != it_end; ++it)
 		{
+			zz_arm_foliage_split(foliage_split_allowed(*it, rs));
 			(*it)->render();
 			if ((*it)->get_bvolume()) {
 				(*it)->get_bvolume()->draw_bounding_volume();
@@ -393,15 +410,18 @@ void zz_scene_octree::render_transparent ()
 	else {
 		for (zz_vislist::iterator it = delayed_nodes.begin(), it_end = delayed_nodes.end(); it != it_end; ++it)
 		{
+			zz_arm_foliage_split(foliage_split_allowed(*it, rs));
 			(*it)->render();
 		}
 	}
 #else
 	for (zz_vislist::iterator it = delayed_nodes.begin(), it_end = delayed_nodes.end(); it != it_end; ++it)
 	{
+		zz_arm_foliage_split(foliage_split_allowed(*it, rs));
 		(*it)->render();
 	}
 #endif
+	zz_arm_foliage_split(false);
 }
 
 void zz_scene_octree::render_ocean ()

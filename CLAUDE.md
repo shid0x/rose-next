@@ -159,7 +159,8 @@ file before working in that area.
 - **Engine** -- `src/engine/CLAUDE.md`: D3D9Ex device (no `D3DPOOL_MANAGED`; the frame
   cap also lives in `zz_system::sleep` and INIT.LUA), cull bounds (ZSC boxes are wrong;
   use mesh bounds), depth precision (`r_d3d: depth-stencil format` in error.txt),
-  lightmap atlas (keep `setMipmapLevel(3)`), transparency AA, and "a missing asset logs
+  lightmap atlas (keep `setMipmapLevel(3)`), transparency AA and two-pass alpha parts
+  (the pale outline round mis-sorted foliage, `[VIDEO] FOLIAGE_TWO_PASS`), and "a missing asset logs
   once and degrades -- never fatal, never retried".
 - **UI2 / RmlUi** -- `src/client/rmlui/CLAUDE.md`: every UI2 panel and window, traps
   and performance rules (`dp` not `px`; no nested auto-sized flex; a replaced classic

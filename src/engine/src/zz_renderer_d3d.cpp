@@ -134,6 +134,62 @@ int zz_get_transparency_aa_status ()
 	return s_transparency_aa_status;
 }
 
+// Two-pass alpha parts ([VIDEO] FOLIAGE_TWO_PASS, default on; src/engine/CLAUDE.md,
+// "Transparency Antialiasing"). A texture-alpha material is alpha-BLENDED with an
+// alpha test and writes depth, and the transparent pass sorts each part by its own
+// centre. Two overlapping alpha parts (a canopy and its vines, two big canopies)
+// swap order as the camera moves; when the near one draws first, its
+// half-transparent edge blends with the sky already in the frame and writes depth,
+// and the part behind it is cut out around it: a pale outline. Split, the draw is
+//   1. the solid core: alpha >= FOLIAGE_CORE_ALPHA, depth written as the material
+//      says (every visible cut-out in our maps keeps its solid texels at 238+);
+//   2. the soft edge: the material's own alpha test, no depth write, and a strict
+//      depth test, so the core just drawn (same depth, bit for bit) is not blended
+//      twice.
+// Correctly sorted, the picture is unchanged; mis-sorted, the edge loses to what is
+// behind it instead of punching a hole through it. zz_scene_octree::render_transparent
+// arms it per node (single-pass rendering, the node wholly nearer than the alpha fog,
+// whose fade needs the blend); render() splits only a plain blended, alpha-tested,
+// depth-writing draw of a material that is not fading. File-scope: no class layout
+// changes.
+static const ulong FOLIAGE_CORE_ALPHA = 0xE0;
+static bool s_foliage_two_pass = true;      // requested ([VIDEO] FOLIAGE_TWO_PASS)
+static bool s_foliage_split_armed = false;  // this node may be split
+static unsigned int s_foliage_split_draws = 0;
+// the state the last material applied, as the setters below wrote it
+static bool s_cur_alpha_blend = false;
+static int s_cur_blend_type = ZZ_BT_NORMAL;
+static bool s_cur_alpha_test = false;
+static ulong s_cur_alpha_ref = 0x80;
+static ZZ_CMPFUNC s_cur_alpha_func = ZZ_CMP_GREATEREQUAL;
+static bool s_cur_zwrite = true;
+static ZZ_CMPFUNC s_cur_zfunc = ZZ_CMP_LESSEQUAL;
+
+void zz_set_foliage_two_pass (bool enabled)
+{
+	if (enabled != s_foliage_two_pass) {
+		ZZ_LOG("r_d3d: two-pass alpha parts switched %s\n", enabled ? "on" : "off");
+	}
+	s_foliage_two_pass = enabled;
+}
+
+bool zz_get_foliage_two_pass ()
+{
+	return s_foliage_two_pass;
+}
+
+void zz_arm_foliage_split (bool armed)
+{
+	s_foliage_split_armed = armed && s_foliage_two_pass;
+}
+
+unsigned int zz_take_foliage_split_draws ()
+{
+	const unsigned int n = s_foliage_split_draws;
+	s_foliage_split_draws = 0;
+	return n;
+}
+
 zz_renderer_d3d::zz_renderer_d3d () : zz_renderer()
 {
 	view = NULL;
@@ -3141,28 +3197,53 @@ void zz_renderer_d3d::render (zz_mesh * mesh, zz_material * material, zz_light *
 	// add polygon and object count
 	num_polygons_ += mesh->get_num_faces();
 	++num_meshes_;
-	
+
 	//ZZ_LOG("r_d3d: render #% 6d (%s-%s)\n", mesh->get_num_faces(), mesh->get_path(), mesh->get_name() );
-	
+
 #if defined(_DEBUG)
 	//validate_device();
 #endif
-	
-	switch (mesh->get_index_type())
-	{
-	case zz_mesh::TYPE_LIST:
-		draw_indexed_trilist(mesh);
-		break;
-	case zz_mesh::TYPE_STRIP:
-		draw_indexed_tristrip(mesh);
-		break;
-	default:
-		assert(!"invalid index type");
-		ZZ_LOG("r_d3d: render(%s) invalid index type\n", mesh->get_path());
-		break;
+
+	auto draw_mesh = [this](zz_mesh * m) {
+		switch (m->get_index_type())
+		{
+		case zz_mesh::TYPE_LIST:
+			draw_indexed_trilist(m);
+			break;
+		case zz_mesh::TYPE_STRIP:
+			draw_indexed_tristrip(m);
+			break;
+		default:
+			assert(!"invalid index type");
+			ZZ_LOG("r_d3d: render(%s) invalid index type\n", m->get_path());
+			break;
+		}
+	};
+
+	// two-pass alpha parts (see FOLIAGE_CORE_ALPHA): a plain blended, alpha-tested,
+	// depth-writing draw of a material at full opacity, below the core threshold
+	const bool split = s_foliage_split_armed && material && !_sprite_began
+		&& s_cur_alpha_blend && s_cur_blend_type == ZZ_BT_NORMAL
+		&& s_cur_alpha_test && s_cur_alpha_func == ZZ_CMP_GREATEREQUAL
+		&& s_cur_alpha_ref < FOLIAGE_CORE_ALPHA
+		&& s_cur_zwrite && s_cur_zfunc == ZZ_CMP_LESSEQUAL
+		&& material->get_objectalpha() >= 1.0f && material->get_materialalpha() >= 1.0f;
+
+	if (split) {
+		d3d_device->SetRenderState(D3DRS_ALPHAREF, FOLIAGE_CORE_ALPHA);
+		draw_mesh(mesh);
+		d3d_device->SetRenderState(D3DRS_ALPHAREF, s_cur_alpha_ref);
+		d3d_device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+		d3d_device->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESS);
+		draw_mesh(mesh);
+		d3d_device->SetRenderState(D3DRS_ZWRITEENABLE, TRUE);
+		d3d_device->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
+		++s_foliage_split_draws;
+		++num_meshes_;
 	}
-
-
+	else {
+		draw_mesh(mesh);
+	}
 }
 
 
@@ -4851,6 +4932,9 @@ bool zz_renderer_d3d::enable_alpha_test (bool true_or_false, ulong alpha_ref, ZZ
 	}
 	d3d_device->SetRenderState(D3DRS_ALPHAREF, alpha_ref);
 	d3d_device->SetRenderState(D3DRS_ALPHAFUNC, cmp_func);
+	s_cur_alpha_test = true_or_false;
+	s_cur_alpha_ref = alpha_ref;
+	s_cur_alpha_func = cmp_func;
 
 	// Every alpha-test toggle in the engine comes through here, so this one line
 	// covers every draw. Written unconditionally rather than cached: a device
@@ -4880,6 +4964,8 @@ bool zz_renderer_d3d::enable_alpha_blend (bool true_or_false, int blend_type)
 	//ZZ_LOG("r_d3d: enable_alpha_blend(%d)\n", true_or_false);
 	//if (old_value != true_or_false) { // changed, then update render state
 	d3d_device->SetRenderState(D3DRS_ALPHABLENDENABLE, (true_or_false) ? TRUE : FALSE);
+	s_cur_alpha_blend = true_or_false;
+	s_cur_blend_type = blend_type;
 	
 	ret_value = old_value;
 	old_value = true_or_false; // update old
@@ -4936,6 +5022,7 @@ bool zz_renderer_d3d::enable_zwrite (bool true_or_false)
 
 	// changed	
 	d3d_device->SetRenderState(D3DRS_ZWRITEENABLE, (true_or_false) ? TRUE : FALSE);	
+	s_cur_zwrite = true_or_false;
 	ret_value = old_value;
 	old_value = true_or_false; // update old
 	return ret_value;
@@ -5729,6 +5816,7 @@ void zz_renderer_d3d::render_shadowmap_overlay()
 bool zz_renderer_d3d::set_zfunc (ZZ_CMPFUNC val)
 {
 	if (FAILED(d3d_device->SetRenderState(D3DRS_ZFUNC, static_cast<ZZ_CMPFUNC>(val)))) return false;
+	s_cur_zfunc = val;
 	return true;
 }
 

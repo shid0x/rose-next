@@ -485,6 +485,9 @@ int setFullSceneAntiAliasing ( int Type )
 }
 
 void zz_set_transparency_aa_request (int mode); // zz_renderer_d3d.cpp
+void zz_set_foliage_two_pass (bool enabled); // zz_renderer_d3d.cpp
+bool zz_get_foliage_two_pass ();
+unsigned int zz_take_foliage_split_draws ();
 int zz_get_transparency_aa_status ();
 
 ZZ_SCRIPT
@@ -500,6 +503,22 @@ int getTransparencyAntiAliasingStatus ( )
 {
 	CHECK_INTERFACE(getTransparencyAntiAliasingStatus);
 	return zz_get_transparency_aa_status();
+}
+
+ZZ_SCRIPT
+int setFoliageTwoPass ( int bUse )
+{
+	CHECK_INTERFACE(setFoliageTwoPass);
+	const int old = zz_get_foliage_two_pass() ? 1 : 0;
+	zz_set_foliage_two_pass(bUse != 0);
+	return old;
+}
+
+ZZ_SCRIPT
+int getFoliageSplitDraws ( )
+{
+	CHECK_INTERFACE(getFoliageSplitDraws);
+	return (int)zz_take_foliage_split_draws();
 }
 
 //==========================

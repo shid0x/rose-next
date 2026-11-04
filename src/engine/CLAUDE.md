@@ -235,6 +235,40 @@ Things that will bite:
   checkbox can switch it live; the mode (1 vs 2) applies on the next device.
 - Cost is per-sample shading of alpha-tested 3D pixels only (fixed-function, cheap);
   not measured on low-end NVIDIA yet -- the alpha is the benchmark.
+- **A pale outline on foliage that comes and goes with the camera is the transparent
+  sort, not the texture** (Haian Coast's hanging vines, 2026-11-04). A texture-alpha
+  material on a fogged object is alpha-*blended* with an alpha test of 32
+  (`zz_material_colormap.cpp`, "do small alpha test for fogged objects") and drawn in
+  the transparent pass, sorted far to near **per part**, each by its own centre
+  (`compare_farther_than`). Two overlapping alpha parts of one model (a canopy and a
+  vine card) swap order as the camera moves; when the front one draws first, its
+  half-transparent edge blends with the sky already in the frame and writes depth, so
+  the part behind it is cut out around it. Soft (gradient) alpha makes the edge wide;
+  big overlapping canopies show it even with a hard cut-out (bilinear filtering makes
+  a one-texel soft edge of any texture).
+  **Two-pass alpha parts** (2026-11-04, `zz_renderer_d3d::render`, `[VIDEO]
+  FOLIAGE_TWO_PASS`, default 1; `/alphasplit` flips it live for an A/B): such a draw is
+  split into its **solid core** (alpha >= 224, depth written) and its **soft edge**
+  (the material's own test, no depth write, `D3DCMP_LESS` so the core is not blended
+  twice). Correctly sorted, the picture is the same; mis-sorted, the edge loses to
+  what is behind it instead of cutting it out. 224 because every visible cut-out in our
+  maps keeps its solid texels at 238+ (a scan of the 320; Haian's canopy is 0/239) --
+  a texture whose solid level sat under it would stop writing depth altogether.
+  Scope: `render_transparent` arms it per node (`zz_arm_foliage_split`) in single-pass
+  rendering only, and only for a node wholly nearer than the alpha fog start (the
+  fog's distance fade rides the blend: `oD0.w` in the object shaders); `render()`
+  splits only a plain blended (`ZZ_BT_NORMAL`), alpha-tested (`>=`), depth-writing
+  (`LESSEQUAL`) draw of a material not fading (object and material alpha 1), outside
+  a sprite batch. It reads the state the material just applied from file-scope caches
+  the setters (`enable_alpha_test` / `_blend`, `enable_zwrite`, `set_zfunc`) keep, so
+  there is no class layout change. The 29 genuinely translucent map materials (lights,
+  crystals, glass) need no exception: their texels mostly sit under 224, so they draw
+  in the edge pass, without depth, as translucency should. Cost: a second draw call
+  per split part; the debug HUD's `AlphaSplit: draws=` line counts them per frame.
+  Validated in game 2026-11-04 (the user: "it fixes the issue"): at most 130 extra
+  draws a frame on an Eldeon map, no change in frame rate on the RTX 5060. The
+  data mitigation for a very soft texture (`import-china-rose.py` `cutout_textures`)
+  stays useful on its own.
 - A full-mip-chain experiment for the same shimmer was reverted: it changed nothing
   visible (8x anisotropic already covered texture minification). Its patch and the
   one useful part -- pinning object lightmaps at 3 mip levels, which quality presets

@@ -571,6 +571,20 @@ CChatDLG::SendLine(const char* szMsg, std::string& strNext) {
         return true;
     }
 
+    /// "/alphasplit" switches the engine's two-pass alpha parts on or off live, to
+    /// A/B the pale outline round mis-sorted foliage ( src/engine/CLAUDE.md,
+    /// "Transparency Antialiasing" ). [VIDEO] FOLIAGE_TWO_PASS sets the value at
+    /// start; this does not write it. Local command, never sent.
+    if (stMsg == "/alphasplit") {
+        const bool bWasOn = ::setFoliageTwoPass(1) != 0;
+        ::setFoliageTwoPass(bWasOn ? 0 : 1);
+        g_itMGR.AppendChatMsg(bWasOn ? "Two-pass alpha parts: off (the old single draw)."
+                                     : "Two-pass alpha parts: on.",
+            IT_MGR::CHAT_TYPE_SYSTEM);
+
+        return true;
+    }
+
     /// "/perfreset" re-zeroes the streaming peak counters (Flush: peak and
     /// MapIO: worst). Both saturate during the zone-in burst, so without a way
     /// to clear them once you are standing in the world they only ever report
