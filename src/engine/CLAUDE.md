@@ -255,18 +255,49 @@ Things that will bite:
   maps keeps its solid texels at 238+ (a scan of the 320; Haian's canopy is 0/239) --
   a texture whose solid level sat under it would stop writing depth altogether.
   Scope: `render_transparent` arms it per node (`zz_arm_foliage_split`) in single-pass
-  rendering only, and only for a node wholly nearer than the alpha fog start (the
-  fog's distance fade rides the blend: `oD0.w` in the object shaders); `render()`
+  rendering only. The alpha fog's distance fade rides the blend (`oD0.w` in the object
+  shaders multiplies texture alpha), so in the fog band the core threshold is 224 times
+  the fade at the node's farthest point (distance + 2 radii; the shader fades by view
+  depth, never more), and deep in the fog (fade < 0.25) the node draws the old way. A
+  first version split only nodes wholly nearer than the fog start, and Haian's 65 m
+  canopies kept their outline beyond ~190 m on Far (fog 260-450 m; Mid 200-320, Near
+  90-145, LIST_CAMERA cols 7/8); `render()`
   splits only a plain blended (`ZZ_BT_NORMAL`), alpha-tested (`>=`), depth-writing
   (`LESSEQUAL`) draw of a material not fading (object and material alpha 1), outside
-  a sprite batch. It reads the state the material just applied from file-scope caches
+  a sprite batch, **and whose texture is a cut-out, not a translucent surface**.
+  **Translucent surfaces** (second round, same day; the test found the split wrong for
+  them -- Marsh of Ghosts' crystals, Junon Polis's balloons, the Bone Warden ghost in the
+  Desert of the Dead showed what drew after them): every texture is classified once at
+  `download_texture`, from its file (`classify_texture_alpha`: the level nearest 128 px,
+  DXT3/DXT5/A8R8G8B8/A4R4G4B4 decoded, DXT1/A1R5G5B5 binary): the share of visible texels
+  (>= 32) that are half-transparent (< 224) **and more than 4 texels from any clear
+  texel**. A cut-out's soft texels are a thin band beside clear ones; a surface's fill
+  wide areas. Over 25% = a surface: never split, and `update_object_sort` draws every
+  surface node **after** every cut-out (each group far to near) -- the standard order for
+  transparency, so a ghost blends over the web behind it. Measured on our 353 alpha map
+  textures: foliage 0-8.6%; every surface the test showed through 32% and up (crystals
+  32-40%, balloons 38%, the ghost 50-58%; also lights, glass, the Lounge's cones, tables,
+  Oro's `or_plantc`). **Junon's street-lamp globe (`STREETLIGHTB`, 23%) must stay split**:
+  the lamp's lit "bulb" is the core of its glow effect inside the translucent globe, and a
+  globe writing depth hides it (retail's look; a 15% cut-off brought it back). error.txt logs
+  each surface once (`r_d3d: translucent surface ...`). Unreadable files stay unsplit in the
+  first group. With `/alphasplit` off the order is the old single sort.
+  It reads the state the material just applied from file-scope caches
   the setters (`enable_alpha_test` / `_blend`, `enable_zwrite`, `set_zfunc`) keep, so
   there is no class layout change. The 29 genuinely translucent map materials (lights,
   crystals, glass) need no exception: their texels mostly sit under 224, so they draw
   in the edge pass, without depth, as translucency should. Cost: a second draw call
   per split part; the debug HUD's `AlphaSplit: draws=` line counts them per frame.
   Validated in game 2026-11-04 (the user: "it fixes the issue"): at most 130 extra
-  draws a frame on an Eldeon map, no change in frame rate on the RTX 5060. The
+  draws a frame on an Eldeon map, no change in frame rate on the RTX 5060. It also
+  fixed a retail bug nobody had traced: **Junon Polis's street lamps (LIST_DECO_JPT 172)
+  showed an unlit bulb** -- the bright core of the lamp's glow effect sits inside the
+  head's translucent glass globe (`streetlight01t`, `STREETLIGHTB`, alpha ~200), and the
+  globe wrote depth, so the effect drawn after it was hidden inside. (`streetlight01g` is
+  the iron scrollwork, a plain cut-out.) Anything that "is sometimes missing behind glass, or
+  shows through a solid surface, depending on the camera" is this sort; but a surface
+  meant to be solid and stored half-transparent now shows through more often (Junon's
+  tents: `set-texture-cutout.py`). The
   data mitigation for a very soft texture (`import-china-rose.py` `cutout_textures`)
   stays useful on its own.
 - A full-mip-chain experiment for the same shimmer was reverted: it changed nothing

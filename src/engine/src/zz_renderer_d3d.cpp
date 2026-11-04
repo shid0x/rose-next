@@ -39,6 +39,10 @@
 #endif
 
 #include <windows.h>
+#include <algorithm>
+#include <cstring>
+#include <unordered_map>
+#include <vector>
 
 #pragma comment (lib, "d3d9.lib")
 #pragma comment (lib, "d3dx9.lib")
@@ -148,13 +152,14 @@ int zz_get_transparency_aa_status ()
 //      twice.
 // Correctly sorted, the picture is unchanged; mis-sorted, the edge loses to what is
 // behind it instead of punching a hole through it. zz_scene_octree::render_transparent
-// arms it per node (single-pass rendering, the node wholly nearer than the alpha fog,
-// whose fade needs the blend); render() splits only a plain blended, alpha-tested,
-// depth-writing draw of a material that is not fading. File-scope: no class layout
-// changes.
+// arms it per node (single-pass rendering; in the alpha fog the core threshold is scaled
+// by the fog's fade, see zz_arm_foliage_split); render() splits only a plain blended, alpha-tested,
+// depth-writing draw of a material that is not fading and whose texture is a cut-out,
+// never a translucent surface (see TRANSLUCENT_INTERIOR_SHARE below). File-scope: no
+// class layout changes.
 static const ulong FOLIAGE_CORE_ALPHA = 0xE0;
 static bool s_foliage_two_pass = true;      // requested ([VIDEO] FOLIAGE_TWO_PASS)
-static bool s_foliage_split_armed = false;  // this node may be split
+static ulong s_foliage_core_alpha = 0;      // this node's core threshold; 0 = not split
 static unsigned int s_foliage_split_draws = 0;
 // the state the last material applied, as the setters below wrote it
 static bool s_cur_alpha_blend = false;
@@ -178,9 +183,14 @@ bool zz_get_foliage_two_pass ()
 	return s_foliage_two_pass;
 }
 
-void zz_arm_foliage_split (bool armed)
+// `core_scale` (0..1): the node's alpha fog factor at its farthest point, 1 when it is
+// wholly nearer than the fog, 0 = draw it the old way. The object shaders multiply
+// texture alpha by that factor (oD0.w), so a solid texel fading in the fog stays above
+// FOLIAGE_CORE_ALPHA * factor and keeps writing depth, and the soft edge still does not.
+void zz_arm_foliage_split (float core_scale)
 {
-	s_foliage_split_armed = armed && s_foliage_two_pass;
+	s_foliage_core_alpha = (s_foliage_two_pass && core_scale > 0.0f)
+		? (ulong)(FOLIAGE_CORE_ALPHA * (core_scale < 1.0f ? core_scale : 1.0f)) : 0;
 }
 
 unsigned int zz_take_foliage_split_draws ()
@@ -188,6 +198,192 @@ unsigned int zz_take_foliage_split_draws ()
 	const unsigned int n = s_foliage_split_draws;
 	s_foliage_split_draws = 0;
 	return n;
+}
+
+// Translucent surfaces (two-pass alpha parts, second round, 2026-11-04). The split is
+// right for a cut-out's soft *edge* and wrong for a surface that is translucent across
+// its face -- crystal facets, balloons, a ghost, glass, lights: with no depth written,
+// whatever the per-part sort draws after them painted over them. Their alpha level does
+// not tell them apart (retail foliage is 20-50% half-transparent texels too); where those
+// texels sit does: on a cut-out they are a thin band beside clear texels, on a surface
+// they fill wide areas. So every texture is classified once, from its file, when it is
+// created: the share of its visible texels (alpha >= 32) that are half-transparent
+// (< 224) and more than 4 texels (at 128 px) from any clear texel. Over 25% = a
+// translucent surface: never split, and drawn after the cut-outs
+// (zz_scene_octree::update_object_sort), one draw with depth -- the old way, and the
+// standard order for transparency. Measured on our 353 alpha map textures: foliage
+// 0-8.6% (Forest of Wisdom's tree012); every surface the test found showing through
+// with the split 32% and up (crystals 32-40%, balloons 38%, the ghost 50-58%). In
+// between, Junon's street-lamp globe (23%) and an Oro pavement decal (18%) stay split:
+// the globe must not write depth, or it hides the lamp's glow effect inside it (the
+// first test's 15% cut-off put it back the retail way). Textures that cannot be read
+// (not DDS, an unhandled format) are left as they were: no split, first group.
+enum { ALPHA_CLASS_UNKNOWN = 0, ALPHA_CLASS_CUTOUT = 1, ALPHA_CLASS_SURFACE = 2 };
+static const float TRANSLUCENT_INTERIOR_SHARE = 0.25f;
+static std::unordered_map<const zz_texture *, int> s_texture_alpha_class;
+
+static uint32 dds_u32 (const unsigned char * p)
+{
+	uint32 v;
+	memcpy(&v, p, 4);
+	return v;
+}
+
+// The alpha of the DDS level nearest 128 px, box-reduced to at most 128 px, into
+// `alpha` (w x h, 0-255). False when the file is not a DDS this reads; `binary` is set
+// when the format can only hold 0/255 alpha (DXT1, A1R5G5B5), which never needs reading.
+static bool dds_reduced_alpha (const unsigned char * data, uint32 size, int & w, int & h,
+	std::vector<float> & alpha, bool & binary)
+{
+	binary = false;
+	if (size < 128 || memcmp(data, "DDS ", 4) != 0) return false;
+	const unsigned char * hd = data + 4;
+	h = (int)dds_u32(hd + 8);
+	w = (int)dds_u32(hd + 12);
+	int mips = (int)dds_u32(hd + 24);
+	const uint32 pf_flags = dds_u32(hd + 76), fourcc = dds_u32(hd + 80);
+	const uint32 bits = dds_u32(hd + 84), amask = dds_u32(hd + 100);
+	if (w <= 0 || h <= 0 || w > 8192 || h > 8192) return false;
+	if (mips < 1) mips = 1;
+
+	int block = 0, bpp = 0; // bytes per 4x4 block, or bytes per texel
+	if (fourcc == MAKEFOURCC('D', 'X', 'T', '1')) { binary = true; return true; }
+	else if (fourcc == MAKEFOURCC('D', 'X', 'T', '3') || fourcc == MAKEFOURCC('D', 'X', 'T', '5')) block = 16;
+	else if (fourcc == 0 && (pf_flags & 0x1) && bits == 32 && amask == 0xFF000000) bpp = 4;
+	else if (fourcc == 0 && (pf_flags & 0x1) && bits == 16 && amask == 0xF000) bpp = 2;
+	else if (fourcc == 0 && (pf_flags & 0x1) && bits == 16 && amask == 0x8000) { binary = true; return true; }
+	else return false;
+
+	// walk to the first level no larger than 128 px
+	uint32 off = 128;
+	int lw = w, lh = h;
+	for (int lv = 0; lv + 1 < mips && (lw > 128 || lh > 128); ++lv) {
+		off += block ? (uint32)((lw + 3) / 4) * (uint32)((lh + 3) / 4) * block : (uint32)lw * lh * bpp;
+		lw = (lw > 1) ? lw / 2 : 1;
+		lh = (lh > 1) ? lh / 2 : 1;
+	}
+	const uint32 need = block ? (uint32)((lw + 3) / 4) * (uint32)((lh + 3) / 4) * block : (uint32)lw * lh * bpp;
+	if (off + need > size) return false;
+	const unsigned char * px = data + off;
+
+	std::vector<float> full((size_t)lw * lh);
+	if (block) {
+		const bool dxt5 = (fourcc == MAKEFOURCC('D', 'X', 'T', '5'));
+		for (int by = 0; by < (lh + 3) / 4; ++by) {
+			for (int bx = 0; bx < (lw + 3) / 4; ++bx, px += 16) {
+				float a[16];
+				if (dxt5) {
+					const int a0 = px[0], a1 = px[1];
+					float pal[8] = { (float)a0, (float)a1 };
+					if (a0 > a1) {
+						for (int i = 1; i < 7; ++i) pal[i + 1] = ((7 - i) * a0 + i * a1) / 7.0f;
+					}
+					else {
+						for (int i = 1; i < 5; ++i) pal[i + 1] = ((5 - i) * a0 + i * a1) / 5.0f;
+						pal[6] = 0.0f;
+						pal[7] = 255.0f;
+					}
+					unsigned long long idx = 0;
+					for (int i = 0; i < 6; ++i) idx |= (unsigned long long)px[2 + i] << (8 * i);
+					for (int i = 0; i < 16; ++i) a[i] = pal[(idx >> (3 * i)) & 7];
+				}
+				else {
+					for (int i = 0; i < 16; ++i) a[i] = (float)(((px[i / 2] >> ((i & 1) * 4)) & 0xF) * 17);
+				}
+				for (int y = 0; y < 4; ++y) {
+					for (int x = 0; x < 4; ++x) {
+						const int tx = bx * 4 + x, ty = by * 4 + y;
+						if (tx < lw && ty < lh) full[(size_t)ty * lw + tx] = a[y * 4 + x];
+					}
+				}
+			}
+		}
+	}
+	else {
+		for (int i = 0; i < lw * lh; ++i) {
+			full[i] = (bpp == 4) ? (float)px[i * 4 + 3] : (float)((px[i * 2 + 1] >> 4) * 17);
+		}
+	}
+
+	// box-reduce what has no small level of its own
+	int f = 1;
+	while (lw / f > 128 || lh / f > 128) f *= 2;
+	w = lw / f;
+	h = lh / f;
+	if (w < 1 || h < 1) return false;
+	alpha.assign((size_t)w * h, 0.0f);
+	for (int y = 0; y < h; ++y) {
+		for (int x = 0; x < w; ++x) {
+			float sum = 0.0f;
+			for (int dy = 0; dy < f; ++dy)
+				for (int dx = 0; dx < f; ++dx) sum += full[(size_t)(y * f + dy) * lw + (x * f + dx)];
+			alpha[(size_t)y * w + x] = sum / (float)(f * f);
+		}
+	}
+	return true;
+}
+
+// The interior half-transparent share (see above), from a texture's file bytes.
+static int classify_texture_alpha (const void * data, uint32 size, float & share)
+{
+	share = 0.0f;
+	int w = 0, h = 0;
+	bool binary = false;
+	std::vector<float> a;
+	if (!dds_reduced_alpha(static_cast<const unsigned char *>(data), size, w, h, a, binary)) return ALPHA_CLASS_UNKNOWN;
+	if (binary) return ALPHA_CLASS_CUTOUT;
+
+	// Chebyshev distance to the nearest clear texel, two-pass chamfer, no wrap
+	const int INF = 1 << 20;
+	std::vector<int> d((size_t)w * h);
+	for (int i = 0; i < w * h; ++i) d[i] = (a[i] < 32.0f) ? 0 : INF;
+	for (int y = 0; y < h; ++y) {
+		for (int x = 0; x < w; ++x) {
+			int & m = d[(size_t)y * w + x];
+			if (!m) continue;
+			if (x) m = (std::min)(m, d[(size_t)y * w + x - 1] + 1);
+			if (y) {
+				m = (std::min)(m, d[(size_t)(y - 1) * w + x] + 1);
+				if (x) m = (std::min)(m, d[(size_t)(y - 1) * w + x - 1] + 1);
+				if (x < w - 1) m = (std::min)(m, d[(size_t)(y - 1) * w + x + 1] + 1);
+			}
+		}
+	}
+	for (int y = h - 1; y >= 0; --y) {
+		for (int x = w - 1; x >= 0; --x) {
+			int & m = d[(size_t)y * w + x];
+			if (x < w - 1) m = (std::min)(m, d[(size_t)y * w + x + 1] + 1);
+			if (y < h - 1) {
+				m = (std::min)(m, d[(size_t)(y + 1) * w + x] + 1);
+				if (x < w - 1) m = (std::min)(m, d[(size_t)(y + 1) * w + x + 1] + 1);
+				if (x) m = (std::min)(m, d[(size_t)(y + 1) * w + x - 1] + 1);
+			}
+		}
+	}
+	const int k = (std::max)(1, (int)(4.0f * (std::max)(w, h) / 128.0f + 0.5f));
+	int visible = 0, interior = 0;
+	for (int i = 0; i < w * h; ++i) {
+		if (a[i] < 32.0f) continue;
+		++visible;
+		if (a[i] < 224.0f && d[i] > k) ++interior;
+	}
+	if (!visible) return ALPHA_CLASS_CUTOUT;
+	share = (float)interior / (float)visible;
+	return (share > TRANSLUCENT_INTERIOR_SHARE) ? ALPHA_CLASS_SURFACE : ALPHA_CLASS_CUTOUT;
+}
+
+bool zz_is_translucent_surface (const zz_texture * tex)
+{
+	if (!tex) return false;
+	std::unordered_map<const zz_texture *, int>::const_iterator it = s_texture_alpha_class.find(tex);
+	return it != s_texture_alpha_class.end() && it->second == ALPHA_CLASS_SURFACE;
+}
+
+static bool is_cutout_texture (const zz_texture * tex)
+{
+	if (!tex) return false;
+	std::unordered_map<const zz_texture *, int>::const_iterator it = s_texture_alpha_class.find(tex);
+	return it != s_texture_alpha_class.end() && it->second == ALPHA_CLASS_CUTOUT;
 }
 
 zz_renderer_d3d::zz_renderer_d3d () : zz_renderer()
@@ -3222,15 +3418,16 @@ void zz_renderer_d3d::render (zz_mesh * mesh, zz_material * material, zz_light *
 
 	// two-pass alpha parts (see FOLIAGE_CORE_ALPHA): a plain blended, alpha-tested,
 	// depth-writing draw of a material at full opacity, below the core threshold
-	const bool split = s_foliage_split_armed && material && !_sprite_began
+	const ulong core_alpha = s_foliage_core_alpha;
+	const bool split = core_alpha > s_cur_alpha_ref && material && !_sprite_began
 		&& s_cur_alpha_blend && s_cur_blend_type == ZZ_BT_NORMAL
 		&& s_cur_alpha_test && s_cur_alpha_func == ZZ_CMP_GREATEREQUAL
-		&& s_cur_alpha_ref < FOLIAGE_CORE_ALPHA
 		&& s_cur_zwrite && s_cur_zfunc == ZZ_CMP_LESSEQUAL
-		&& material->get_objectalpha() >= 1.0f && material->get_materialalpha() >= 1.0f;
+		&& material->get_objectalpha() >= 1.0f && material->get_materialalpha() >= 1.0f
+		&& is_cutout_texture(material->get_texture(0)); // never a translucent surface
 
 	if (split) {
-		d3d_device->SetRenderState(D3DRS_ALPHAREF, FOLIAGE_CORE_ALPHA);
+		d3d_device->SetRenderState(D3DRS_ALPHAREF, core_alpha);
 		draw_mesh(mesh);
 		d3d_device->SetRenderState(D3DRS_ALPHAREF, s_cur_alpha_ref);
 		d3d_device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
@@ -4569,6 +4766,17 @@ zz_handle zz_renderer_d3d::download_texture (zz_texture * tex)
 		return ZZ_HANDLE_NULL;
 	}
 	//ZZ_PROFILER_END(Pdownload_texture);
+
+	// two-pass alpha parts: a cut-out or a translucent surface (see TRANSLUCENT_INTERIOR_SHARE)
+	{
+		float share = 0.0f;
+		const int cls = classify_texture_alpha(data, size, share);
+		s_texture_alpha_class[tex] = cls;
+		if (cls == ALPHA_CLASS_SURFACE) {
+			ZZ_LOG("r_d3d: translucent surface, drawn after cut-outs and never split: %s (interior %.0f%%)\n",
+				texture_path, share * 100.0f);
+		}
+	}
 
 	::QueryPerformanceCounter(&tex_t2);
 	if (tex_qpf.QuadPart != 0) {

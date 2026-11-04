@@ -374,18 +374,27 @@ void zz_scene_octree::render_opaque ()
 #endif
 }
 
-void zz_arm_foliage_split (bool armed); // zz_renderer_d3d.cpp
+void zz_arm_foliage_split (float core_scale); // zz_renderer_d3d.cpp
 
-// Two-pass alpha parts (zz_renderer_d3d.cpp, FOLIAGE_CORE_ALPHA): a node may be split
-// only in single-pass rendering (the multipass lightmap pass blends on top of pass 0)
-// and only when it stands wholly nearer than the alpha fog, whose distance fade is
-// carried by the blend. The centre of mass lies inside the bounding sphere, so its
-// distance plus twice the radius bounds the node's farthest point.
-static bool foliage_split_allowed (zz_visible * vis, const zz_render_state * rs)
+// Two-pass alpha parts (zz_renderer_d3d.cpp, FOLIAGE_CORE_ALPHA): a node is split only in
+// single-pass rendering (the multipass lightmap pass blends on top of pass 0). In the
+// alpha fog its core threshold is scaled by the fog's fade at its farthest point, so its
+// solid texels keep writing depth while it fades; deep in the fog (a fade under 0.25) it
+// is drawn the old way. The centre of mass lies inside the bounding sphere, so its
+// distance plus twice the radius bounds the farthest point; and the shader fades by view
+// depth, never more than that distance, so the scale is never too high. Haian Coast's
+// canopies are ~65 m across: wholly-nearer-than-the-fog split them only within ~190 m on
+// Far, and the outline showed beyond (second test, 2026-11-04).
+static float foliage_core_scale (zz_visible * vis, const zz_render_state * rs)
 {
-	if (rs->use_multipass) return false;
-	if (!rs->use_alpha_fog) return true;
-	return sqrtf(vis->get_camdist_square()) + 2.0f * vis->get_radius() < rs->alpha_fog_start;
+	if (rs->use_multipass) return 0.0f;
+	if (!rs->use_alpha_fog) return 1.0f;
+	const float far_point = sqrtf(vis->get_camdist_square()) + 2.0f * vis->get_radius();
+	if (far_point <= rs->alpha_fog_start) return 1.0f;
+	const float span = rs->alpha_fog_end - rs->alpha_fog_start;
+	if (span <= 0.0f) return 0.0f;
+	const float fade = (rs->alpha_fog_end - far_point) / span;
+	return (fade >= 0.25f) ? fade : 0.0f;
 }
 
 void zz_scene_octree::render_transparent ()
@@ -400,7 +409,7 @@ void zz_scene_octree::render_transparent ()
 	if (znzin->get_rs()->use_draw_bounding_volume) {
 		for (zz_vislist::iterator it = delayed_nodes.begin(), it_end = delayed_nodes.end(); it != it_end; ++it)
 		{
-			zz_arm_foliage_split(foliage_split_allowed(*it, rs));
+			zz_arm_foliage_split(foliage_core_scale(*it, rs));
 			(*it)->render();
 			if ((*it)->get_bvolume()) {
 				(*it)->get_bvolume()->draw_bounding_volume();
@@ -410,18 +419,18 @@ void zz_scene_octree::render_transparent ()
 	else {
 		for (zz_vislist::iterator it = delayed_nodes.begin(), it_end = delayed_nodes.end(); it != it_end; ++it)
 		{
-			zz_arm_foliage_split(foliage_split_allowed(*it, rs));
+			zz_arm_foliage_split(foliage_core_scale(*it, rs));
 			(*it)->render();
 		}
 	}
 #else
 	for (zz_vislist::iterator it = delayed_nodes.begin(), it_end = delayed_nodes.end(); it != it_end; ++it)
 	{
-		zz_arm_foliage_split(foliage_split_allowed(*it, rs));
+		zz_arm_foliage_split(foliage_core_scale(*it, rs));
 		(*it)->render();
 	}
 #endif
-	zz_arm_foliage_split(false);
+	zz_arm_foliage_split(0.0f);
 }
 
 void zz_scene_octree::render_ocean ()
@@ -883,12 +892,36 @@ void clear_infrustum (zz_visible * vis)
 	vis->set_infrustum(false);
 }
 
+bool zz_is_translucent_surface (const zz_texture * tex); // zz_renderer_d3d.cpp
+bool zz_get_foliage_two_pass ();
+
+// A node with a translucent-surface texture (zz_renderer_d3d.cpp, TRANSLUCENT_INTERIOR_SHARE):
+// drawn after every cut-out, so a ghost blends over the spider web behind it, and a lamp's
+// glass over the glow inside it, whichever part's centre is nearer.
+static bool is_translucent_surface_node (zz_visible * vis)
+{
+	for (unsigned int i = 0, n = vis->get_num_runits(); i < n; ++i) {
+		zz_material * mat = vis->get_material(i);
+		if (mat && zz_is_translucent_surface(mat->get_texture(0))) return true;
+	}
+	return false;
+}
+
 void zz_scene_octree::update_object_sort (void)
 {
 	if (!znzin->get_rs()->use_object_sorting) return;
 
 	//sort(visible_nodes.begin(), visible_nodes.end(), compare_by_texture);
-	sort(delayed_nodes.begin(), delayed_nodes.end(), compare_farther_than);
+	if (zz_get_foliage_two_pass()) {
+		// two-pass alpha parts: cut-outs first, then translucent surfaces, each far to near
+		zz_vislist::iterator mid = std::stable_partition(delayed_nodes.begin(), delayed_nodes.end(),
+			[](zz_visible * v) { return !is_translucent_surface_node(v); });
+		sort(delayed_nodes.begin(), mid, compare_farther_than);
+		sort(mid, delayed_nodes.end(), compare_farther_than);
+	}
+	else {
+		sort(delayed_nodes.begin(), delayed_nodes.end(), compare_farther_than);
+	}
 
 	// texture > distance
 	//sort(terrain_nodes.begin(), terrain_nodes.end(), compare_nearer_than);
