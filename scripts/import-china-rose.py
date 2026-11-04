@@ -119,6 +119,27 @@ of its five languages), the series' M027. tsuki carries it as row 158
     over 2.5 m tall, with collision 0 found nothing else of the kind: leaves over a
     colliding trunk, flat cards (a door, a backdrop) and the jungle undergrowth, which
     stays walk-through as Eldeon's ferns do.
+  * **The hanging vines drew a pale outline that came and went with the camera**
+    (second test, 2026-11-04). Not the texture's colour: `Pk011_veg_tree_014_A.dds`
+    (object 28's part 2, the vine card, and three other trees') is green under its
+    clear texels at every mip level. It is the engine. A material with texture alpha
+    on a fogged object is alpha-BLENDED with an alpha test of 32
+    (zz_material_colormap.cpp, "do small alpha test for fogged objects") and goes to
+    the transparent pass, sorted far to near **part by part**, each part by its own
+    centre (zz_scene_octree.cpp compare_farther_than). The canopy's centre is ~20 m up,
+    the vines' ~10 m: as the camera moves their order flips, and when the vines draw
+    first their half-transparent edge blends with the sky already in the frame, writes
+    depth and hides the canopy drawn after. Retail trees mostly carry their leaves on
+    one alpha part. This texture's alpha is a soft gradient (256 levels), so the edge
+    is wide. cutout_textures makes it a hard cut-out at the material's own reference
+    (128), each mip level cut at the threshold that keeps mip 0's coverage (the strands
+    do not thin out with distance), colour averaged over the visible texels: measured
+    with bilinear sampling, the half-transparent share of the vines' visible pixels
+    falls from 36% to 19% magnified 6x and from 47% to 31% at mip 1, coverage 22% ->
+    20% (the faintest wisps go). A mitigation, not a cure: the next test showed the
+    same lines round the canopies, whose texture is already a hard cut-out (0/239).
+    The cure is in the engine, for every map: two-pass alpha parts (src/engine/CLAUDE.md,
+    "Transparency Antialiasing"; `[VIDEO] FOLIAGE_TWO_PASS`, `/alphasplit`).
 
 Backups: build/china-rose/ (orig/ for every file this script overwrote, bak/ for
 the table codecs' .bak files).
@@ -182,6 +203,9 @@ HA = dict(
     # a floating card had 12; the result must equal object 81, the authors' fixed copy
     collision_fixes={28: {1: ("dtree_0731b02.zms", 12), 2: ("dtree_0731b03.zms", 0)}},
     collision_twins={28: 81},
+    # textures made hard cut-outs at their material's alpha reference (see the docstring:
+    # the hanging vines' pale outline)
+    cutout_textures={r"3Ddata\mapobj\HOUSE\haian\HA_dds\Pk011_veg_tree_014_A.dds": 128},
     # spawn points: kept out until the monster stage
     held_lumps=(ifo.REGEN,),
     # the dead east gate: lump -> what each record must be, per chunk
@@ -429,6 +453,74 @@ def deco_table(spec, src):
     return data
 
 
+# ------------------------------------------------------- cut-out textures
+DDSD_MIPMAPCOUNT, DDSCAPS_COMPLEX, DDSCAPS_MIPMAP = 0x20000, 0x8, 0x400000
+
+
+def cutout_levels(rgba, ref):
+    """A full mip chain of (h, w, 4) uint8 levels whose alpha is 0 or 255 only.
+
+    Level 0 is cut at `ref` with its colour untouched. Each smaller level box-averages
+    the alpha of the level above *before* its cut (never the cut one: a strand would
+    erode level by level) and is cut at the threshold that keeps level 0's coverage
+    -- DirectXTex's coverage-preserving idea, binarised. Colour is averaged over the
+    visible texels only (by alpha), so no clear texel's fill colour bleeds in."""
+    a = rgba[..., 3].astype(np.float64) / 255.0
+    c = rgba[..., :3].astype(np.float64)
+    target = float((a >= ref / 255.0).mean())
+    out = []
+    while True:
+        t = ref / 255.0 if not out else (np.quantile(a, 1.0 - target) if target > 0 else 2.0)
+        out.append(np.dstack([np.clip(np.rint(c), 0, 255), np.where(a >= t, 255, 0)]).astype(np.uint8))
+        h, w = a.shape
+        if h == 1 and w == 1:
+            return out
+        h2, w2 = max(1, h // 2), max(1, w // 2)
+        A = a.reshape(h2, h // h2, w2, w // w2)
+        C = c.reshape(h2, h // h2, w2, w // w2, 3)
+        wsum = A.sum((1, 3))
+        weighted = (C * A[..., None]).sum((1, 3)) / np.maximum(wsum, 1e-12)[..., None]
+        c = np.where(wsum[..., None] > 1e-12, weighted, C.mean((1, 3)))
+        a = A.mean((1, 3))
+
+
+def decode_rgba(path):
+    """The top level of any DDS as (h, w, 4) uint8 RGBA, through texconv."""
+    with tempfile.TemporaryDirectory() as tmp:
+        src = os.path.join(tmp, "src.dds")          # texconv writes beside a path it cannot parse
+        shutil.copyfile(path, src)
+        png = texconv(["-ft", "png", "-m", "1", "-f", "R8G8B8A8_UNORM", "-o", tmp, src],
+                      os.path.join(tmp, "src.png"))
+        return np.asarray(Image.open(png).convert("RGBA"))
+
+
+def cutout_dds(src, rel, ref):
+    """China Rose's texture as a hard cut-out DXT5 with its full chain, as DDS bytes:
+    each level encoded on its own (texconv, -m 1) and the levels joined under level 0's
+    header, so no encoder re-filters the cut alpha."""
+    path = P(src, rel)
+    h0 = dds.parse_header(path)
+    if h0.fourcc != b"DXT5":
+        raise SystemExit(f"{rel} is {h0.fourcc!r}: the cut-out keeps DXT5's alpha, expected DXT5")
+    levels = cutout_levels(decode_rgba(path), ref)
+    head, payload = None, []
+    with tempfile.TemporaryDirectory() as tmp:
+        for i, lv in enumerate(levels):
+            src_lv = os.path.join(tmp, f"l{i}.dds")
+            dds.write_bgra(src_lv, Image.fromarray(lv, "RGBA"))
+            os.makedirs(os.path.join(tmp, "out"), exist_ok=True)
+            out = texconv(["-dx9", "-m", "1", "-f", "BC3_UNORM", "-o", os.path.join(tmp, "out"), src_lv],
+                          os.path.join(tmp, "out", f"l{i}.dds"))
+            h, body = dds.split(open(out, "rb").read())
+            if head is None:
+                head = h
+            payload.append(body)
+    head.mip_count = len(levels)
+    head.flags |= DDSD_MIPMAPCOUNT
+    head.caps |= DDSCAPS_COMPLEX | DDSCAPS_MIPMAP
+    return dds.join(head, b"".join(payload))
+
+
 def zone_row(spec, s_z, d_z):
     r = spec["src_zone"]
     row = [s_z.get(r, c) for c in range(d_z.cols)]
@@ -558,6 +650,9 @@ def install(spec, ours, src, dry, do_bake):
               (f", collision fixed on object(s) {fixed}" if fixed else ""))
     else:
         print(f"    {os.path.basename(spec['deco']):26s} already in place")
+    for rel, ref in spec.get("cutout_textures", {}).items():
+        state = "written" if write_if_changed(P(ours, rel), cutout_dds(src, rel, ref), dry) else "already in place"
+        print(f"    {os.path.basename(rel):26s} hard cut-out at {ref}, full chain: {state}")
     have_cnst = P(ours, spec["cnst"])
     if open(have_cnst, "rb").read() != open(P(src, spec["cnst"]), "rb").read():
         raise SystemExit(f"our {spec['cnst']} is not China Rose's: the map's buildings would change")
@@ -670,6 +765,10 @@ def verify(ours, src):
                  f"{[spec['collision_twins'][o] for o in fixed]})" if fixed else ""))
         check(open(P(ours, spec["cnst"]), "rb").read() == open(P(src, spec["cnst"]), "rb").read(),
               f"{os.path.basename(spec['cnst'])} is China Rose's")
+        for rel, ref in spec.get("cutout_textures", {}).items():
+            p = P(ours, rel)
+            check(os.path.isfile(p) and open(p, "rb").read() == cutout_dds(src, rel, ref),
+                  f"{os.path.basename(rel)} is a hard cut-out at {ref} with its full chain")
         for rel, rows, label in ((MORPH_STB_REL, spec["morph_rows"], "LIST_MORPH_OBJECT"),
                                  (SKY_STB_REL, spec["sky_rows"], "LIST_SKY")):
             d = oro.Stb(P(ours, rel))

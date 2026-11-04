@@ -125,6 +125,15 @@ Each was found on a real import; check for the condition, apply only when it is 
 - **Coplanar placements** (a wall that flashes while the camera moves):
   `fix-coplanar-object-overlaps.py --zone N`.
 - **Objects the map names that our table leaves empty**: `fill-zsc-gaps.py`.
+- **A tree you walk through**: look for a model whose trunk part has collision 0 while a
+  small part carries the collision (HA's object 28; its fixed twin was object 81).
+  Scan every placed part that stands on the ground, is tall and has collision 0; leave
+  undergrowth walk-through. `import-china-rose.py` `collision_fixes`.
+- **A pale outline round foliage as the camera moves**: mis-sorted overlapping alpha
+  parts (src/engine/CLAUDE.md, Transparency Antialiasing). The engine's two-pass alpha
+  parts (`[VIDEO] FOLIAGE_TWO_PASS`, `/alphasplit`) remove it; a texture with a very
+  soft alpha gradient can also be made a hard cut-out, coverage kept per mip level
+  (`import-china-rose.py` `cutout_textures`).
 
 ## 5. Art and tables
 
