@@ -87,9 +87,12 @@ of its five languages), the series' M027. tsuki carries it as row 158
   * Zone row: China Rose's cols 0-35 are ours column for column (its IO_STB.h
     ZONE_* macros); its 36-41 (world-map index, PK NPC, navmesh flag, a scale, the
     navmesh path) are dropped. Changed: the name, the ZON and minimap paths (our
-    folder), the music, the sky row. **No music**: China Rose's HA has none (nor
-    YJ, Yulin, the volcano maps: the series' unfinished end) and tsuki's
-    `BGM_MGHA27.ogg` is in no dump: Shady Jungle's track as a placeholder.
+    folder), the music, the sky row. **Music**: China Rose's HA has none (nor YJ,
+    Yulin, the volcano maps: the series' unfinished end) and tsuki's `BGM_MGHA27.ogg`
+    is in no dump. The user's pick (2026-11-04): `BGM_FCSL.ogg`, China Rose's
+    翡翠森林 "Emerald Forest" theme (its zone 4, PK011; Ogg Vorbis, 103 s, loops).
+    Music is not in data/: the file is copied by hand from China Rose's
+    `SOUND\\BGM\\` into the launch folder's `sound\\bgm\\`, like every track of ours.
   * Sky: China Rose's row 0 = our 13 (the Starlight Lounge's, from tsuki), cell for
     cell; the two `MAPOBJ\\Sky\\day01/night01.dds` differ only outside the dome cap's
     octagon, which the sky mesh never samples. Shared.
@@ -195,7 +198,7 @@ HA = dict(
     key="HA", src_zone=27, zone=158, name="Haian Coast", stl_key="LZON158",
     src_dir=r"3DDATA\MAPS\HA", dst_dir=r"3DDATA\Maps\ELDEON\HA", zon="HA.zon",
     deco=r"3DDATA\MAPOBJ\LIST_DECO_Haian.ZSC", cnst=r"3DDATA\MAPOBJ\LIST_CNST_FK.ZSC",
-    music=rb"Sound\BGM\Plain02_eldeon.ogg",          # placeholder: Shady Jungle's (CR ships none)
+    music=rb"Sound\BGM\BGM_FCSL.ogg",                # CR's Emerald Forest theme (HA ships none)
     # China Rose row -> ours: 1-3 identical, 42 pokpo01 = our 47 (the canyon's), 43 pokpo02 new
     morph_rows={1: 1, 2: 2, 3: 3, 42: 47, 43: 50},
     sky_rows={0: 13},                                # cell for cell (see the docstring)
