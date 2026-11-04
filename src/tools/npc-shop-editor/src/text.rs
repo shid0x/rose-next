@@ -15,10 +15,14 @@
 //! *script*, not decode errors, because both codecs accept each other's bytes
 //! nearly error-free: Korean read as Shift-JIS turns into half-width katakana
 //! (0xB0-0xDF are single bytes there), Japanese read as EUC-KR into Hangul.
+//!
+//! China Rose added two more: GBK in its STBs and UTF-8 in its STLs. GBK and
+//! EUC-KR share their byte ranges entirely, so GBK is told apart by *where*
+//! the lead bytes fall (see `detect`); UTF-8 by being valid UTF-8 throughout.
 use std::collections::HashMap;
 
 use anyhow::{bail, Context, Result};
-use encoding_rs::{EUC_KR, SHIFT_JIS, WINDOWS_1252};
+use encoding_rs::{EUC_KR, GBK, SHIFT_JIS, WINDOWS_1252};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Codec {
@@ -31,10 +35,21 @@ pub enum Codec {
     Korean,
     /// Shift-JIS: Jrose.
     Japanese,
+    /// GBK: China Rose's tables.
+    Chinese,
+    /// UTF-8: China Rose's string tables.
+    Unicode,
 }
 
 impl Codec {
-    pub const ALL: [Codec; 4] = [Codec::Auto, Codec::Western, Codec::Korean, Codec::Japanese];
+    pub const ALL: [Codec; 6] = [
+        Codec::Auto,
+        Codec::Western,
+        Codec::Korean,
+        Codec::Japanese,
+        Codec::Chinese,
+        Codec::Unicode,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -42,6 +57,8 @@ impl Codec {
             Codec::Western => "Western",
             Codec::Korean => "Korean",
             Codec::Japanese => "Japanese",
+            Codec::Chinese => "Chinese",
+            Codec::Unicode => "UTF-8",
         }
     }
 
@@ -51,6 +68,8 @@ impl Codec {
             "western" | "latin" | "en" => Some(Codec::Western),
             "korean" | "ko" | "euc-kr" | "cp949" => Some(Codec::Korean),
             "japanese" | "ja" | "sjis" | "shift-jis" | "cp932" => Some(Codec::Japanese),
+            "chinese" | "zh" | "gbk" | "gb2312" | "cp936" => Some(Codec::Chinese),
+            "utf-8" | "utf8" | "unicode" => Some(Codec::Unicode),
             _ => None,
         }
     }
@@ -62,6 +81,8 @@ impl Codec {
             Codec::Auto | Codec::Western => WINDOWS_1252,
             Codec::Korean => EUC_KR,
             Codec::Japanese => SHIFT_JIS,
+            Codec::Chinese => GBK,
+            Codec::Unicode => encoding_rs::UTF_8,
         };
         enc.decode_without_bom_handling(b).0.into_owned()
     }
@@ -83,15 +104,28 @@ impl Codec {
 /// 0xB0-0xC8 with trails >= 0xA1, which Shift-JIS reads as single-byte
 /// half-width katakana. Only 0xE0-0xEF leads with high trails are ambiguous
 /// (level-2 kanji vs hanja), and those decide nothing.
+///
+/// GBK reads as EUC-KR without a single error, so an EUC-style vote is then
+/// split by lead byte: Hangul syllables -- nearly all of a Korean name -- lead
+/// with 0xB0-0xC8, and 0xC9 is unassigned in KS X 1001, while GB2312's hanzi
+/// run on to 0xF7. Chinese text puts about half its leads at 0xC9 or above,
+/// Korean only its rare hanja.
+///
+/// UTF-8 is checked first: a file whose every non-ASCII cell is valid UTF-8
+/// is UTF-8, as EUC-style and Shift-JIS pairs almost never are.
 fn detect<'a>(sample: impl IntoIterator<Item = &'a [u8]>) -> Codec {
     let (mut sj, mut kr, mut we) = (0i64, 0i64, 0i64);
     let (mut ja, mut ko) = (0i64, 0i64);
+    // EUC-style pairs whose lead lies past the Hangul block (0xC9-0xF7).
+    let mut past_hangul = 0i64;
     let mut any = false;
+    let mut all_utf8 = true;
     for cell in sample {
         if cell.is_ascii() {
             continue;
         }
         any = true;
+        all_utf8 &= std::str::from_utf8(cell).is_ok();
         let mut i = 0;
         while i < cell.len() {
             let b = cell[i];
@@ -118,9 +152,11 @@ fn detect<'a>(sample: impl IntoIterator<Item = &'a [u8]>) -> Codec {
                 i += 2;
             } else if (0xA1..=0xDF).contains(&b) && euc_trail {
                 kr += 1;
+                past_hangul += i64::from(b >= 0xC9);
                 i += 2;
             } else if b >= 0xF0 && euc_trail {
                 kr += 1;
+                past_hangul += i64::from(b <= 0xF7);
                 i += 2;
             } else {
                 i += 1; // ambiguous or a stray byte: no vote
@@ -129,18 +165,23 @@ fn detect<'a>(sample: impl IntoIterator<Item = &'a [u8]>) -> Codec {
         ja += score(SHIFT_JIS, cell, Script::Japanese);
         ko += score(EUC_KR, cell, Script::Korean);
     }
+    if any && all_utf8 {
+        return Codec::Unicode;
+    }
     if !any || we > sj + kr {
         return Codec::Western;
     }
+    // A fifth of the pairs past the Hangul block is Chinese.
+    let korean_or_chinese = if past_hangul * 5 > kr { Codec::Chinese } else { Codec::Korean };
     if sj != kr {
-        return if sj > kr { Codec::Japanese } else { Codec::Korean };
+        return if sj > kr { Codec::Japanese } else { korean_or_chinese };
     }
     if ja <= 0 && ko <= 0 {
         Codec::Western
     } else if ja >= ko {
         Codec::Japanese
     } else {
-        Codec::Korean
+        korean_or_chinese
     }
 }
 
@@ -227,8 +268,12 @@ impl RawStb {
         Ok(RawStb { rows })
     }
 
+    /// The game columns' cells, which is what the codec is detected on. Row
+    /// labels are left out: nothing shows them, and a fork can leave them in
+    /// another script (China Rose's are the original Korean notes over GBK
+    /// columns, which outvoted the names in small tables like LIST_PAT).
     pub fn cells(&self) -> impl Iterator<Item = &[u8]> {
-        self.rows.iter().flatten().map(Vec::as_slice)
+        self.rows.iter().flat_map(|row| row.iter().skip(1)).map(Vec::as_slice)
     }
 
     pub fn decode(&self, codec: Codec) -> Vec<Vec<String>> {
@@ -365,6 +410,23 @@ mod tests {
         assert_eq!(Codec::Auto.resolve([b"Wooden Shield".as_ref()]), Codec::Western);
         assert_eq!(Codec::Auto.resolve([b"Fafnir\x92s Scale".as_ref()]), Codec::Western);
         assert_eq!(Codec::Western.decode(b"Fafnir\x92s"), "Fafnir\u{2019}s");
+    }
+
+    #[test]
+    fn tells_chinese_from_korean_and_finds_utf8() {
+        // China Rose's LIST_FACEITEM row 18 and two of its neighbours.
+        let (cn, _, _) = GBK.encode("暗纹面具");
+        let (cn2, _, _) = GBK.encode("如风面具");
+        let (cn3, _, _) = GBK.encode("武侠头饰");
+        let sample = [cn.as_ref(), cn2.as_ref(), cn3.as_ref()];
+        assert_eq!(Codec::Auto.resolve(sample), Codec::Chinese);
+        assert_eq!(Codec::Chinese.decode(&cn), "暗纹面具");
+        let (ko, _, _) = EUC_KR.encode("가죽 장갑");
+        let (ko2, _, _) = EUC_KR.encode("초보자용 한손검");
+        assert_eq!(Codec::Auto.resolve([ko.as_ref(), ko2.as_ref()]), Codec::Korean);
+        let utf8 = "暗纹面具".as_bytes();
+        assert_eq!(Codec::Auto.resolve([utf8, b"Mask".as_ref()]), Codec::Unicode);
+        assert_eq!(Codec::Unicode.decode(utf8), "暗纹面具");
     }
 
     #[test]

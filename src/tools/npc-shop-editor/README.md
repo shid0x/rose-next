@@ -165,8 +165,8 @@ The existing editor still runs with `cargo run -p npc-shop-editor`.
 
 ## Browsing another client's dump
 
-"Open data folder..." on a reference dump (Jrose, RoseZA, QQ-iROSE...) works the
-same as on ours. Two things make it work and both are worth knowing:
+"Open data folder..." on a reference dump (Jrose, RoseZA, QQ-iROSE, China Rose...)
+works the same as on ours. Three things make it work and all are worth knowing:
 
 - **Text codec.** roselib decodes every string as Korean EUC-KR and only reads
   the modern `NRST01`/`ITST01` string tables, so Jrose (Shift-JIS, legacy
@@ -174,20 +174,38 @@ same as on ours. Two things make it work and both are worth knowing:
   warnings. The browser now reads the tables itself (`src/text.rs`) and picks
   the codec per file from the bytes: lead-byte classes first (kana sits on
   leads 0x81-0x9F, Hangul on 0xB0-0xC8 with high trails), decoded script as a
-  tiebreak. The `Text:` box in the top bar overrides it (`--encoding
-  auto|western|korean|japanese` on the command line); it should never be
-  needed.
+  tiebreak. China Rose added GBK (its STBs) and UTF-8 (its STLs). GBK reads as
+  EUC-KR without an error, so it is told apart by where the leads fall: Hangul
+  leads stop at 0xC8, Chinese puts 20-65% of its pairs on 0xC9-0xF7, and every
+  Korean dump on hand measures 0% there. Row labels are left out of the vote
+  (China Rose kept the original Korean ones over its GBK columns). The `Text:`
+  box in the top bar overrides it (`--encoding
+  auto|western|korean|japanese|chinese|utf-8` on the command line); it should
+  never be needed. `tests/codec_dumps.rs` (ignored; set `ROSE_DUMPS`) prints
+  what Auto picks for every item table of a list of dumps -- run it before and
+  after touching `detect`.
 - **Fonts.** egui ships Latin-only fonts, so a correctly decoded name still
   draws as boxes without a CJK font. At startup the browser appends whatever
   Windows has (Yu Gothic, Meiryo, MS Gothic, Malgun Gothic, Microsoft YaHei,
   SimSun) as fallbacks; `ROSE_GM_FONT=<path>` puts a font of your own first.
   A machine with none of them gets a line in Data warnings.
+- **Weapon tables.** iROSE has one `LIST_WEAPON.ZSC` / `LIST_SUBWPN.ZSC` for both
+  sexes. China Rose (`_FK_CHAR_SYSTEM`) has none, only `LIST_MWEAPON` /
+  `LIST_WWEAPON` and `LIST_MSUBWPN` / `LIST_WSUBWPN`; `WeaponTables::detect`
+  (`src/monsters.rs`) switches when the shared table is absent and the male one
+  present. Monsters use the male tables, as in its client. About 440 of its
+  spawnable items still show "model N is empty": those objects really are
+  empty in its ZSCs (rosefmt agrees, and the meshes are nowhere in the dump),
+  so its own client draws nothing either.
 
-`gm-item-browser.exe --check <folder or data.idx> [--encoding ...]` loads a
-folder headlessly and prints the item and monster counts, a few sample names,
-the data warnings and which fallback fonts loaded (it renders one probe frame,
-so a font egui cannot parse fails here rather than at the window). Exit code 1
-means a catalog failed to load; warnings alone exit 0.
+`gm-item-browser.exe --check <folder or data.idx> [--previews] [--encoding ...]`
+loads a folder headlessly and prints the item and monster counts, a few sample
+names, the data warnings and which fallback fonts loaded (it renders one probe
+frame, so a font egui cannot parse fails here rather than at the window). Exit
+code 1 means a catalog failed to load; warnings alone exit 0. `--previews` also
+builds every spawnable item's preview (both sexes) and every monster's, without
+drawing, and groups what could not be shown with the numbers taken out, so a
+cause shared by a thousand items is one line (about a minute on a full dump).
 
 `gm-item-browser.exe --preview <folder> <out.png> <type:id>[,<type:id>...] [--female]
 [--motion idle|battle|walk|run|attack|sitting|bind] [--time seconds] [--yaw degrees] [--zoom z]`

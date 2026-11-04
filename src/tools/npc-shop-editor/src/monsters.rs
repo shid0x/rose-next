@@ -33,6 +33,49 @@ pub const NPC_CHR: &str = "3DDATA/NPC/LIST_NPC.CHR";
 pub const NPC_ZSC: &str = "3DDATA/NPC/PART_NPC.ZSC";
 pub const WEAPON_ZSC: &str = "3DDATA/WEAPON/LIST_WEAPON.ZSC";
 pub const SUBWPN_ZSC: &str = "3DDATA/WEAPON/LIST_SUBWPN.ZSC";
+
+/// Where a dump keeps its weapon models. iROSE has one table per hand for both
+/// sexes; China Rose (`_FK_CHAR_SYSTEM`, `IO_Basic.cpp`) has a male and a
+/// female table per hand instead, and no shared one. Monsters there draw from
+/// the male tables (an NPC model is never female).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum WeaponTables {
+    Shared,
+    PerSex,
+}
+
+impl WeaponTables {
+    /// `PerSex` only when the shared table is absent and the male one is
+    /// present, so a dump with neither still reports the standard file missing.
+    pub fn detect(assets: &Assets) -> Self {
+        if !assets.exists(WEAPON_ZSC) && assets.exists("3DDATA/WEAPON/LIST_MWEAPON.ZSC") {
+            WeaponTables::PerSex
+        } else {
+            WeaponTables::Shared
+        }
+    }
+
+    pub fn weapon(self, female: bool) -> &'static str {
+        match (self, female) {
+            (WeaponTables::Shared, _) => WEAPON_ZSC,
+            (WeaponTables::PerSex, false) => "3DDATA/WEAPON/LIST_MWEAPON.ZSC",
+            (WeaponTables::PerSex, true) => "3DDATA/WEAPON/LIST_WWEAPON.ZSC",
+        }
+    }
+
+    pub fn subweapon(self, female: bool) -> &'static str {
+        match (self, female) {
+            (WeaponTables::Shared, _) => SUBWPN_ZSC,
+            (WeaponTables::PerSex, false) => "3DDATA/WEAPON/LIST_MSUBWPN.ZSC",
+            (WeaponTables::PerSex, true) => "3DDATA/WEAPON/LIST_WSUBWPN.ZSC",
+        }
+    }
+}
+
+/// The file name of a data path, for messages.
+pub fn file_name(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
 pub const AI_STB: &str = "3DDATA/STB/FILE_AI.STB";
 /// Everything `MonsterCatalog::load` reads; the model files themselves are
 /// only probed, so a tester package carries these plus a manifest.
@@ -148,8 +191,10 @@ impl MonsterCatalog {
         });
         let chr = optional(assets, NPC_CHR, &mut warnings, Chr::parse);
         let parts = optional(assets, NPC_ZSC, &mut warnings, Zsc::parse);
-        let weapons = optional(assets, WEAPON_ZSC, &mut warnings, Zsc::parse);
-        let subweapons = optional(assets, SUBWPN_ZSC, &mut warnings, Zsc::parse);
+        let hand_tables = WeaponTables::detect(assets);
+        let (weapon_zsc, subwpn_zsc) = (hand_tables.weapon(false), hand_tables.subweapon(false));
+        let weapons = optional(assets, weapon_zsc, &mut warnings, Zsc::parse);
+        let subweapons = optional(assets, subwpn_zsc, &mut warnings, Zsc::parse);
         let ai = optional(assets, AI_STB, &mut warnings, |bytes| {
             let mut stb = STB::new();
             stb.read(&mut Cursor::new(bytes))
@@ -181,13 +226,13 @@ impl MonsterCatalog {
                     (
                         number(row, 5),
                         &weapons,
-                        "LIST_WEAPON.ZSC",
+                        file_name(weapon_zsc),
                         "Right-hand weapon",
                     ),
                     (
                         number(row, 6),
                         &subweapons,
-                        "LIST_SUBWPN.ZSC",
+                        file_name(subwpn_zsc),
                         "Left-hand weapon",
                     ),
                 ];

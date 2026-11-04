@@ -86,7 +86,8 @@ src/
 │   │                   # also builds gm-item-browser.exe: read-only tester catalog, /item + /mon clipboard;
 │   │                   # flags broken LIST_NPC rows (server refusal, CHR/ZSC/mesh/texture/motion);
 │   │                   # opens foreign dumps too: text codec picked per file (src/text.rs, roselib
-│   │                   # is EUC-KR-only + rejects legacy I_NUM STLs), CJK fonts from Windows; --check
+│   │                   # is EUC-KR-only + rejects legacy I_NUM STLs; GBK vs Korean by lead byte),
+│   │                   # China Rose's per-sex weapon ZSCs, CJK fonts from Windows; --check [--previews]
 │   ├── quest-editor/    # CLI + egui wizard: Hunt/Fetch quests + NPC dialog givers (see its PROGRESS.md)
 │   └── dev-studio/      # Python/PyQt6 (not a cargo member): Rose Dev Studio, GUI editor over
 │                       # scripts/rosefmt -- STB + STL so far, plus the combat simulator

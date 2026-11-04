@@ -8,7 +8,8 @@
 //!   with no default bone or dummy: a part that names neither is skinned.
 //!   ZSC position, rotation and scale are ignored here too.
 //! - LIST_NPC columns 5 and 6 are objects of LIST_WEAPON.ZSC and
-//!   LIST_SUBWPN.ZSC, linked by their parts' own dummy tags
+//!   LIST_SUBWPN.ZSC (China Rose: the male LIST_MWEAPON / LIST_MSUBWPN, see
+//!   `WeaponTables`), linked by their parts' own dummy tags
 //!   [`CCharModelDATA::Load_MOBorNPC`].
 //! - Column 4 scales the whole model [`CObjMOB` `m_fScale`]. The pane fits the
 //!   camera to the model either way, so the scale is reported, not applied.
@@ -22,7 +23,7 @@ use anyhow::Result;
 
 use crate::assets::Assets;
 use crate::monsters::{
-    Chr, ChrModel, Monster, Zsc, MOTION_NAMES, NPC_CHR, NPC_ZSC, SUBWPN_ZSC, WEAPON_ZSC,
+    file_name, Chr, ChrModel, Monster, WeaponTables, Zsc, MOTION_NAMES, NPC_CHR, NPC_ZSC,
 };
 use crate::preview::{load_rig, Animation, Scene, SceneBuilder};
 
@@ -64,6 +65,8 @@ pub struct MonsterModels {
     parts: Result<Zsc, String>,
     weapons: Result<Zsc, String>,
     subweapons: Result<Zsc, String>,
+    /// The two tables' file names, for messages.
+    hand_files: [&'static str; 2],
 }
 
 fn read<T>(assets: &Assets, path: &str, parse: fn(&[u8]) -> Result<T>) -> Result<T, String> {
@@ -75,11 +78,14 @@ fn read<T>(assets: &Assets, path: &str, parse: fn(&[u8]) -> Result<T>) -> Result
 
 impl MonsterModels {
     pub fn load(assets: &Assets) -> Self {
+        let tables = WeaponTables::detect(assets);
+        let (weapon, subweapon) = (tables.weapon(false), tables.subweapon(false));
         Self {
             chr: read(assets, NPC_CHR, Chr::parse),
             parts: read(assets, NPC_ZSC, Zsc::parse),
-            weapons: read(assets, WEAPON_ZSC, Zsc::parse),
-            subweapons: read(assets, SUBWPN_ZSC, Zsc::parse),
+            weapons: read(assets, weapon, Zsc::parse),
+            subweapons: read(assets, subweapon, Zsc::parse),
+            hand_files: [file_name(weapon), file_name(subweapon)],
         }
     }
 
@@ -140,13 +146,13 @@ impl MonsterModels {
             (
                 monster.right_weapon,
                 &self.weapons,
-                "LIST_WEAPON.ZSC",
+                self.hand_files[0],
                 "Right-hand weapon",
             ),
             (
                 monster.left_weapon,
                 &self.subweapons,
-                "LIST_SUBWPN.ZSC",
+                self.hand_files[1],
                 "Left-hand weapon",
             ),
         ];
@@ -253,6 +259,7 @@ mod tests {
             parts: Ok(zsc),
             weapons: Err("LIST_WEAPON.ZSC: gone".into()),
             subweapons: Err("LIST_SUBWPN.ZSC: gone".into()),
+            hand_files: ["LIST_WEAPON.ZSC", "LIST_SUBWPN.ZSC"],
         }
     }
 

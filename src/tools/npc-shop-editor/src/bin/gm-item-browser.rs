@@ -28,7 +28,7 @@ const AMBER: Color32 = Color32::from_rgb(235, 185, 80);
 fn main() -> eframe::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let mut args: Vec<_> = std::env::args_os().skip(1).collect();
-    // --encoding auto|western|korean|japanese: how table text is decoded.
+    // --encoding auto|western|korean|japanese|chinese|utf-8: how table text is decoded.
     // Auto reads the script off each file, so this is only for overriding it.
     let mut codec = Codec::Auto;
     if let Some(i) = args.iter().position(|a| a == "--encoding") {
@@ -36,7 +36,7 @@ fn main() -> eframe::Result<()> {
         match value {
             Some(c) => codec = c,
             None => {
-                eprintln!("usage: --encoding auto|western|korean|japanese");
+                eprintln!("usage: --encoding auto|western|korean|japanese|chinese|utf-8");
                 std::process::exit(2);
             }
         }
@@ -45,11 +45,16 @@ fn main() -> eframe::Result<()> {
     if args.first().is_some_and(|a| a == "--check") {
         // Headless: load a folder the way the window does and print what the
         // "Data warnings" header would show. Exit 1 if either catalog failed.
+        // `--previews` also builds every spawnable item's and every monster's 3D preview
+        // (no drawing) and groups what could not be shown.
         let Some(root) = args.get(1).map(PathBuf::from) else {
-            eprintln!("usage: gm-item-browser --check <data folder or data.idx> [--encoding ...]");
+            eprintln!(
+                "usage: gm-item-browser --check <data folder or data.idx> [--previews] [--encoding ...]"
+            );
             std::process::exit(2);
         };
-        std::process::exit(check(&root, codec));
+        let previews = args[2..].iter().any(|a| a == "--previews");
+        std::process::exit(check(&root, codec, previews));
     }
     if args.first().is_some_and(|a| a == "--preview") {
         // Headless: render an outfit's 3D preview to a PNG, the way the pane
@@ -120,7 +125,7 @@ fn main() -> eframe::Result<()> {
 }
 
 /// `--check`: what the window would load from `root`, on the console.
-fn check(root: &Path, codec: Codec) -> i32 {
+fn check(root: &Path, codec: Codec, previews: bool) -> i32 {
     let assets = match Assets::open(root) {
         Ok(assets) => assets,
         Err(e) => {
@@ -141,6 +146,26 @@ fn check(root: &Path, codec: Codec) -> i32 {
             for item in catalog.items.iter().filter(|i| i.item.icon_no > 0).take(5) {
                 println!("  e.g. {}:{} {}", item.item.category as u8, item.item.id, item.item.name);
             }
+            if previews {
+                let models = AvatarModels::load(&assets, codec);
+                let mut notes = NoteTally::default();
+                let mut built = 0;
+                for item in &catalog.items {
+                    let category = item.item.category;
+                    if Slot::for_category(category).is_none() || !item.spawnable() {
+                        continue;
+                    }
+                    for sex in [Sex::Male, Sex::Female] {
+                        let worn = [(category, item.item.id)];
+                        let outfit = models.outfit(sex, &worn, Some(category));
+                        let scene = models.build(&assets, &outfit);
+                        built += 1;
+                        let who = format!("{}:{} {:?}", category as u8, item.item.id, sex);
+                        notes.add(&who, &scene.notes);
+                    }
+                }
+                notes.print("item previews", built);
+            }
             warnings.extend(catalog.warnings);
         }
         Err(e) => {
@@ -158,6 +183,15 @@ fn check(root: &Path, codec: Codec) -> i32 {
             );
             for m in catalog.monsters.iter().filter(|m| m.has_game_name).take(5) {
                 println!("  e.g. {} {}", m.id, m.name);
+            }
+            if previews {
+                let models = MonsterModels::load(&assets);
+                let mut notes = NoteTally::default();
+                for monster in &catalog.monsters {
+                    let scene = models.build(&assets, monster);
+                    notes.add(&format!("monster {}", monster.id), &scene.notes);
+                }
+                notes.print("monster previews", catalog.monsters.len());
             }
             warnings.extend(catalog.warnings);
         }
@@ -184,6 +218,45 @@ fn check(root: &Path, codec: Codec) -> i32 {
         if fonts.is_empty() { "none (CJK names draw as boxes)".to_string() } else { fonts.join(", ") }
     );
     i32::from(failed)
+}
+
+/// `--check --previews`: preview notes grouped by their text with the numbers
+/// taken out, so one cause shared by a thousand items is one line.
+#[derive(Default)]
+struct NoteTally {
+    failed: usize,
+    groups: std::collections::BTreeMap<String, (usize, Vec<String>)>,
+}
+
+impl NoteTally {
+    fn add(&mut self, who: &str, notes: &[String]) {
+        if !notes.is_empty() {
+            self.failed += 1;
+        }
+        for note in notes {
+            let key: String = note
+                .chars()
+                .map(|c| if c.is_ascii_digit() { '#' } else { c })
+                .collect();
+            let group = self.groups.entry(key).or_default();
+            group.0 += 1;
+            if group.1.len() < 3 {
+                group.1.push(format!("{who}: {note}"));
+            }
+        }
+    }
+
+    fn print(&self, what: &str, built: usize) {
+        println!("{what}: {built} built, {} with notes", self.failed);
+        let mut groups: Vec<_> = self.groups.iter().collect();
+        groups.sort_by(|a, b| b.1 .0.cmp(&a.1 .0));
+        for (key, (count, examples)) in groups {
+            println!("  {count:>6}  {key}");
+            for example in examples {
+                println!("            e.g. {example}");
+            }
+        }
+    }
 }
 
 /// `--preview` / `--preview-monster`: what the 3D pane would show, as a PNG.
@@ -1540,8 +1613,9 @@ impl eframe::App for Browser {
                     .response
                     .on_hover_text(
                         "How the tables' text is decoded. Auto reads the script off each \
-                         file (Jrose is Japanese, retail and RoseZA are Korean, ours is \
-                         Western); pick one only if Auto gets a folder wrong.",
+                         file (Jrose is Japanese, retail and RoseZA are Korean, China \
+                         Rose is Chinese, ours is Western); pick one only if Auto gets \
+                         a folder wrong.",
                     );
                 if self.codec != before && self.loading.is_none() {
                     if let Some(root) = self.root.clone() {

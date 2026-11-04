@@ -40,7 +40,7 @@ use roselib::io::RoseFile;
 use crate::assets::{normalize, Assets};
 use crate::data::ItemCategory;
 use crate::dds::{self, DecodedImage};
-use crate::monsters::{Zsc, ZscMaterial, ZscObject};
+use crate::monsters::{file_name, WeaponTables, Zsc, ZscMaterial, ZscObject};
 use crate::text::{self, Codec};
 
 /// `BONE_IDX_HEAD`, `DUMMY_IDX_BACK`, `DUMMY_IDX_MOUSE`, `DUMMY_IDX_CAP`
@@ -128,7 +128,7 @@ impl Slot {
         }
     }
 
-    fn table(self, sex: Sex) -> &'static str {
+    fn table(self, sex: Sex, weapons: WeaponTables) -> &'static str {
         let male = sex == Sex::Male;
         match self {
             Slot::Face if male => "3DDATA/AVATAR/LIST_MFACE.ZSC",
@@ -146,8 +146,8 @@ impl Slot {
             // One table for both sexes.
             Slot::FaceItem => "3DDATA/AVATAR/LIST_FACEIEM.ZSC",
             Slot::Back => "3DDATA/AVATAR/LIST_BACK.ZSC",
-            Slot::WeaponR => "3DDATA/WEAPON/LIST_WEAPON.ZSC",
-            Slot::WeaponL => "3DDATA/WEAPON/LIST_SUBWPN.ZSC",
+            Slot::WeaponR => weapons.weapon(!male),
+            Slot::WeaponL => weapons.subweapon(!male),
         }
     }
 
@@ -226,13 +226,15 @@ impl Action {
 /// Whether `assets` holds avatar models at all: the tester package ships
 /// tables and icons only, and gets no preview rather than a list of misses.
 pub fn has_avatar_models(assets: &Assets) -> bool {
-    assets.exists(Slot::Body.table(Sex::Male))
+    assets.exists(Slot::Body.table(Sex::Male, WeaponTables::Shared))
 }
 
 /// Everything the preview reads once per data folder: the part tables, the two
 /// skeletons, each hat's hair type, each weapon's motion type and the motion tables.
 pub struct AvatarModels {
     tables: HashMap<&'static str, Result<Zsc, String>>,
+    /// Shared weapon tables, or China Rose's per-sex ones.
+    weapons: WeaponTables,
     rigs: HashMap<Sex, Result<Arc<Rig>, String>>,
     hair_types: Vec<i32>,
     weapon_motion_types: Vec<i32>,
@@ -248,9 +250,10 @@ impl AvatarModels {
     pub fn load(assets: &Assets, codec: Codec) -> Self {
         let mut tables = HashMap::new();
         let mut rigs = HashMap::new();
+        let weapons = WeaponTables::detect(assets);
         for sex in [Sex::Male, Sex::Female] {
             for slot in Slot::ALL {
-                let path = slot.table(sex);
+                let path = slot.table(sex, weapons);
                 tables.entry(path).or_insert_with(|| {
                     assets
                         .read(path)
@@ -313,6 +316,7 @@ impl AvatarModels {
         });
         Self {
             tables,
+            weapons,
             rigs,
             hair_types,
             weapon_motion_types,
@@ -323,7 +327,7 @@ impl AvatarModels {
     }
 
     fn table(&self, slot: Slot, sex: Sex) -> Result<&Zsc, &str> {
-        match &self.tables[slot.table(sex)] {
+        match &self.tables[slot.table(sex, self.weapons)] {
             Ok(zsc) => Ok(zsc),
             Err(e) => Err(e),
         }
@@ -391,11 +395,7 @@ impl AvatarModels {
         }
         for &(slot, index) in &outfit.parts {
             let label = slot.label();
-            let file = slot
-                .table(outfit.sex)
-                .rsplit('/')
-                .next()
-                .unwrap_or_default();
+            let file = file_name(slot.table(outfit.sex, self.weapons));
             let zsc = match self.table(slot, outfit.sex) {
                 Ok(zsc) => zsc,
                 Err(e) => {
