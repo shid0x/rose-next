@@ -41,7 +41,9 @@
 #include <windows.h>
 #include <algorithm>
 #include <cstring>
+#include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #pragma comment (lib, "d3d9.lib")
@@ -211,7 +213,10 @@ unsigned int zz_take_foliage_split_draws ()
 // (< 224) and more than 4 texels (at 128 px) from any clear texel. Over 25% = a
 // translucent surface: never split, and drawn after the cut-outs
 // (zz_scene_octree::update_object_sort), one draw with depth -- the old way, and the
-// standard order for transparency. Measured on our 353 alpha map textures: foliage
+// standard order for transparency. error.txt names a surface once per session, the first
+// time a transparent part with it is ordered (`r_d3d: translucent surface ...`): logging
+// at load named every texture of the sort, avatar bodies and terrain tiles included, at
+// every reload (a third of the file). Measured on our 353 alpha map textures: foliage
 // 0-8.6% (Forest of Wisdom's tree012); every surface the test found showing through
 // with the split 32% and up (crystals 32-40%, balloons 38%, the ghost 50-58%). In
 // between, Junon's street-lamp globe (23%) and an Oro pavement decal (18%) stay split:
@@ -220,7 +225,13 @@ unsigned int zz_take_foliage_split_draws ()
 // (not DDS, an unhandled format) are left as they were: no split, first group.
 enum { ALPHA_CLASS_UNKNOWN = 0, ALPHA_CLASS_CUTOUT = 1, ALPHA_CLASS_SURFACE = 2 };
 static const float TRANSLUCENT_INTERIOR_SHARE = 0.25f;
-static std::unordered_map<const zz_texture *, int> s_texture_alpha_class;
+struct zz_alpha_class {
+	int cls;
+	float share;     // the interior half-transparent share it was classified by
+	bool reported;   // named in error.txt (or its path already was)
+};
+static std::unordered_map<const zz_texture *, zz_alpha_class> s_texture_alpha_class;
+static std::unordered_set<std::string> s_reported_surface_paths;
 
 static uint32 dds_u32 (const unsigned char * p)
 {
@@ -372,18 +383,29 @@ static int classify_texture_alpha (const void * data, uint32 size, float & share
 	return (share > TRANSLUCENT_INTERIOR_SHARE) ? ALPHA_CLASS_SURFACE : ALPHA_CLASS_CUTOUT;
 }
 
+// Asked by zz_scene_octree::update_object_sort for the parts of the transparent pass,
+// which is where a surface's class first matters: named in error.txt there, once.
 bool zz_is_translucent_surface (const zz_texture * tex)
 {
 	if (!tex) return false;
-	std::unordered_map<const zz_texture *, int>::const_iterator it = s_texture_alpha_class.find(tex);
-	return it != s_texture_alpha_class.end() && it->second == ALPHA_CLASS_SURFACE;
+	std::unordered_map<const zz_texture *, zz_alpha_class>::iterator it = s_texture_alpha_class.find(tex);
+	if (it == s_texture_alpha_class.end() || it->second.cls != ALPHA_CLASS_SURFACE) return false;
+	if (!it->second.reported) {
+		it->second.reported = true;
+		const char * path = tex->get_path();
+		if (path && s_reported_surface_paths.insert(path).second) {
+			ZZ_LOG("r_d3d: translucent surface, drawn after cut-outs and never split: %s (interior %.0f%%)\n",
+				path, it->second.share * 100.0f);
+		}
+	}
+	return true;
 }
 
 static bool is_cutout_texture (const zz_texture * tex)
 {
 	if (!tex) return false;
-	std::unordered_map<const zz_texture *, int>::const_iterator it = s_texture_alpha_class.find(tex);
-	return it != s_texture_alpha_class.end() && it->second == ALPHA_CLASS_CUTOUT;
+	std::unordered_map<const zz_texture *, zz_alpha_class>::const_iterator it = s_texture_alpha_class.find(tex);
+	return it != s_texture_alpha_class.end() && it->second.cls == ALPHA_CLASS_CUTOUT;
 }
 
 zz_renderer_d3d::zz_renderer_d3d () : zz_renderer()
@@ -4769,13 +4791,9 @@ zz_handle zz_renderer_d3d::download_texture (zz_texture * tex)
 
 	// two-pass alpha parts: a cut-out or a translucent surface (see TRANSLUCENT_INTERIOR_SHARE)
 	{
-		float share = 0.0f;
-		const int cls = classify_texture_alpha(data, size, share);
-		s_texture_alpha_class[tex] = cls;
-		if (cls == ALPHA_CLASS_SURFACE) {
-			ZZ_LOG("r_d3d: translucent surface, drawn after cut-outs and never split: %s (interior %.0f%%)\n",
-				texture_path, share * 100.0f);
-		}
+		zz_alpha_class c = { ALPHA_CLASS_UNKNOWN, 0.0f, false };
+		c.cls = classify_texture_alpha(data, size, c.share);
+		s_texture_alpha_class[tex] = c;
 	}
 
 	::QueryPerformanceCounter(&tex_t2);

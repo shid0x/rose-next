@@ -279,8 +279,10 @@ Things that will bite:
   32-40%, balloons 38%, the ghost 50-58%; also lights, glass, the Lounge's cones, tables,
   Oro's `or_plantc`). **Junon's street-lamp globe (`STREETLIGHTB`, 23%) must stay split**:
   the lamp's lit "bulb" is the core of its glow effect inside the translucent globe, and a
-  globe writing depth hides it (retail's look; a 15% cut-off brought it back). error.txt logs
-  each surface once (`r_d3d: translucent surface ...`). Unreadable files stay unsplit in the
+  globe writing depth hides it (retail's look; a 15% cut-off brought it back). error.txt names
+  a surface once per session, the first time a transparent part with it is ordered
+  (`r_d3d: translucent surface ...`) -- logging at load named every texture classified,
+  avatar bodies and terrain tiles too, at every reload: a third of the file. Unreadable files stay unsplit in the
   first group. With `/alphasplit` off the order is the old single sort.
   It reads the state the material just applied from file-scope caches
   the setters (`enable_alpha_test` / `_blend`, `enable_zwrite`, `set_zfunc`) keep, so
