@@ -1191,6 +1191,7 @@ CMAP_PATCH::CMAP_PATCH() {
 void
 CMAP_PATCH::InitMember() {
     m_wLastViewFRAME = 0;
+    m_dwLastViewTIME = 0;
 
     m_hTerrainBlock = NULL;
 

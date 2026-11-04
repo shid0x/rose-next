@@ -172,6 +172,13 @@ CClientStorage::Load() {
     m_VideoOption.terrain_evict_budget_us =
         GetPrivateProfileInt("VIDEO", "TERRAIN_EVICT_BUDGET_US", 2000, g_szIniFileName);
 
+    /// How long a patch that left the view stays in the scene. It used to be 30
+    /// frames, which is 0.2 s at 150 fps: any look over the shoulder evicted
+    /// everything past the 120 m ring, and turning back refilled the view at the
+    /// insert cap's pace (objects popping in for most of a second).
+    m_VideoOption.terrain_evict_grace_ms =
+        GetPrivateProfileInt("VIDEO", "TERRAIN_EVICT_GRACE_MS", 5000, g_szIniFileName);
+
     /// One draw per map cell's texture group instead of one per 10 m patch: ~5,600
     /// terrain draws a frame on the 5x5 Far view before. 0 = the per-patch path.
     m_VideoOption.terrain_batch =
@@ -368,6 +375,9 @@ CClientStorage::Save() {
 
     itoa(m_VideoOption.terrain_evict_budget_us, szTemp, 10);
     WritePrivateProfileString("VIDEO", "TERRAIN_EVICT_BUDGET_US", szTemp, g_szIniFileName);
+
+    itoa(m_VideoOption.terrain_evict_grace_ms, szTemp, 10);
+    WritePrivateProfileString("VIDEO", "TERRAIN_EVICT_GRACE_MS", szTemp, g_szIniFileName);
 
     itoa(m_VideoOption.terrain_batch, szTemp, 10);
     WritePrivateProfileString("VIDEO", "TERRAIN_BATCH", szTemp, g_szIniFileName);

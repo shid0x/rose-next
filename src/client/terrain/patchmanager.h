@@ -26,9 +26,15 @@ private:
     short m_nPickPATCH;
 
     WORD m_wViewFRAME;
+    /// GetTickCount() for this frame's Update_VisiblePatchManager; every stamp
+    /// and the eviction grace use it.
+    DWORD m_dwViewTIME;
     float m_ViewFrsutumEq[6][4];
 
     std::vector<CMAP_PATCH*> patches;
+    /// Scratch: first-time far frustum inserts over this frame's cap, as
+    /// (squared distance to the camera, patch), so the cap goes nearest-first.
+    std::vector<std::pair<float, CMAP_PATCH*>> m_DeferredFar;
     int patch_lod[31][31];
 
 public:
@@ -41,17 +47,23 @@ public:
     int m_nDrawingPatch;
     bool lod_onoff;
 
-    void ResetViewFrame() { m_wViewFRAME = 0; }
+    void ResetViewFrame() { m_wViewFRAME = 1; }
+    /// m_wLastViewFRAME == 0 means "not in the scene", so the frame counter must
+    /// skip 0 when it wraps. (It used to land on 0 for one frame every 65,536:
+    /// every patch stamped that frame looked cold and was pushed into the
+    /// resident list a second time.)
     void IncreaseViewFrame() {
         m_wViewFRAME++;
-        if (m_wViewFRAME <= 0)
-            m_wViewFRAME = 0;
+        if (m_wViewFRAME == 0)
+            m_wViewFRAME = 1;
     }
 
     void SetPATCH(int iX, int iY, CMAP_PATCH* pPATCH);
 
     void Update_VisiblePatch(short nMappingX, short nMappingY);
     void Insert_VisiblePatch(CMAP_PATCH* pPATCH);
+    /// Marks an in-scene patch as seen this frame (frame and time).
+    void Stamp(CMAP_PATCH* pPATCH);
     void Clear_VisiblePatch(void);
     void Delete_UnvisiblePatch(void);
     /// Takes a map cell's patches out of the resident set; call before the cell

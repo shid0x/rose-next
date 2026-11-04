@@ -149,6 +149,11 @@ public:
     short GetDnTileTEX() const { return m_nDnTileTEX; }
     short GetUpTileTEX() const { return m_nUpTileTEX; }
 
+    /// True once the patch has been inserted since its cell loaded: Register() ran
+    /// (it runs only from the first InsertToScene), so putting it back in the scene
+    /// is octree work only. CPatchManager never budgets such a re-entry.
+    bool IsRegistered() const { return m_bIsRegistered; }
+
 private:
     static float m_fHEIGHT[MAX_VERTEX_COUNT_PER_PATCH_AXIS * MAX_VERTEX_COUNT_PER_PATCH_AXIS];
 
@@ -191,6 +196,9 @@ public:
     bool UnregisterFromNZIN(void);
 
     WORD m_wLastViewFRAME;
+    /// GetTickCount() of the frame that last stamped m_wLastViewFRAME. The
+    /// eviction grace is measured in time, not frames (see Delete_UnvisiblePatch).
+    DWORD m_dwLastViewTIME;
 
     void InsertToScene();
     void RemoveFromScene();

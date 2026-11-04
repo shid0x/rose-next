@@ -17,7 +17,8 @@ CPatchManager::CPatchManager(void) {
     m_nSubPATCH = 0;
     m_nCameraPatch = 0;
     m_nPickPATCH = 0;
-    m_wViewFRAME = 0;
+    m_wViewFRAME = 1; // 0 is reserved: m_wLastViewFRAME == 0 means "not in the scene"
+    m_dwViewTIME = 0;
     m_nDrawingPatch = 0;
 
     lod_onoff = FALSE;
@@ -57,7 +58,8 @@ CPatchManager::Reset() {
     m_nSubPATCH = 0;
     m_nCameraPatch = 0;
     m_nPickPATCH = 0;
-    m_wViewFRAME = 0;
+    m_wViewFRAME = 1; // 0 is reserved: m_wLastViewFRAME == 0 means "not in the scene"
+    m_dwViewTIME = 0;
     m_nDrawingPatch = 0;
 }
 
@@ -120,19 +122,23 @@ CPatchManager::Update_VisiblePatch(short nMappingX, short nMappingY) {
         if (pPATCH->m_wLastViewFRAME != 0) {
             /// Already live — just refresh the frame stamp so the grace
             /// window does not expire. No InsertToScene work.
-            pPATCH->m_wLastViewFRAME = this->m_wViewFRAME;
+            this->Stamp(pPATCH);
             pPATCH->PlaySOUND();
             ++s_nRingStampsThisFrame;
-        } else if (remaining_inserts > 0) {
-            /// Fresh insert — budget-gated so teleport / zone warp cannot
+        } else if (pPATCH->IsRegistered() || remaining_inserts > 0) {
+            /// First-time insert — budget-gated so teleport / zone warp cannot
             /// land > kMaxProximityInsertsPerFrame new patches in one frame.
+            /// A returning patch (registered on an earlier insert) is octree
+            /// work only and is never budgeted.
+            const bool bFirstTime = !pPATCH->IsRegistered();
             this->Insert_VisiblePatch(pPATCH);
             pPATCH->PlaySOUND();
-            --remaining_inserts;
+            if (bFirstTime)
+                --remaining_inserts;
             ++s_nRingStampsThisFrame;
         }
         /// Budget exhausted: skip this patch. Next frame will retry — still
-        /// well within the 30-frame eviction grace, so nothing expires.
+        /// well within the eviction grace, so nothing expires.
     }
 }
 
@@ -168,7 +174,13 @@ CPatchManager::Insert_VisiblePatch(CMAP_PATCH* patch) {
         patch->InsertToScene();
         this->patches.push_back(patch);
     }
+    this->Stamp(patch);
+}
+
+void
+CPatchManager::Stamp(CMAP_PATCH* patch) {
     patch->m_wLastViewFRAME = this->m_wViewFRAME;
+    patch->m_dwLastViewTIME = this->m_dwViewTIME;
 }
 
 void
@@ -187,11 +199,16 @@ CPatchManager::Clear_VisiblePatch(void) {
 /// Patches leave the visible set the moment the camera pans away. Without a
 /// grace window, curving back ~0.5 s later forces a fresh InsertToScene on
 /// dozens of patches at once — visible as a hitch. Keep patches in-scene for
-/// this many view-frames after they last appeared; uint16_t arithmetic
-/// handles IncreaseViewFrame's wrap naturally. 30 frames (~0.5 s at 60 fps)
-/// absorbs frustum/ring boundary oscillation during motion. The earlier
-/// "2304 saturation" argument for a shorter grace no longer applies once the
-/// proximity ring (kProximityRingRadius = 12) only covers ~452 patches.
+/// at least this many view-frames after they last appeared; uint16_t
+/// arithmetic handles IncreaseViewFrame's wrap naturally. It absorbs
+/// frustum/ring boundary oscillation during motion.
+///
+/// The real grace is time, [VIDEO] TERRAIN_EVICT_GRACE_MS (default 5000,
+/// 2026-11-04). 30 frames was meant as ~0.5 s at 60 fps, but at 150-180 fps it
+/// is 0.2 s: a look over the shoulder evicted everything past the 120 m ring,
+/// and turning back put it back at the first-time insert cap's 24 patches a
+/// frame -- map objects visibly popping in across the view for most of a
+/// second. 0 = the frame floor alone (the old behaviour).
 static const uint16_t kPatchEvictGraceFrames = 30;
 
 /// Evictions are budgeted per frame, like inserts (2026-10-25). A camera swing
@@ -200,13 +217,17 @@ static const uint16_t kPatchEvictGraceFrames = 30;
 /// the terrain block and every object, effect and sound on the patch. With the
 /// 5x5 window and the Far view that measured 17-51 ms in a single frame
 /// (terr[del=] on the spike log, Xita and Shadow Canyon).
-/// A patch kept past its grace costs nothing: the renderer culls it like any
-/// resident patch, and if it comes back into view it is simply restamped. At
-/// least one patch goes per frame, so a backlog always drains.
+/// A patch kept past its grace is cheap: the renderer culls it like any
+/// resident patch, and if it comes back into view it is simply restamped. (Not
+/// free: the engine still advances the clocks of everything in the scene, so
+/// a resident patch's effects keep simulating off screen.) At least one patch
+/// goes per frame, so a backlog always drains.
 /// [VIDEO] TERRAIN_EVICT_BUDGET_US (default 2000, 0 = uncapped/legacy).
 void
 CPatchManager::Delete_UnvisiblePatch(void) {
     uint16_t view_frame = this->m_wViewFRAME;
+    const DWORD now = this->m_dwViewTIME;
+    const DWORD grace_ms = g_ClientStorage.GetTerrainEvictGraceMs();
 
     LARGE_INTEGER qpf, t0, t1;
     ::QueryPerformanceFrequency(&qpf);
@@ -223,6 +244,10 @@ CPatchManager::Delete_UnvisiblePatch(void) {
             }
             uint16_t age = (uint16_t)(view_frame - patch->m_wLastViewFRAME);
             if (age < kPatchEvictGraceFrames || budget_spent) {
+                return false;
+            }
+            /// DWORD subtraction is wrap-safe across GetTickCount's 49.7-day roll.
+            if ((DWORD)(now - patch->m_dwLastViewTIME) < grace_ms) {
                 return false;
             }
             patch->m_PreDrawingType = -1;
@@ -422,6 +447,9 @@ CPatchManager::Update_VisiblePatchManager(short nMappingX, short nMappingY) {
     }
     #define ZZ_NOTE_TERR(step)                                                                if (bTimeTerr) {                                                                          ::QueryPerformanceCounter(&t1);                                                       FrameProfiler::NoteTerrainStep(FrameProfiler::step,                                       (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)qpfT.QuadPart);            t0 = t1;                                                                          }
 
+    /// One clock for the whole pass: every stamp and the eviction check below.
+    m_dwViewTIME = ::GetTickCount();
+
     CalculateViewFrustumCulling();
     ZZ_NOTE_TERR(TERRAIN_CULL);
 
@@ -453,7 +481,19 @@ CPatchManager::Update_VisiblePatchManager(short nMappingX, short nMappingY) {
             continue;
         }
 
+        /// Returning after an eviction: registered on its first insert, so
+        /// putting it back is octree work only -- none of the terrain-mesh and
+        /// texture loading the cap exists for. Never budgeted: this is what
+        /// turning the camera back costs, and deferring it is what made map
+        /// objects pop back in across the view.
+        if (pPATCH->IsRegistered()) {
+            this->Insert_VisiblePatch(pPATCH);
+            pPATCH->PlaySOUND();
+            continue;
+        }
+
         bool bNear = true;
+        float dist_square = 0.0f;
         if (have_camera) {
             /// Measure to the patch's own terrain footprint, not to its object
             /// AABB. m_AABBMin starts at +1e8 and is only ever lowered by
@@ -466,21 +506,39 @@ CPatchManager::Update_VisiblePatchManager(short nMappingX, short nMappingY) {
                 (0.5f * (pPATCH->m_aabb.x[0] + pPATCH->m_aabb.x[1])) - camera_eye[0];
             const float dy =
                 (0.5f * (pPATCH->m_aabb.y[0] + pPATCH->m_aabb.y[1])) - camera_eye[1];
-            bNear = ((dx * dx + dy * dy) <= near_radius_square);
+            dist_square = dx * dx + dy * dy;
+            bNear = (dist_square <= near_radius_square);
         }
 
         if (!bNear && budget_inserts) {
-            if (far_inserts_left <= 0) {
-                /// Deferred to a later frame. The patch stays outside the scene
-                /// for now; it is still inside the frustum next frame, so it
-                /// gets another chance immediately.
-                continue;
-            }
-            --far_inserts_left;
+            /// Capped: which of these go in this frame is decided below,
+            /// nearest first.
+            m_DeferredFar.push_back(std::make_pair(dist_square, pPATCH));
+            continue;
         }
 
         this->Insert_VisiblePatch(pPATCH);
         pPATCH->PlaySOUND();
+    }
+
+    /// First-time far inserts, nearest first. The quadtree hands patches over
+    /// cell by cell, so spending the cap in that order filled the view from one
+    /// corner of the map window. The rest wait for a later frame: they stay
+    /// outside the scene for now, and are still inside the frustum next frame.
+    if (!m_DeferredFar.empty()) {
+        const size_t n = min((size_t)far_inserts_left, m_DeferredFar.size());
+        if (n < m_DeferredFar.size()) {
+            std::nth_element(m_DeferredFar.begin(),
+                m_DeferredFar.begin() + n,
+                m_DeferredFar.end(),
+                [](const std::pair<float, CMAP_PATCH*>& a,
+                    const std::pair<float, CMAP_PATCH*>& b) { return a.first < b.first; });
+        }
+        for (size_t k = 0; k < n; ++k) {
+            this->Insert_VisiblePatch(m_DeferredFar[k].second);
+            m_DeferredFar[k].second->PlaySOUND();
+        }
+        m_DeferredFar.clear();
     }
 
     for (i = 0; i < m_nCameraPatch; i += 1) {
