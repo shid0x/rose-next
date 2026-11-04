@@ -160,6 +160,7 @@ sys.path.insert(0, HERE)
 import numpy as np  # noqa: E402
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 import rosedata as oro  # noqa: E402  the shared data layer
+from rosedata import texture  # noqa: E402  texconv, the hard cut-out
 from rosefmt import chunk, dds, ifo, lit, lnav, zon  # noqa: E402
 from rosefmt.zsc import TAG_COLLISION, Zsc, decode_props, serialize_object  # noqa: E402
 
@@ -184,7 +185,6 @@ SOURCE_MINIMAP_PX = 128             # China Rose's CMinimapDLG.cpp MINIMAP_RESOL
 MINIMAP_PX = 64                     # ours (src/client/interface/dlgs/cminimapdlg.cpp)
 MINIMAP_FONT = (r"C:\Windows\Fonts\arialbd.ttf", 11)
 MINIMAP_TEXT, MINIMAP_OUTLINE, MINIMAP_SHADOW = (255, 255, 255), (35, 28, 20), (20, 16, 12)
-TEXCONV = os.path.join(ROOT, "thirdparty", "directxtex-2020.9.30", "texconv.exe")
 LIT_NAMES = ("OBJECTLIGHTMAPDATA.LIT", "BUILDINGLIGHTMAPDATA.LIT")
 ORIGIN_M, CHUNK_M = 5200.0, 160.0
 
@@ -318,13 +318,6 @@ def dds_size(path):
     return h.width, h.height, h.mip_count
 
 
-def texconv(args, out):
-    r = subprocess.run([TEXCONV, "-nologo", "-y"] + args, capture_output=True, text=True)
-    if r.returncode != 0 or not os.path.isfile(out):
-        raise SystemExit("texconv failed: %s" % (r.stdout or r.stderr)[-400:])
-    return out
-
-
 def find_name(folder, want):
     """A file's real name in a folder, case-insensitively (dumps are case-mixed)."""
     hit = [f for f in os.listdir(folder) if f.upper() == want.upper()]
@@ -368,7 +361,7 @@ def minimap_bytes(spec, s_map):
     with tempfile.TemporaryDirectory() as tmp:
         src_copy = os.path.join(tmp, "src.dds")          # texconv writes beside a path it cannot parse
         shutil.copyfile(sp, src_copy)
-        png = texconv(["-ft", "png", "-m", "1", "-o", tmp, src_copy], os.path.join(tmp, "src.png"))
+        png = texture.texconv(["-ft", "png", "-m", "1", "-o", tmp, src_copy], os.path.join(tmp, "src.png"))
         a = np.asarray(Image.open(png).convert("RGB")).astype(np.float32)
         erase_labels(a, [box for box, _ in spec["labels"]])
         im = Image.fromarray(np.clip(np.rint(a), 0, 255).astype(np.uint8)).resize((w, h), Image.BOX)
@@ -384,7 +377,7 @@ def minimap_bytes(spec, s_map):
         label_png = os.path.join(tmp, "MINIMAP.png")
         im.save(label_png)
         pow2 = w & (w - 1) == 0 and h & (h - 1) == 0       # DirectXTex's BOX takes powers of two only
-        out = texconv(["-dx9", "-m", "0", "-nowic", "-if", "BOX" if pow2 else "LINEAR", "-f", "BC1_UNORM",
+        out = texture.texconv(["-dx9", "-m", "0", "-nowic", "-if", "BOX" if pow2 else "LINEAR", "-f", "BC1_UNORM",
                        "-o", os.path.join(tmp, "out"), label_png], os.path.join(tmp, "out", "MINIMAP.dds"))
         return open(out, "rb").read()
 
@@ -451,74 +444,6 @@ def deco_table(spec, src):
         if [p[2] for p in z2.objects[oid][1]] != [p[2] for p in z2.objects[twin][1]]:
             raise SystemExit(f"{spec['deco']}: object {oid}'s parts are not object {twin}'s")
     return data
-
-
-# ------------------------------------------------------- cut-out textures
-DDSD_MIPMAPCOUNT, DDSCAPS_COMPLEX, DDSCAPS_MIPMAP = 0x20000, 0x8, 0x400000
-
-
-def cutout_levels(rgba, ref):
-    """A full mip chain of (h, w, 4) uint8 levels whose alpha is 0 or 255 only.
-
-    Level 0 is cut at `ref` with its colour untouched. Each smaller level box-averages
-    the alpha of the level above *before* its cut (never the cut one: a strand would
-    erode level by level) and is cut at the threshold that keeps level 0's coverage
-    -- DirectXTex's coverage-preserving idea, binarised. Colour is averaged over the
-    visible texels only (by alpha), so no clear texel's fill colour bleeds in."""
-    a = rgba[..., 3].astype(np.float64) / 255.0
-    c = rgba[..., :3].astype(np.float64)
-    target = float((a >= ref / 255.0).mean())
-    out = []
-    while True:
-        t = ref / 255.0 if not out else (np.quantile(a, 1.0 - target) if target > 0 else 2.0)
-        out.append(np.dstack([np.clip(np.rint(c), 0, 255), np.where(a >= t, 255, 0)]).astype(np.uint8))
-        h, w = a.shape
-        if h == 1 and w == 1:
-            return out
-        h2, w2 = max(1, h // 2), max(1, w // 2)
-        A = a.reshape(h2, h // h2, w2, w // w2)
-        C = c.reshape(h2, h // h2, w2, w // w2, 3)
-        wsum = A.sum((1, 3))
-        weighted = (C * A[..., None]).sum((1, 3)) / np.maximum(wsum, 1e-12)[..., None]
-        c = np.where(wsum[..., None] > 1e-12, weighted, C.mean((1, 3)))
-        a = A.mean((1, 3))
-
-
-def decode_rgba(path):
-    """The top level of any DDS as (h, w, 4) uint8 RGBA, through texconv."""
-    with tempfile.TemporaryDirectory() as tmp:
-        src = os.path.join(tmp, "src.dds")          # texconv writes beside a path it cannot parse
-        shutil.copyfile(path, src)
-        png = texconv(["-ft", "png", "-m", "1", "-f", "R8G8B8A8_UNORM", "-o", tmp, src],
-                      os.path.join(tmp, "src.png"))
-        return np.asarray(Image.open(png).convert("RGBA"))
-
-
-def cutout_dds(src, rel, ref):
-    """China Rose's texture as a hard cut-out DXT5 with its full chain, as DDS bytes:
-    each level encoded on its own (texconv, -m 1) and the levels joined under level 0's
-    header, so no encoder re-filters the cut alpha."""
-    path = P(src, rel)
-    h0 = dds.parse_header(path)
-    if h0.fourcc != b"DXT5":
-        raise SystemExit(f"{rel} is {h0.fourcc!r}: the cut-out keeps DXT5's alpha, expected DXT5")
-    levels = cutout_levels(decode_rgba(path), ref)
-    head, payload = None, []
-    with tempfile.TemporaryDirectory() as tmp:
-        for i, lv in enumerate(levels):
-            src_lv = os.path.join(tmp, f"l{i}.dds")
-            dds.write_bgra(src_lv, Image.fromarray(lv, "RGBA"))
-            os.makedirs(os.path.join(tmp, "out"), exist_ok=True)
-            out = texconv(["-dx9", "-m", "1", "-f", "BC3_UNORM", "-o", os.path.join(tmp, "out"), src_lv],
-                          os.path.join(tmp, "out", f"l{i}.dds"))
-            h, body = dds.split(open(out, "rb").read())
-            if head is None:
-                head = h
-            payload.append(body)
-    head.mip_count = len(levels)
-    head.flags |= DDSD_MIPMAPCOUNT
-    head.caps |= DDSCAPS_COMPLEX | DDSCAPS_MIPMAP
-    return dds.join(head, b"".join(payload))
 
 
 def zone_row(spec, s_z, d_z):
@@ -651,7 +576,7 @@ def install(spec, ours, src, dry, do_bake):
     else:
         print(f"    {os.path.basename(spec['deco']):26s} already in place")
     for rel, ref in spec.get("cutout_textures", {}).items():
-        state = "written" if write_if_changed(P(ours, rel), cutout_dds(src, rel, ref), dry) else "already in place"
+        state = "written" if write_if_changed(P(ours, rel), texture.cutout_dds(P(src, rel), ref), dry) else "already in place"
         print(f"    {os.path.basename(rel):26s} hard cut-out at {ref}, full chain: {state}")
     have_cnst = P(ours, spec["cnst"])
     if open(have_cnst, "rb").read() != open(P(src, spec["cnst"]), "rb").read():
@@ -767,7 +692,7 @@ def verify(ours, src):
               f"{os.path.basename(spec['cnst'])} is China Rose's")
         for rel, ref in spec.get("cutout_textures", {}).items():
             p = P(ours, rel)
-            check(os.path.isfile(p) and open(p, "rb").read() == cutout_dds(src, rel, ref),
+            check(os.path.isfile(p) and open(p, "rb").read() == texture.cutout_dds(P(src, rel), ref),
                   f"{os.path.basename(rel)} is a hard cut-out at {ref} with its full chain")
         for rel, rows, label in ((MORPH_STB_REL, spec["morph_rows"], "LIST_MORPH_OBJECT"),
                                  (SKY_STB_REL, spec["sky_rows"], "LIST_SKY")):
