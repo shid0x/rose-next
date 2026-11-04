@@ -120,13 +120,16 @@ class Zsc:
         out += list(extra_objects)
         return b"".join(out)
 
-    def rebuild(self):
+    def rebuild(self, effects=None):
         """The file with the object section rebuilt from ``self.objects`` --
-        for writing *at* an index (``import-item.py --target-row``). Meshes,
-        materials and effects are spliced from the original bytes."""
-        return (self.d[:self.objcnt_pos]
-                + struct.pack("<H", len(self.objects))
-                + self.objects_blob())
+        for writing *at* an index (``import-item.py --target-row``). Meshes and
+        materials are spliced from the original bytes, and so are the effects
+        unless ``effects`` gives the list to write instead (paths as bytes; a
+        dummy names its effect by index, so keep the order to re-point one)."""
+        head = self.d[:self.objcnt_pos] if effects is None else (
+            self.d[:self.mat_end] + struct.pack("<H", len(effects))
+            + b"".join(e + NUL for e in effects))
+        return head + struct.pack("<H", len(self.objects)) + self.objects_blob()
 
     def without(self, mesh_idx=(), mat_idx=()):
         """The file with these mesh and material records removed, every object's

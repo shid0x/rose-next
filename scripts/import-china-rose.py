@@ -143,6 +143,18 @@ of its five languages), the series' M027. tsuki carries it as row 158
     same lines round the canopies, whose texture is already a hard cut-out (0/239).
     The cure is in the engine, for every map: two-pass alpha parts (src/engine/CLAUDE.md,
     "Transparency Antialiasing"; `[VIDEO] FOLIAGE_TWO_PASS`, `/alphasplit`).
+  * **The giant tree's blue glow blinked out every few seconds** (2026-11-04: "the
+    loop ends a bit abruptly"). LIST_DECO_Haian 75 (`haian_jushu`, one placed, at
+    (4806, 5140) m, scale 13.1) carries `_bandy_runa_01.eft` on a dummy: particles only,
+    three looping sequences (blue snow motes and two layers of glow, 50 / 150 / 250
+    particle-time = 10 / 31 / 52 s). Each spawns its whole cloud in one frame with one
+    lifetime and alpha 1 to the end, so it vanishes and reappears elsewhere all at once,
+    for ever (rosedata/particles.py has the engine side). rolling_effects saves it as
+    `_haian_tree_glow.eft` + `.ptl` with the births spread over a lifetime and each
+    particle faded in and out, a third more particles for the same light, and points the
+    table's effect entry 15 at it. The retail file stays: FILE_EFFECT.STB names it.
+    A fresh emitter now fills in over one lifetime (the tree's chunk loads with the zone,
+    210 m from the start).
 
 Backups: build/china-rose/ (orig/ for every file this script overwrote, bak/ for
 the table codecs' .bak files).
@@ -163,8 +175,9 @@ sys.path.insert(0, HERE)
 import numpy as np  # noqa: E402
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 import rosedata as oro  # noqa: E402  the shared data layer
+from rosedata import particles  # noqa: E402  a looping effect made to roll
 from rosedata import texture  # noqa: E402  texconv, the hard cut-out
-from rosefmt import chunk, dds, ifo, lit, lnav, zon  # noqa: E402
+from rosefmt import chunk, dds, eft, ifo, lit, lnav, zon  # noqa: E402
 from rosefmt.zsc import TAG_COLLISION, Zsc, decode_props, serialize_object  # noqa: E402
 
 # --------------------------------------------------------------------- config
@@ -209,6 +222,10 @@ HA = dict(
     # textures made hard cut-outs at their material's alpha reference (see the docstring:
     # the hanging vines' pale outline)
     cutout_textures={r"3Ddata\mapobj\HOUSE\haian\HA_dds\Pk011_veg_tree_014_A.dds": 128},
+    # effects the decoration table names -> our copy, its particles made to roll (see the
+    # docstring: the giant tree's glow). The source stays as it is: it is a retail file
+    # (FILE_EFFECT.STB names it too).
+    rolling_effects={r"3Ddata\Effect\_bandy_runa_01.eft": r"3Ddata\Effect\_haian_tree_glow.eft"},
     # spawn points: kept out until the monster stage
     held_lumps=(ifo.REGEN,),
     # the dead east gate: lump -> what each record must be, per chunk
@@ -419,13 +436,19 @@ def set_collision(props, level):
 def deco_table(spec, src):
     """China Rose's decoration table as we ship it: collision_fixes applied, every
     other object byte for byte the source's, each fixed object equal part for part
-    to its collision twin."""
+    to its collision twin; rolling_effects re-pointed in the effect list, in place."""
     path = P(src, spec["deco"])
     raw = open(path, "rb").read()
     fixes = spec.get("collision_fixes", {})
-    if not fixes:
+    swaps = {old.lower(): new for old, new in spec.get("rolling_effects", {}).items()}
+    if not fixes and not swaps:
         return raw
     z = Zsc(path)
+    named = {e.decode("latin-1").lower() for e in z.effects}
+    if set(swaps) - named:
+        raise SystemExit(f"{spec['deco']} names no effect {sorted(set(swaps) - named)}")
+    effects = [swaps.get(e.decode("latin-1").lower(), e.decode("latin-1")).encode("latin-1")
+               for e in z.effects]
     before = [serialize_object(o) for o in z.objects]
     for oid, parts_fix in fixes.items():
         cyl, parts, dummies, bb = z.objects[oid]
@@ -436,9 +459,10 @@ def deco_table(spec, src):
                 raise SystemExit(f"{spec['deco']} object {oid} part {pi} is not {mesh}")
             parts[pi] = (m, t, set_collision(props, level))
         z.objects[oid] = (cyl, parts, dummies, bb)
-    data = z.rebuild()
+    data = z.rebuild(effects=effects)
     z2 = Zsc(data)
-    if len(z2.objects) != len(before) or z2.meshes != z.meshes or z2.materials != z.materials:
+    if len(z2.objects) != len(before) or z2.meshes != z.meshes or z2.materials != z.materials \
+            or z2.effects != effects:
         raise SystemExit(f"{spec['deco']}: the rebuild changed the table's lists")
     for i, o in enumerate(z2.objects):
         if i not in fixes and serialize_object(o) != before[i]:
@@ -447,6 +471,22 @@ def deco_table(spec, src):
         if [p[2] for p in z2.objects[oid][1]] != [p[2] for p in z2.objects[twin][1]]:
             raise SystemExit(f"{spec['deco']}: object {oid}'s parts are not object {twin}'s")
     return data
+
+
+def rolling_effect(src, old, new):
+    """{data-relative path: bytes} for one of rolling_effects: China Rose's effect `old`
+    saved as `new`, each particle system it names saved beside it under `new`'s name and
+    made to roll (rosedata.particles.rolling_loop). Nothing else in the effect changes."""
+    e = eft.read(P(src, old))
+    stem = os.path.splitext(os.path.basename(new))[0]
+    out = {}
+    for i, q in enumerate(e["particles"]):
+        name = stem + (f"_{i}" if len(e["particles"]) > 1 else "") + ".ptl"
+        rel = "3DDATA\\EFFECT\\PARTICLES\\" + name
+        out[rel] = particles.rolling_loop(open(P(src, q["ptl"]), "rb").read())
+        q["ptl"], q["label"] = rel, name
+    out[new] = eft.build(e)
+    return out
 
 
 def zone_row(spec, s_z, d_z):
@@ -573,11 +613,17 @@ def install(spec, ours, src, dry, do_bake):
         new_dds += [r for r in rels if r.lower().endswith(".dds") and not os.path.isfile(P(ours, r))]
         oro.copy_files(rels, src, ours, dry, label)
     fixed = sorted(spec.get("collision_fixes", {}))
+    rolling = spec.get("rolling_effects", {})
     if write_if_changed(P(ours, spec["deco"]), deco_table(spec, src), dry):
         print(f"    {os.path.basename(spec['deco']):26s} written" +
-              (f", collision fixed on object(s) {fixed}" if fixed else ""))
+              (f", collision fixed on object(s) {fixed}" if fixed else "") +
+              (f", {len(rolling)} effect(s) re-pointed" if rolling else ""))
     else:
         print(f"    {os.path.basename(spec['deco']):26s} already in place")
+    for old, new in rolling.items():
+        wrote = [write_if_changed(P(ours, rel), blob, dry) for rel, blob in rolling_effect(src, old, new).items()]
+        print(f"    {os.path.basename(new):26s} = {os.path.basename(old)}, its particles rolling: "
+              + ("written" if any(wrote) else "already in place"))
     for rel, ref in spec.get("cutout_textures", {}).items():
         state = "written" if write_if_changed(P(ours, rel), texture.cutout_dds(P(src, rel), ref), dry) else "already in place"
         print(f"    {os.path.basename(rel):26s} hard cut-out at {ref}, full chain: {state}")
@@ -687,10 +733,18 @@ def verify(ours, src):
             missing += [r for r in rels if os.path.isfile(P(src, r)) and not os.path.isfile(P(ours, r))]
         check(not missing, f"every asset the map names is here ({len(missing)} missing)")
         fixed = sorted(spec.get("collision_fixes", {}))
+        rolling = spec.get("rolling_effects", {})
         check(open(P(ours, spec["deco"]), "rb").read() == deco_table(spec, src),
               f"{os.path.basename(spec['deco'])} is China Rose's"
               + (f", collision fixed on object(s) {fixed} (= their twins "
-                 f"{[spec['collision_twins'][o] for o in fixed]})" if fixed else ""))
+                 f"{[spec['collision_twins'][o] for o in fixed]})" if fixed else "")
+              + (f", {len(rolling)} effect(s) re-pointed" if rolling else ""))
+        for old, new in rolling.items():
+            files = rolling_effect(src, old, new)
+            check(all(os.path.isfile(P(ours, r)) and open(P(ours, r), "rb").read() == b
+                      for r, b in files.items()),
+                  f"{os.path.basename(new)} is {os.path.basename(old)} with its particles rolling "
+                  f"({len(files) - 1} .ptl)")
         check(open(P(ours, spec["cnst"]), "rb").read() == open(P(src, spec["cnst"]), "rb").read(),
               f"{os.path.basename(spec['cnst'])} is China Rose's")
         for rel, ref in spec.get("cutout_textures", {}).items():

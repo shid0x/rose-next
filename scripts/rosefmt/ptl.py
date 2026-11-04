@@ -26,6 +26,15 @@ Things that matter when editing one:
   world particle with a velocity is a self-propelled shot that ignores where the
   homing bullet goes.
 * ``loops`` 0 is "forever"; ``loops * num_particles`` caps the total emitted.
+* Emission waits for a free slot, so the births' spread is kept for as long as
+  the effect lives: a sequence that fills every slot in one frame (emit 1000/s,
+  one lifetime for all) dies and respawns as one cohort forever, and with no
+  alpha fade the whole cloud blinks out at once. ``rosedata.particles.rolling_loop``
+  staggers the births and fades each particle in and out.
+* Alpha/colour fades: an event with ``fade`` 1 is the *target* the previous event
+  of its type ramps towards, and each event links to the next **fade** event of
+  its type, skipping plain ones -- so a hold between two ramps must be a fade
+  event too. Events at the same time run in no fixed order (unstable sort).
 * Blend modes are D3DBLEND values; 2/2 (ONE/ONE) is additive and ignores the
   vertex alpha, so an alpha-0 particle there is still visible through its colour.
 * Sizes and gravity are cm (the engine scales them by ``ZZ_SCALE_IN``).
