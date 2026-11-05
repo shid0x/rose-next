@@ -992,7 +992,14 @@ CEvent::ProbeMenu(classLUA& LUA,
             case SC_MSG_CLOSE:
             case SC_MSG_PLAYERSELECT:
             case SC_MSG_JUMPSELECT:
-                Options.push_back(pItem);
+                // An option with no text in this client's language is never put on
+                // screen (Conversation drops it at ParseMESSAGE), so the player can
+                // never click it. 147 English options with a click function are
+                // like that; 15 are AT_mileageBank, which calls the unregistered
+                // retail GF_openDeliveryStore -- walked anyway, it popped a script
+                // error box every refresh (Ferrell Guild manager, EM02-009).
+                if (pItem->m_Message.Get())
+                    Options.push_back(pItem);
                 break;
 
             case SC_MSG_NPCSAY:
@@ -1160,6 +1167,7 @@ CEvent::GetQuestSignal(int iOwnerObjIDX) {
 
             if (bLoaded) {
                 QF_Init(LUA.m_pState);
+                lua_CaptureErrorText(LUA.m_pState);
 
                 for (size_t i = 0; i < m_QuestCompleteFuncs.size(); i++)
                     if (CallQuestCheckFunc(LUA, this, m_QuestCompleteFuncs[i].c_str()))

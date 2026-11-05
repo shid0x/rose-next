@@ -5,6 +5,9 @@
 
 #include "rose/io/stb.h"
 #include "IO_Event.h"
+#include "LUA_Func.h"
+
+#include <set>
 
 //-------------------------------------------------------------------------------------------------
 CEventLIST::CEventLIST(): CFileLIST<CEvent*>("EVT") {
@@ -105,7 +108,23 @@ CEventLIST::GetNpcQuestSignal(int iOwnerObjIDX, short nQuestIDX) {
     if (pEvent == NULL)
         return 0;
 
-    return pEvent->GetQuestSignal(iOwnerObjIDX);
+    // The icon walk runs this NPC's dialog Lua headlessly on every refresh, so a
+    // script error in it must not open the "Script running error.." box: it would
+    // come straight back 2 s later, for as long as the NPC is in view (reported on
+    // the Ferrell Guild manager, 2026-11-05). Quiet, and logged once per file.
+    bool bWasQuiet = lua_SetQuietErrors(true);
+    short nSignal = pEvent->GetQuestSignal(iOwnerObjIDX);
+    lua_SetQuietErrors(bWasQuiet);
+
+    if (const char* szError = lua_TakeQuietError()) {
+        static std::set<t_HASHKEY> s_Logged;
+        if (s_Logged.insert(HashKEY).second)
+            LOG_WARN("Quest icon: script error in {} skipped (logged once per file): {}",
+                szQuestFILE,
+                szError);
+    }
+
+    return nSignal;
 }
 
 //-------------------------------------------------------------------------------------------------

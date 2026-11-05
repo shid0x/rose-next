@@ -167,6 +167,9 @@ QF_InitProbe(lua_State* L) {
 
     lua_register(L, "QF_doQuestTrigger", lf_ProbeDoQuestTrigger);
     lua_register(L, "QF_checkQuestCondition", lf_ProbeCheckQuestCondition);
+
+    // The walk runs quiet (CEventLIST::GetNpcQuestSignal); this names the fault.
+    lua_CaptureErrorText(L);
 }
 
 void

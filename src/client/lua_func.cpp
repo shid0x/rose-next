@@ -139,6 +139,51 @@ set_global(lua_State* L, const char* variable_name, const char* value) {
 }
 
 //-------------------------------------------------------------------------------------------------
+// Quiet mode (see lua_func.h).
+static bool s_bQuietErrors = false;
+static std::string s_QuietError; // first failure since the last take
+static std::string s_TakenError; // what lua_TakeQuietError last handed out
+static std::string s_LuaErrorText; // _ERRORMESSAGE's text for the call in progress
+
+bool
+lua_SetQuietErrors(bool bQuiet) {
+    bool bWas = s_bQuietErrors;
+    s_bQuietErrors = bQuiet;
+    return bWas;
+}
+
+const char*
+lua_TakeQuietError() {
+    if (s_QuietError.empty())
+        return NULL;
+    s_TakenError.swap(s_QuietError);
+    s_QuietError.clear();
+    return s_TakenError.c_str();
+}
+
+static int
+lf_CaptureErrorText(lua_State* L) {
+    if (s_LuaErrorText.empty() && lua_isstring(L, 1))
+        s_LuaErrorText = lua_tostring(L, 1);
+    return 0;
+}
+
+void
+lua_CaptureErrorText(lua_State* L) {
+    lua_register(L, LUA_ERRORMESSAGE, lf_CaptureErrorText);
+}
+
+static void
+RecordQuietError(const char* function_name, const char* szWhat) {
+    if (s_QuietError.empty()) {
+        s_QuietError = function_name;
+        s_QuietError += ": ";
+        s_QuietError += s_LuaErrorText.empty() ? szWhat : s_LuaErrorText.c_str();
+    }
+    s_LuaErrorText.clear();
+}
+
+//-------------------------------------------------------------------------------------------------
 //
 // 루아 함수 호출후 리턴된 결과값 갯수를 리턴한다.
 int
@@ -146,9 +191,16 @@ lua_CallFUNC(lua_State* L, const char* function_name, va_list va) {
     int param_count = 0;
     int iBeforeStackIDX = lua_gettop(L);
 
+    s_LuaErrorText.clear();
+
     lua_getglobal(L, function_name);
     if (!lua_isfunction(L, -1)) { // if no lua function exists
         lua_pop(L, param_count + 1); // restore function name and arguments in stack
+
+        if (s_bQuietErrors) {
+            RecordQuietError(function_name, "function not found");
+            return -1;
+        }
 
         char* szMsg = CStr::Printf("invalid script function( %s ) name ...", function_name);
         g_pCApp->ErrorBOX("ERROR :: function not found ", szMsg);
@@ -211,7 +263,7 @@ lua_CallFUNC(lua_State* L, const char* function_name, va_list va) {
     }
 
     // error code print
-    char* szErrMSG;
+    char* szErrMSG = "script: unknown error";
 
     switch (err) {
         case LUA_ERRRUN: // 1
@@ -231,6 +283,11 @@ lua_CallFUNC(lua_State* L, const char* function_name, va_list va) {
             szErrMSG = "script: error while running _ERRORMESSAGE. For such errors, Scriptor does "
                        "not call _ERRORMESSAGE again, to avoid loops.";
             break;
+    }
+
+    if (s_bQuietErrors) {
+        RecordQuietError(function_name, szErrMSG);
+        return -1;
     }
 
     g_pCApp->ErrorBOX(szErrMSG, "Script running error..");

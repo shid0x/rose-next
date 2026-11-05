@@ -61,6 +61,17 @@ void set_global(lua_State* L, const char* variable_name, const char* value);
 
 int lua_CallFUNC(lua_State* L, const char* function_name, va_list va);
 
+// Headless callers (the NPC quest-icon walk, CEventLIST::GetNpcQuestSignal) run on
+// a timer, so the ErrorBOX a failing call raises would come back every refresh.
+// While quiet, a failing call opens no box and still returns -1; the first failure
+// is kept as "function: message" until lua_TakeQuietError() hands it over (NULL
+// when nothing failed). lua_SetQuietErrors returns the previous setting.
+bool lua_SetQuietErrors(bool bQuiet);
+const char* lua_TakeQuietError();
+// Points the state's _ERRORMESSAGE at that record, so it names the actual fault
+// ("attempt to call global `X' (a nil value)") rather than only the error code.
+void lua_CaptureErrorText(lua_State* L);
+
 int lua_CallIntFUNC(lua_State* pLUA, const char* szFuncName, ...);
 char* lua_CallCharFUNC(lua_State* pLUA, const char* szFuncName, ...);
 bool lua_GetRETURN(lua_State* pLUA, int& iValue);
