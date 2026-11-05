@@ -24,9 +24,18 @@ Hooligans 306-308). The other 219 are erased, as the user asked:
 * **13 that only dead content references**, erased with the reference:
   Zombie 253 (no CHR entry; spawned only by QP103.QSD trigger 122-04, a quest
   chain no dialog fires -- the REWD_008 reward is removed from the trigger),
+  **wrong, and taken back out on 2026-11-05**: no *NPC* dialog fires 122-04,
+  but the JD02 pyramid's area trigger does (122-03 -> REWD_029 ``piramid01``
+  in TUTORIAL.LUA -> Object005.con), so quest 122 stalled with nothing to
+  kill. restore-quest-122-zombie.py gave 253 a model and its spawn back; the
+  list below is now 218 rows. Before calling a quest chain dead, follow the
+  IFO event-object triggers and the REWD_029 system scripts too.
   Dragon Egg / Hatchling 678/679 (CL_SEED.AIP, which no FILE_AI row loads) and
   the candle-ghost forms 741-750 (Change_CHAR targets in GHOST_M3.AIP, whose only
-  user is GhostSeed 704, which nothing spawns). The AI actions are stripped by
+  user is GhostSeed 704). "Nothing spawns 704" was wrong too (checked 2026-11-05):
+  eleven AIs summon it on death (AIACT37, e.g. Penguin General, Hell Mag), but
+  741-750 had blank column-0 names, so the server refused every Change_CHAR into
+  them -- the seed never grew in our build, and erasing them changed nothing. The AI actions are stripped by
   audit-ai-monster-refs.py once the rows are blank -- its job.
 
 Cleaning the references is not tidiness: an erased row looks free, importers
@@ -78,16 +87,18 @@ SERVER_MAX_HP = 20000                        # MobRowRefusalReason, cheatcmd.cpp
 SKILL_TYPE_COL, SKILL_SUMMON_COL = 4, 28     # SKILL_SUMMON_PET, read for SKILL_TYPE_14 only
 SKILL_TYPE_SUMMON = 14
 
-_RANGES = [(226, 249), 253, (293, 295), (297, 298), 335, 350, 367, (373, 374), 377, 380, 411,
+_RANGES = [(226, 249), (293, 295), (297, 298), 335, 350, 367, (373, 374), 377, 380, 411,
            (587, 599), (607, 609), (676, 679), (694, 697), 700, (741, 750), 939, 941, (943, 959),
            (961, 963), 965, (970, 972), (974, 977), (996, 1000), (1022, 1023), 1042, 1065, 1074,
            1108, 1120, 1124, (1126, 1128), (1136, 1137), 1152, 1174, 1189, 1194, 1209, 1269,
            (1475, 1489), (1600, 1604), 1608, (1612, 1616), (1618, 1632), (1635, 1642), (1644, 1650),
            (1660, 1684), (1760, 1770)]
 ERASE = sorted({i for r in _RANGES for i in (range(r[0], r[1] + 1) if isinstance(r, tuple) else [r])})
-assert len(ERASE) == 219, len(ERASE)          # the reviewed set
+assert len(ERASE) == 218, len(ERASE)          # the reviewed set, less 253 (see the docstring)
 
-# The references the run accepts: dead content, cleaned with the rows.
+# The references the run accepts: dead content, cleaned with the rows. The one
+# QSD entry is kept only so --restore can find the file; 253 is no longer in
+# ERASE, so the run neither accepts nor strips it.
 QSD_DEAD = (r"3DDATA\QUESTDATA\QP103.QSD", "122-04", 253)      # file, trigger, REWD_008 monster
 AIP_DEAD = {"cl_seed.aip": {678, 679}, "ghost_m3.aip": set(range(741, 751))}
 
@@ -261,7 +272,7 @@ def run(dry):
     qpath = P(QSD_DEAD[0])
     with open(qpath, "rb") as fh:
         qblob = fh.read()
-    new_q, removed = strip_qsd_reward(qblob)
+    new_q, removed = strip_qsd_reward(qblob) if QSD_DEAD[2] in ERASE else (qblob, False)
     if removed:
         print("  %s trigger %s: REWD_008 (spawn %d) removed" % (os.path.basename(qpath), QSD_DEAD[1], QSD_DEAD[2]))
     if not todo and not removed:

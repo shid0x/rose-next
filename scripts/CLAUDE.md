@@ -144,13 +144,22 @@ Our `data/` is a translated iROSE dump with gaps; the reference dumps in `C:\Use
   called broken** (it showed 223; now 0): rows the server can never spawn (blank col 0, no model,
   level 0, junk HP, no CHR entry) -- 206 nothing references, 13 only dead content does (Zombie 253 via
   QP103 trigger 122-04, whose REWD_008 it removes; 678/679 via CL_SEED.AIP, loaded by no FILE_AI row;
-  741-750 via GHOST_M3.AIP, whose only user GhostSeed 704 never spawns -- `audit-ai-monster-refs.py`
-  strips those actions afterwards). Fully erased per the house rule (cells, CHR hole, STL key) except
+  741-750 via GHOST_M3.AIP, whose only user is GhostSeed 704 -- `audit-ai-monster-refs.py`
+  strips those actions afterwards; 704 *is* summoned on death by eleven AIs, but 741-750 had blank
+  names, so its Change_CHAR never worked here and the erase changed nothing visible). Fully erased per the house rule (cells, CHR hole, STL key) except
   an **STL key a surviving row shares stays** (12 of 55: 226/227 carry monster 41's, 298 Mr Baggie's,
   373/374 the Dreadnaughts'). Cleaning the references matters because an erased row looks free and
   importers pick free rows by hand. Refuses a listed row that can spawn now or any live reference
   (re-scans maps, AI, QSD, summon skills); cell-level undo in `build/erase-dead-npc-rows/`.
   `fix-dreadnaught-model.py` lost its donors 373/374 to it and now only checks 375/376's skeleton.
+  **Zombie 253 was a mistake, undone 2026-11-05** (now 218 rows): quest 122 is live -- the JD02
+  pyramid's IFO event object fires 122-03, whose REWD_029 runs `piramid01` (TUTORIAL.LUA) and opens
+  `Object005.con`, whose option fires 122-04 -- and with the spawn gone the main-episode quest stalled.
+  `restore-quest-122-zombie.py` gave 253 a model (Demoniac Cheney's CHR entry) and its REWD_008 back.
+  **"No dialog fires this trigger" needs three searches, not one:** the decoded Lua of every `.CON`
+  (the blob is XOR'd -- a plain grep finds nothing; `rosefmt.condialog.split_ex`), the IFO
+  `EVENT_OBJECT` triggers (area triggers, `ifo.EVENT_OBJECT`), and the REWD_029 system-script names
+  in `data/SCRIPTS/*.LUA`, which open `ObjectNNN.con` event dialogs via `SC_RunEventObjectEvent`.
 - `scripts/fix-spawned-npc-gaps.py` (2026-10-12, validated in game) — closes the audit's
   first findings. **Sikuku Elite Fighter 562** (Turak's SummonMaster) has no CHR entry in *any* dump,
   but our rows 540/1708 are the same monster with a model: 562 gets a copy of 540's entry.
