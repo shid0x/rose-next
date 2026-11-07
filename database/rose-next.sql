@@ -34,6 +34,7 @@ DROP INDEX IF EXISTS "public"."character_account_email_index";
 ALTER TABLE IF EXISTS ONLY "public"."worldvar" DROP CONSTRAINT IF EXISTS "worldvar_pkey";
 ALTER TABLE IF EXISTS ONLY "public"."worldvar" DROP CONSTRAINT IF EXISTS "worldvar_name_key";
 ALTER TABLE IF EXISTS ONLY "public"."union_points" DROP CONSTRAINT IF EXISTS "union_points_pkey";
+ALTER TABLE IF EXISTS ONLY "public"."union_points" DROP CONSTRAINT IF EXISTS "union_points_character_id_key";
 ALTER TABLE IF EXISTS ONLY "public"."storage" DROP CONSTRAINT IF EXISTS "storage_pkey";
 ALTER TABLE IF EXISTS ONLY "public"."storage" DROP CONSTRAINT IF EXISTS "storage_owner_id_slot_key";
 ALTER TABLE IF EXISTS ONLY "public"."storage" DROP CONSTRAINT IF EXISTS "storage_owner_id_slot_item_id_key";
@@ -571,6 +572,14 @@ ALTER TABLE ONLY "public"."storage"
 
 ALTER TABLE ONLY "public"."storage"
     ADD CONSTRAINT "storage_pkey" PRIMARY KEY ("id");
+
+
+--
+-- Name: union_points union_points_character_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY "public"."union_points"
+    ADD CONSTRAINT "union_points_character_id_key" UNIQUE ("character_id");
 
 
 --

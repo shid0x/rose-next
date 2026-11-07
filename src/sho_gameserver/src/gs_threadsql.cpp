@@ -138,11 +138,19 @@ GS_CThreadSQL::UpdateUserRECORD(classUSER* user) {
         return false;
     }
 
-    // Update union points
+    // Update union points. Nothing else creates a character's row (character creation does not),
+    // and an UPDATE of a missing row changes nothing and raises no error, so union points were
+    // never saved. Update the row, or insert it when there is none. Written without ON CONFLICT
+    // so a database that has not applied migration 0005 (one row per character) still saves.
     std::string union_query =
-        "UPDATE union_points SET union1=$1, union2=$2, union3=$3, union4=$4, union5=$5, union6=$6, "
-        "union7=$7, union8=$8, union9=$9, union10=$10 "
-        "WHERE character_id=$11";
+        "WITH updated AS ("
+        "UPDATE union_points SET union1=$1, union2=$2, union3=$3, union4=$4, union5=$5, "
+        "union6=$6, union7=$7, union8=$8, union9=$9, union10=$10 "
+        "WHERE character_id=$11 RETURNING 1) "
+        "INSERT INTO union_points (character_id, union1, union2, union3, union4, union5, "
+        "union6, union7, union8, union9, union10) "
+        "SELECT $11, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10 "
+        "WHERE NOT EXISTS (SELECT 1 FROM updated)";
 
     QueryResult union_res = this->db.query(union_query,
         {
