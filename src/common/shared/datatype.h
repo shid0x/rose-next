@@ -522,6 +522,9 @@ enum t_VarINDEX {
     SV_EXP,
     SV_LEVEL,
     SV_POINT,
+    /// GSV_SET_VAR_REPLY only: union 1-10's points, SV_UNION_POINT1 + union - 1
+    /// (the GM /add up command; quests send theirs as rewards).
+    SV_UNION_POINT1,
 };
 
 //*************************************************************************************************

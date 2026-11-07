@@ -660,6 +660,10 @@ classUSER::Cheat_add(char* pArg1, char* pArg2, char* pArg3, char* szCode) {
                         pUSER->SetCur_UnionPOINT(pUSER->GetCur_UNION(), 0);
                     else if (pUSER->GetCur_UnionPOINT(pUSER->GetCur_UNION()) > 99999)
                         pUSER->SetCur_UnionPOINT(pUSER->GetCur_UNION(), 99999);
+
+                    // Nothing else tells the client; without this the points showed after a relog.
+                    pUSER->Send_gsv_SET_VAR_REPLY(SV_UNION_POINT1 + pUSER->GetCur_UNION() - 1,
+                        pUSER->GetCur_UnionPOINT(pUSER->GetCur_UNION()));
                 }
                 return CHEAT_PROCED;
             } else if (!strcmpi(pArg1, "MONEY")) {
@@ -1259,7 +1263,10 @@ classUSER::Cheat_set(classUSER* pUSER, char* pArg1, char* pArg2, char* pArg3) {
             int iValue = atoi(pArg2);
             if (iValue >= 0 && iValue < MAX_UNION_COUNT) {
                 this->SetCur_UNION(iValue);
-                return CHEAT_SEND;
+                // The client's own /set has no union entry, so echoing the command (CHEAT_SEND)
+                // changed nothing there until a relog; the client applies SV_UNION at once.
+                this->Send_gsv_SET_VAR_REPLY(SV_UNION, iValue);
+                return CHEAT_PROCED;
             }
         }
 #ifdef __KCHS_BATTLECART__

@@ -608,6 +608,22 @@ public:
         }
         return true;
     }
+    /// Sets one of our own variables on our client at once. GSV_REWARD_SET_ABILITY cannot do
+    /// that outside a quest: the client queues it until it runs a quest reward itself.
+    bool Send_gsv_SET_VAR_REPLY(BYTE btVarTYPE, int iValue) {
+        classPACKET* pCPacket = Packet_AllocNLock();
+        if (!pCPacket)
+            return false;
+
+        pCPacket->m_HEADER.m_wType = GSV_SET_VAR_REPLY;
+        pCPacket->m_HEADER.m_nSize = sizeof(gsv_SET_VAR_REPLY);
+        pCPacket->m_gsv_SET_VAR_REPLY.m_btVarTYPE = btVarTYPE;
+        pCPacket->m_gsv_SET_VAR_REPLY.m_iValue = iValue;
+
+        this->SendPacket(pCPacket);
+        Packet_ReleaseNUnlock(pCPacket);
+        return true;
+    }
     void Add_AbilityValueNSend(WORD wType, int iValue) {
         this->Add_AbilityValue(wType, iValue);
         this->Send_gsv_SET_ABILITY(GSV_REWARD_ADD_ABILITY, wType, iValue);

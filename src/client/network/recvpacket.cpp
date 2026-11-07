@@ -767,6 +767,12 @@ CRecvPACKET::Recv_gsv_SET_VAR_REPLY() {
         case SV_EXP:
             return g_pAVATAR->Set_EXP(iValue);
     }
+
+    /// A union's points ( GM /add up ). Union i's points are ability AT_UNION_POINT1 - 1 + i,
+    /// the slot the character window and the union shops read.
+    const int iUnionSlot = (int)m_pRecvPacket->m_gsv_SET_VAR_REPLY.m_btVarTYPE - SV_UNION_POINT1;
+    if (iUnionSlot >= 0 && iUnionSlot < AT_UNION_POINT10 - AT_UNION_POINT1 + 1)
+        g_pAVATAR->Set_AbilityValue(AT_UNION_POINT1 + iUnionSlot, iValue);
 }
 
 //-------------------------------------------------------------------------------------------------
