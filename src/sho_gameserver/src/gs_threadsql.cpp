@@ -239,11 +239,17 @@ GS_CThreadSQL::UpdateUserRECORD(classUSER* user) {
             item.uuid.to_string());
     }
 
-    // Update storage info
+    // Update storage info. The storage is read from the database only when the player first opens
+    // it in a session (Proc_cli_BANK_LIST_REQ); until then m_Bank holds nothing but its zuly, and
+    // writing it back deleted every stored item -- at the first 5-minute backup or at logout of
+    // any session in which the storage was not opened. An unopened storage is left as it is.
+    const bool storage_loaded = user->m_btBankData != BANK_UNLOADED;
+    const size_t storage_slots = storage_loaded ? BANKSLOT_TOTAL : 0;
+
     std::vector<int> storage_delete_list;
     std::string storage_query;
 
-    for (size_t i = 0; i < BANKSLOT_TOTAL; ++i) {
+    for (size_t i = 0; i < storage_slots; ++i) {
         tagITEM& item = user->m_Bank.m_ItemLIST[i];
         if (item.GetTYPE() == 0 || item.IsEmpty() || !item.IsValidITEM()) {
             storage_delete_list.push_back(i);
@@ -302,13 +308,36 @@ GS_CThreadSQL::UpdateUserRECORD(classUSER* user) {
             item.uuid.to_string());
     }
 
-    std::string delete_invalid_query =
-        fmt::format("DELETE FROM item WHERE "
-                    "(id IN (SELECT item_id FROM inventory WHERE owner_id={0}) OR "
-                    "id IN (SELECT item_id FROM storage WHERE owner_id={0})) AND "
-                    "uuid NOT IN ({1});",
+    // Item rows this character's slots pointed at and it no longer holds. Deleting one cascades
+    // into every inventory/storage slot that points at it, and a row can back several slots: a
+    // trade or a dropped item picked up keeps its uuid, and so does a partial stack moved between
+    // inventory and storage. So a row still pointed at by another character's slot is kept (a
+    // giver saved after the receiver used to delete the traded item from the receiver's
+    // inventory or storage), and while the storage is not loaded so is any row a storage slot
+    // points at, this character's included.
+    std::string delete_invalid_query;
+    if (storage_loaded) {
+        delete_invalid_query = fmt::format(
+            "DELETE FROM item WHERE "
+            "(id IN (SELECT item_id FROM inventory WHERE owner_id={0}) OR "
+            "id IN (SELECT item_id FROM storage WHERE owner_id={0})) AND "
+            "uuid NOT IN ({1}) AND "
+            "NOT EXISTS (SELECT 1 FROM inventory o WHERE o.item_id=item.id AND o.owner_id<>{0})"
+            " AND "
+            "NOT EXISTS (SELECT 1 FROM storage o WHERE o.item_id=item.id AND o.owner_id<>{0});",
             user->m_dwDBID,
             value_list(valid_items, true));
+    } else {
+        delete_invalid_query = fmt::format(
+            "DELETE FROM item WHERE "
+            "id IN (SELECT item_id FROM inventory WHERE owner_id={0}) AND "
+            "uuid NOT IN ({1}) AND "
+            "NOT EXISTS (SELECT 1 FROM inventory o WHERE o.item_id=item.id AND o.owner_id<>{0})"
+            " AND "
+            "NOT EXISTS (SELECT 1 FROM storage o WHERE o.item_id=item.id);",
+            user->m_dwDBID,
+            value_list(valid_items, true));
+    }
 
     std::string delete_inventory_query = fmt::format("DELETE FROM inventory WHERE "
                                                      "owner_id={0} AND slot IN ({1});",
@@ -322,7 +351,9 @@ GS_CThreadSQL::UpdateUserRECORD(classUSER* user) {
 
     std::string bulk = delete_invalid_query;
     bulk += delete_inventory_query + inventory_query;
-    bulk += delete_storage_query + storage_query;
+    if (storage_loaded) {
+        bulk += delete_storage_query + storage_query;
+    }
 
     QueryResult bulk_res = this->db.batch(bulk);
     if (!bulk_res.is_ok()) {
@@ -877,6 +908,12 @@ GS_CThreadSQL::Proc_cli_BANK_LIST_REQ(tagQueryDATA* pSqlPACKET) {
     classUSER* user = reinterpret_cast<classUSER*>(g_pUserLIST->GetSOCKET(pSqlPACKET->m_iTAG));
     if (!user || !user->Get_ACCOUNT())
         return false;
+
+    // Only the first open of a session reads the database. A second open request queued before
+    // the first was answered would read the rows back over a storage the player may already have
+    // changed, and an item just taken out would be in the storage and the inventory both.
+    if (user->m_btBankData != BANK_UNLOADED)
+        return true;
 
     QueryResult storage_res = this->db.query(
         "SELECT storage.slot, storage.quantity, item.uuid, "

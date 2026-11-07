@@ -380,6 +380,26 @@ and its §6 decisions before touching movement, height or AoE shape. Phase 0 is 
 - Precompiled headers: `stdafx.h`
 - Server-specific prefixes: `gs_` for gameserver modules, `srv_` for server-common
 
+## Storage And Item Rows (2026-11-07)
+
+Storage (the bank) is per character (`storage.owner_id` = `character.id`) and **loaded lazily**:
+`Proc_cli_SELECT_CHAR` loads only its zuly and marks it `BANK_UNLOADED`; the items are read on
+the first open of the session (`Proc_cli_BANK_LIST_REQ` -> `BANK_LOADED`). `UpdateUserRECORD`
+(every 5 minutes, logout, char select) used to write the empty in-memory bank back anyway, so
+any session in which the player did not open the storage wiped it -- testers saw it "sometimes"
+survive a relog (it did whenever they had opened it that session). A save now leaves the
+storage rows alone while `m_btBankData == BANK_UNLOADED`, and a second queued open no longer
+reloads over a bank already in memory (an item just taken out came back).
+
+**One `item` row can back several slots**, because the uuid travels with the item: a trade
+copies the whole `tagITEM`, a dropped item picked up keeps it, and a partial stack moved between
+inventory and storage keeps the source's uuid. `inventory`/`storage.item_id` cascade on delete,
+so deleting an item row empties every slot pointing at it. The save's item clean-up therefore
+keeps a row another character's slot still points at (a giver saved after the receiver used to
+delete the traded item from the receiver), and, while the storage is unloaded, any row a storage
+slot points at. Any new save path must follow the same rule: delete slot rows, never item rows
+someone else still holds.
+
 ## Warp And Party Rules
 
 - **`Recv_cli_RELAY_REPLY` now honours only the destination the server last
