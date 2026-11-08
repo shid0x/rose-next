@@ -662,6 +662,11 @@ CZoneTHREAD::Sub_DIRECT(CGameOBJ* pObj, bool bSubFromREGEN) {
         if (bSubFromREGEN && ((CObjMOB*)pObj)->m_pRegenPOINT)
             ((CObjMOB*)pObj)->m_pRegenPOINT->SubLiveCNT();
     }
+    // Players targeting it are linked into its target list. A death has already
+    // unlinked them; a removal or re-index of a live one must do it here, while the
+    // index is still its own (see CObjMOB::DetachTargeters).
+    if (pObj->IsA(OBJ_MOB) || pObj->IsA(OBJ_NPC))
+        ((CObjMOB*)pObj)->DetachTargeters();
 
     pObj->Set_TargetObjIDX(0); // CCharOBJ°æ¿ì ¿¡¸¸ ÇØ´ç.
 

@@ -113,6 +113,10 @@ public:
 
     void Add_ToTargetLIST(CObjAVT* pAVTChar);
     void Sub_FromTargetLIST(CObjAVT* pAVTChar);
+    // Unlinks every avatar targeting this monster and clears their server target.
+    // Dead() runs it, and so does CZoneTHREAD::Sub_DIRECT: a monster removed or
+    // re-indexed while alive must not leave its targeters' nodes linked to it.
+    void DetachTargeters();
 
 private:
     // CObjMOB ------------------------------------------------------------------------------------

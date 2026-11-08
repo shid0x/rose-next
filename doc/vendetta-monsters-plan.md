@@ -462,6 +462,10 @@ Any data change goes through a re-runnable `scripts/` tool, because `data/` is u
 
 ## 11. Pre-existing problems found on the way (independent of vendetta)
 
+Items 1 and 2 were fixed on 2026-11-08: the sign in both copies, and `Sub_DIRECT` now calls
+`CObjMOB::DetachTargeters()`. Check how far the in-game test of that change has got before relying
+on it. A vendetta expiry can then use plain `Sub_DIRECT` + `delete`.
+
 1. **The death penalty can pay.** `Set_PenalEXP` has a sign error in its cap branch
    (`cobjavt.h:423-424`, copied on the client in `cuserdata.h:833-834`).
    `m_iAppliedPenaltyEXP -= (DIV02(need) - m_lPenalEXP)` subtracts a negative once the debt passes half

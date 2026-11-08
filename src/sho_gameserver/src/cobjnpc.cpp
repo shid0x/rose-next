@@ -224,11 +224,32 @@ CObjMOB::Sub_FromTargetLIST(CObjAVT* pAVTChar) {
     this->UnlockTargetLIST();
 }
 
+// The list holds the targeters' own nodes, so a monster that leaves the zone alive
+// (GM npc DEL, the Cerberus sleeper swap, the escort's end) left them linked to a
+// freed list, and one that is re-indexed (GM npc CALL, regen CALL) kept them under
+// its new index. The player's next attack on it then appended a node already in
+// the list: a self-loop that hung the zone thread in this loop when it died.
+void
+CObjMOB::DetachTargeters() {
+    classDLLNODE<CObjAVT*>* pTargetNODE;
+
+    this->LockTargetLIST();
+    {
+        pTargetNODE = this->m_TargetLIST.GetHeadNode();
+        while (pTargetNODE) {
+            assert(this->Get_INDEX() == pTargetNODE->DATA->Get_TargetIDX());
+
+            this->m_TargetLIST.DeleteNode(pTargetNODE);
+            pTargetNODE->DATA->CObjTARGET::Set_TargetIDX(0);
+            pTargetNODE = this->m_TargetLIST.GetHeadNode();
+        }
+    }
+    this->UnlockTargetLIST();
+}
+
 bool
 CObjMOB::Dead(CObjCHAR* pKiller) {
     if (CObjCHAR::Dead(NULL)) {
-        classDLLNODE<CObjAVT*>* pTargetNODE;
-
         if (this->GetCallerUsrIDX()) {
             // 소환수가 있으면 갯수 감소
             CObjCHAR* pOwner = g_pObjMGR->Get_CharOBJ(this->GetCallerUsrIDX(), true);
@@ -241,18 +262,7 @@ CObjMOB::Dead(CObjCHAR* pKiller) {
             }
         }
 
-        this->LockTargetLIST();
-        {
-            pTargetNODE = this->m_TargetLIST.GetHeadNode();
-            while (pTargetNODE) {
-                assert(this->Get_INDEX() == pTargetNODE->DATA->Get_TargetIDX());
-
-                this->m_TargetLIST.DeleteNode(pTargetNODE);
-                pTargetNODE->DATA->CObjTARGET::Set_TargetIDX(0);
-                pTargetNODE = this->m_TargetLIST.GetHeadNode();
-            }
-        }
-        this->UnlockTargetLIST();
+        this->DetachTargeters();
 
         return true;
     }

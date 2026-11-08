@@ -55,6 +55,7 @@ main.cpp → lib_gsmain (init) → Zone Threads (gs_threadzone)
 - Zones divided into sectors for spatial queries
 - `send_packet_nearby()` broadcasts to players in 9 adjacent sectors
 - Zones listed in `LIST_ZONE.STB`; each zone's map data comes from its `.ZON` and per-tile `x_y.IFO` under `data_dir` (`zonefile.cpp`), and its walk grid `<FOLDER>.lnav` (`nav/nav_grid.cpp`)
+- **A monster's target list holds its attackers' own nodes** (`CObjAVT::m_pTargetNODE` in `CObjMOB::m_TargetLIST`; an avatar joins it through `Set_TargetIDX` when it attacks or casts on the monster). `CObjMOB::DetachTargeters()` unlinks them. `Dead()` calls it, and since 2026-11-08 so does `CZoneTHREAD::Sub_DIRECT` for `OBJ_MOB`/`OBJ_NPC`. Before that, removing a live monster (GM `npc DEL`, the Cerberus sleeper swap, the escort's end) or re-indexing it (GM `npc CALL`, `/regen CALL`, which `Sub_DIRECT` + `Add_OBJECT` a live object) left the nodes linked. After a re-index, the attacker's next attack re-appended a node already in the list, a self-loop, and the zone thread hung in the unlink loop when the monster died. Any new removal must go through `Sub_DIRECT`; never unlink a monster from the zone another way.
 
 ## Combat Flow
 
