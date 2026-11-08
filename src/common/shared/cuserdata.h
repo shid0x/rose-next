@@ -831,7 +831,9 @@ public:
                 m_GrowAbility.m_lEXP = 0;
 
                 if (m_GrowAbility.m_lPenalEXP > DIV02(iNeedEXP)) {
-                    m_iAppliedPenaltyEXP -= (DIV02(iNeedEXP) - m_GrowAbility.m_lPenalEXP);
+                    // The debt is capped at half a level: subtract the part that was
+                    // not added (see the server copy in sho_gameserver/src/cobjavt.h).
+                    m_iAppliedPenaltyEXP -= (m_GrowAbility.m_lPenalEXP - DIV02(iNeedEXP));
                     m_GrowAbility.m_lPenalEXP = DIV02(iNeedEXP);
                 }
             }

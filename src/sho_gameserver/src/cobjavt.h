@@ -421,7 +421,11 @@ public:
                 m_GrowAbility.m_lPenalEXP += iPenalEXP;
                 m_GrowAbility.m_lEXP = 0;
                 if (m_GrowAbility.m_lPenalEXP > DIV02(iNeedEXP)) {
-                    m_iAppliedPenaltyEXP -= (DIV02(iNeedEXP) - m_GrowAbility.m_lPenalEXP);
+                    // The debt is capped at half a level: what was not added is not part
+                    // of the applied penalty. The retail line subtracted (cap - debt), a
+                    // negative number, which inflated the penalty a Resurrection refunds.
+                    // Keep this in step with the client copy in common/shared/cuserdata.h.
+                    m_iAppliedPenaltyEXP -= (m_GrowAbility.m_lPenalEXP - DIV02(iNeedEXP));
                     m_GrowAbility.m_lPenalEXP = DIV02(iNeedEXP);
                 }
             }
