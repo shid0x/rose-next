@@ -24,6 +24,21 @@ What that changes:
   on known lines, so here it is. That removes the two worst v1 limitations, ranged
   attacks and aggro through walls (§7, M4).
 
+**The user's decisions, 2026-11-09:**
+- **Both art sets, switching.** Reminiscence and Sorrow alternate daily, one zone each
+  (§2, §3).
+- **Openings, not a day-long crypt.** The catacombs open every 2 hours, at even hours
+  server time, for 1 h 50 min. The maze still changes once a day.
+- **Registration once a day, for one opening.** You give the keeper the materials and
+  are registered for the current opening. You re-enter free until it ends, and cannot
+  register again until the next day. "That's the catch, you can't spam it." (§4, §5)
+- **The boss comes back about 15 minutes after a kill, with a timer on screen** (§6).
+- **The first boss is the Necromancer**; the spider and the tree come next (§6).
+- **Level band 235-240: our endgame content** (§6).
+- **Player attacks through walls: later.** M4 does the monster side first (§7).
+- **Room sizes, the empty-room reset and the boss pools**: left to the brief's
+  recommendations (§3, §6).
+
 The 2026-09-09 and 2026-10-01 versions are in git history. **Jrose is inspiration, not
 a spec**: we do not port its generator, its floor tables, its entry bookkeeping or its
 packets. The three Jrose reports (`jrose-catacombs-investigation.md`,
@@ -38,24 +53,40 @@ rather than replacing it.
 ## 1. The feature, from the player's side
 
 - A crypt mouth in the Desolate Cemetery (zone 87). A keeper NPC stands in front.
-- Hand the keeper Cemetery hearts → you are warped into the catacombs.
-- The catacombs are a **maze that is different every day**. One shared zone, everyone
-  in it together, no instances. Monsters in the corridors, a boss in the far room.
-- **Why go in: challenge and loot.** The boss drops unique weapons; ordinary
-  monsters drop good things too.
+- **The catacombs open every 2 hours (even hours), for 1 h 50 min.** Hand the keeper
+  Cemetery hearts to register for the current opening, and you are warped in. You can go
+  back in free until that opening ends. **You can register once a day**, so after your
+  opening the crypt is closed to you until the next day's maze.
+- **Endgame: levels 235-240.**
+- The catacombs are a **maze that is different every day**, and **the crypt changes with
+  it**: Reminiscence (warm stone, amber lamps) one day, Sorrow (cold teal stone, cyan
+  lamps) the next. One shared zone per crypt, everyone in it together, no instances.
+  Monsters in the corridors, a boss in the far room.
+- **There is always a boss.** It is there when an opening starts, and returns about 15
+  minutes after each kill. A timer on screen says when.
+- **Why go in: challenge and loot.** The boss drops red weapons; ordinary monsters
+  drop good things too.
 - Dying puts you back **inside**, at the entrance hall.
-- A few minutes before the daily reset the crypt closes, everyone still inside is
-  sent back to the crypt mouth, and the next day's maze takes its place.
+- When an opening ends, everyone still inside is sent back to the crypt mouth, and the
+  next opening starts 10 minutes later. On one of those breaks each day, the next day's
+  maze and crypt take over.
 - PvPvE is the goal but **comes later** (§7, M5). Everything before that ships as PvE.
 
 ## 2. Design principles
 
 These keep v1 small. Each one removes a whole class of engine work.
 
-1. **One shared zone, one maze per day.** The gameserver has no instancing
-   (`CZoneLIST` is a flat array indexed by zone number, one thread per zone). EVO's
-   per-party instances could be ported (surveyed 2026-11-03), but a shared maze is the
-   point: PvPvE needs strangers in the same corridors.
+1. **One shared zone per crypt, one maze per day.** Reminiscence is zone 90 and Sorrow
+   is zone 91. Only today's crypt is open; the other stands empty. The gameserver has no
+   instancing (`CZoneLIST` is a flat array indexed by zone number, one thread per zone).
+   EVO's per-party instances could be ported (surveyed 2026-11-03), but a shared maze
+   is the point: PvPvE needs strangers in the same corridors.
+   - **Why two zones and not one zone that switches its art:** zone objects can switch
+     the walls, but not the terrain's floor tile, the fog and light colours or the music,
+     which are fixed per zone. Two zones also let each crypt keep its own monsters and
+     boss pool later, as Jrose's two crypts did.
+   - Both zones come from **one script and one layout**, so their fixed parts, spawn
+     points and walk grids match. They differ in art, floor tile, fog, light and music.
 2. **The floor is terrain. Only walls are generated.** The zone is a flat terrain.
    Height, click-to-move, monster heights and the avatar's height clamp all work as in
    every other zone. The walk grid agrees: the bake sees one flat floor.
@@ -94,29 +125,36 @@ comes in two moods, one per Jrose crypt:
 - **Sorrow** (`KCatacomb2`): cold teal stone, a carved frieze, cyan lamps, a vine overlay.
   Six wall textures and small decorative parts.
 
-Proposed: Reminiscence for this crypt, and Sorrow for a second one (`maze_id`). How each
-piece is used:
-- **Walls: wall C** (object 113 of `KCATACOMB0101.ZSC`), the straight piece: one wall
-  along one cell edge, 108 x 25 x 150 units. At x15 that is 16.2 m long (it overlaps the
-  next piece by 1.2 m), 3.75 m thick and 22.5 m tall. Its collision flag is set. A, B and
-  D are Jrose's corner and end pieces; edge walls do not need them. The lamps are
+**Both are used (user, 2026-11-09)**: Reminiscence dresses zone 90, Sorrow zone 91, and
+they alternate daily (§2). How each piece is used:
+- **Walls: wall C** (object 113 of `KCATACOMB0101.ZSC` and of `KCATACOMB0201.ZSC`), the
+  straight piece: one wall along one cell edge, 108 units long and 150 tall.
+  Reminiscence's is 25 thick. At x15 that is 16.2 m long (it overlaps the next piece by
+  1.2 m), 3.75 m thick and 22.5 m tall. Sorrow's is a 16-unit wall (2.4 m) plus a
+  non-colliding carved panel. Both carry collision. Stamp each set's own footprint into
+  the walk-grid overlay. A, B and D are Jrose's corner and end pieces; edge walls do
+  not need them. The lamps are
   painted into the texture, so the wall looks lit with no lightmap, which suits
   unlit zone objects. A zone object scales each axis, so the height can come down
   if 22.5 m fights the camera (M2).
 - **Pillars**: the set has none. Use a square cut of wall C (scaled down in length) or
   a column from our Karkia decoration; pick in M2.
-- **Floor**: Jrose's floor textures are made one per 15 m cell, with trims along the
-  sides that assume Jrose's wall layout. Our walls move daily, so a trim would sometimes
-  cross an open doorway. Our own Karkia terrain tiles are outdoor (dirt, grass) or
-  the Church's blue diamond tile; none fits. Plan:
-  - paint the terrain with a seamless flagstone tile cut from the trim-free middle of
-    the catacomb floor textures;
-  - place the round floor medallions (floor E, four variants) as fixed, non-colliding
-    decoration quads in the entrance hall, the boss room and a few junctions.
+- **Floor**: Jrose's floor textures are made one per 15 m cell. Reminiscence's have
+  trims along the sides that assume Jrose's wall layout. Our walls move daily, so a
+  trim would sometimes cross an open doorway. Sorrow's are plain mossy flagstones. Our
+  own Karkia terrain tiles are outdoor (dirt, grass) or the Church's blue diamond tile;
+  none fits. Plan, per zone:
+  - paint the terrain with a seamless flagstone tile from that set: cut from the
+    trim-free middle of Reminiscence's floors, and taken from Sorrow's plain ones;
+  - place that set's round floor medallions (floor E, four variants) as fixed,
+    non-colliding decoration quads in the entrance hall, the boss room and a few
+    junctions.
+- **Fog, light and music** per zone: warm for Reminiscence, cold for Sorrow. Jrose's
+  catacombs played `Ramesses.ogg`.
 - **Ceilings**: not used. Jrose's have no collision either, and they would block the
   camera.
-- **Import**: wall C, its texture, the floor E quads and textures, and the floor textures
-  the tile is cut from. That is a small part of the 46 files.
+- **Import**, for each set: wall C and its textures, the floor E quads and textures, and
+  the floor textures the tile comes from. That is a small part of the 46 files.
 
 Contact sheets of the textures and renders of the wall pieces were made in the
 2026-11-09 session (scratch only); re-create them before choosing.
@@ -127,8 +165,14 @@ Contact sheets of the textures and renders of the wall pieces were made in the
   whatever the seed;
 - floor decoration;
 - monster regen points at cell centres;
-- the entrance hall and the boss room. These are blocks of cells, for example 2 x 2,
-  that the generator is told to leave open inside;
+- the entrance hall and the boss room, blocks of cells that the generator is told to
+  leave open inside. **Recommended (accepted 2026-11-09):**
+  - the hall is 2 x 2 cells (30 m), with no regen point in it or next to it, so a
+    revived player does not stand up in a fight;
+  - the boss room is 3 x 3 cells (45 m). 30 m is too tight to dodge in: a fan leaves
+    gaps only from about 6 m out, and Cerberus's cone reaches 18 m. Its four inner
+    pillars stay, as cover now and for the "hide behind a pillar" attack later (§6);
+  - they sit in opposite corners, so the boss is the far end of the maze;
 - the revive point in the entrance hall.
 
 The zone is baked (`nav-bake.py`) with every interior edge open.
@@ -140,9 +184,14 @@ carry a wall.
 **Generator.**
 1. Carve a perfect maze, using a recursive backtracker or randomised Prim's, with the
    fixed rooms pre-opened.
-2. **Braid it**: remove a share of the remaining walls (start around 10-15%, mostly at
-   dead ends) so there are loops. Pure perfect mazes are tedious to walk and, once PvP
-   arrives, give nobody an escape route.
+2. **Braid it**: open a wall at dead ends, one at a time, until only **2 dead ends**
+   remain (user, 2026-11-09: "hard to say without playing, maybe 2 for now"; a
+   constant, tuned by playing). That makes loops. Pure perfect mazes are tedious to walk
+   and, once PvP arrives, give nobody an escape route. A perfect 10 x 10 maze has
+   roughly two dozen dead ends, so this removes about a third of its 81 walls.
+   - **Recommended: braiding never opens a wall of the boss room.** It keeps the single
+     door the carve gave it, so the boss stays the far end of the maze, and later a PvP
+     choke point.
 
 **The output is one edge bitset**, which only the server uses:
 - **placements**: one `tagZONE_OBJECT` per closed edge, giving the wall's decoration id,
@@ -155,8 +204,8 @@ carry a wall.
 **Seed.** `seed = hash(salt, maze_id, reset_day)`. `reset_day` is the server's calendar
 day counted from the reset time, not from midnight. It is computed and used **on the
 server only**; `/catacomb status` prints it. Because the seed comes from the date, any
-past day's maze can be regenerated to check a report. `maze_id` leaves room for a
-second crypt.
+past day's maze can be regenerated to check a report. `maze_id` is the crypt (90 or
+91). Today's crypt is `reset_day` modulo 2, so it is known from the date too.
 
 **Determinism.**
 - Write the PRNG ourselves (splitmix64 or xorshift).
@@ -186,46 +235,79 @@ second crypt.
   collision) but not monsters on their router legs. Decoration with collision goes
   against walls or pillars.
 
-## 4. The daily cycle (server)
+## 4. The cycle: openings and the daily change (server)
 
 A controller on the pattern in [making-events.md](making-events.md) §1: a singleton
-with a `ProcZone`, owned by zone 90's thread. GM commands typed in another zone record
-a request under its mutex. Timings are constants for now; move them to `server.toml`
-later if needed.
+with a `ProcZone`, driven by today's crypt's thread. GM commands typed in another zone
+record a request under its mutex. Timings are constants for now; move them to
+`server.toml` later if needed.
 
-| State | When | What happens |
+**An opening every 2 hours at even hours, server time** (user, 2026-11-09): 0:00, 2:00 ...
+22:00, 12 a day.
+
+| State | When, in each 2-hour period | What happens |
 |---|---|---|
-| OPEN | normal | keeper accepts the toll |
-| WARNING | reset - 10 min | zone-wide announcements, repeated |
-| CLOSED | reset - 5 min | keeper refuses (toll **not** taken) |
-| EVICT | reset | every player in the zone is warped to the crypt mouth in zone 87 |
-| REROLL | right after | kill all monsters, delete ground items, compute the new seed, take the wall groups down and put the new ones up, re-stamp the walk-grid overlay, **then** reset regen points (so spawns re-roll against the new walls), back to OPEN |
+| OPEN | 0:00 - 1:40 | the keeper registers (once a day per character, for this opening) and lets this opening's registered back in; the boss is up when the opening starts |
+| WARNING | 1:40 - 1:50 | zone-wide announcements at 10, 5 and 1 minutes; entry still allowed |
+| BREAK | 1:50 - 2:00 | the keeper refuses (toll **not** taken); everyone inside is warped to the crypt mouth in zone 87; this opening's registrations end; all monsters are killed, ground items deleted and regen points reset |
+
+**The daily change** happens on the 23:50 - 0:00 break (user, 2026-11-09), so a day's
+maze runs from 0:00 to 23:50 and `reset_day` is the server's calendar date. On
+top of the break's work, it:
+1. computes the new seed;
+2. takes the wall groups down in today's crypt;
+3. switches to the other crypt (90 ↔ 91), so Reminiscence and Sorrow alternate;
+4. puts the new wall groups up there and re-stamps its walk-grid overlay;
+5. **then** resets that zone's regen points, so spawns re-roll against the new walls.
+
+**Registration: once a day, for one opening** (user, 2026-11-09: "everyone who
+registered can enter, provided they gave materials"; "the toll should only be payable
+once per day, that's the catch, you can't spam it"):
+- A payment registers the character for **the current opening only**. It re-enters
+  free until that opening ends, and cannot register again until the daily change. The
+  day is the maze's `reset_day`.
+- **The record lives in the database**: one row per character, `(reset_day, opening)`,
+  in a small table of its own, as `union_points` was added (migration 0005). It is
+  **saved at the payment**, not at logout. Then a crash or a restart can neither allow
+  a second payment that day nor lock out someone who has paid.
+- The current opening's list is the characters whose record is (today, this opening),
+  read with the character at login. Nothing is lost on a restart.
+- **Every tick, anyone in a crypt zone whose record is not (today, this opening) is
+  warped to the crypt mouth.** That covers a relog after the opening ended, a GM
+  teleport and a crash. It also closes the old "offline at the reset, back in free"
+  hole. GMs are exempt.
 
 **How the keeper knows the crypt is closed, with no new quest machinery.**
 - Quest conditions cannot read the clock, but they can read an **NPC event value**.
   That is how Cornell's timed quest works (client `CLAUDE.md`, "Timed quests").
 - The cycle sets the keeper's event value with `CObjNPC::Set_ObjVAR(0, v)`, which sends
-  `GSV_SET_EVENT_STATUS` on a change: 1 = open, 0 = closed. The entry trigger's
-  condition (COND_011) checks it, so a refused entry never takes the hearts.
+  `GSV_SET_EVENT_STATUS` on a change: 1 = open (OPEN and WARNING), 0 = the break. The
+  entry triggers' condition (COND_011) checks it, so a refused entry never takes the
+  hearts.
 - Set it from the C++ cycle, not from the keeper's `.aip`, so there is **one clock**.
   Cornell's AI also shows the trap of opening on an edge: a server started after the
-  edge time skips the whole day.
+  edge time skips the whole day. The cycle works out its state from the clock at any
+  moment, so a start mid-opening simply finds it open.
 
-**GM commands (needed from M1, nobody can wait a day to test):**
-- `/catacomb status` shows the state, the seed, the time to reset and the wall count;
-- `/catacomb reset` runs WARNING → EVICT → REROLL now, with short timers;
+**GM commands (needed from M1, nobody can wait 2 hours to test):**
+- `/catacomb status` shows the state, today's crypt, the seed, the time to the next
+  change, the registered count and the boss timer;
+- `/catacomb close` runs WARNING → BREAK now, with short timers, and `/catacomb open`
+  ends a break now;
+- `/catacomb daily` runs the daily change now (new seed, the other crypt);
 - `/catacomb seed N` forces a seed, live: the groups go down, then up with the new
-  placements (§9).
+  placements (§9);
+- `/catacomb boss` brings the boss now;
+- `/catacomb pass <name>` clears a character's daily record, so a tester can register
+  again (nobody can wait a day either).
 
 **Edge cases:**
-- **Dying** → revive point in the entrance hall. The zone's revive point is resolved as
-  the nearest one (`CZoneFILE::Get_RevivePOS`), and there is only one.
-- **Logging in inside** already lands you on that revive point, +/-5 m
-  (`gs_threadsql.cpp`, login path). With the hall at least one cell wide, that is always
-  open floor, whatever the day. The standing wall groups follow the join reply.
-- **Offline at the reset**: such a player is not evicted, and logs into *today's* maze
-  in the entrance hall without paying. Accepted for the alpha. The fix, if it ever
-  matters, is to store the entry day per character.
+- **Dying** → revive point in the crypt's entrance hall. The zone's revive point is
+  resolved as the nearest one (`CZoneFILE::Get_RevivePOS`), and there is only one.
+- **Logging in inside** lands you on that revive point, +/-5 m (`gs_threadsql.cpp`,
+  login path). With the hall at least one cell wide, that is always open floor,
+  whatever the day. The standing wall groups follow the join reply. If your record is
+  not this opening's, the next tick sends you to the crypt mouth.
 - **Entering during WARNING** is allowed, and the keeper's text says when the crypt
   seals.
 
@@ -233,27 +315,47 @@ later if needed.
 
 - **Keeper NPC** at the crypt mouth in the Cemetery, placed in the Cemetery's IFO with
   its `.CON` (making-events §4), and a crypt entrance object (or, for M1, just the NPC).
-- **Toll = Cemetery hearts**, already dropped there (`add-karkia-drops.py`
-  `MAT_CEMETERY`): Black 151, Green 152, Blue 153. Amount to be tuned.
-- **The payment is a QSD trigger**, so the server enforces it. The trigger:
-  - checks the keeper's event value is 1 (COND_011);
-  - checks the hearts are in the bag;
-  - removes them;
-  - warps the player to the entrance hall.
-- **The dialog is `quest-editor con-toll`**: the offer fires the trigger when its
-  conditions pass, a "lack" answer shows otherwise (no silent failure), and
-  `--open-when 1 --closed T` shows the "sealed" answer while the value is 0. The
-  client's COND_011 always passes, so the dialog checks the value itself; con-toll does
-  that. Existing machinery only.
+- **Toll = a few Cemetery hearts, as a placeholder** (user, 2026-11-09: "doesn't matter
+  much for now, just some Karkia drop as a temp thing"). They already drop there
+  (`add-karkia-drops.py` `MAT_CEMETERY`): Black 151, Green 152, Blue 153. Keep the item
+  and count as constants, so they are easy to change.
+- **Paid once a day** (§4): one payment buys one opening, with free re-entry until it
+  ends.
+- **Two dialog options, two QSD triggers:**
+  - **"Register"** checks the keeper's event value is 1 (COND_011) and that the hearts
+    are in the bag. **It takes nothing**: the conditions are there so the dialog can
+    show its "lack" answer.
+  - **"I am registered"** checks only the event value. It costs nothing.
+- **The controller does the rest, not the QSD.** The once-a-day rule needs the
+  database record, the destination changes daily (zone 90 or 91), and a QSD would take
+  the hearts before any C++ could refuse. The hook is the trigger's name in
+  `classUSER::Do_QuestTRIGGER`, after the trigger succeeded (making-events §1):
+  - after **"Register"**: if the character already has a record for today, it is
+    refused with a whisper ("You have already entered the catacombs today. Come back
+    tomorrow.") and **nothing is taken**. Otherwise the controller removes the hearts
+    itself (checking again that they are there), saves the record, and warps the
+    character to today's entrance hall.
+  - after **"I am registered"**: it warps a character whose record is this opening's.
+    Anyone else gets a whisper: either "your opening has ended, come back tomorrow" or
+    "you are not registered".
+  - Check at M1 that a trigger with conditions and no rewards counts as succeeded, so
+    the hook runs.
+- **The dialog**: `quest-editor con-toll` writes the paid option. The offer fires the
+  trigger when its conditions pass, a "lack" answer shows otherwise (no silent
+  failure), and `--open-when 1 --closed T` shows the "sealed" answer while the value is
+  0. The client's COND_011 always passes, so the dialog checks the value itself;
+  con-toll does that. The free option is a second menu entry; check at M1 whether
+  con-toll can write both or `con-append` adds the second.
 
 ## 6. Content
 
-**Zone number: 90.** It is free in `LIST_ZONE`, and no monster's drop column points at
-it (checked 2026-10-01). Re-checked 2026-11-09: the `LIST_ZONE` row is still empty, and
-`ITEM_DROP` row 90 holds only a stale label, "(Stat Cap Raise to 400)", in its name
-column; overwrite it. Under `TEST_ZONE_NO` (250), so it is served. Skaaj took 89.
+**Zone numbers: 90 (Reminiscence) and 91 (Sorrow).** Both were free on 2026-11-09:
+their `LIST_ZONE` rows are empty, no monster's drop column (`LIST_NPC` col 18) points at
+either, and their `ITEM_DROP` rows hold only stale labels in the name column, "(Stat Cap
+Raise to 400)" and "Karkia Town (Lvl 215)"; overwrite them. Both are under
+`TEST_ZONE_NO` (250), so they are served. Skaaj took 89; 92 is free too.
 
-**Zone files.** All of them are new:
+**Zone files**, for each of the two zones; all of them are new:
 - `LIST_ZONE` row;
 - `.ZON` with the start and revive events;
 - flat terrain;
@@ -272,8 +374,10 @@ Either way, bake lighting with object lighting off or a sunless profile, so that
 walls (in the IFO) look like M3's (zone objects, no lightmap).
 
 **Monsters.**
-- Start by **reusing Cemetery undead** at regen points in the cell centres. No import is
-  needed and the theme fits.
+- Start by **reusing the Cemetery undead's models** at regen points in the cell centres,
+  in both crypts, as **new rows at 235-240**. The Cemetery's own rows keep their level.
+  No art import is needed and the theme fits. Later each crypt can take its own Jrose
+  roster (`KCC_` for Reminiscence, `KCC2_` for Sorrow).
 - **What the walk grid gives them** (from M2, through the bake; from M3, through the
   overlay):
   - wandering stays in the corridor (`LineWalk` refuses a line through a wall);
@@ -293,15 +397,38 @@ with attacks to dodge.** A boss that stands there and hits is not good enough. J
 own catacomb bosses are that kind: their AIs cast instant 20-45 m circles and a
 sleep, with nothing to move out of.
 
-- **In M2 a regen point is enough**: count 1, cap 1, a short respawn.
-- **From M3 the controller owns the boss** instead. That way it can:
-  - bring it back N minutes after a kill, so a later party never finds an empty room;
-  - reset it (full HP, back to its spot) when the room has been empty for a while;
-  - run its phases at HP thresholds (adds, a new attack), the way the Cerberus Lair
+- **Timing (user, 2026-11-09): the boss returns about 15 minutes after each kill, with a
+  timer on screen.** It is up when an opening starts. With 1 h 50 min openings, that
+  is up to about seven kills an opening.
+- **So the controller owns the boss from M2, not a regen point.** It:
+  - spawns it at the opening, and again 15 minutes (a constant) after each kill;
+  - resets it (full HP, back to its spot) when the boss room has been empty for a
+    minute. This is not the respawn. Monsters do not regain HP on their own (the
+    recovery call in `cobjchar.cpp` is commented out), so a boss that a party hurts and
+    then abandons, by a wipe or a retreat, would otherwise wait half-dead for the next
+    party (recommended, accepted 2026-11-09);
+  - runs its phases at HP thresholds (adds, a new attack), the way the Cerberus Lair
     calls the hounds at 66% and 33%;
-  - announce it, and clear it at REROLL.
-- **The seed also picks today's boss from a pool**, so the far room changes with the
-  maze. Start with one boss and grow the pool one boss at a time.
+  - announces it in the zone ("stirs in 5 minutes", "1 minute", "has risen");
+  - removes it at the break. When the opening will end before the 15 minutes are up,
+    the timer shows the seal instead, and the next opening starts with the boss up.
+- **The timer on screen is new, small and generic.** Today the only countdown a player
+  sees is a timed quest's, in the journal. That counts from each player's own start,
+  so it cannot show a shared boss timer. Proposed:
+  - a packet, at a free legacy id next to `GSV_ZONE_OBJECTS` (0x07f1), carries a few
+    labelled countdowns (an id, a label, seconds left; 0 hides one);
+  - the server sends the standing timers on every arrival, as it does the zone
+    objects, and a change at once;
+  - a UI2 HUD element under the minimap shows them: "The Necromancer returns in 12:31",
+    "The crypt seals in 1:42:10";
+  - the classic UI gets the announcements only;
+  - client and server ship together. The Cerberus Lair's run and other events can use
+    it too.
+- **Each crypt has a boss pool, and the seed picks today's boss from it**, so the far
+  room changes with the maze. The Necromancer comes first (user, 2026-11-09) and serves
+  both crypts until they have their own: the spider for Reminiscence and the tree for
+  Sorrow, as in Jrose (recommended, accepted 2026-11-09). Grow each pool one boss at a
+  time.
 - **Every pool boss has:**
   - at least two telegraphed attacks of different shapes (circle round the caster,
     cone, strip, fan of strips; [making-monsters.md](making-monsters.md) §6);
@@ -312,7 +439,7 @@ sleep, with nothing to move out of.
   1. **Necromancer** (2414, from tsuki): imported and validated, but spawned nowhere,
      and it fits the crypt. It has Soul Siphon and one skill clip (a three-pulse
      strike). It needs attacks to dodge, with cast and release clips cut from what it
-     has, and stats for the level band.
+     has, and boss stats at level 240 (it is level 120 today).
   2. **Jrose 2771, a green crystal spider** (Reminiscence's boss): new meshes and
      textures (three each) on a skeleton and clips we already ship (`spiderE`,
      `s_spider1`). Row 2771 is free here.
@@ -332,45 +459,63 @@ sleep, with nothing to move out of.
     is always centred on the caster;
   - **hide behind a pillar** (after M4): a room-wide blast that the sight test stops, so
     the boss room's pillars become cover. The test must then count pillars as blockers.
-- **Room to dodge**: a 2 x 2 boss room is 30 m across. A fan leaves gaps only from
-  about 6 m out, and Cerberus's cone reaches 18 m. A 3 x 3 room (45 m) may be needed
-  (open decision 5).
-- Boss loot = **unique weapons**:
-  - new imports via `import-item.py --art-only --template-row N`;
-  - or the Jrose weapons already imported (1381-1453), after checking whether anything
-    sells them.
-
-  Item ids up to **2047** can drop since the drop-code widening (`drop_item_code.h`).
+- **Room to dodge**: the boss room is 3 x 3 cells, 45 m across (§3).
+- **Boss loot: red weapons for now, tailored later** (user, 2026-11-09: "don't overfocus
+  on the loot"). The 2026-10-01 pick was the black blood-stained Jrose set (1456-1468,
+  already imported), with a red name from prefix 22 and placeholder stats. Item ids up
+  to **2047** can drop since the drop-code widening (`drop_item_code.h`).
 
 **Drop tables.**
 - One table for the catacomb monsters, one for the boss, written by a script in the
   style of `add-karkia-drops.py`, with `--simulate` to check rates.
-- **Fill row 90 too**: table ids and zone ids are one namespace, and with `col 20` at
-  80, about 20% of every roll goes to the zone's row. Left empty, a fifth of all rolls
-  drop nothing.
+- **Fill rows 90 and 91 too**: table ids and zone ids are one namespace, and with
+  `col 20` at 80, about 20% of every roll goes to the zone's row. Left empty, a fifth of
+  all rolls drop nothing.
+- **Size the boss table per player-day.** A player gets one opening a day, so at most
+  about seven boss kills. The boss itself dies up to about 80 times a day across all
+  players.
 
-**Level band.** Cemetery and up, to be decided. New monster rows whose level falls in
-60-199 must be added to `scripts/balance-trend-exclude.py`, and every balance pass
-re-verified (root `CLAUDE.md`, Monster Balance).
+**Level band: 235-240, our endgame content** (user, 2026-11-09).
+- Every new row, monsters and boss, sits at 235-240.
+- That is above the balance trend's 60-199 window, so the rows need no
+  `scripts/balance-trend-exclude.py` entry. Still re-verify the balance passes after
+  adding them (root `CLAUDE.md`, Monster Balance).
+- Characters well below 235 will mostly miss: the level gate in `Get_SuccessRATE`
+  (`src/common/calculation.cpp`). That is right for endgame content. Test with a
+  character at 235-240 (making-monsters §6).
 
 ## 7. Milestones
 
-Each milestone is playable on its own. M2 needs no C++; M3 and M4 are server-only.
+Each milestone is playable on its own. M2's C++ is the boss alone; M3 and M4 are
+server-only.
 
-**M1: zone, entry, daily cycle (PvE, empty maze).** A flat, empty zone 90 with an
-entrance hall, a keeper with the toll, the cycle and the GM commands. The zone is baked.
+**M1: the two zones, registration, the openings, the timer (PvE, empty mazes).** Flat,
+empty zones 90 and 91, each with an entrance hall and its own art, floor, fog and music.
+Then the keeper with both options, the opening cycle, the daily switch, the GM commands,
+and the on-screen timer (the seal countdown first). Both zones are baked.
 
 *Done when:*
-- paying warps you in;
-- dying and relogging both put you in the hall;
-- `/catacomb reset` warns, closes (the keeper refuses and keeps your hearts), evicts to
-  the crypt mouth, clears the zone, and reopens;
-- `/nav` answers in zone 90 (the grid loaded, no stale warning).
+- paying registers you and warps you into today's crypt; "I am registered" lets you
+  back in free, and refuses someone who has not paid;
+- a second payment the same day is refused and takes nothing; after your opening ends,
+  "I am registered" refuses you until the next day; `/catacomb pass` clears it for a
+  tester;
+- the record survives a server restart: a registered player who logs back in during
+  their opening is still in;
+- dying and relogging during the opening both put you in the hall; relogging after it
+  ended puts you at the crypt mouth;
+- `/catacomb close` warns, seals (the keeper refuses and keeps your hearts), evicts to
+  the crypt mouth, clears the zone, and `/catacomb open` reopens it;
+- `/catacomb daily` switches to the other crypt;
+- two clients show the same seal countdown;
+- `/nav` answers in both zones (the grid loaded, no stale warning).
 
-**M2: one static maze with its content. No C++.** The Python generator writes one fixed
-seed's walls into the IFO, with pillars, the outer wall, regen points, the boss room,
-the first boss with its attacks to dodge, the drop tables and the first unique weapon.
-Then the zone is re-baked.
+**M2: one static maze per crypt, its content and the first boss.** The Python generator
+writes one fixed seed's walls into both IFOs, with pillars, the outer wall, regen
+points and the boss room. Add the Necromancer with its attacks to dodge, the drop tables
+and the first red weapon, then re-bake both zones. The only C++ is the boss: the
+controller spawns it, brings it back 15 minutes after a kill, resets it, and feeds the
+timer.
 
 **The bake makes the walls real for monsters**, for free: wandering, spawns, short
 chases and the leash already respect them. Two things to learn here:
@@ -391,16 +536,18 @@ Keep the M2 grid (`build/nav/`): it is **the reference** for M3's overlay.
 - monsters wander inside their corridor, chase round a corner, and `/nav spawns` shows
   no spot behind a wall;
 - the camera cannot spoil the maze from above. Wall height, fog and zoom limits are
-  tuned here; this is the main open question about the look.
+  tuned here; this is the main open question about the look;
+- the boss fight is worth going in for: both attacks can be read and dodged, it comes
+  back on time, and the timer agrees with it.
 
 **M3: walls change daily. Server only.**
 - **The generator in C++, in the gameserver.** It no longer needs `src/common`, since
   only the server uses it. It reproduces the Python test vectors.
-- **The cycle sends the walls as zone objects**: at most 50 placements per group, so
-  two groups. **No client change.** The Cerberus wall settled the old open question:
+- **The cycle sends the walls as zone objects** into today's crypt, in that crypt's
+  art: at most 50 placements per group, so two groups. **No client change.** The Cerberus wall settled the old open question:
   groups added to a loaded map at any time are safe, and a joining player gets them
   right after the join reply.
-- **The walk-grid overlay.** A block mask over the maze area, set at REROLL and applied
+- **The walk-grid overlay.** A block mask over the maze area, set at the daily change and applied
   in `Grid::SpansAt` by clearing `SPAN_WALK` in blocked cells. `SpansAt` is the one call
   that `LineWalk`, A\*, `FollowZ` and `NearestSpan` all go through, so every AI move,
   spawn re-roll and `/nav` readout sees the walls at once. A wall one cell thick is
@@ -410,7 +557,7 @@ Keep the M2 grid (`build/nav/`): it is **the reference** for M3's overlay.
 - **The maze router.** A breadth-first search over the 100 cells through the open edges
   gives the doorways in order. The walker goes straight from doorway midpoint to doorway
   midpoint, then to the goal. Each leg lies inside one open, convex cell, 7.5 m from the
-  pillars. `Nav::Agent` already walks a waypoint list. In zone 90 the router replaces
+  pillars. `Nav::Agent` already walks a waypoint list. In the crypt zones the router replaces
   `Nav::FindPath` at its two call sites, `CObjCHAR::Nav_Chase` (after `Nav_LineTo`
   fails) and `CObjCHAR::Nav_PathTo` (leash, summon follow, CTRL+click), whenever start
   and goal are in different maze cells. It has no budget and no window, and it never
@@ -420,7 +567,7 @@ Keep the M2 grid (`build/nav/`): it is **the reference** for M3's overlay.
 
 *Done when:*
 - two clients see the same walls;
-- `/catacomb reset` produces a different layout;
+- `/catacomb daily` produces a different layout, in the other crypt's art;
 - the Python and C++ test vectors agree;
 - **for M2's seed, the overlay blocks the cells the M2 bake blocked**: a GM dump of the
   mask diffed against the kept `.lnav` by a script, allowing one cell at wall ends;
@@ -428,7 +575,8 @@ Keep the M2 grid (`build/nav/`): it is **the reference** for M3's overlay.
   way (`/nav path`);
 - the frame rate holds with ~80 zone objects up.
 
-**M4: walls block sight. Server only, zones with a maze only.**
+**M4: walls block monsters' sight. Server only, zones with a maze only.** The player side
+comes later (user, 2026-11-09: "we'll deal with it later").
 - **The test**: walk the maze cells that the segment crosses (a DDA on the 15 m grid)
   and check each edge it crosses. It is exact and cheap: at most about 20 edges. A
   segment through a vertex counts as blocked if either edge there is closed.
@@ -436,15 +584,19 @@ Keep the M2 grid (`build/nav/`): it is **the reference** for M3's overlay.
   then grow.
 - **Monster attacks and skills** need a clear line. Without one the monster keeps
   routing until it has one, the way Phase 7 handles a target on another level.
-- **Player attacks and targeted skills** are refused with a whisper, as Phase 7 refuses a
+- **Monster area skills** leave out the victims behind a wall from the area's centre,
+  as a post-filter like the vertical band. With pillars counted as blockers, this is
+  what the boss's "hide behind a pillar" attack needs (§6).
+
+*Done when:* a monster in the next corridor does not aggro, and a boss's area hit stops
+at a wall.
+
+**Later, the player side** (deferred by the user): the same test for players.
+- **Attacks and targeted skills** would be refused with a whisper, as Phase 7 refuses a
   target on another level. The server walks a player's attack in, so the verdict lives
   there alone, and the client needs no change.
-- **Area skills** leave out the victims behind a wall from the area's centre, as a
-  post-filter like the vertical band. A ground skill aimed past a wall (caster to aim
-  point) is refused before it costs.
-
-*Done when:* a monster in the next corridor does not aggro; an archer cannot shoot
-through a wall; an area hit stops at a wall.
+- **Area skills** would leave out victims behind a wall.
+- **A ground skill aimed past a wall** would be refused before it costs.
 
 **M5 and later: PvP and polish, in any order.**
 - `ZONE_PVP_STATE` 2 (everyone except your party). Check whether that mode needs a zone
@@ -456,12 +608,12 @@ through a wall; an area hit stops at a wall.
   zone-limited form of the nav plan's Phase 8 `CANTMOVE`/`SETPOS` validation.
 - A minimap: the client already holds the placements, so the UI2 minimap (RmlUi) can
   draw them without the seed.
-- Catacomb monster art, chests, several floors, a second crypt (`maze_id`).
+- Catacomb monster art (each crypt its own Jrose roster), chests, several floors.
 
 ## 8. Accepted limitations (v1)
 
-- **Ranged attacks and area skills go through walls until M4.** ROSE has no
-  line-of-sight check anywhere else either.
+- **Monsters see, aggro and hit through walls until M4.** ROSE has no line-of-sight
+  check anywhere else either.
 - **The server trusts the client's collision for players until M5**, as in every zone.
   A modified client can walk through walls.
 - **Click-to-move does not path.** Clicking past a wall walks into it, so the player
@@ -473,7 +625,9 @@ through a wall; an area hit stops at a wall.
   right for a maze.
 - **Generated walls are unlit** (no lightmap). Flat lighting suits a crypt, and Shibuya
   already ships unlit.
-- **A player offline at reset gets today's maze for free** (§4).
+- **Players' attacks and area skills go through walls** until the player side of M4 is
+  done (deferred).
+- **The on-screen timer is UI2 only.** The classic UI gets the zone announcements.
 
 ## 9. Traps from our codebase that apply here
 
@@ -491,7 +645,9 @@ through a wall; an area hit stops at a wall.
 - **`SetZoneObjects` takes at most 50 placements per group.** Its comment still counts
   18-byte records; since per-axis scale they are 23 bytes, so 50 come to 1,150, well
   inside the 4 KB packet.
-- **Drop-table ids are zone ids**, so fill row 90 (§6).
+- **Drop-table ids are zone ids**, so fill rows 90 and 91 (§6).
+- **Two zones, one layout**: generate both from the same script and bake both after any
+  change, or their spawn points and grids drift apart.
 - **The keeper's dialog** (`.CON`) and **`UI_strID.ID`-style loose files** are client
   data. Ship client and data together, and bake after data edits (`scripts/pack.ps1`).
 - **No `.bak` under `data/`**: `pack.rs` would bake it.
@@ -501,18 +657,24 @@ through a wall; an area hit stops at a wall.
 
 ## 10. Open decisions
 
-1. **Art:** Reminiscence (warm, proposed) or Sorrow (cold) for the first crypt (§3,
-   "Art"). Either way the cell is 15 m, and the wall goes into the zone's decoration
-   ZSC.
-2. **Toll amount**, and which hearts.
-3. **Level band** for the monsters and the boss.
-4. **Boss return:** how many minutes after a kill before the next boss stands in the
-   room, and how long an empty room waits before the boss resets.
-5. **Braid ratio and room sizes:** tune in M2. The boss room may need 3 x 3 cells for
-   its dodges.
-6. **Reset time:** any fixed server time; a constant for now.
-7. **Sight for players (M4):** refuse an attack through a wall with a whisper (Phase 7's
-   way, the proposal), or let players' attacks through and block only monsters and area
-   hits.
-8. **The first boss:** the Necromancer (cheapest, proposed), the crystal spider, or the
-   tree; then the order the pool grows in.
+**Decided by the user, 2026-11-09:**
+- **Art**: both sets, alternating daily, one zone each (90 Reminiscence, 91 Sorrow).
+- **Openings**: every 2 hours at even hours, server time, for 1 h 50 min. The maze
+  changes once a day.
+- **Toll**: payable once a day, and it buys one opening, with free re-entry until it
+  ends. "That's the catch, you can't spam it." The amount is a placeholder: a few
+  Cemetery hearts.
+- **Dead ends**: 2 for now, tuned by playing.
+- **Daily change**: on the 23:50 - 0:00 break.
+- **Boss loot**: red weapons, tailored later.
+- **Level band**: 235-240, our endgame content.
+- **Boss return**: about 15 minutes after a kill, with a timer on screen.
+- **First boss**: the Necromancer; the spider and the tree are good next ones.
+- **Player sight through walls**: later. M4 does the monster side.
+- **Left to the brief's recommendations**:
+  - rooms: hall 2 x 2, boss room 3 x 3, in opposite corners;
+  - the boss resets when its room has been empty for a minute;
+  - pools: the spider goes to Reminiscence, the tree to Sorrow.
+
+**Still open:** nothing blocks M1. Tuning waits for play: the dead-end count, the
+toll, the boss's numbers and the loot.
