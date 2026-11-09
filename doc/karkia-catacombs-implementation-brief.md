@@ -83,8 +83,43 @@ These keep v1 small. Each one removes a whole class of engine work.
 
 **Grid.** 10 x 10 cells to start (tunable). **The cell size comes from the wall
 art**: one wall mesh spans exactly one cell edge, so pick the wall first and size the
-cell to it (around 15 m is a good target). At 15 m the maze is 150 m across and fits
-inside one 160 m map block.
+cell to it. The proposed art (below) gives 15 m. At 15 m the maze is 150 m across and
+fits inside one 160 m map block.
+
+**Art (proposed, surveyed 2026-11-09).** Jrose's own catacomb set (`3Ddata/KARKIA/KCatacomb/`,
+not imported yet) is built for 15 m cells: 1 m meshes that its client scales x15. It
+comes in two moods, one per Jrose crypt:
+- **Reminiscence** (`KCatacomb`): warm brown stone, burial niches, amber lamps. One wall
+  texture, `wall_010.dds`.
+- **Sorrow** (`KCatacomb2`): cold teal stone, a carved frieze, cyan lamps, a vine overlay.
+  Six wall textures and small decorative parts.
+
+Proposed: Reminiscence for this crypt, and Sorrow for a second one (`maze_id`). How each
+piece is used:
+- **Walls: wall C** (object 113 of `KCATACOMB0101.ZSC`), the straight piece: one wall
+  along one cell edge, 108 x 25 x 150 units. At x15 that is 16.2 m long (it overlaps the
+  next piece by 1.2 m), 3.75 m thick and 22.5 m tall. Its collision flag is set. A, B and
+  D are Jrose's corner and end pieces; edge walls do not need them. The lamps are
+  painted into the texture, so the wall looks lit with no lightmap, which suits
+  unlit zone objects. A zone object scales each axis, so the height can come down
+  if 22.5 m fights the camera (M2).
+- **Pillars**: the set has none. Use a square cut of wall C (scaled down in length) or
+  a column from our Karkia decoration; pick in M2.
+- **Floor**: Jrose's floor textures are made one per 15 m cell, with trims along the
+  sides that assume Jrose's wall layout. Our walls move daily, so a trim would sometimes
+  cross an open doorway. Our own Karkia terrain tiles are outdoor (dirt, grass) or
+  the Church's blue diamond tile; none fits. Plan:
+  - paint the terrain with a seamless flagstone tile cut from the trim-free middle of
+    the catacomb floor textures;
+  - place the round floor medallions (floor E, four variants) as fixed, non-colliding
+    decoration quads in the entrance hall, the boss room and a few junctions.
+- **Ceilings**: not used. Jrose's have no collision either, and they would block the
+  camera.
+- **Import**: wall C, its texture, the floor E quads and textures, and the floor textures
+  the tile is cut from. That is a small part of the 46 files.
+
+Contact sheets of the textures and renders of the wall pieces were made in the
+2026-11-09 session (scratch only); re-create them before choosing.
 
 **What is fixed, in the `.IFO`:**
 - the outer boundary walls;
@@ -253,9 +288,53 @@ walls (in the IFO) look like M3's (zone objects, no lightmap).
 - Importing the Jrose catacomb monster art (31 NPC rows, under 1 MB) is a later identity
   pass, not a prerequisite.
 
-**Boss.**
-- One regen point in the boss room, count 1, cap 1. Respawn interval to be decided (a
-  few hours, or once per day). REROLL resets it either way.
+**Boss. Requirement (2026-11-09): there is always a boss in the far room, and it fights
+with attacks to dodge.** A boss that stands there and hits is not good enough. Jrose's
+own catacomb bosses are that kind: their AIs cast instant 20-45 m circles and a
+sleep, with nothing to move out of.
+
+- **In M2 a regen point is enough**: count 1, cap 1, a short respawn.
+- **From M3 the controller owns the boss** instead. That way it can:
+  - bring it back N minutes after a kill, so a later party never finds an empty room;
+  - reset it (full HP, back to its spot) when the room has been empty for a while;
+  - run its phases at HP thresholds (adds, a new attack), the way the Cerberus Lair
+    calls the hounds at 66% and 33%;
+  - announce it, and clear it at REROLL.
+- **The seed also picks today's boss from a pool**, so the far room changes with the
+  maze. Start with one boss and grow the pool one boss at a time.
+- **Every pool boss has:**
+  - at least two telegraphed attacks of different shapes (circle round the caster,
+    cone, strip, fan of strips; [making-monsters.md](making-monsters.md) §6);
+  - a dodge window of about 2 s, and hits worth 30-45% of a typical player's HP, sized
+    with `combat-sim.py`;
+  - a phase change at an HP threshold.
+- **Bodies, cheapest first:**
+  1. **Necromancer** (2414, from tsuki): imported and validated, but spawned nowhere,
+     and it fits the crypt. It has Soul Siphon and one skill clip (a three-pulse
+     strike). It needs attacks to dodge, with cast and release clips cut from what it
+     has, and stats for the level band.
+  2. **Jrose 2771, a green crystal spider** (Reminiscence's boss): new meshes and
+     textures (three each) on a skeleton and clips we already ship (`spiderE`,
+     `s_spider1`). Row 2771 is free here.
+  3. **Jrose 2274, the Ancient Tree Khasiana** (Sorrow's boss): a purple thorn tree on
+     a new rig, 8.5 m tall and slow. Rooted in place, it suits a fight about the ground
+     (fans of roots, circles). Our row 2274 is taken (Armastyx), so it needs another
+     number.
+  4. **Jrose's catacomb mid-bosses** (2773-2776): an Evil Fairy, a Cursed Murderous
+     Head Chef, D=Kratos (a purple larva) and Vampire Düsseldorf, on the `grandduke`
+     model we ship. They could be elites at junctions, or join the pool.
+
+  Survey each with `survey-monster.py` and import it the Shadow Soldier way
+  ([importing-monsters.md](importing-monsters.md)). Their Jrose AIs are a starting point
+  only.
+- **Two new shapes would make the fights better**, and each is reusable elsewhere:
+  - **a circle where the target stood** (an eruption): today a monster's area circle
+    is always centred on the caster;
+  - **hide behind a pillar** (after M4): a room-wide blast that the sight test stops, so
+    the boss room's pillars become cover. The test must then count pillars as blockers.
+- **Room to dodge**: a 2 x 2 boss room is 30 m across. A fan leaves gaps only from
+  about 6 m out, and Cerberus's cone reaches 18 m. A 3 x 3 room (45 m) may be needed
+  (open decision 5).
 - Boss loot = **unique weapons**:
   - new imports via `import-item.py --art-only --template-row N`;
   - or the Jrose weapons already imported (1381-1453), after checking whether anything
@@ -290,7 +369,8 @@ entrance hall, a keeper with the toll, the cycle and the GM commands. The zone i
 
 **M2: one static maze with its content. No C++.** The Python generator writes one fixed
 seed's walls into the IFO, with pillars, the outer wall, regen points, the boss room,
-the drop tables and the first unique weapon. Then the zone is re-baked.
+the first boss with its attacks to dodge, the drop tables and the first unique weapon.
+Then the zone is re-baked.
 
 **The bake makes the walls real for monsters**, for free: wandering, spawns, short
 chases and the leash already respect them. Two things to learn here:
@@ -421,15 +501,18 @@ through a wall; an area hit stops at a wall.
 
 ## 10. Open decisions
 
-1. **Wall art:** an existing wall mesh from our data for M2, or import the Jrose
-   KCatacomb pieces straight away (46 files, 0.74 MB, walls only, without the floor
-   parts)? This fixes the cell size, and the wall must go into the zone's decoration
+1. **Art:** Reminiscence (warm, proposed) or Sorrow (cold) for the first crypt (§3,
+   "Art"). Either way the cell is 15 m, and the wall goes into the zone's decoration
    ZSC.
 2. **Toll amount**, and which hearts.
 3. **Level band** for the monsters and the boss.
-4. **Boss respawn:** once per day, or every few hours.
-5. **Braid ratio and room sizes:** tune in M2.
+4. **Boss return:** how many minutes after a kill before the next boss stands in the
+   room, and how long an empty room waits before the boss resets.
+5. **Braid ratio and room sizes:** tune in M2. The boss room may need 3 x 3 cells for
+   its dodges.
 6. **Reset time:** any fixed server time; a constant for now.
 7. **Sight for players (M4):** refuse an attack through a wall with a whisper (Phase 7's
    way, the proposal), or let players' attacks through and block only monsters and area
    hits.
+8. **The first boss:** the Necromancer (cheapest, proposed), the crystal spider, or the
+   tree; then the order the pool grows in.
