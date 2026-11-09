@@ -10,7 +10,8 @@ class classUSER;
 
 /// The Karkia catacombs (doc/karkia-catacombs-implementation-brief.md, data in
 /// scripts/import-catacombs.py): two crypt zones, Reminiscence (90) and Sorrow (91),
-/// one open per day, reached through the keeper in the Desolate Cemetery (87).
+/// one open per day, reached through the keepers in the Desolate Cemetery (87): one
+/// in front of each of its four Columbariums, all leading to the crypt of the day.
 ///
 /// The clock. An opening starts on every even hour, server local time: 1 h 40 open,
 /// 10 min of warnings, then a 10 min break during which the keeper refuses and
@@ -29,8 +30,8 @@ class classUSER;
 /// Threads. ProcZone runs in every zone thread and acts in three:
 ///   * each crypt zone's thread sweeps its own players and, once per break, kills
 ///     its monsters and removes its ground items;
-///   * the Cemetery's thread keeps the keeper's event value 0 (1 = open), which the
-///     enter trigger (COND_011) and the dialog read, and makes the announcements.
+///   * the Cemetery's thread keeps every keeper's event value 0 (1 = open), which
+///     the enter trigger (COND_011) and the dialog read, and makes the announcements.
 /// OnEnter runs in the thread of the player who talked to the keeper (the
 /// Cemetery's). OnLoaded runs in the SQL thread. One mutex covers the records and
 /// the skew.
@@ -77,6 +78,7 @@ private:
     struct Record {
         int day;
         int opening;
+        int entrance; // the keeper used last: where the crypt casts the player out (memory only)
     };
 
     CCatacombs();
@@ -84,7 +86,7 @@ private:
     Now Clock() const; // under m_Mutex
     void ProcCrypt(CZoneTHREAD* pZone, int iSlot);
     void ProcCemetery(CZoneTHREAD* pZone);
-    void Evict(classUSER* pUSER);
+    void Evict(classUSER* pUSER, int iEntrance);
     void Save(unsigned long dbid, const Record& r);
     static const char* StateName(State s);
     static const char* CryptName(short nZoneNO);

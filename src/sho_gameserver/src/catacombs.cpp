@@ -19,11 +19,24 @@ namespace {
 // Data written by scripts/import-catacombs.py; keep the two in step.
 constexpr short CRYPT_ZONES[2] = {90, 91}; // Reminiscence, Sorrow: day number even / odd
 constexpr short CEMETERY_ZONE = 87;
-constexpr int KEEPER_NPC = 4020;
-constexpr float KEEPER_X = 480950.f, KEEPER_Y = 479000.f; // world cm
-constexpr float EXIT_X = 481200.f, EXIT_Y = 478680.f; // in front of the Columbarium door
+/// A keeper, one per Columbarium: his row, his name for the whispers, where he stands
+/// and where the crypt casts out a player who went in through him (world cm).
+/// `import-catacombs.py --emit` prints this table.
+struct Keeper {
+    int npc;
+    const char* name;
+    float x, y;
+    float exitX, exitY;
+};
+constexpr Keeper KEEPERS[] = {
+    {4020, "Osric", 480950.f, 479000.f, 481200.f, 478680.f},
+    {4021, "Maren", 535650.f, 525510.f, 535400.f, 525830.f},
+    {4022, "Aldous", 530880.f, 503340.f, 531200.f, 503590.f},
+    {4023, "Edda", 565850.f, 472390.f, 565650.f, 472710.f},
+};
+constexpr int KEEPER_COUNT = (int)(sizeof(KEEPERS) / sizeof(KEEPERS[0]));
 const char* ENTER_TRIGGER = "Catacomb-Enter";
-const char* SPEAKER = "Osric";
+const char* SPEAKER = "The Crypt Keepers"; // the announcements
 
 // The toll, a placeholder (the user, 2026-11-09: "just some Karkia drop as a temp
 // thing"): five Black Hearts, LIST_NATURAL 151, dropped in the Cemetery. The keeper's
@@ -54,8 +67,8 @@ Reached(unsigned long now, unsigned long when) {
 }
 
 void
-Whisper(classUSER* pUSER, const std::string& msg) {
-    pUSER->Send_gsv_WHISPER((char*)SPEAKER, (char*)msg.c_str());
+Whisper(classUSER* pUSER, int iKeeper, const std::string& msg) {
+    pUSER->Send_gsv_WHISPER((char*)KEEPERS[iKeeper].name, (char*)msg.c_str());
 }
 
 /// classUSER::C_Cheater's mask (private there): GMs may stand in a sealed crypt.
@@ -174,7 +187,7 @@ CCatacombs::OnLoaded(unsigned long dbid, int iDay, int iOpening) {
     // Memory wins while the server runs: a payment's write may still be queued behind
     // this very read (a relog seconds after paying).
     if (iDay >= 0 && m_Records.find(dbid) == m_Records.end())
-        m_Records[dbid] = {iDay, iOpening};
+        m_Records[dbid] = {iDay, iOpening, 0};
 }
 
 void
@@ -184,10 +197,11 @@ CCatacombs::Save(unsigned long dbid, const Record& r) {
 }
 
 void
-CCatacombs::Evict(classUSER* pUSER) {
+CCatacombs::Evict(classUSER* pUSER, int iEntrance) {
+    const Keeper& k = KEEPERS[iEntrance >= 0 && iEntrance < KEEPER_COUNT ? iEntrance : 0];
     tPOINTF pos;
-    pos.x = EXIT_X;
-    pos.y = EXIT_Y;
+    pos.x = k.exitX;
+    pos.y = k.exitY;
     pUSER->Send_gsv_RELAY_REQ(RELAY_TYPE_RECALL, CEMETERY_ZONE, pos);
 }
 
@@ -282,17 +296,20 @@ CCatacombs::ProcCrypt(CZoneTHREAD* pZone, int iSlot) {
             it != m_Records.end() && it->second.day == n.day && it->second.opening == n.opening;
         if (bOpenHere && bRegistered)
             continue;
+        // out through the entrance they came in by (the first, for one who has no record)
+        const int iEntrance = it != m_Records.end() ? it->second.entrance : 0;
         Whisper(pUSER,
+            iEntrance,
             bOpenHere ? "You are not on the list for this opening. Speak to me at the crypt mouth."
                       : "The crypt is sealed. You are cast out to the crypt mouth.");
-        this->Evict(pUSER);
+        this->Evict(pUSER, iEntrance);
     }
 }
 
 //-------------------------------------------------------------------------------------------------
-/// The Cemetery's thread: the keeper's event value 0 follows the clock (Set_ObjVAR(0)
-/// sends GSV_SET_EVENT_STATUS on a change, which the dialog reads), and the crypt
-/// mouth hears the crypt open and seal.
+/// The Cemetery's thread: every keeper's event value 0 follows the clock (Set_ObjVAR(0)
+/// sends GSV_SET_EVENT_STATUS on a change, which the dialog of the keeper talked to
+/// reads), and the Cemetery hears the crypt open and seal.
 void
 CCatacombs::ProcCemetery(CZoneTHREAD* pZone) {
     const unsigned long now = ::GetTickCount();
@@ -307,9 +324,11 @@ CCatacombs::ProcCemetery(CZoneTHREAD* pZone) {
     }
     const bool bSealed = n.state == State::Break;
     const short nWant = bSealed ? KEEPER_SEALED : KEEPER_OPEN;
-    CObjNPC* pNPC = g_pZoneLIST->Get_LocalNPC(KEEPER_NPC);
-    if (pNPC && pNPC->GetZONE() == pZone && pNPC->Get_ObjVAR(0) != nWant)
-        pNPC->Set_ObjVAR(0, nWant);
+    for (const Keeper& k: KEEPERS) {
+        CObjNPC* pNPC = g_pZoneLIST->Get_LocalNPC(k.npc);
+        if (pNPC && pNPC->GetZONE() == pZone && pNPC->Get_ObjVAR(0) != nWant)
+            pNPC->Set_ObjVAR(0, nWant);
+    }
 
     const long long llKey = ((long long)n.day * OPENINGS_PER_DAY + n.opening) * 2 + (bSealed ? 1 : 0);
     if (m_llAnnounced != llKey) {
@@ -338,19 +357,30 @@ CCatacombs::OnEnter(classUSER* pUSER) {
     CZoneTHREAD* pHere = pUSER->GetZONE();
     if (!pHere || pHere->Get_ZoneNO() != CEMETERY_ZONE || pUSER->Get_HP() <= 0)
         return;
-    const float fDX = pUSER->Get_CurXPOS() - KEEPER_X, fDY = pUSER->Get_CurYPOS() - KEEPER_Y;
-    if (std::sqrt(fDX * fDX + fDY * fDY) > TALK_RANGE)
-        return; // not a click on the keeper: a trigger sent from elsewhere
+    // The keeper talked to is the nearest one; none in reach is not a click on a keeper
+    // but a trigger sent from elsewhere.
+    int iKeeper = -1;
+    float fNearest = TALK_RANGE;
+    for (int iI = 0; iI < KEEPER_COUNT; iI++) {
+        const float fDX = pUSER->Get_CurXPOS() - KEEPERS[iI].x, fDY = pUSER->Get_CurYPOS() - KEEPERS[iI].y;
+        const float fDist = std::sqrt(fDX * fDX + fDY * fDY);
+        if (fDist <= fNearest) {
+            fNearest = fDist;
+            iKeeper = iI;
+        }
+    }
+    if (iKeeper < 0)
+        return;
 
     std::lock_guard<std::mutex> lock(m_Mutex);
     const Now n = this->Clock();
     if (n.state == State::Break) {
-        Whisper(pUSER, fmt::format("The crypt is sealed. It opens again in {}.", Span(n.toOpen)));
+        Whisper(pUSER, iKeeper, fmt::format("The crypt is sealed. It opens again in {}.", Span(n.toOpen)));
         return;
     }
     CZoneTHREAD* pCrypt = g_pZoneLIST->GetZONE(n.crypt);
     if (!pCrypt) {
-        Whisper(pUSER, "The door will not open today.");
+        Whisper(pUSER, iKeeper, "The door will not open today.");
         LOG_WARN("[catacomb] zone {} is not loaded", n.crypt);
         return;
     }
@@ -359,25 +389,29 @@ CCatacombs::OnEnter(classUSER* pUSER) {
     auto it = m_Records.find(dbid);
     const bool bThisOpening = it != m_Records.end() && it->second.day == n.day && it->second.opening == n.opening;
     if (bThisOpening) {
-        Whisper(pUSER, fmt::format("Back again. The crypt seals in {}.", Span(n.toSeal)));
+        it->second.entrance = iKeeper;
+        Whisper(pUSER, iKeeper, fmt::format("Back again. The crypt seals in {}.", Span(n.toSeal)));
     } else {
         if (it != m_Records.end() && it->second.day == n.day) {
             Whisper(pUSER,
+                iKeeper,
                 "You have already entered the catacombs today, and your opening has ended. Come "
                 "back tomorrow.");
             return;
         }
         if (!TakeToll(pUSER)) {
             Whisper(pUSER,
+                iKeeper,
                 fmt::format("The price is {}, once a day. You do not carry it. The dead of this "
                             "cemetery do.",
                     TOLL_NAME));
             return;
         }
-        const Record rec = {n.day, n.opening};
+        const Record rec = {n.day, n.opening, iKeeper};
         m_Records[dbid] = rec;
         this->Save(dbid, rec);
         Whisper(pUSER,
+            iKeeper,
             fmt::format("The price is paid. The {} are yours until the crypt seals, in {}. Leave "
                         "and return as you like until then.",
                 CryptName(n.crypt),

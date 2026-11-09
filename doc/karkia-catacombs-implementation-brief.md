@@ -58,7 +58,8 @@ rather than replacing it.
 
 ## 1. The feature, from the player's side
 
-- A crypt mouth in the Desolate Cemetery (zone 87). A keeper NPC stands in front.
+- Four crypt mouths in the Desolate Cemetery (zone 87), its Columbariums. A keeper
+  stands in front of each, and all lead to the same crypt.
 - **The catacombs open every 2 hours (even hours), for 1 h 50 min.** Hand the keeper
   Cemetery hearts to register for the current opening, and you are warped in. You can go
   back in free until that opening ends. **You can register once a day**, so after your
@@ -354,9 +355,13 @@ clock (a skew added to the wall clock), so every test runs the real code path.
   once-a-day rule, and `--open-when 1 --closed T` shows the "sealed" answer while the
   value is 0. The client's COND_011 always passes, so the dialog checks the value
   itself; con-toll does that.
-- **Built**: the keeper is [Crypt Keeper] Osric, `LIST_NPC` 4020, the plague doctor's
-  look, beside the Columbarium in the Cemetery, where Jrose put its Reminiscence
-  entrance. The toll is five Black Hearts (`LIST_NATURAL` 151).
+- **Built**: a keeper in front of each of the Cemetery's four Columbariums (the user,
+  2026-11-10: "several entrances on the map, so one to each"): [Crypt Keeper] Osric,
+  Maren, Aldous and Edda, `LIST_NPC` 4020-4023, the plague doctor's look. The first and
+  third stand at Jrose's Reminiscence and Sorrow entrances. Each is his own row,
+  because the server finds an NPC by number and each one's dialog reads his own event
+  value. Every entrance leads to the crypt of the day, and the crypt casts a player
+  out to the entrance used. The toll is five Black Hearts (`LIST_NATURAL` 151).
 
 ## 6. Content
 

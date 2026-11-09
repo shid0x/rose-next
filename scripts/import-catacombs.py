@@ -27,11 +27,14 @@ What it writes
   for Jrose's walls, Sorrow's a dark vignette, and ours is terrain whose tile repeats
   every 10 m under walls that move daily. So each tile is a 128 px cut from the
   texture's plain middle, mirrored 2 x 2: seamless by construction.
-* **The keeper**, [Crypt Keeper] Osric (LIST_NPC 4020, the plague doctor's look), in
-  front of the Columbarium in the Desolate Cemetery (zone 87), where Jrose put its
-  Reminiscence entrance. The Cemetery had no NPC at all.
-  - His dialog is `quest-editor con-toll`: one option, open only while his event
-    value 0 is 1 (the controller sets it during an opening).
+* **The keepers**, one in front of each of the four Columbariums of the Desolate
+  Cemetery (zone 87): [Crypt Keeper] Osric, Maren, Aldous and Edda (LIST_NPC 4020-4023,
+  the plague doctor's look). The first stands where Jrose put its Reminiscence entrance,
+  the third at its Sorrow entrance. The Cemetery had no NPC at all. Every entrance leads
+  to the crypt of the day, and the crypt casts a player out to the entrance used.
+  - They share one dialog, written by `quest-editor con-toll`: one option, open only
+    while the keeper's event value 0 is 1 (the controller sets all four during an
+    opening).
   - The trigger `Catacomb-Enter` only checks that value. **It takes nothing**: the
     controller does the rest in classUSER::Do_QuestTRIGGER's hook, because the toll is
     payable once a day (a database record), the destination changes daily, and a QSD
@@ -48,6 +51,7 @@ read at start), re-bake the client data (scripts/pack.ps1).
 import argparse
 import copy
 import json
+import math
 import os
 import shutil
 import struct
@@ -109,18 +113,27 @@ ZONES = (
 )
 
 # ------------------------------------------------------------------ the keeper
-KEEPER = 4020                                   # blank, in the Karkia NPC band (4016-4146)
 KEEPER_TEMPLATE = 4143                          # [Plague Doctor] Jenner: row and model
-KEEPER_NAME = "[Crypt Keeper] Osric"
-KEEPER_STRID = "LCATNPC4020"
-# World m. Jrose's Reminiscence entrance is (4806.28, 4786.83), on the east face of the
-# Columbarium (its footprint on the walk grid: x 4794-4807, y 4779-4793). The keeper
-# stands just off that face, beside the door's axis; catacombs.cpp sends evicted
-# players to EXIT_POS, in front of the door.
-KEEPER_POS = (4809.5, 4790.0)
-EXIT_POS = (4812.0, 4786.8)
-KEEPER_ROT = (0.0, 0.0, 0.70710678, 0.70710678)  # facing east, his back to the door
-KEEPER_IFO = "30_35.IFO"
+# One keeper per Columbarium of the Cemetery (LIST_DECO_KARKIA 174, with door 186 or the
+# open 187): the map has four, and each is an entrance (the user, 2026-11-10). Each
+# keeper is his own LIST_NPC row, because the server finds an NPC by its number
+# (Get_LocalNPC) and each one's event value 0 is what his dialog reads. Rows 4020-4023
+# were blank, in the Karkia NPC band (4016-4146).
+#   (row, name, the Columbarium's pivot in world m, its yaw in degrees)
+# Jrose's two entrances are the first (Reminiscence, 4806.28 / 4786.83) and the third
+# (Sorrow, 5312.03 / 5030.19): both 5.5 m in front of the pivot, which gives the front
+# as (sin yaw, -cos yaw).
+KEEPERS = (
+    (4020, "[Crypt Keeper] Osric", (4800.84, 4786.83), 90),
+    (4021, "[Crypt Keeper] Maren", (5365.20, 5258.30), 270),
+    (4022, "[Crypt Keeper] Aldous", (5312.00, 5024.70), 180),
+    (4023, "[Crypt Keeper] Edda", (5667.70, 4727.10), 270),     # the open door, in the cliff
+)
+# Where a keeper stands and where the crypt casts players out, in metres in front of
+# the pivot and to its left. The first keeper's spot was validated in game.
+KEEPER_FRONT, KEEPER_LEFT = 8.66, 3.17
+EXIT_FRONT = 11.16
+SPOT_STEP, SPOT_REACH = 0.5, 4.0                # a blocked spot moves out along the front
 EVENT_ROW = 141                                 # blank; 140 is the Cerberus gatekeeper
 KEEPER_CON = "EM87-001.con"
 TOLL_KEY = "kcat"
@@ -144,7 +157,8 @@ DIALOG = {
 }
 
 TRACKED = [ZONE_STB_REL, ZONE_STL_REL, NPC_STB_REL, NPC_STL_REL, NPC_CHR_REL, EVENT_STB_REL,
-           QSD_REL, LTB_REL, CEMETERY_REL + "\\" + KEEPER_IFO, CEMETERY_REL + r"\KCemetery.lnav"]
+           QSD_REL, LTB_REL, CEMETERY_REL + r"\KCemetery.lnav"] + [
+    CEMETERY_REL + "\\" + name for name in ("30_35.IFO", "33_32.IFO", "33_33.IFO", "35_35.IFO")]
 
 
 def P(root, rel):
@@ -322,51 +336,60 @@ def zones(ours, dry):
 
 
 # ---------------------------------------------------------------------- the keeper
-def keeper_row(n):
+def keeper_strid(row_no):
+    return "LCATNPC%d" % row_no
+
+
+def keeper_row(n, row_no, name):
     row = list(n.d[KEEPER_TEMPLATE])
-    row[0] = KEEPER_NAME.encode("latin-1")
-    row[oro.NPC_STRID_COL] = KEEPER_STRID.encode()
+    row[0] = name.encode("latin-1")
+    row[oro.NPC_STRID_COL] = keeper_strid(row_no).encode()
     for c in oro.NPC_SELL_TAB_COLS:
         row[c] = b""
     return row
 
 
-def npc_row(ours, dry):
+def npc_rows(ours, dry):
     n = oro.Stb(P(ours, NPC_STB_REL))
     stl = oro.Stl(P(ours, NPC_STL_REL))
     chr_ = oro.Chr(P(ours, NPC_CHR_REL))
-    cur = n.get(KEEPER, 0).decode("latin-1").strip()
-    if cur and cur != KEEPER_NAME:
-        raise SystemExit(f"LIST_NPC row {KEEPER} is {cur!r}: not free")
-    if KEEPER < len(chr_.chars) and chr_.chars[KEEPER] is not None and not cur:
-        raise SystemExit(f"LIST_NPC row {KEEPER} is blank but has a CHR entry: not free")
-    done = True
-    if n.d[KEEPER] != keeper_row(n):
-        n.d[KEEPER] = keeper_row(n)
+    dirty = {"stb": False, "stl": False, "chr": False}
+    for row_no, name, _pivot, _yaw in KEEPERS:
+        cur = n.get(row_no, 0).decode("latin-1").strip()
+        if cur and cur != name:
+            raise SystemExit(f"LIST_NPC row {row_no} is {cur!r}: not free")
+        if row_no < len(chr_.chars) and chr_.chars[row_no] is not None and not cur:
+            raise SystemExit(f"LIST_NPC row {row_no} is blank but has a CHR entry: not free")
+        if n.d[row_no] != keeper_row(n, row_no, name):
+            n.d[row_no] = keeper_row(n, row_no, name)
+            dirty["stb"] = True
+            print(f"    {'LIST_NPC.STB':26s} row {row_no} {name}")
+        if not stl.has(keeper_strid(row_no)):
+            stl.append(keeper_strid(row_no), row_no, name)
+            dirty["stl"] = True
+            print(f"    {'LIST_NPC_S.STL':26s} +key {keeper_strid(row_no)}")
+        want = copy.deepcopy(chr_.chars[KEEPER_TEMPLATE])
+        if chr_.chars[row_no] != want:
+            chr_.chars[row_no] = want
+            dirty["chr"] = True
+            print(f"    {'LIST_NPC.CHR':26s} entry {row_no}")
+    if dirty["stb"]:
         n.save(dry, keep_backup=False)
-        done = False
-        print(f"    {'LIST_NPC.STB':26s} row {KEEPER} {KEEPER_NAME}")
-    if not stl.has(KEEPER_STRID):
-        stl.append(KEEPER_STRID, KEEPER, KEEPER_NAME)
+    if dirty["stl"]:
         stl.save(dry, keep_backup=False)
-        done = False
-        print(f"    {'LIST_NPC_S.STL':26s} +key {KEEPER_STRID}")
-    want = copy.deepcopy(chr_.chars[KEEPER_TEMPLATE])
-    if chr_.chars[KEEPER] != want:
-        chr_.chars[KEEPER] = want
+    if dirty["chr"]:
         chr_.save(dry, keep_backup=False)
-        done = False
-        print(f"    {'LIST_NPC.CHR':26s} entry {KEEPER}")
-    if done:
-        print(f"    {'LIST_NPC row':26s} already in place")
+    if not any(dirty.values()):
+        print(f"    {'LIST_NPC rows':26s} already in place")
 
 
 def triggers():
-    """[(name, conds, rewds)]. COND_013 selects the keeper (a server-wide lookup by NPC
-    number), COND_011 needs his event value 0 to be OPEN_VALUE. No reward: the
+    """[(name, conds, rewds)]. COND_013 selects the first keeper (a server-wide lookup by
+    NPC number; the controller keeps every keeper's value the same), COND_011 needs his
+    event value 0 to be OPEN_VALUE. No reward: the
     controller takes the toll and warps (the docstring says why). Layouts as in
     import-wisdom-escort.py."""
-    c_npc = struct.pack("<Iii", 12, 13, KEEPER)
+    c_npc = struct.pack("<Iii", 12, 13, KEEPERS[0][0])
     c_open = struct.pack("<IiBxhiB3x", 20, 11, 0, 0, OPEN_VALUE, OP_EQ)
     return [(ENTER_TRIGGER, [c_npc, c_open], [])]
 
@@ -399,7 +422,7 @@ def trigger(ours, dry):
 
 
 def event_row(e):
-    return [KEEPER_NAME.encode("latin-1"), e.get(EVENT_ROW - 1, 1), b"NPC",
+    return [b"[Crypt Keeper]", e.get(EVENT_ROW - 1, 1), b"NPC",   # every keeper shares the dialog
             rf"3Ddata\Event\{KEEPER_CON}".encode()]
 
 
@@ -407,7 +430,7 @@ def dialog(ours, dry):
     e = oro.Stb(P(ours, EVENT_STB_REL))
     erow = event_row(e)
     if e.d[EVENT_ROW] != erow:
-        if any(x.strip() for x in e.d[EVENT_ROW]):
+        if any(x.strip() for x in e.d[EVENT_ROW]) and e.d[EVENT_ROW][3] != erow[3]:   # ours: the label may change
             raise SystemExit(f"LIST_EVENT row {EVENT_ROW} is {e.get(EVENT_ROW, 0)!r}: not free")
         e.d[EVENT_ROW] = erow
         e.save(dry, keep_backup=False)
@@ -426,12 +449,16 @@ def dialog(ours, dry):
             print(f"    {'dialog':26s} {line.strip()[:110]}")
 
 
+_nav = {}
+
+
 def ground(ours, x_m, y_m):
     """(terrain height cm, walkable) under a world point of the Cemetery, from its walk
     grid (vertices 2.5 m apart, row 0 = south; 1 m cells)."""
-    nav = lnav.parse(open(find_ci(ours, CEMETERY_REL + r"\KCemetery.lnav"), "rb").read())
+    if ours not in _nav:
+        _nav[ours] = lnav.parse(open(find_ci(ours, CEMETERY_REL + r"\KCemetery.lnav"), "rb").read())
     sx, sy = int(x_m // 160), int(y_m // 160)
-    t = nav.tiles[(sx, sy)]
+    t = _nav[ours].tiles[(sx, sy)]
     h = t.heights
     fx, fy = (x_m - sx * 160) / 2.5, (y_m - sy * 160) / 2.5
     ix, iy = int(fx), int(fy)
@@ -447,38 +474,71 @@ def f32(*vals):
     return tuple(struct.unpack("<f", struct.pack("<f", v))[0] for v in vals)
 
 
-def keeper_record(ours):
-    x_cm, y_cm = KEEPER_POS[0] * 100, KEEPER_POS[1] * 100
+def spot(ours, pivot, yaw, front, left):
+    """A walkable point `front` m ahead of a Columbarium and `left` m to its left, moved
+    out along the front when the building's (or the cliff's) footprint covers it."""
+    th = math.radians(yaw)
+    fx, fy = math.sin(th), -math.cos(th)
+    lx, ly = math.cos(th), math.sin(th)
+    out = 0.0
+    while out <= SPOT_REACH:
+        x = round(pivot[0] + (front + out) * fx + left * lx, 1)
+        y = round(pivot[1] + (front + out) * fy + left * ly, 1)
+        if ground(ours, x, y)[1]:
+            return x, y
+        out += SPOT_STEP
+    raise SystemExit(f"no walkable ground in front of the Columbarium at {pivot}")
+
+
+def keeper_spots(ours):
+    """[(row, name, keeper (x, y) m, exit (x, y) m, yaw)]: what catacombs.cpp's KEEPERS
+    table carries (`--emit` prints it)."""
+    return [(row_no, name, spot(ours, pivot, yaw, KEEPER_FRONT, KEEPER_LEFT),
+             spot(ours, pivot, yaw, EXIT_FRONT, 0.0), yaw) for row_no, name, pivot, yaw in KEEPERS]
+
+
+def keeper_record(ours, row_no, pos, yaw):
+    x_cm, y_cm = pos[0] * 100, pos[1] * 100
     sx, sy = int(x_cm // 16000), int(y_cm // 16000)
-    if f"{sx}_{64 - sy}.IFO" != KEEPER_IFO:
-        raise SystemExit(f"the keeper's spot is in chunk {sx}_{64 - sy}, not {KEEPER_IFO}")
-    z_cm, _ = ground(ours, *KEEPER_POS)
-    return ifo.Mob(name=b"", warp_id=0, event_id=0, obj_type=3, obj_id=KEEPER,
-                   map_x=int((x_cm - sx * 16000) // 250), map_y=63 - int((y_cm - sy * 16000) // 250),
-                   rot=f32(*KEEPER_ROT), pos=f32(x_cm - 520000, y_cm - 520000, z_cm),
-                   scale=(1.0, 1.0, 1.0), ai=0, con_file=KEEPER_CON.encode("latin-1"))
+    z_cm, _ = ground(ours, *pos)
+    half = math.radians(yaw) / 2.0                  # he faces the way the door does
+    return f"{sx}_{64 - sy}.IFO", ifo.Mob(
+        name=b"", warp_id=0, event_id=0, obj_type=3, obj_id=row_no,
+        map_x=int((x_cm - sx * 16000) // 250), map_y=63 - int((y_cm - sy * 16000) // 250),
+        rot=f32(0.0, 0.0, math.sin(half), math.cos(half)), pos=f32(x_cm - 520000, y_cm - 520000, z_cm),
+        scale=(1.0, 1.0, 1.0), ai=0, con_file=KEEPER_CON.encode("latin-1"))
 
 
 def placement(ours, dry):
-    path = find_ci(ours, CEMETERY_REL + "\\" + KEEPER_IFO)
-    f = ifo.parse(open(path, "rb").read())
-    mobs = f.lumps(ifo.MOB)
-    if len(mobs) > 1:
-        raise SystemExit(f"{KEEPER_IFO}: {len(mobs)} MOB lumps")
-    if not mobs:
-        # the Cemetery had no NPC anywhere: this chunk has no MOB lump yet
-        f.entries.append((ifo.MOB, len(f.regions)))
-        f.regions.append(Region(ifo.MOB, []))
+    moved = False
+    for row_no, name, pos, _exit, yaw in keeper_spots(ours):
+        ifo_name, want = keeper_record(ours, row_no, pos, yaw)
+        if CEMETERY_REL + "\\" + ifo_name not in TRACKED:
+            raise SystemExit(f"{name} lands in {ifo_name}, which TRACKED does not snapshot")
+        path = find_ci(ours, CEMETERY_REL + "\\" + ifo_name)
+        f = ifo.parse(open(path, "rb").read())
         mobs = f.lumps(ifo.MOB)
-    want = keeper_record(ours)
-    z_cm, walkable = ground(ours, *KEEPER_POS)
-    if not walkable or not ground(ours, *EXIT_POS)[1]:
-        raise SystemExit(f"the keeper's spot {KEEPER_POS} or the exit {EXIT_POS} is not walkable ground")
-    mobs[0][:] = [m for m in mobs[0] if m.obj_id != KEEPER] + [want]
-    changed = write_if_changed(path, ifo.build(f), dry)
-    print(f"    {KEEPER_IFO:26s} {KEEPER_NAME} at {KEEPER_POS} m, z {z_cm / 100:.1f} m "
-          + ("written" if changed else "in place"))
-    return changed
+        if len(mobs) > 1:
+            raise SystemExit(f"{ifo_name}: {len(mobs)} MOB lumps")
+        if not mobs:
+            # the Cemetery had no NPC anywhere: its chunks have no MOB lump yet
+            f.entries.append((ifo.MOB, len(f.regions)))
+            f.regions.append(Region(ifo.MOB, []))
+            mobs = f.lumps(ifo.MOB)
+        mobs[0][:] = [m for m in mobs[0] if m.obj_id != row_no] + [want]
+        changed = write_if_changed(path, ifo.build(f), dry)
+        moved = moved or changed
+        print(f"    {ifo_name:26s} {name} at {pos} m, z {want.pos[2] / 100:.1f} m "
+              + ("written" if changed else "in place"))
+    return moved
+
+
+def emit(ours):
+    """The KEEPERS table of catacombs.cpp, world cm."""
+    for row_no, name, pos, ex, _yaw in keeper_spots(ours):
+        print('    {%d, "%s", %.0f.f, %.0f.f, %.0f.f, %.0f.f},' % (
+            row_no, name.split("] ")[1], pos[0] * 100, pos[1] * 100, ex[0] * 100, ex[1] * 100))
+    return 0
 
 
 def bake(ours, extra):
@@ -518,18 +578,22 @@ def verify(ours):
         check(os.path.isfile(os.path.join(zdir, z["folder"] + ".lnav")), f"{z['folder']}.lnav baked")
     n = oro.Stb(P(ours, NPC_STB_REL))
     chr_ = oro.Chr(P(ours, NPC_CHR_REL))
-    check(n.d[KEEPER] == keeper_row(n), f"LIST_NPC {KEEPER} {KEEPER_NAME}")
-    check(oro.Stl(P(ours, NPC_STL_REL)).has(KEEPER_STRID), f"LIST_NPC_S {KEEPER_STRID}")
-    check(chr_.chars[KEEPER] == chr_.chars[KEEPER_TEMPLATE], f"LIST_NPC.CHR {KEEPER}")
+    nstl = oro.Stl(P(ours, NPC_STL_REL))
+    for row_no, name, _pivot, _yaw in KEEPERS:
+        check(n.d[row_no] == keeper_row(n, row_no, name), f"LIST_NPC {row_no} {name}")
+        check(nstl.has(keeper_strid(row_no)), f"LIST_NPC_S {keeper_strid(row_no)}")
+        check(chr_.chars[row_no] == chr_.chars[KEEPER_TEMPLATE], f"LIST_NPC.CHR {row_no}")
     blob = open(P(ours, QSD_REL), "rb").read()
     for name, c, r in triggers():
         check(qsd.trigger_bytes(blob, name) == qsd.build_trigger(name, c, r), f"QP401 {name}")
     e = oro.Stb(P(ours, EVENT_STB_REL))
     check(e.d[EVENT_ROW] == event_row(e), f"LIST_EVENT {EVENT_ROW}")
     check(os.path.isfile(find_ci(ours, r"3DDATA\EVENT" + "\\" + KEEPER_CON)), KEEPER_CON)
-    f = ifo.parse(open(find_ci(ours, CEMETERY_REL + "\\" + KEEPER_IFO), "rb").read())
-    placed = [m for m in (f.lump(ifo.MOB) or []) if m.obj_id == KEEPER]
-    check(placed == [keeper_record(ours)], f"{KEEPER_IFO} places {KEEPER} once")
+    for row_no, name, pos, _exit, yaw in keeper_spots(ours):
+        ifo_name, want = keeper_record(ours, row_no, pos, yaw)
+        f = ifo.parse(open(find_ci(ours, CEMETERY_REL + "\\" + ifo_name), "rb").read())
+        placed = [m for m in (f.lump(ifo.MOB) or []) if m.obj_id == row_no]
+        check(placed == [want], f"{ifo_name} places {row_no} {name} once")
     leftovers = []
     for rel in TRACKED + [r"3DDATA\EVENT\x"]:
         folder = os.path.dirname(find_ci(ours, rel))
@@ -576,11 +640,14 @@ def main():
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--restore", action="store_true")
     ap.add_argument("--no-bake", action="store_true", help="skip the walk grids")
+    ap.add_argument("--emit", action="store_true", help="print catacombs.cpp's KEEPERS table")
     args = ap.parse_args()
     if args.verify:
         return verify(args.ours)
     if args.restore:
         return restore(args.ours)
+    if args.emit:
+        return emit(args.ours)
     dry = args.dry_run
     if not dry:
         keep_originals(args.ours)
@@ -588,8 +655,8 @@ def main():
     tiles(args.ours, dry)
     print("the zones")
     zones(args.ours, dry)
-    print("the keeper")
-    npc_row(args.ours, dry)
+    print("the keepers")
+    npc_rows(args.ours, dry)
     trigger(args.ours, dry)
     dialog(args.ours, dry)
     moved = placement(args.ours, dry)
