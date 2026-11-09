@@ -302,6 +302,18 @@ them (tree cylinders only). First use: the Cerberus Lair's ice wall; meant for t
 Karkia catacombs maze. Walls through a map's open ground must be proven: the lair's
 "rock ring" was a walkable ridge (`scripts/cerberus-wall.py`'s flood fill).
 
+### Zone Timers (2026-11-10)
+
+A labelled countdown the server shows the players of a zone: `GSV_ZONE_TIMER` (0x07f2,
+`common/net_prototype.h`), one packet per timer with its id, the seconds left (0 removes
+it) and its label after the header. `CZoneTHREAD::SetZoneTimer(id, label, seconds)` stores
+it and broadcasts; `Send_gsv_JOIN_ZONE` sends what is left of each to every arrival;
+`ZoneTimerLeft(id)` reads one back. Nothing per tick: the client counts down by itself
+(`CZoneTimers` in `src/client/zoneobjects.*`, drawn by UI2's `RoseRmlZoneTimers`), so set a
+timer again only when its end moves. A zone change forgets them. The classic interface has
+no panel. First use: the Karkia catacombs' "The crypt seals in" (`catacombs.cpp`); meant
+for any server-run event with a deadline. Client and server ship together.
+
 ### NPC Dialog Quest Options (.CON QEX1 Appendix)
 NPC conversations are `.CON` files (`data/3DDATA/EVENT/`) whose logic is compiled Lua 4 **bytecode** — new functions can't be merged into the blob (Lua 4.0.1 rejects multi-chunk buffers). Our extension: an optional appendix after the Lua tail (`b"QEX1"; i32 len; XOR'd Lua source`) that the client (`cevent.cpp`, `QEX_APPENDIX_MAGIC`) executes into the same `lua_State` via a second `Do_Buffer`. The quest editor uses it to append quest options to an NPC's existing dialog without replacing it (`quest-editor con-append`, or the wizard's append radio). Codec + gotchas (main-blob XOR key depends on file size; menu-0 append ordering) live in `src/tools/quest-editor/src/convo.rs` and the tool's `PROGRESS.md`. `.CON` files are client-only — the server never reads them; quest authority stays in QSD triggers. Appended `.CON`s require the QEX1-aware client: ship client + data together.
 

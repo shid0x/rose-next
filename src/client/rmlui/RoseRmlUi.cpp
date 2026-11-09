@@ -6,6 +6,7 @@
 #include "RoseRmlDamageMeter.h"
 #include "RoseRmlOptions.h"
 #include "RoseRmlNotifyButtons.h"
+#include "RoseRmlZoneTimers.h"
 #include "RoseRmlChat.h"
 #include "RoseRmlLayout.h"
 #include "RoseRmlStatusPanel.h"
@@ -115,6 +116,7 @@ RoseRmlClan g_Clan; ///< UI2: replaces CClanDlg + CClanRegistNotice
 RoseRmlClanOrganize g_ClanOrganize; ///< UI2: replaces CClanOrganizeDlg ( found a clan )
 RoseRmlSkillTree g_SkillTree; ///< UI2: replaces CSkillTreeDlg ( generated from LIST_SKILL )
 RoseRmlNotifyButtons g_NotifyButtons; ///< UI2: the tutorial's notify buttons ( CNotifyButtonDlg )
+RoseRmlZoneTimers g_ZoneTimers; ///< UI2: the zone's countdowns ( CZoneTimers, GSV_ZONE_TIMER )
 RoseRmlChat g_Chat; ///< UI2: replaces CChatDLG + CChatFilterDlg
 bool g_bInitialised = false;
 int g_iEnabled = -1; ///< -1 = not yet resolved
@@ -674,6 +676,7 @@ Initialise(HWND hWnd, void* pD3DDevice, int iWidth, int iHeight) {
     g_ClanOrganize.Initialise(g_pContext, kAssetDir);
     g_SkillTree.Initialise(g_pContext, kAssetDir);
     g_NotifyButtons.Initialise(g_pContext, kAssetDir);
+    g_ZoneTimers.Initialise(g_pContext, kAssetDir);
     g_Chat.Initialise(g_pContext, kAssetDir);
     /// Late, so they stack over the windows that ask them.
     g_NumberInput.Initialise(g_pContext, kAssetDir);
@@ -726,6 +729,7 @@ Shutdown() {
     g_ClanOrganize.Shutdown();
     g_SkillTree.Shutdown();
     g_NotifyButtons.Shutdown();
+    g_ZoneTimers.Shutdown();
     g_Chat.Shutdown();
     g_NumberInput.Shutdown();
     g_MessageBox.Shutdown();
@@ -832,6 +836,7 @@ Update() {
     UI_TIMED("clanorganize", g_ClanOrganize.Update());
     UI_TIMED("skilltree", g_SkillTree.Update());
     UI_TIMED("notify", g_NotifyButtons.Update());
+    UI_TIMED("timers", g_ZoneTimers.Update());
     UI_TIMED("chat", g_Chat.Update());
     UI_TIMED("numinput", g_NumberInput.Update());
     UI_TIMED("msgbox", g_MessageBox.Update());

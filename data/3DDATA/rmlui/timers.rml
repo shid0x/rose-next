@@ -1,0 +1,24 @@
+<rml>
+<head>
+    <title>Zone Timers</title>
+    <!-- Theme first ( materials, colours, states ), then this panel's layout. -->
+    <link type="text/rcss" href="rose-theme.rcss"/>
+    <link type="text/rcss" href="timers.rcss"/>
+</head>
+<body data-model="zonetimers">
+    <!--
+        UI2 zone timers ( RoseRmlZoneTimers ): the countdowns the server shows
+        the players of a zone, one row each -- in the Karkia catacombs, "The
+        crypt seals in 1:42:10". Shown only while a timer runs. It sits under
+        the minimap until you move it: drag it anywhere, the spot is saved.
+    -->
+    <div id="timers" class="ui-window">
+        <div class="row" data-for="r : rows" data-class-unused="!r.used" data-class-soon="r.soon">
+            <span class="label ui-muted">{{r.label}}</span>
+            <span class="time">{{r.time}}</span>
+        </div>
+        <!-- The whole panel is the drag handle: nothing in it is clicked. -->
+        <handle move_target="timers" class="grab"></handle>
+    </div>
+</body>
+</rml>

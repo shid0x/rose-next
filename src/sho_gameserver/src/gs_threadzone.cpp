@@ -517,6 +517,66 @@ CZoneTHREAD::IsZoneObjectsOn(BYTE btGroup) {
     return it != m_ZoneObjects.end() && it->second.bOn;
 }
 
+//-------------------------------------------------------------------------------------------------
+/// Zone timers (GSV_ZONE_TIMER): one packet per timer, its label after the header.
+static void
+FillZoneTimerPacket(classPACKET* pCPacket, BYTE btID, const char* szLabel, int iSeconds) {
+    pCPacket->m_HEADER.m_wType = GSV_ZONE_TIMER;
+    pCPacket->m_HEADER.m_nSize = sizeof(gsv_ZONE_TIMER);
+    pCPacket->m_gsv_ZONE_TIMER.m_btID = btID;
+    pCPacket->m_gsv_ZONE_TIMER.m_iSeconds = iSeconds;
+    pCPacket->AppendString((char*)szLabel);
+}
+
+void
+CZoneTHREAD::SetZoneTimer(BYTE btID, const char* szLabel, int iSeconds) {
+    if (!szLabel || strlen(szLabel) > 120)
+        szLabel = "";
+    {
+        std::lock_guard<std::mutex> lock(m_ZoneTimersMutex);
+        if (iSeconds > 0) {
+            ZoneTimer& timer = m_ZoneTimers[btID];
+            timer.label = szLabel;
+            timer.dwEndTick = ::GetTickCount() + (DWORD)iSeconds * 1000;
+        } else {
+            m_ZoneTimers.erase(btID);
+        }
+    }
+    classPACKET* pCPacket = Packet_AllocNLock();
+    if (!pCPacket)
+        return;
+    FillZoneTimerPacket(pCPacket, btID, szLabel, iSeconds > 0 ? iSeconds : 0);
+    this->SendPacketToZONE(pCPacket);
+    Packet_ReleaseNUnlock(pCPacket);
+}
+
+void
+CZoneTHREAD::SendZoneTimers(classUSER* pUSER) {
+    std::lock_guard<std::mutex> lock(m_ZoneTimersMutex);
+    const DWORD dwNow = ::GetTickCount();
+    for (const auto& it: m_ZoneTimers) {
+        const int iLeft = (int)((long)(it.second.dwEndTick - dwNow) / 1000);
+        if (iLeft <= 0)
+            continue;
+        classPACKET* pCPacket = Packet_AllocNLock();
+        if (!pCPacket)
+            return;
+        FillZoneTimerPacket(pCPacket, it.first, it.second.label.c_str(), iLeft);
+        pUSER->SendPacket(pCPacket);
+        Packet_ReleaseNUnlock(pCPacket);
+    }
+}
+
+int
+CZoneTHREAD::ZoneTimerLeft(BYTE btID) {
+    std::lock_guard<std::mutex> lock(m_ZoneTimersMutex);
+    auto it = m_ZoneTimers.find(btID);
+    if (it == m_ZoneTimers.end())
+        return -1;
+    const long lLeft = (long)(it->second.dwEndTick - ::GetTickCount()) / 1000;
+    return lLeft > 0 ? (int)lLeft : 0;
+}
+
 void
 CZoneTHREAD::Send_EconomyDATA() {
     t_PACKET* pPacket = (t_PACKET*)new char[MAX_PACKET_SIZE];

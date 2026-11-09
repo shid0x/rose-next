@@ -167,6 +167,11 @@ From `src/sho_gameserver/src/catacombs.*` and `scripts/import-catacombs.py`:
 - **Check a placement against the walk grid's `simple` cells**, not only the terrain
   height: a spot beside a building can lie inside its collision footprint.
 
+- **A deadline players should see is a zone timer**: `pZone->SetZoneTimer(id, label,
+  seconds)` (0 removes it). The clients count down by themselves and an arrival gets what
+  is left, so set it once and again only when the end moves (compare with
+  `ZoneTimerLeft(id)`). UI2 draws it; the classic interface needs an announcement too.
+
 ## 9. Deploying
 
 - **Server-read data** (LIST_NPC, LIST_NPC.CHR, LIST_SKILL, FILE_AI, the AIs, QSDs,

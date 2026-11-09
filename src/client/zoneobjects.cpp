@@ -109,3 +109,45 @@ void
 CZoneObjects::Forget() {
     m_Groups.clear();
 }
+
+//-------------------------------------------------------------------------------------------------
+CZoneTimers&
+CZoneTimers::Instance() {
+    static CZoneTimers s_Timers;
+    return s_Timers;
+}
+
+void
+CZoneTimers::Set(unsigned char btID, const char* szLabel, int iSeconds) {
+    if (iSeconds <= 0) {
+        m_Timers.erase(btID);
+        return;
+    }
+    Timer& timer = m_Timers[btID];
+    timer.label = szLabel ? szLabel : "";
+    timer.dwEndTick = ::GetTickCount() + (unsigned long)iSeconds * 1000;
+}
+
+void
+CZoneTimers::List(std::vector<Entry>& out) {
+    out.clear();
+    const unsigned long now = ::GetTickCount();
+    for (std::map<unsigned char, Timer>::iterator it = m_Timers.begin(); it != m_Timers.end();) {
+        const long lLeftMS = (long)(it->second.dwEndTick - now);
+        if (lLeftMS <= 0) {
+            it = m_Timers.erase(it);
+            continue;
+        }
+        Entry e;
+        e.btID = it->first;
+        e.label = it->second.label;
+        e.iSecondsLeft = (int)((lLeftMS + 999) / 1000); // 0:01 until the last second is over
+        out.push_back(e);
+        ++it;
+    }
+}
+
+void
+CZoneTimers::Forget() {
+    m_Timers.clear();
+}

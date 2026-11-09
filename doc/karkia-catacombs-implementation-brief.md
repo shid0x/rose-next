@@ -3,7 +3,8 @@
 **Status, 2026-11-09: M1 in progress.** Built and awaiting the first in-game test: the two
 zones, the keeper, the openings, the daily registration and the GM commands
 (`scripts/import-catacombs.py`, `src/sho_gameserver/src/catacombs.*`, migration 0006).
-Not built yet: the on-screen timer, then M2 onwards. "Built" notes below mark where the
+The on-screen timer is built too (2026-11-10, `GSV_ZONE_TIMER`, `RoseRmlZoneTimers`),
+awaiting its test. Not built yet: M2 onwards. "Built" notes below mark where the
 build differs from the plan.
 
 **The design, revised 2026-11-09.** The 2026-10-01 design stands: one
@@ -287,7 +288,7 @@ once per day, that's the catch, you can't spam it"):
 - **Every tick, anyone in a crypt zone whose record is not (today, this opening) is
   warped to the crypt mouth.** That covers a relog after the opening ended, a GM
   teleport and a crash. It also closes the old "offline at the reset, back in free"
-  hole. GMs are exempt.
+  hole. GMs are cast out like anyone else (the user, 2026-11-10).
 
 **How the keeper knows the crypt is closed, with no new quest machinery.**
 - Quest conditions cannot read the clock, but they can read an **NPC event value**.

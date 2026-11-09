@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <string>
 #include <vector>
 
 class CGameOBJ;
@@ -53,4 +54,39 @@ private:
     void Destroy(Group& group);
 
     std::map<unsigned char, Group> m_Groups;
+};
+
+/// Zone timers: labelled countdowns the server shows the players of a zone
+/// (GSV_ZONE_TIMER; first use: the Karkia catacombs' "the crypt seals in").
+///
+/// The server sends a timer's seconds left when it sets it and on every zone
+/// entry; this counts down from the moment the packet arrived. A zone change
+/// forgets them all (CObjectMANAGER::Clear), and the new zone sends its own.
+/// UI2 draws them (RoseRmlZoneTimers); the classic interface has no panel and
+/// relies on the zone's announcements.
+class CZoneTimers {
+public:
+    struct Entry {
+        unsigned char btID;
+        std::string label;
+        int iSecondsLeft;
+    };
+
+    static CZoneTimers& Instance();
+
+    /// From Recv_gsv_ZONE_TIMER: iSeconds <= 0 removes the timer.
+    void Set(unsigned char btID, const char* szLabel, int iSeconds);
+    /// The timers still running, by id. One that ran out is dropped.
+    void List(std::vector<Entry>& out);
+    void Forget();
+
+private:
+    struct Timer {
+        std::string label;
+        unsigned long dwEndTick;
+    };
+
+    CZoneTimers() {}
+
+    std::map<unsigned char, Timer> m_Timers;
 };

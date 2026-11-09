@@ -1,0 +1,52 @@
+/* UI2 zone timers -- LAYOUT ONLY ( colours and materials: rose-theme.rcss ).
+   Reload in game with /uireload. The C++ places the panel under the minimap
+   the first time, until it is moved.
+
+   PERFORMANCE ( see shop.rcss ): a fixed-width window of fixed-height rows,
+   no nested flex. The time text changes once a second; the document is hidden
+   while no timer runs. */
+
+#timers {
+    left: 400dp;               /* first frame only: RoseRmlZoneTimers places it */
+    top: 240dp;
+    width: 210dp;
+    padding: 3dp 8dp;
+}
+
+/* A timer: its label on the left, the time left pinned to the right ( a float
+   would drop below the label ). */
+.row {
+    position: relative;
+    height: 18dp;
+    line-height: 18dp;
+}
+.row.unused { display: none; }
+
+.label {
+    display: block;
+    margin-right: 62dp;        /* room for "1:42:10" */
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.time {
+    position: absolute;
+    right: 0dp;
+    top: 0dp;
+    font-weight: bold;
+    color: #ffffff;
+}
+
+/* Under a minute: this panel's own state, the theme's accent colour. */
+.row.soon .time { color: #ff9a5a; }
+
+/* The drag handle covers the panel. */
+.grab {
+    position: absolute;
+    left: 0dp;
+    top: 0dp;
+    width: 100%;
+    height: 100%;
+    cursor: move;
+}
+body.locked .grab { cursor: default; }

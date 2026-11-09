@@ -108,6 +108,15 @@ private:
     static void FillZoneObjectsPacket(classPACKET* pCPacket, BYTE btGroup, bool bOn,
         const tagZONE_OBJECT* pObjs, int iCount);
 
+    /// Zone timers (GSV_ZONE_TIMER): per id, its label and the tick it ends at. Empty
+    /// in every zone that never sets one. Same threads as the zone objects.
+    struct ZoneTimer {
+        std::string label;
+        DWORD dwEndTick = 0;
+    };
+    std::mutex m_ZoneTimersMutex;
+    std::map<BYTE, ZoneTimer> m_ZoneTimers;
+
 protected:
     CZoneTHREAD* GetZonePTR() { return this; }
 
@@ -211,6 +220,15 @@ public:
     /// The groups that stand, to a player who just joined (Send_gsv_JOIN_ZONE).
     void SendZoneObjects(classUSER* pUSER);
     bool IsZoneObjectsOn(BYTE btGroup);
+
+    /// Show the zone a countdown (iSeconds > 0) or remove it (0), remember it, and tell
+    /// the zone. Any thread. The clients count down by themselves: set it again only
+    /// when the end moves.
+    void SetZoneTimer(BYTE btID, const char* szLabel, int iSeconds);
+    /// The timers still running, to a player who just joined (Send_gsv_JOIN_ZONE).
+    void SendZoneTimers(classUSER* pUSER);
+    /// Seconds a standing timer has left, 0 once it ran out, -1 when there is none.
+    int ZoneTimerLeft(BYTE btID);
 
     void Send_EconomyDATA();
     void Send_GLOBAL_FLAG();

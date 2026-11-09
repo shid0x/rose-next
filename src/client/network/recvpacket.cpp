@@ -217,6 +217,24 @@ CRecvPACKET::Recv_gsv_ZONE_OBJECTS() {
     CZoneObjects::Instance().Apply(head.m_btGroup, head.m_btState != 0, specs);
 }
 
+//-------------------------------------------------------------------------------------------------
+/// A zone timer (the catacombs' "the crypt seals in"): its id, the seconds left and
+/// its label, a NUL-terminated string after the header. 0 seconds removes it.
+void
+CRecvPACKET::Recv_gsv_ZONE_TIMER() {
+    const gsv_ZONE_TIMER& head = m_pRecvPacket->m_gsv_ZONE_TIMER;
+    const int nSize = m_pRecvPacket->m_HEADER.m_nSize;
+    if (nSize < (int)sizeof(gsv_ZONE_TIMER))
+        return;
+    // the label must end inside the packet
+    const char* pLabel = (const char*)m_pRecvPacket + sizeof(gsv_ZONE_TIMER);
+    const int nRoom = nSize - (int)sizeof(gsv_ZONE_TIMER);
+    std::string label;
+    if (nRoom > 0 && memchr(pLabel, 0, nRoom) != NULL)
+        label = pLabel;
+    CZoneTimers::Instance().Set(head.m_btID, label.c_str(), head.m_iSeconds);
+}
+
 void
 CRecvPACKET::Recv_gsv_ANNOUNCE_CHAT() {
     short nOffset = sizeof(t_PACKETHEADER);

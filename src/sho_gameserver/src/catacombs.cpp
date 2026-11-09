@@ -53,6 +53,12 @@ constexpr int BREAK_AT_S = 110 * 60; // 1 h 50 in: sealed for ten minutes
 constexpr int OPENINGS_PER_DAY = 24 * 60 * 60 / PERIOD_S;
 constexpr int WARN_STEPS_S[] = {10 * 60, 5 * 60, 60}; // announced inside the crypt
 
+// The countdown shown to those inside (GSV_ZONE_TIMER). Id 2 is kept for the boss's
+// return (M2).
+constexpr BYTE TIMER_SEAL = 1;
+const char* TIMER_SEAL_LABEL = "The crypt seals in";
+constexpr int TIMER_DRIFT_S = 2; // re-sent only when the end moved (a GM shifted the clock)
+
 constexpr short KEEPER_SEALED = 0;
 constexpr short KEEPER_OPEN = 1; // the trigger's COND_011 and the dialog's --open-when
 
@@ -69,12 +75,6 @@ Reached(unsigned long now, unsigned long when) {
 void
 Whisper(classUSER* pUSER, int iKeeper, const std::string& msg) {
     pUSER->Send_gsv_WHISPER((char*)KEEPERS[iKeeper].name, (char*)msg.c_str());
-}
-
-/// classUSER::C_Cheater's mask (private there): GMs may stand in a sealed crypt.
-bool
-IsGM(classUSER* pUSER) {
-    return 0 != (pUSER->Get_RIGHT() & (RIGHT_MASTER | RIGHT_DEV | RIGHT_MG | RIGHT_NG));
 }
 
 std::string
@@ -263,6 +263,18 @@ CCatacombs::ProcCrypt(CZoneTHREAD* pZone, int iSlot) {
                 users.size());
     }
 
+    // The seal's countdown on screen: set once per opening, and again when the end
+    // moves. The clients count down by themselves; an arrival gets what is left.
+    {
+        const int iShown = pZone->ZoneTimerLeft(TIMER_SEAL);
+        if (bOpenHere) {
+            if (iShown < 0 || abs(iShown - n.toSeal) > TIMER_DRIFT_S)
+                pZone->SetZoneTimer(TIMER_SEAL, TIMER_SEAL_LABEL, n.toSeal);
+        } else if (iShown >= 0) {
+            pZone->SetZoneTimer(TIMER_SEAL, "", 0);
+        }
+    }
+
     // The warnings, to those inside.
     if (bOpenHere && n.state == State::Warning) {
         int iStep = 0;
@@ -284,13 +296,12 @@ CCatacombs::ProcCrypt(CZoneTHREAD* pZone, int iSlot) {
 
     // Who may stand here: those registered for this opening, in the crypt of the day,
     // while it is open. Anyone else (a login after the opening ended, a stale relay, a
-    // teleport) goes back to the crypt mouth. GMs may stay.
+    // teleport) goes back to the crypt mouth. GMs too (the user, 2026-11-10): a GM tests
+    // the crypt as a player does, and `/catacomb pass` gives one a fresh registration.
     if (!Reached(now, m_dwCryptSweep[iSlot] + SWEEP_MS))
         return;
     m_dwCryptSweep[iSlot] = now;
     for (classUSER* pUSER: users) {
-        if (IsGM(pUSER))
-            continue;
         auto it = m_Records.find(pUSER->m_dwDBID);
         const bool bRegistered =
             it != m_Records.end() && it->second.day == n.day && it->second.opening == n.opening;

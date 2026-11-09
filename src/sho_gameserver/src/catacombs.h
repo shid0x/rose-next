@@ -24,8 +24,8 @@ class classUSER;
 /// with free re-entry until that opening ends. A character's record is (day,
 /// opening); it lives in the database (table catacomb_entry, written at the payment
 /// by the SQL thread, read at login) and in m_Records while the server runs. Anyone
-/// in a crypt zone whose record is not the current opening's is sent out; GMs may
-/// stay.
+/// in a crypt zone whose record is not the current opening's is sent out, GMs
+/// included.
 ///
 /// Threads. ProcZone runs in every zone thread and acts in three:
 ///   * each crypt zone's thread sweeps its own players and, once per break, kills

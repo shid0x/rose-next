@@ -1621,6 +1621,8 @@ classUSER::Send_gsv_JOIN_ZONE(CZoneTHREAD* pZONE) {
     // The zone's dynamic objects that stand (the Cerberus Lair's ice wall): after
     // the join reply, before the sector objects.
     pZONE->SendZoneObjects(this);
+    // and its timers still running (the catacombs' "the crypt seals in")
+    pZONE->SendZoneTimers(this);
 
     this->send_update_stats_all();
 

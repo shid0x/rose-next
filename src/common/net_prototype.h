@@ -404,6 +404,14 @@ using namespace Rose::Common;
 // client builds them as ordinary collidable map objects; the server enforces nothing.
 #define GSV_ZONE_OBJECTS 0x07f1
 
+// Zone timers (2026-11-10): a labelled countdown the server shows the players of a
+// zone (the Karkia catacombs: "the crypt seals in"; later a boss's return). One
+// packet per timer: its id, the seconds left (0 removes it) and its label, a
+// NUL-terminated string after the header. Sent to the zone when a timer is set and
+// to a player on every zone entry (Send_gsv_JOIN_ZONE). The client counts down by
+// itself (UI2: RoseRmlZoneTimers) and forgets every timer on a zone change.
+#define GSV_ZONE_TIMER 0x07f2
+
 struct cli_CHECK_AUTH: public t_PACKETHEADER {};
 
 struct srv_CHECK_AUTH: public t_PACKETHEADER {
@@ -1152,6 +1160,13 @@ struct gsv_ZONE_OBJECTS: public t_PACKETHEADER {
     BYTE m_btGroup;
     BYTE m_btState; // 1 = present, 0 = gone (the client fades it out)
     BYTE m_btCount; // tagZONE_OBJECT records that follow
+};
+
+// One zone timer (GSV_ZONE_TIMER).
+struct gsv_ZONE_TIMER: public t_PACKETHEADER {
+    BYTE m_btID;
+    int m_iSeconds; // left to run; 0 removes the timer
+    // char szLabel[] follows, NUL-terminated
 };
 
 // 자신의 현재 경험치를 갱신한다.
@@ -2956,6 +2971,7 @@ struct t_PACKET {
         cli_SUMMON_CMD m_cli_SUMMON_CMD;
         cli_SUMMON_CONTROL m_cli_SUMMON_CONTROL;
         gsv_ZONE_OBJECTS m_gsv_ZONE_OBJECTS;
+        gsv_ZONE_TIMER m_gsv_ZONE_TIMER;
         // gsv_SUMMON_CMD			m_gsv_SUMMON_CMD;
         gsv_PATSTATE_CHANGE m_gsv_PATSTATE_CHANGE;
 
