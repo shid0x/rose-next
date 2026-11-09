@@ -1,6 +1,12 @@
 # Karkia catacombs: implementation brief
 
-**Status, 2026-11-09: revised, nothing built.** The 2026-10-01 design stands: one
+**Status, 2026-11-09: M1 in progress.** Built and awaiting the first in-game test: the two
+zones, the keeper, the openings, the daily registration and the GM commands
+(`scripts/import-catacombs.py`, `src/sho_gameserver/src/catacombs.*`, migration 0006).
+Not built yet: the on-screen timer, then M2 onwards. "Built" notes below mark where the
+build differs from the plan.
+
+**The design, revised 2026-11-09.** The 2026-10-01 design stands: one
 shared zone, a new maze every day, the floor is terrain, only the walls are generated,
 and the generator is our own. This revision builds that design on what has landed
 since:
@@ -149,8 +155,13 @@ they alternate daily (§2). How each piece is used:
   - place that set's round floor medallions (floor E, four variants) as fixed,
     non-colliding decoration quads in the entrance hall, the boss room and a few
     junctions.
-- **Fog, light and music** per zone: warm for Reminiscence, cold for Sorrow. Jrose's
-  catacombs played `Ramesses.ogg`.
+- **Music** per zone (built): `Ramesses.ogg` for Reminiscence, as in Jrose, and
+  `KChurch.ogg` for Sorrow.
+- **Fog cannot differ per zone today.** The client sets the fog colour from the time
+  of day alone (`s_FogColor` in `cdaynnightproc.cpp`: grey by day, near black at
+  night), not from any table. Both zones are "underground" rows on the dungeon sky
+  (`LIST_SKY` 1). A warm or cold light per crypt would be two new `LIST_SKY` rows; a
+  fog colour per crypt needs client code. Decide in M2, once the walls can be seen.
 - **Ceilings**: not used. Jrose's have no collision either, and they would block the
   camera.
 - **Import**, for each set: wall C and its textures, the floor E quads and textures, and
@@ -289,17 +300,19 @@ once per day, that's the catch, you can't spam it"):
   edge time skips the whole day. The cycle works out its state from the clock at any
   moment, so a start mid-opening simply finds it open.
 
-**GM commands (needed from M1, nobody can wait 2 hours to test):**
-- `/catacomb status` shows the state, today's crypt, the seed, the time to the next
-  change, the registered count and the boss timer;
-- `/catacomb close` runs WARNING → BREAK now, with short timers, and `/catacomb open`
-  ends a break now;
-- `/catacomb daily` runs the daily change now (new seed, the other crypt);
-- `/catacomb seed N` forces a seed, live: the groups go down, then up with the new
-  placements (§9);
-- `/catacomb boss` brings the boss now;
-- `/catacomb pass <name>` clears a character's daily record, so a tester can register
-  again (nobody can wait a day either).
+**GM commands (nobody can wait 2 hours to test).** Built: they shift the controller's
+clock (a skew added to the wall clock), so every test runs the real code path.
+- `/catacomb status` shows the state, today's crypt, the day and opening, the time to
+  the next change, who is registered, and any clock shift;
+- `/catacomb close` jumps to one minute before the break: the one-minute warning, then
+  the seal and the evictions;
+- `/catacomb open` jumps to the start of the next opening (earlier registrations are
+  then spent, as after a real opening);
+- `/catacomb daily` jumps one day ahead: the other crypt, and every pass is spent;
+- `/catacomb clock` drops the shift and returns to the real clock;
+- `/catacomb pass [name]` clears a character's daily record (your own with no name), so
+  a tester can register again.
+- Later: `/catacomb seed N` (M3) and `/catacomb boss` (M2).
 
 **Edge cases:**
 - **Dying** → revive point in the crypt's entrance hall. The zone's revive point is
@@ -321,31 +334,29 @@ once per day, that's the catch, you can't spam it"):
   and count as constants, so they are easy to change.
 - **Paid once a day** (§4): one payment buys one opening, with free re-entry until it
   ends.
-- **Two dialog options, two QSD triggers:**
-  - **"Register"** checks the keeper's event value is 1 (COND_011) and that the hearts
-    are in the bag. **It takes nothing**: the conditions are there so the dialog can
-    show its "lack" answer.
-  - **"I am registered"** checks only the event value. It costs nothing.
-- **The controller does the rest, not the QSD.** The once-a-day rule needs the
-  database record, the destination changes daily (zone 90 or 91), and a QSD would take
-  the hearts before any C++ could refuse. The hook is the trigger's name in
-  `classUSER::Do_QuestTRIGGER`, after the trigger succeeded (making-events §1):
-  - after **"Register"**: if the character already has a record for today, it is
-    refused with a whisper ("You have already entered the catacombs today. Come back
-    tomorrow.") and **nothing is taken**. Otherwise the controller removes the hearts
-    itself (checking again that they are there), saves the record, and warps the
-    character to today's entrance hall.
-  - after **"I am registered"**: it warps a character whose record is this opening's.
-    Anyone else gets a whisper: either "your opening has ended, come back tomorrow" or
-    "you are not registered".
-  - Check at M1 that a trigger with conditions and no rewards counts as succeeded, so
-    the hook runs.
-- **The dialog**: `quest-editor con-toll` writes the paid option. The offer fires the
-  trigger when its conditions pass, a "lack" answer shows otherwise (no silent
-  failure), and `--open-when 1 --closed T` shows the "sealed" answer while the value is
-  0. The client's COND_011 always passes, so the dialog checks the value itself;
-  con-toll does that. The free option is a second menu entry; check at M1 whether
-  con-toll can write both or `con-append` adds the second.
+- **One dialog option, one QSD trigger** (built; the plan had two). `Catacomb-Enter`
+  checks only that the keeper's event value is 1 (COND_011). **It takes nothing.** One
+  option is enough because the controller decides what the click means, and a second
+  "I am registered" option added nothing a player needs.
+- **The controller does the rest, not the QSD** (`CCatacombs::OnEnter`). The
+  once-a-day rule needs the database record, the destination changes daily (zone 90 or
+  91), and a QSD would take the hearts before any C++ could refuse. The hook is the
+  trigger's name in `classUSER::Do_QuestTRIGGER`, after the trigger succeeded
+  (making-events §1). A trigger with conditions and no rewards does count as succeeded.
+  - registered for this opening: warped in, free;
+  - paid today for an opening that has ended: refused with a whisper, **nothing taken**;
+  - otherwise: the toll is taken across stacks (`classUSER::Sub_ItemNSend`), the record
+    saved, and the character warped to today's entrance hall;
+  - without the toll: a whisper names the price. The dialog cannot show a "lack"
+    answer here, because a registered player with no hearts left must still get in.
+  - A trigger sent from anywhere but the keeper's side (20 m) is ignored.
+- **The dialog** is `quest-editor con-toll`: the offer names the price and the
+  once-a-day rule, and `--open-when 1 --closed T` shows the "sealed" answer while the
+  value is 0. The client's COND_011 always passes, so the dialog checks the value
+  itself; con-toll does that.
+- **Built**: the keeper is [Crypt Keeper] Osric, `LIST_NPC` 4020, the plague doctor's
+  look, beside the Columbarium in the Cemetery, where Jrose put its Reminiscence
+  entrance. The toll is five Black Hearts (`LIST_NATURAL` 151).
 
 ## 6. Content
 
@@ -495,11 +506,10 @@ Then the keeper with both options, the opening cycle, the daily switch, the GM c
 and the on-screen timer (the seal countdown first). Both zones are baked.
 
 *Done when:*
-- paying registers you and warps you into today's crypt; "I am registered" lets you
-  back in free, and refuses someone who has not paid;
-- a second payment the same day is refused and takes nothing; after your opening ends,
-  "I am registered" refuses you until the next day; `/catacomb pass` clears it for a
-  tester;
+- paying registers you and warps you into today's crypt; talking to the keeper again
+  during the same opening lets you back in free;
+- after your opening ends, the keeper refuses you until the next day and takes
+  nothing; `/catacomb pass` clears it for a tester;
 - the record survives a server restart: a registered player who logs back in during
   their opening is still in;
 - dying and relogging during the opening both put you in the hall; relogging after it

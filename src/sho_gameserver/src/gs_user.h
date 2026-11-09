@@ -540,6 +540,12 @@ public:
             this->Add_EXP(iExp, false, 0);
         return true;
     }
+    /// Take sITEM's quantity out of an inventory slot and tell the client what the slot
+    /// holds now (a toll a controller takes: catacombs.cpp). The player's own thread.
+    bool Sub_ItemNSend(short nInvIDX, tagITEM& sITEM) {
+        this->Sub_ITEM(nInvIDX, sITEM);
+        return this->Send_gsv_SET_INV_ONLY((BYTE)nInvIDX, &this->m_Inventory.m_ItemLIST[nInvIDX]);
+    }
     bool Add_ItemNSend(tagITEM& sITEM) {
         this->Set_ItemSN(sITEM); // 퀘스트 보상에 의해...
 

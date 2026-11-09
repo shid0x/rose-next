@@ -2,6 +2,7 @@
 
 #include "LIB_gsMAIN.h"
 
+#include "catacombs.h"
 #include "cerberus_lair.h"
 #include "GS_USER.h"
 #include "GS_ListUSER.h"
@@ -239,6 +240,8 @@ CZoneTHREAD::Execute() {
         CCerberusLair::Instance().ProcZone(this);
         // the Wisdom Tree escort: acts in the Forest of Wisdom only
         CWisdomEscort::Instance().ProcZone(this);
+        // the Karkia catacombs: acts in the two crypts and the Desolate Cemetery only
+        CCatacombs::Instance().ProcZone(this);
 
         m_NavMeter.EndProc(*this, iTickMOBs);
 

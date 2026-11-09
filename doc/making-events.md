@@ -141,7 +141,33 @@ dodge), see [making-monsters.md](making-monsters.md).
 - **IFO floats are 32-bit**: round a record you build through `struct` `f` before
   comparing it with one read back.
 
-## 8. Deploying
+## 8. A price, a clock and a record (the Karkia catacombs)
+
+From `src/sho_gameserver/src/catacombs.*` and `scripts/import-catacombs.py`:
+
+- **A price with a rule the QSD cannot express is taken by the controller.** A QSD
+  reward runs before any hook, so "once a day" could only refuse after the items were
+  gone. The trigger keeps its conditions and takes nothing; the hook checks the rule,
+  then takes the items across stacks with `classUSER::Sub_ItemNSend(slot, item)`, which
+  also tells the client what the slot holds now. A trigger with conditions and no
+  rewards still counts as succeeded, so the hook runs.
+- **Check where the click came from.** A trigger name can be sent by a client from
+  anywhere: the hook tests the player's zone and distance to the NPC.
+- **A schedule is a function of the wall clock, not a latch.** Work the state out from
+  the time at every tick. A server started mid-window then finds the right state, and
+  GM test commands only add a skew to that clock, so they run the real code.
+- **A record that must survive a restart is written at once**, not at the character's
+  next save: `GS_CThreadSQL::Add_CatacombSave` queues it and wakes the SQL thread. It
+  is read at login by its **own** query, so a database without the table still logs
+  characters in. The controller keeps its own map by character id; no member was
+  added to `classUSER`.
+- **An IFO chunk may have no NPC lump at all** (the Desolate Cemetery had no NPC):
+  add the region and its table entry (`rosefmt.container.Region`), then re-bake the
+  zone's walk grid, since an NPC is a bake input.
+- **Check a placement against the walk grid's `simple` cells**, not only the terrain
+  height: a spot beside a building can lie inside its collision footprint.
+
+## 9. Deploying
 
 - **Server-read data** (LIST_NPC, LIST_NPC.CHR, LIST_SKILL, FILE_AI, the AIs, QSDs,
   IFOs, clips) **needs a server restart**. The game server's exe is locked while it

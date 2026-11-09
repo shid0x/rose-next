@@ -8,6 +8,7 @@
 #include "GS_ListUSER.h"
 #include "GS_SocketLSV.h"
 #include "GS_ThreadSQL.h"
+#include "catacombs.h"
 #include "LIB_gsMAIN.h"
 #include "ZoneLIST.h"
 #include "classTIME.h"
@@ -393,6 +394,41 @@ GS_CThreadSQL::UpdateUserRECORD(classUSER* user) {
     return true;
 }
 
+/// Any thread. The record is written when the SQL thread next wakes, which this asks for.
+void
+GS_CThreadSQL::Add_CatacombSave(DWORD dwDBID, int iDay, int iOpening) {
+    {
+        std::lock_guard<std::mutex> lock(m_csCatacomb);
+        m_CatacombSaves.push_back({dwDBID, iDay, iOpening});
+    }
+    this->Set_EVENT();
+}
+
+/// The SQL thread. A failure is logged and dropped: the game server still holds the
+/// record in memory (CCatacombs), so only a restart would lose it. The usual cause is
+/// a database without migration 0006.
+void
+GS_CThreadSQL::Run_CatacombSaves() {
+    std::vector<tagCatacombSave> saves;
+    {
+        std::lock_guard<std::mutex> lock(m_csCatacomb);
+        saves.swap(m_CatacombSaves);
+    }
+    for (const tagCatacombSave& s: saves) {
+        QueryResult res = s.m_iDay < 0
+            ? this->db.query("DELETE FROM catacomb_entry WHERE character_id=$1", {std::to_string(s.m_dwDBID)})
+            : this->db.query(
+                  "INSERT INTO catacomb_entry (character_id, day, opening) VALUES ($1, $2, $3) "
+                  "ON CONFLICT (character_id) DO UPDATE SET day=EXCLUDED.day, opening=EXCLUDED.opening",
+                  {std::to_string(s.m_dwDBID), std::to_string(s.m_iDay), std::to_string(s.m_iOpening)});
+        if (!res.is_ok()) {
+            LOG_ERROR("[catacomb] could not save the record of character {} (is migration 0006 applied?): {}",
+                s.m_dwDBID,
+                res.error_message());
+        }
+    }
+}
+
 void
 GS_CThreadSQL::Execute() {
     //	this->SetPriority( THREAD_PRIORITY_ABOVE_NORMAL );	// Priority 1 point above the priority
@@ -417,10 +453,13 @@ GS_CThreadSQL::Execute() {
             iCnt2 = m_AddUserLIST.GetNodeCount();
             this->m_csUserLIST.Unlock();
             if (iCnt1 <= 0 && iCnt2 <= 0) {
+                this->Run_CatacombSaves();
                 m_bWaiting = true;
                 break;
             }
         }
+
+        this->Run_CatacombSaves();
 
         this->m_CS.Lock();
         m_RunPACKET.AppendNodeList(&m_AddPACKET);
@@ -598,6 +637,20 @@ GS_CThreadSQL::Proc_cli_SELECT_CHAR(tagQueryDATA* pSqlPACKET) {
             account_email,
             char_name);
         return false;
+    }
+
+    // The catacombs' daily record, its own query so that a database without migration
+    // 0006 still logs characters in (the failure is not logged: it would be on every login).
+    {
+        QueryResult cat_res = this->db.query(
+            "SELECT day, opening FROM catacomb_entry WHERE character_id = $1",
+            {char_res.get_string(0, COL_ID)});
+        if (cat_res.is_ok()) {
+            const bool bHas = cat_res.row_count == 1;
+            CCatacombs::Instance().OnLoaded((unsigned long)char_res.get_int32(0, COL_ID),
+                bHas ? cat_res.get_int32(0, 0) : -1,
+                bHas ? cat_res.get_int32(0, 1) : -1);
+        }
     }
 
     QueryResult item_res = this->db.query(

@@ -4,6 +4,7 @@
 
 #include "CRandom.h"
 #include "CThreadGUILD.h"
+#include "catacombs.h"
 #include "cerberus_lair.h"
 #include "Calculation.h"
 #include "DEF_STB.h"
@@ -6219,6 +6220,11 @@ classUSER::Do_QuestTRIGGER(t_HASHKEY HashTRIGGER, short nSelectReward) {
             // and the level (doc/wisdom-tree-escort-brief.md).
             if (CWisdomEscort::Instance().IsStartTrigger(HashTRIGGER))
                 CWisdomEscort::Instance().OnStart(this);
+            // The catacombs' keeper: the trigger only checks that he is open. The toll,
+            // the once-a-day rule and the warp are the controller's
+            // (doc/karkia-catacombs-implementation-brief.md, section 5).
+            if (CCatacombs::Instance().IsEnterTrigger(HashTRIGGER))
+                CCatacombs::Instance().OnEnter(this);
             return this->Send_gsv_QUEST_REPLY(RESULT_QUEST_REPLY_TRIGGER_SUCCESS,
                 0,
                 (int)HashTRIGGER);

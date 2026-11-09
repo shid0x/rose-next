@@ -9,6 +9,7 @@
 #include "rose/common/util.h"
 
 #include "LIB_gsMAIN.h"
+#include "catacombs.h"
 #include "cerberus_lair.h"
 #include "nav/nav_probe.h"
 #include "GS_USER.h"
@@ -273,6 +274,33 @@ escort(classUSER* user, CommandInfo info, const std::vector<std::string>& args) 
     return true;
 }
 
+bool
+catacomb(classUSER* user, CommandInfo info, const std::vector<std::string>& args) {
+    if (!user) {
+        return false;
+    }
+
+    CCatacombs& crypt = CCatacombs::Instance();
+    const std::string action = args.size() >= 2 ? args[1] : "status";
+    if (action == "close") {
+        user->send_server_whisper(crypt.GmClose());
+    } else if (action == "open") {
+        user->send_server_whisper(crypt.GmOpen());
+    } else if (action == "daily") {
+        user->send_server_whisper(crypt.GmDaily());
+    } else if (action == "clock") {
+        user->send_server_whisper(crypt.GmClock());
+    } else if (action == "pass") {
+        // no name: the GM's own record
+        user->send_server_whisper(crypt.GmPass(args.size() >= 3 ? args[2] : std::string(user->Get_NAME())));
+    } else if (action != "status") {
+        user->send_server_whisper(info.usage);
+        return false;
+    }
+    user->send_server_whisper(crypt.GmStatus());
+    return true;
+}
+
 using CommandFunction = std::function<bool(classUSER*, CommandInfo, const std::vector<std::string>&)>;
 static const std::unordered_map<std::string, std::tuple<CommandFunction, CommandInfo>>
     command_registry = {
@@ -289,6 +317,7 @@ static const std::unordered_map<std::string, std::tuple<CommandFunction, Command
         REGISTER_COMMAND(Command::CERBERUS, cerberus),
         REGISTER_COMMAND(Command::NAV, nav),
         REGISTER_COMMAND(Command::ESCORT, escort),
+        REGISTER_COMMAND(Command::CATACOMB, catacomb),
     };
 
 char* l_szAbility[] = {"STR",

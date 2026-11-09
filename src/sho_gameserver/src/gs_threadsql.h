@@ -2,6 +2,9 @@
 
 #include "CSqlTHREAD.h"
 
+#include <mutex>
+#include <vector>
+
 #pragma pack(push, 1)
 struct tagBasicETC {
     tPOINTF m_PosSTART;
@@ -60,8 +63,22 @@ private:
 
     void Execute();
 
+    /// The catacombs' daily records waiting to be written (catacombs.h).
+    struct tagCatacombSave {
+        DWORD m_dwDBID;
+        int m_iDay; // < 0: delete the row
+        int m_iOpening;
+    };
+    std::mutex m_csCatacomb;
+    std::vector<tagCatacombSave> m_CatacombSaves;
+    void Run_CatacombSaves();
+
 public:
     GS_CThreadSQL();
+
+    /// Queue a catacomb record and wake the thread: it is written at once, not at the
+    /// character's next save. iDay < 0 deletes the row (GM `/catacomb pass`).
+    void Add_CatacombSave(DWORD dwDBID, int iDay, int iOpening);
 
     void Set_EVENT() { m_pEVENT->SetEvent(); }
 
