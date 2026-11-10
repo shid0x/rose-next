@@ -21,7 +21,7 @@ What it writes
   - The ZON's one texture and one tile row follow the Abandoned Church (86), the other
     flat indoor Karkia zone.
   - `start` and `restore` are the middle of the entrance hall, the 2 x 2 cells in the
-    maze's south-west corner. The boss room is the 3 x 3 in the north-east corner (M2).
+    maze's south-west corner. The boss room is the 4 x 4 in the north-east corner.
 * **The floor tiles** (3DDATA/TERRAIN/TILES/KARKIA/KCATACOMB/): Jrose's catacomb floor
   textures are one 15 m cell each. Reminiscence's carry trims along the sides laid out
   for Jrose's walls, Sorrow's a dark vignette, and ours is terrain whose tile repeats
@@ -42,8 +42,15 @@ What it writes
     told so by a whisper from the keeper.
 * **The walk grids** of 90, 91 and 87 (the Cemetery gained an NPC, a bake input).
 
-Not here yet (M2): walls, pillars, monsters, the boss, drop rows 90/91, the zones' own
-decoration tables.
+* **Milestone 2, the maze itself** (2026-11-10): each crypt's own decoration table
+  (LIST_DECO_KCATACOMB1/2.ZSC: a wall, a pillar, two floor medallions, built by
+  catacomb_art.py from Jrose's catacomb set -- read its docstring for why the wall is
+  our own mesh) and, in the map files, the outer wall, a pillar at every grid corner,
+  the medallions, and **one fixed maze** per crypt: the generator's day 0
+  (catacomb_maze.py). Milestone 3 takes the interior walls back out of the map files
+  and has the server send the day's.
+
+Not here yet: monsters, the boss, drop rows 90/91.
 
 Deploy: restart the servers (LIST_ZONE, LIST_NPC, the QSD, the IFOs and the grids are
 read at start), re-bake the client data (scripts/pack.ps1).
@@ -68,6 +75,8 @@ from rosefmt import ifo, lnav, qsd, zon  # noqa: E402
 from rosefmt.container import Region  # noqa: E402
 from mapgen import lighting  # noqa: E402  (the vendored texconv's path)
 from mapgen.zone import EventPoint, Tile, ZoneParams, build_zone  # noqa: E402
+import catacomb_art as art  # noqa: E402
+import catacomb_maze as maze  # noqa: E402
 
 BUILD_DIR = os.path.join(ROOT, "build", "catacombs")
 JROSE = r"C:\Users\Thomas\Desktop\Testclients\Jrose"
@@ -89,8 +98,9 @@ TILE_DIR_REL = r"3DDATA\TERRAIN\TILES\KARKIA\KCATACOMB"
 CHUNK_X0, CHUNK_Y0, CHUNKS = 31, 31, 2          # slots 31..32: the Church's block
 CENTRE_CM = (CHUNK_X0 + CHUNKS / 2.0) * 16000   # 512000: both axes
 CELL_CM, GRID = 1500, 10                        # 10 x 10 cells of 15 m
+STATIC_DAY = 0                                  # milestone 2: one fixed maze per crypt, the generator's day 0
 MAZE_SW_CM = CENTRE_CM - CELL_CM * GRID / 2.0   # 504500
-HALL_CELLS = 2                                  # the hall: cells 0..1 on both axes
+HALL_CELLS = 2                                  # the hall: cells 0..1 on both axes (catacomb_maze.HALL)
 HALL_CM = MAZE_SW_CM + CELL_CM * HALL_CELLS / 2.0   # 506000: start and revive
 
 TEMPLATE_ZONE = 136                             # Tower of Despair
@@ -250,6 +260,14 @@ def tiles(ours, dry):
         print(f"    {z['tile']:26s} " + ("written" if changed else "in place"))
 
 
+# ---------------------------------------------------------------------- the art
+def art_stage(ours, dry):
+    for z in ZONES:
+        files = art.art_files(z["zone"])
+        changed = sum(write_if_changed(P(ours, rel), blob, dry) for rel, blob in files.items())
+        print(f"    {art.SETS[z['zone']]['zsc']:26s} + {len(files) - 1} models and textures, {changed} written")
+
+
 # ---------------------------------------------------------------------- the zones
 def tile_texture(z):
     return ("3Ddata/TERRAIN/Tiles/Karkia/KCatacomb/" + z["tile"]).encode("latin-1")
@@ -267,6 +285,11 @@ class ZonTemplate:
         return self.l[t]
 
 
+def static_maze(z):
+    """Milestone 2's fixed maze of a crypt: the generator's edges for STATIC_DAY."""
+    return maze.generate(maze.seed_for(z["zone"], STATIC_DAY))
+
+
 def zone_files(ours, z):
     church = zon.parse(open(find_ci(ours, CHURCH_ZON_REL), "rb").read())
     if len(church.lump(zon.TILES)) != 1 or len(church.lump(zon.TEXTURES)) != 1:
@@ -275,7 +298,8 @@ def zone_files(ours, z):
                    ground_cm=0.0, tile=Tile(brush=0, tile_set=0, tile_index=0, tile_id=0),
                    events=[EventPoint("start", HALL_CM, HALL_CM, 0.0),
                            EventPoint("restore", HALL_CM, HALL_CM, 0.0)],
-                   zone_type=1, start_chunk=(CHUNK_X0, CHUNK_Y0))
+                   zone_type=1, start_chunk=(CHUNK_X0, CHUNK_Y0),
+                   objects=art.records_by_chunk(art.placements(static_maze(z), MAZE_SW_CM, CELL_CM)))
     return build_zone(p, ZonTemplate(church, z))
 
 
@@ -292,8 +316,8 @@ def zone_row(zstb, z):
         C_BGM_DAY: z["bgm"], C_BGM_NIGHT: z["bgm"],
         C_MINIMAP: "NOMAP",                      # an empty panel; blank would keep the last zone's
         C_MM_X: str(CHUNK_X0), C_MM_Y: str(64 - (CHUNK_Y0 + CHUNKS - 1)),
-        # the Karkia tables until the crypts get their own (M2: walls, pillars, medallions)
-        C_DECO: r"3DDATA\KARKIA\LIST_DECO_KARKIA.ZSC", C_CNST: r"3DDATA\KARKIA\LIST_CNST_KARKIA.ZSC",
+        # each crypt's own decoration table (catacomb_art.py); no building in either
+        C_DECO: art.zsc_rel(z["zone"]), C_CNST: r"3DDATA\KARKIA\LIST_CNST_KARKIA.ZSC",
         C_PVP: "",                               # PvE until M5
         C_OCEAN: "0", C_WATER: "25",
         C_JOIN: "", C_KILL: "", C_DEAD: "",      # the template's are QSD names: never inherit
@@ -318,7 +342,9 @@ def zones(ours, dry):
         zdir = P(ours, zone_dir_rel(z))
         changed = sum(write_if_changed(os.path.join(zdir, rel.replace("/", os.sep)), blob, dry)
                       for rel, blob in files.items())
-        print(f"    zone {n} {z['folder']:14s} {len(files)} files, {changed} written")
+        closed = static_maze(z)
+        print(f"    zone {n} {z['folder']:14s} {len(files)} files, {changed} written; "
+              f"maze {sum(closed)} walls, hash 0x{maze.fnv1a64(closed):016X}")
         row = zone_row(zstb, z)
         if [zstb.get(n, c) for c in range(zstb.cols)] != row:
             for c in range(zstb.cols):
@@ -573,6 +599,9 @@ def verify(ours):
                    and open(os.path.join(zdir, rel.replace("/", os.sep)), "rb").read() == blob
                    for rel, blob in files.items())
         check(same, f"{z['folder']}: {len(files)} map files match the builder")
+        afiles = art.art_files(n)
+        check(all(os.path.isfile(P(ours, rel)) and open(P(ours, rel), "rb").read() == blob
+                  for rel, blob in afiles.items()), f"{art.SETS[n]['zsc']} and its {len(afiles) - 1} files match the builder")
         tile = os.path.join(P(ours, TILE_DIR_REL), z["tile"])
         check(os.path.isfile(tile), f"floor tile {z['tile']}")
         check(os.path.isfile(os.path.join(zdir, z["folder"] + ".lnav")), f"{z['folder']}.lnav baked")
@@ -620,6 +649,15 @@ def restore(ours):
         if os.path.isdir(zdir):
             shutil.rmtree(zdir)
             print(f"    removed {zone_dir_rel(z)}")
+    for z in ZONES:
+        for rel in [art.zsc_rel(z["zone"])]:
+            if os.path.isfile(P(ours, rel)):
+                os.remove(P(ours, rel))
+                print(f"    removed {rel}")
+    adir = P(ours, art.ART_DIR_REL)
+    if os.path.isdir(adir):
+        shutil.rmtree(adir)
+        print(f"    removed {art.ART_DIR_REL}")
     tdir = P(ours, TILE_DIR_REL)
     if os.path.isdir(tdir):
         shutil.rmtree(tdir)
@@ -653,6 +691,8 @@ def main():
         keep_originals(args.ours)
     print("the floor tiles")
     tiles(args.ours, dry)
+    print("the walls, pillars and medallions")
+    art_stage(args.ours, dry)
     print("the zones")
     zones(args.ours, dry)
     print("the keepers")

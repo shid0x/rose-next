@@ -4,7 +4,10 @@
 zones, the keeper, the openings, the daily registration and the GM commands
 (`scripts/import-catacombs.py`, `src/sho_gameserver/src/catacombs.*`, migration 0006).
 The on-screen timer is built too (2026-11-10, `GSV_ZONE_TIMER`, `RoseRmlZoneTimers`),
-awaiting its test. Not built yet: M2 onwards. "Built" notes below mark where the
+validated and committed. **M2 has started** (2026-11-10): the maze itself is built and
+awaiting its first look in game (walls, pillars, outer wall, medallions, one fixed maze
+per crypt; `scripts/catacomb_maze.py`, `scripts/catacomb_art.py`). Monsters, drops and
+the boss follow. "Built" notes below mark where the
 build differs from the plan.
 
 **The design, revised 2026-11-09.** The 2026-10-01 design stands: one
@@ -135,6 +138,16 @@ comes in two moods, one per Jrose crypt:
 
 **Both are used (user, 2026-11-09)**: Reminiscence dresses zone 90, Sorrow zone 91, and
 they alternate daily (§2). How each piece is used:
+- **Built, and one surprise: wall C is one-sided.** Its faces look one way only (in
+  Jrose a wall backs onto solid rock), so a wall between two corridors would vanish
+  from behind. Each crypt's wall is therefore our own model, made by
+  `catacomb_art.py` from wall C: two copies back to back about the edge line (3.5 m
+  surface to surface at scale 15), the end column dropped, a cap on top. One model,
+  one placement per wall. The pillar is a plain box in the column strip of the same
+  texture, 3.9 m square and a little taller than the wall. Its size is chosen against the
+  wall's own face planes: the first cut put a pillar side in the plane of a niche's end
+  face, and the two flickered (`PILLAR_HALF` in `catacomb_art.py`). Each crypt has its own
+  decoration table, `LIST_DECO_KCATACOMB1/2.ZSC`: wall 1, pillar 2, medallions 3 and 4.
 - **Walls: wall C** (object 113 of `KCATACOMB0101.ZSC` and of `KCATACOMB0201.ZSC`), the
   straight piece: one wall along one cell edge, 108 units long and 150 tall.
   Reminiscence's is 25 thick. At x15 that is 16.2 m long (it overlaps the next piece by
@@ -182,9 +195,9 @@ Contact sheets of the textures and renders of the wall pieces were made in the
   leave open inside. **Recommended (accepted 2026-11-09):**
   - the hall is 2 x 2 cells (30 m), with no regen point in it or next to it, so a
     revived player does not stand up in a fight;
-  - the boss room is 3 x 3 cells (45 m). 30 m is too tight to dodge in: a fan leaves
-    gaps only from about 6 m out, and Cerberus's cone reaches 18 m. Its four inner
-    pillars stay, as cover now and for the "hide behind a pillar" attack later (§6);
+  - the boss room is **4 x 4 cells (60 m), with no pillar inside** (the user, 2026-11-10,
+    after walking the first build: 3 x 3 with its four inner pillars was too tight to
+    fight in). The "hide behind a pillar" attack (§6) will need its own cover placed;
   - they sit in opposite corners, so the boss is the far end of the maze;
 - the revive point in the entrance hall.
 
@@ -195,8 +208,9 @@ interior edges. A perfect maze (a spanning tree over 100 cells) opens 99 of them
 carry a wall.
 
 **Generator.**
-1. Carve a perfect maze, using a recursive backtracker or randomised Prim's, with the
-   fixed rooms pre-opened.
+1. Carve a perfect maze with the fixed rooms pre-opened. Built as a depth-first walk
+   (the recursive backtracker): long winding corridors, about 68 walls of 180 edges
+   once braided. The boss room is entered once and never walked on from.
 2. **Braid it**: open a wall at dead ends, one at a time, until only **2 dead ends**
    remain (user, 2026-11-09: "hard to say without playing, maybe 2 for now"; a
    constant, tuned by playing). That makes loops. Pure perfect mazes are tedious to walk
@@ -226,8 +240,11 @@ past day's maze can be regenerated to check a report. `maze_id` is the crypt (90
   implementation-defined.
 - Keep a **Python mirror** of the generator in `scripts/`. It writes the M2 static
   layout through `rosefmt.ifo` (or `mapgen/ifo.py`, if the zone comes from mapgen),
-  prints any day's maze as ASCII, and provides the **test vectors**: a few
-  `(seed → edge-bitset hash)` pairs, written into this doc once the generator exists.
+  prints any day's maze as ASCII, and provides the **test vectors**. Built:
+  `scripts/catacomb_maze.py` (`--vectors`). (crypt, day) → FNV-1a 64 of the 180 edge
+  bytes: (90, 0) `0x9B0FAB2781071B37`, (90, 1) `0xCEF29EA72B1566A1`, (90, 20767)
+  `0xD1B5106FE281976E`, (91, 0) `0x6B56403122DACE98`, (91, 1) `0x3F94487D6960C511`,
+  (91, 20767) `0xADB6550618BB419D` (the 4 x 4 boss room's; `VECTORS` in the script is the source).
   The C++ version is done when it reproduces them. Client and server no longer need to
   agree on anything; the vectors now guarantee that the Python preview of a day is the
   maze the server built, which is what answers a player's report.
@@ -476,7 +493,7 @@ sleep, with nothing to move out of.
     is always centred on the caster;
   - **hide behind a pillar** (after M4): a room-wide blast that the sight test stops, so
     the boss room's pillars become cover. The test must then count pillars as blockers.
-- **Room to dodge**: the boss room is 3 x 3 cells, 45 m across (§3).
+- **Room to dodge**: the boss room is 4 x 4 cells, 60 m across, open (§3).
 - **Boss loot: red weapons for now, tailored later** (user, 2026-11-09: "don't overfocus
   on the loot"). The 2026-10-01 pick was the black blood-stained Jrose set (1456-1468,
   already imported), with a red name from prefix 22 and placeholder stats. Item ids up
@@ -688,7 +705,7 @@ at a wall.
 - **First boss**: the Necromancer; the spider and the tree are good next ones.
 - **Player sight through walls**: later. M4 does the monster side.
 - **Left to the brief's recommendations**:
-  - rooms: hall 2 x 2, boss room 3 x 3, in opposite corners;
+  - rooms: hall 2 x 2, boss room 4 x 4 with no pillars (enlarged 2026-11-10), in opposite corners;
   - the boss resets when its room has been empty for a minute;
   - pools: the spider goes to Reminiscence, the tree to Sorrow.
 
