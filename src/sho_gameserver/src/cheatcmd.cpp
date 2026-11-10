@@ -292,6 +292,21 @@ catacomb(classUSER* user, CommandInfo info, const std::vector<std::string>& args
         user->send_server_whisper(crypt.GmClock());
     } else if (action == "boss") {
         user->send_server_whisper(crypt.GmBoss());
+    } else if (action == "seed") {
+        user->send_server_whisper(crypt.GmSeed(args.size() >= 3 ? args[2] : std::string()));
+    } else if (action == "maze") {
+        // one whisper per row: the picture is 21 lines
+        std::string text = crypt.GmMaze();
+        size_t from = 0;
+        while (from < text.size()) {
+            size_t to = text.find('\n', from);
+            if (to == std::string::npos)
+                to = text.size();
+            if (to > from)
+                user->send_server_whisper(text.substr(from, to - from));
+            from = to + 1;
+        }
+        return true;
     } else if (action == "pass") {
         // no name: the GM's own record
         user->send_server_whisper(crypt.GmPass(args.size() >= 3 ? args[2] : std::string(user->Get_NAME())));

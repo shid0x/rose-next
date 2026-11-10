@@ -297,6 +297,12 @@ and its §6 decisions before touching movement, height or AoE shape. Phase 0 is 
     `GetHeightTop`), `FollowZ` (the avatar's 135 cm step rule, cell by cell) and `NearestSpan`.
   - It loads at the end of `LoadZONE` and warns when map files changed since the bake.
     **Re-bake a zone after any map edit.**
+  - **A block mask for walls put up at run time** (`Grid::SetBlockMask`, 2026-11-10): 1 m
+    cells that `SpansAt` reports without `SPAN_WALK`. Everything reads the grid through
+    `SpansAt`, so walks, searches, spawn re-rolls and sight lines see the wall at once.
+    The Karkia crypts stamp their daily maze with it (`CCatacombs::BuildMaze`); the
+    Cerberus ice wall could. One writer, the zone's thread; old masks are kept, since a
+    reader on another thread may still hold one.
   - About 120 MB for all 66 zones.
 - **The vertical rule (Phase 3): `nav/nav_settings`.** `InVerticalReach`, defaulting to a
   band of |dz| <= 5 m + 70% of the horizontal distance.
@@ -350,6 +356,10 @@ and its §6 decisions before touching movement, height or AoE shape. Phase 0 is 
     `CMD_MOVE` and `CMD_RUNAWAY`, and re-issuing a walk toward a goal within 4 m keeps it.
   - Search arrays are per thread (`thread_local`, about 2 MB each). Searches run only on
     zone threads, apart from the GM probe.
+  - **A zone may have its own router** (`Nav::Router`, `CZoneTHREAD::m_pNavRouter`), asked
+    before `FindPath` in `Nav_Chase` and `Nav_PathTo`: the crypts' maze walks doorway to
+    doorway (`CatacombMaze::Route`), because a way across it is longer than the search's
+    128 m window and its budget. It returns false for anything it does not route.
   - Switches: `[nav] pathing`, `path_zones`, `path_*` budgets; `/nav set path|zones|lead|cells`.
     Readout: `/nav path [go]`.
 - **Vertical attack range (Phase 7, `[nav] vertical_range`, `/nav set range|giveup`).**

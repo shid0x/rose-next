@@ -8,8 +8,10 @@ validated and committed. **M2** (2026-11-10): the maze itself is built, validate
 committed (walls, pillars, outer wall, medallions, one fixed maze per crypt;
 `scripts/catacomb_maze.py`, `scripts/catacomb_art.py`). The monsters and their drops
 are validated and committed (`scripts/catacomb_monsters.py`, drop table 912). The
-boss, the Crypt Necromancer, is built and awaiting its test
-(`scripts/catacomb_boss.py`, `CCatacombs::ProcBoss`, drop table 913). "Built" notes below mark where the
+boss, the Crypt Necromancer, is validated and committed (`scripts/catacomb_boss.py`,
+`CCatacombs::ProcBoss`, drop table 913), and so is the first part of M4 (monsters do not
+see through the walls). **M3 is built and awaiting its test** (2026-11-10): the maze
+changes daily (`src/sho_gameserver/src/catacomb_maze.*`, `CCatacombs::BuildMaze`). "Built" notes below mark where the
 build differs from the plan.
 
 **The design, revised 2026-11-09.** The 2026-10-01 design stands: one
@@ -616,7 +618,32 @@ Keep the M2 grid (`build/nav/`): it is **the reference** for M3's overlay.
 - the boss fight is worth going in for: both attacks can be read and dodged, it comes
   back on time, and the timer agrees with it.
 
-**M3: walls change daily. Server only.**
+**M3: walls change daily. Server only.** *Built 2026-11-10, awaiting its test.* What the
+build settled:
+- `catacomb_maze.cpp` is the generator, checked at server start against the Python
+  vectors (`[catacomb] maze generator self-test` in the log). A standalone build of it
+  printed the same mazes as `catacomb_maze.py`, an untested day included.
+- **Each crypt always has the maze of its day**; both are rebuilt when the day's last
+  break starts (23:50) for the day to come, before that break's clearing. The walls
+  are zone object groups 10-13 (object 1 of the crypt's table at 1500%).
+- **The mask**: a closed edge blocks the 1 m cells within 3 m of its line along its
+  15 m, measured on M2's bake. `import-catacombs.py --check-mask` compares today's
+  grid minus the mask with M2's grids (kept in `build/catacombs/m2-reference`): Sorrow
+  matches cell for cell; Reminiscence has 42 cells beside pillars open now and
+  blocked then (the bake's body test reaching past a pillar from a wall end hidden in
+  it), which is allowed. The Python mirror is `catacomb_maze.block_mask`, and the
+  server checks its own against two mask vectors, so no GM dump was needed.
+- **The router** is a `Nav::Router` on the zone (`CZoneTHREAD::m_pNavRouter`), asked
+  before `Nav::FindPath` at both call sites. Doorways in a straight line are merged
+  into one leg (a staircase of doorways is a straight diagonal through their
+  midpoints).
+- Regen points need no care: their 4 m range ends before the 4.5 m where a wall's
+  mask starts, so a spawn is never under a wall whatever the maze.
+- GM: `/catacomb maze` whispers the picture, `/catacomb seed <n>` rebuilds today's
+  crypt from a seed (`catacomb_maze.py --seed` prints the same), `/catacomb seed`
+  goes back to the day's own; `/catacomb status` shows the seed and the hash.
+
+The plan it was built from:
 - **The generator in C++, in the gameserver.** It no longer needs `src/common`, since
   only the server uses it. It reproduces the Python test vectors.
 - **The cycle sends the walls as zone objects** into today's crypt, in that crypt's

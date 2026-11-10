@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "catacomb_maze.h"
+
 class CObjCHAR;
 class CZoneTHREAD;
 class classUSER;
@@ -27,6 +29,14 @@ class classUSER;
 /// by the SQL thread, read at login) and in m_Records while the server runs. Anyone
 /// in a crypt zone whose record is not the current opening's is sent out, GMs
 /// included.
+///
+/// The maze (catacomb_maze.*, the generator scripts/catacomb_maze.py mirrors). Each crypt
+/// has the maze of its day, a function of the crypt and the date alone: the map files hold
+/// only the outer wall, the pillars and the rooms. The crypt's thread builds it at the
+/// first tick and again when the day's last break starts (23:50), for the day to come:
+/// the walls as zone objects (GSV_ZONE_OBJECTS, in groups of 50), the same walls as a
+/// block mask on the zone's walk grid, and a router that walks a monster from doorway
+/// to doorway, since a way across the maze is longer than the path search looks.
 ///
 /// The boss (scripts/catacomb_boss.py). The crypt of the day has one in its far room,
 /// and the controller owns it, not a regen point: it raises it when an opening starts
@@ -71,6 +81,8 @@ public:
     std::string GmPass(const std::string& name); // clear a character's record
     std::string GmClock(); // drop the skew: back to the real clock
     std::string GmBoss(); // a fresh boss in today's crypt, now
+    std::string GmSeed(const std::string& arg); // today's crypt rebuilt from a seed ("" = the day's own)
+    std::string GmMaze(); // today's maze as text
 
 private:
     enum class State { Open, Warning, Break };
@@ -108,10 +120,24 @@ private:
         unsigned long dwEmptySince = 0; // 0: someone is in the room
     };
 
+    /// One crypt's maze, built and read by its zone thread.
+    struct Crypt {
+        CatacombMaze::Maze maze;
+        long long llDay = -1; // the day it was built for
+        unsigned long long ullSeed = 0;
+        bool bForced = false; // a GM's seed: kept until the day changes
+        int nWalls = 0;
+    };
+
     CCatacombs();
 
     Now Clock() const; // under m_Mutex
     void ProcCrypt(CZoneTHREAD* pZone, int iSlot);
+    void BuildMaze(CZoneTHREAD* pZone,
+        int iSlot,
+        unsigned long long ullSeed,
+        long long llDay,
+        const std::vector<CObjCHAR*>& mobs);
     void ProcBoss(CZoneTHREAD* pZone,
         int iSlot,
         unsigned long now,
@@ -137,6 +163,9 @@ private:
     long long m_llWarned[2]; // the last (opening key * 4 + warning step) announced inside
     Boss m_Boss[2];
     bool m_bReqBoss[2]; // GM: a fresh boss at the next tick
+    Crypt m_Crypt[2];
+    int m_iReqSeed[2]; // GM: 1 = rebuild from m_ullReqSeed, 2 = back to the day's own
+    unsigned long long m_ullReqSeed[2];
     unsigned long m_dwCemeteryTick;
     long long m_llAnnounced; // the last (opening key * 2 + sealed) announced at the crypt mouth
     unsigned long m_EnterHash;

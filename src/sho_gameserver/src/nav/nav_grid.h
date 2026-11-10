@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
@@ -56,7 +57,8 @@ StepLinks(const Span& a, const Span& b, float objStep = OBJ_STEP_CM) {
 
 /// A zone's layered walk grid, <ZONE FOLDER>.lnav, baked by scripts/nav-bake.py (format:
 /// scripts/rosefmt/lnav.py; design: doc/pathfinding-and-z-plan.md, section 3.1). Read-only
-/// once loaded, so any thread may query it.
+/// once loaded, so any thread may query it; the one thing that changes is the block mask
+/// (SetBlockMask), swapped whole by the zone's thread.
 ///
 /// 1 m cells in 160 x 160 tiles, one per map chunk. Every cell has its terrain floor; a
 /// "complex" cell lists every floor (decks, platforms, stairs, Z-only floors) lowest first,
@@ -79,6 +81,14 @@ public:
 
     /// Every floor at a world position, lowest first; returns the count (0 off the grid).
     int SpansAt(float x, float y, Span* out, int iMax) const;
+
+    /// Cells blocked on top of the bake: walls the server puts up at run time (the Karkia
+    /// crypts' daily maze). w x h 1 m cells from (x0, y0) world cm, row 0 south, non-zero =
+    /// blocked. SpansAt reports a blocked cell's floors without SPAN_WALK, and LineWalk, the
+    /// path search, FollowZ and NearestSpan all read the grid through SpansAt: every AI
+    /// move, spawn re-roll, sight line and /nav readout sees the wall at once. Replaces the
+    /// last mask; cells == nullptr clears it. One writer, the zone's own thread.
+    void SetBlockMask(float x0, float y0, int w, int h, const unsigned char* cells);
 
     /// Where today's client draws a monster standing here (GetHeightTop), or NO_Z.
     float VisualTopZ(float x, float y) const;
@@ -117,6 +127,15 @@ private:
     const Tile* TileAt(float x, float y, int& cell) const;
     float CellZ(const Tile& t, int cell, float x, float y, float stored, unsigned char flags) const;
     float Pick(const Span* spans, int n, float curZ) const;
+    void Masked(float x, float y, Span* out, int n) const;
+
+    struct BlockMask {
+        float x0, y0;
+        int w, h;
+        std::vector<unsigned char> cells;
+    };
+    std::atomic<const BlockMask*> m_pMask{nullptr};
+    std::vector<std::unique_ptr<BlockMask>> m_Masks; // every one set: a reader may still hold an old one
 
     struct Anchor {
         float x, y;

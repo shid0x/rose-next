@@ -43,6 +43,17 @@ enum class PathResult {
 
 const char* PathResultName(PathResult r);
 
+/// A zone's own way round its walls, asked before the search (CZoneTHREAD::m_pNavRouter):
+/// the Karkia crypts' maze knows its doorways, and a route across it is longer than the
+/// search's window and budget allow. True fills 'out' like FindPath does (waypoints, the
+/// goal last, the start left out); false leaves the pair to FindPath. Called on the zone
+/// thread.
+class Router {
+public:
+    virtual ~Router() {}
+    virtual bool Route(float x0, float y0, float x1, float y1, std::vector<tPOINTF>& out) = 0;
+};
+
 /// A* from the start to the goal over the grid's reached walkable floors (8 neighbours, the
 /// bake's step rule between floors, a 128 x 128-cell window), pulled straight into at most 16
 /// waypoints. The start is not in 'out'; the last waypoint is the goal itself when found.

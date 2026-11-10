@@ -131,6 +131,7 @@ public:
     void* m_pListITEM;
     Nav::ZoneMeter m_NavMeter; // tick timing and movement/scan counters (nav/nav_stats.h)
     Nav::TickBudget m_NavBudget; // this tick's path searches (nav/nav_path.h), zone thread only
+    Nav::Router* m_pNavRouter = nullptr; // this zone's own router, if it has one (the crypts' maze)
 
     CZoneTHREAD(bool CreateSuspended);
     ~CZoneTHREAD();

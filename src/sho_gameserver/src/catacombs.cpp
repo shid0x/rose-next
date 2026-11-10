@@ -14,6 +14,8 @@
 #include "GS_ThreadZONE.h"
 #include "GS_USER.h"
 #include "ZoneLIST.h"
+#include "nav/nav_grid.h"
+#include "nav/nav_path.h"
 
 namespace {
 
@@ -100,6 +102,24 @@ constexpr int ADD_SPREAD = 700; // cm round the boss
 constexpr BYTE TIMER_BOSS = 2;
 const char* TIMER_BOSS_LABEL = "The Necromancer returns in";
 
+// ---- the maze's walls (scripts/catacomb_art.py: object 1 of each crypt's decoration
+// table is its wall, a 1 m model placed at 15x)
+constexpr WORD WALL_OBJECT = 1;
+constexpr WORD WALL_SCALE_PCT = 1500;
+constexpr BYTE WALL_GROUP = 10; // zone object groups 10..13
+constexpr int WALL_GROUPS = 4; // 50 walls each; a maze has about 65, never more than 81
+constexpr int WALLS_PER_GROUP = 50;
+
+/// A crypt's router: its maze's doorways (Nav::Router, asked by chases and walks).
+class MazeRouter: public Nav::Router {
+public:
+    const CatacombMaze::Maze* pMaze = nullptr;
+    bool Route(float x0, float y0, float x1, float y1, std::vector<tPOINTF>& out) override {
+        return pMaze && CatacombMaze::Route(*pMaze, x0, y0, x1, y1, out);
+    }
+};
+MazeRouter s_Router[2];
+
 constexpr short KEEPER_SEALED = 0;
 constexpr short KEEPER_OPEN = 1; // the trigger's COND_011 and the dialog's --open-when
 
@@ -184,9 +204,19 @@ CCatacombs::CCatacombs():
     m_llCleaned{-1, -1},
     m_llWarned{-1, -1},
     m_bReqBoss{false, false},
+    m_iReqSeed{0, 0},
+    m_ullReqSeed{0, 0},
     m_dwCemeteryTick(0),
     m_llAnnounced(-1),
-    m_EnterHash(::StrToHashKey(ENTER_TRIGGER)) {}
+    m_EnterHash(::StrToHashKey(ENTER_TRIGGER)) {
+    // the C++ generator against the Python one's test vectors: a day's maze must be the
+    // one `catacomb_maze.py` prints for it
+    std::string report;
+    if (CatacombMaze::SelfTest(report))
+        LOG_ERROR("[catacomb] maze generator self-test FAILED:{}", report);
+    else
+        LOG_INFO("[catacomb] maze generator self-test: {}", report);
+}
 
 bool
 CCatacombs::IsEnterTrigger(unsigned long hash) const {
@@ -303,6 +333,24 @@ CCatacombs::ProcCrypt(CZoneTHREAD* pZone, int iSlot) {
     const bool bOpenHere = n.crypt == nZoneNO && n.state != State::Break;
     const long long llOpening = (long long)n.day * OPENINGS_PER_DAY + n.opening;
 
+    // The maze: the day's own, and from the start of the day's last break (23:50)
+    // tomorrow's, so the walls change while nobody is inside. Before the clearing
+    // below: what respawns after it re-rolls against the new walls.
+    {
+        const long long llMazeDay =
+            n.state == State::Break && n.opening == OPENINGS_PER_DAY - 1 ? (long long)n.day + 1 : n.day;
+        Crypt& c = m_Crypt[iSlot];
+        const int iReq = m_iReqSeed[iSlot];
+        m_iReqSeed[iSlot] = 0;
+        if (iReq == 1) {
+            c.bForced = true;
+            this->BuildMaze(pZone, iSlot, m_ullReqSeed[iSlot], llMazeDay, mobs);
+        } else if (c.llDay != llMazeDay || iReq == 2) {
+            c.bForced = false;
+            this->BuildMaze(pZone, iSlot, CatacombMaze::SeedFor(nZoneNO, llMazeDay), llMazeDay, mobs);
+        }
+    }
+
     // A crypt that is not open is cleared once per opening: at its own break, and the
     // other day's crypt whenever the clock moves on. A suicide, as AI action 23 does it:
     // no killer, so no drop and no EXP.
@@ -378,6 +426,76 @@ CCatacombs::ProcCrypt(CZoneTHREAD* pZone, int iSlot) {
                       : "The crypt is sealed. You are cast out to the crypt mouth.");
         this->Evict(pUSER, iEntrance);
     }
+}
+
+//-------------------------------------------------------------------------------------------------
+/// A crypt's maze from a seed, on its own zone thread: the walls on every client, the
+/// same walls on the walk grid, the router. Whatever stands in the corridors goes (a wall
+/// may land on it) and the spawn points start over; the boss room never changes, so the
+/// boss stays.
+void
+CCatacombs::BuildMaze(CZoneTHREAD* pZone,
+    int iSlot,
+    unsigned long long ullSeed,
+    long long llDay,
+    const std::vector<CObjCHAR*>& mobs) {
+    Crypt& c = m_Crypt[iSlot];
+    CatacombMaze::Generate(ullSeed, c.maze);
+    c.ullSeed = ullSeed;
+    c.llDay = llDay;
+
+    // The old walls down, the new ones up. A client that sees both takes the second as
+    // "up again mid-fade" and rebuilds the group at once (client zoneobjects.cpp).
+    std::vector<CatacombMaze::Wall> walls;
+    CatacombMaze::Walls(c.maze, walls);
+    c.nWalls = (int)walls.size();
+    std::vector<tagZONE_OBJECT> objs;
+    for (int g = 0; g < WALL_GROUPS; g++) {
+        pZone->SetZoneObjects((BYTE)(WALL_GROUP + g), nullptr, 0, false);
+        objs.clear();
+        for (int k = g * WALLS_PER_GROUP; k < (g + 1) * WALLS_PER_GROUP && k < (int)walls.size(); k++) {
+            tagZONE_OBJECT o;
+            o.m_wObjID = WALL_OBJECT;
+            o.m_btKind = 0;
+            o.m_fX = walls[k].x;
+            o.m_fY = walls[k].y;
+            o.m_fZ = 0.f;
+            o.m_wRotDeg = (WORD)walls[k].rotDeg;
+            o.m_wScaleX = o.m_wScaleY = o.m_wScaleZ = WALL_SCALE_PCT;
+            objs.push_back(o);
+        }
+        if (!objs.empty())
+            pZone->SetZoneObjects((BYTE)(WALL_GROUP + g), objs.data(), (int)objs.size(), true);
+    }
+    if ((int)walls.size() > WALL_GROUPS * WALLS_PER_GROUP)
+        LOG_ERROR("[catacomb] {}: {} walls do not fit {} groups", CryptName(CRYPT_ZONES[iSlot]), walls.size(), WALL_GROUPS);
+
+    std::vector<unsigned char> mask;
+    CatacombMaze::BlockMask(c.maze, mask);
+    if (pZone->NavGrid())
+        pZone->NavGrid()->SetBlockMask(
+            CatacombMaze::SW_CM, CatacombMaze::SW_CM, CatacombMaze::MASK_SIDE, CatacombMaze::MASK_SIDE, mask.data());
+    else
+        LOG_WARN("[catacomb] {}: no walk grid, the maze is walls on screen only", CryptName(CRYPT_ZONES[iSlot]));
+    s_Router[iSlot].pMaze = &c.maze;
+    pZone->m_pNavRouter = &s_Router[iSlot];
+
+    int nGone = 0;
+    for (CObjCHAR* pMob: mobs) {
+        if (pMob->Get_CharNO() != BOSS_NPC && !InBossRoom(pMob->m_PosCUR)) {
+            pMob->Add_DAMAGE(pMob->Get_HP() + 1);
+            nGone++;
+        }
+    }
+    pZone->Reset_REGEN();
+    LOG_INFO("[catacomb] {}: the maze of day {}{}: seed {:016X}, hash {:016X}, {} walls, {} monsters removed",
+        CryptName(CRYPT_ZONES[iSlot]),
+        llDay,
+        c.bForced ? " (a GM's seed)" : "",
+        ullSeed,
+        CatacombMaze::Hash(c.maze),
+        walls.size(),
+        nGone);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -762,7 +880,52 @@ CCatacombs::GmStatus() {
                    : b.bReturning ? fmt::format(" | boss returns in {}", Span((int)((long)(b.dwReturnAt - now) / 1000)))
                                   : std::string(" | boss down for this opening");
     }
+    {
+        const Crypt& c = m_Crypt[n.crypt == CRYPT_ZONES[0] ? 0 : 1];
+        if (c.llDay >= 0)
+            s += fmt::format(" | maze of day {}{}: seed {:016X}, hash {:016X}, {} walls",
+                c.llDay,
+                c.bForced ? " (a GM's seed)" : "",
+                c.ullSeed,
+                CatacombMaze::Hash(c.maze),
+                c.nWalls);
+    }
     return s;
+}
+
+std::string
+CCatacombs::GmSeed(const std::string& arg) {
+    std::lock_guard<std::mutex> lock(m_Mutex);
+    const Now n = this->Clock();
+    const int iSlot = n.crypt == CRYPT_ZONES[0] ? 0 : 1;
+    if (arg.empty()) {
+        m_iReqSeed[iSlot] = 2;
+        return fmt::format("{} goes back to the maze of its day within a second.", CryptName(n.crypt));
+    }
+    char* pEnd = nullptr;
+    const unsigned long long ullSeed = ::strtoull(arg.c_str(), &pEnd, 0); // 0x... or decimal
+    if (!pEnd || *pEnd)
+        return "Usage: catacomb seed <number or 0x hex> (no number: back to the day's own maze)";
+    m_iReqSeed[iSlot] = 1;
+    m_ullReqSeed[iSlot] = ullSeed;
+    return fmt::format("{} is rebuilt from seed {:016X} within a second; `catacomb_maze.py --seed` prints it.",
+        CryptName(n.crypt),
+        ullSeed);
+}
+
+std::string
+CCatacombs::GmMaze() {
+    std::lock_guard<std::mutex> lock(m_Mutex);
+    const Now n = this->Clock();
+    const Crypt& c = m_Crypt[n.crypt == CRYPT_ZONES[0] ? 0 : 1];
+    if (c.llDay < 0)
+        return "No maze built yet.";
+    return fmt::format("{}, day {}, seed {:016X}, hash {:016X}\n{}",
+        CryptName(n.crypt),
+        c.llDay,
+        c.ullSeed,
+        CatacombMaze::Hash(c.maze),
+        CatacombMaze::Render(c.maze));
 }
 
 std::string

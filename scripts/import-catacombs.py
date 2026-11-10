@@ -45,10 +45,13 @@ What it writes
 * **Milestone 2, the maze itself** (2026-11-10): each crypt's own decoration table
   (LIST_DECO_KCATACOMB1/2.ZSC: a wall, a pillar, two floor medallions, built by
   catacomb_art.py from Jrose's catacomb set -- read its docstring for why the wall is
-  our own mesh) and, in the map files, the outer wall, a pillar at every grid corner,
-  the medallions, and **one fixed maze** per crypt: the generator's day 0
-  (catacomb_maze.py). Milestone 3 takes the interior walls back out of the map files
-  and has the server send the day's.
+  our own mesh) and, in the map files, the outer wall, a pillar at every grid corner
+  and the medallions. **No interior wall is in the map files** since milestone 3
+  (2026-11-10): the game server builds each day's maze and sends its walls as zone
+  objects (src/sho_gameserver/src/catacomb_maze.cpp, CCatacombs::BuildMaze), and
+  blocks the same cells on the walk grid. `--check-mask` proves those cells are the
+  ones the bake blocked when the walls were map objects (milestone 2's grids, kept
+  in build/catacombs/m2-reference).
 
 * **The monsters** (2026-11-10, catacomb_monsters.py -- its docstring is the record):
   six rows at levels 235-240 (LIST_NPC 2550-2555, copies of Spire Village's Alpha
@@ -111,7 +114,6 @@ TILE_DIR_REL = r"3DDATA\TERRAIN\TILES\KARKIA\KCATACOMB"
 CHUNK_X0, CHUNK_Y0, CHUNKS = 31, 31, 2          # slots 31..32: the Church's block
 CENTRE_CM = (CHUNK_X0 + CHUNKS / 2.0) * 16000   # 512000: both axes
 CELL_CM, GRID = 1500, 10                        # 10 x 10 cells of 15 m
-STATIC_DAY = 0                                  # milestone 2: one fixed maze per crypt, the generator's day 0
 MAZE_SW_CM = CENTRE_CM - CELL_CM * GRID / 2.0   # 504500
 HALL_CELLS = 2                                  # the hall: cells 0..1 on both axes (catacomb_maze.HALL)
 HALL_CM = MAZE_SW_CM + CELL_CM * HALL_CELLS / 2.0   # 506000: start and revive
@@ -299,9 +301,7 @@ class ZonTemplate:
         return self.l[t]
 
 
-def static_maze(z):
-    """Milestone 2's fixed maze of a crypt: the generator's edges for STATIC_DAY."""
-    return maze.generate(maze.seed_for(z["zone"], STATIC_DAY))
+NO_WALLS = [False] * maze.EDGES                 # the map files hold no interior wall: the server sends the day's
 
 
 def zone_files(ours, z):
@@ -313,7 +313,7 @@ def zone_files(ours, z):
                    events=[EventPoint("start", HALL_CM, HALL_CM, 0.0),
                            EventPoint("restore", HALL_CM, HALL_CM, 0.0)],
                    zone_type=1, start_chunk=(CHUNK_X0, CHUNK_Y0),
-                   objects=art.records_by_chunk(art.placements(static_maze(z), MAZE_SW_CM, CELL_CM)),
+                   objects=art.records_by_chunk(art.placements(NO_WALLS, MAZE_SW_CM, CELL_CM)),
                    regen=mon.regen_by_chunk(z["zone"], MAZE_SW_CM, CELL_CM))
     return build_zone(p, ZonTemplate(church, z))
 
@@ -357,9 +357,7 @@ def zones(ours, dry):
         zdir = P(ours, zone_dir_rel(z))
         changed = sum(write_if_changed(os.path.join(zdir, rel.replace("/", os.sep)), blob, dry)
                       for rel, blob in files.items())
-        closed = static_maze(z)
-        print(f"    zone {n} {z['folder']:14s} {len(files)} files, {changed} written; "
-              f"maze {sum(closed)} walls, hash 0x{maze.fnv1a64(closed):016X}")
+        print(f"    zone {n} {z['folder']:14s} {len(files)} files, {changed} written")
         row = zone_row(zstb, z)
         if [zstb.get(n, c) for c in range(zstb.cols)] != row:
             for c in range(zstb.cols):
@@ -593,6 +591,63 @@ def bake(ours, extra):
         raise SystemExit("nav-bake.py failed")
 
 
+# ---------------------------------------------------------------------- the wall mask
+def ground_walk(path):
+    """A baked grid's walkable ground over the crypt's two chunks: [y][x] booleans, 1 m
+    cells from the south-west chunk's corner."""
+    import numpy as np
+    nav = lnav.parse(open(path, "rb").read())
+    side = CHUNKS * 160
+    walk = np.zeros((side, side), dtype=bool)
+    for (sx, sy), t in nav.tiles.items():
+        w = (t.simple > 0).copy()
+        first = 0
+        for k, ci in enumerate(np.flatnonzero(t.complex_mask.reshape(-1))):
+            n = int(t.cells[k]["n_spans"])
+            spans = t.spans[first:first + n]
+            first += n
+            w.reshape(-1)[ci] = any((int(sp["flags"]) & 7) == 7 for sp in spans)   # WALK | REACHED | TERRAIN
+        oy, ox = (sy - CHUNK_Y0) * 160, (sx - CHUNK_X0) * 160
+        walk[oy:oy + 160, ox:ox + 160] = w
+    return walk
+
+
+def check_mask(ours):
+    """Milestone 3's acceptance: over the maze, today's grid (no interior wall) minus the
+    server's wall mask for day 0 must be milestone 2's grid, baked with day 0's walls as
+    map objects. One kind of difference is expected and allowed: a cell beside a pillar
+    that is open now and was blocked then. In Reminiscence the bake's body test reached
+    one cell past the pillar from a wall's end hidden inside it (42 cells on day 0);
+    nothing stands there, so open is the truer answer. Sorrow matches cell for cell."""
+    import numpy as np
+    bad = 0
+    off = int((MAZE_SW_CM - CHUNK_X0 * 16000) // 100)
+    side = maze.MASK_SIDE
+    for z in ZONES:
+        ref_path = os.path.join(BUILD_DIR, "m2-reference", z["folder"] + ".lnav")
+        if not os.path.isfile(ref_path):
+            raise SystemExit(f"{ref_path} is missing: the milestone-2 grid is the reference")
+        ref = ground_walk(ref_path)[off:off + side, off:off + side]
+        now = ground_walk(os.path.join(P(ours, zone_dir_rel(z)), z["folder"] + ".lnav"))[off:off + side, off:off + side]
+        mask = np.array([list(r) for r in maze.block_mask(maze.generate(maze.seed_for(z["zone"], 0)))], dtype=bool)
+        got = now & ~mask
+        diff = got != ref
+        print(f"    zone {z['zone']}: {int(now.sum())} open cells, {int(mask.sum())} under the mask, "
+              f"{int(ref.sum())} walkable in the reference; {int(diff.sum())} cells differ "
+              f"({int((got & ~ref).sum())} open only now, {int((ref & ~got).sum())} open only then)")
+        wrong = []
+        for y, x in zip(*np.nonzero(diff)):
+            by_pillar = max(abs(x - round(x / 15) * 15), abs(y - round(y / 15) * 15)) <= 3
+            if not (got[y, x] and by_pillar):
+                wrong.append((int(x), int(y)))
+        print(f"        {int(diff.sum()) - len(wrong)} beside a pillar and open now (allowed), {len(wrong)} others")
+        for x, y in wrong[:8]:
+            print(f"        cell ({x}, {y}): now {'open' if got[y, x] else 'blocked'}")
+        bad += len(wrong)
+    print("OK" if not bad else f"{bad} cell(s) differ where none may")
+    return 0 if not bad else 1
+
+
 # ---------------------------------------------------------------------- verify / restore
 def verify(ours):
     bad = []
@@ -698,6 +753,8 @@ def main():
     ap.add_argument("--restore", action="store_true")
     ap.add_argument("--no-bake", action="store_true", help="skip the walk grids")
     ap.add_argument("--emit", action="store_true", help="print catacombs.cpp's KEEPERS table")
+    ap.add_argument("--check-mask", action="store_true",
+                    help="the server's wall mask against milestone 2's baked walls")
     args = ap.parse_args()
     if args.verify:
         return verify(args.ours)
@@ -705,6 +762,8 @@ def main():
         return restore(args.ours)
     if args.emit:
         return emit(args.ours)
+    if args.check_mask:
+        return check_mask(args.ours)
     dry = args.dry_run
     if not dry:
         keep_originals(args.ours)

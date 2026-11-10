@@ -41,6 +41,7 @@
     <ClInclude Include="src\cobjchar.h" />
     <ClInclude Include="src\cobjevent.h" />
     <ClInclude Include="src\catacombs.h" />
+    <ClInclude Include="src\catacomb_maze.h" />
     <ClInclude Include="src\cerberus_lair.h" />
     <ClInclude Include="src\wisdom_escort.h" />
     <ClInclude Include="src\cobjitem.h" />
@@ -86,6 +87,7 @@
     <ClCompile Include="src\cchatroom.cpp" />
     <ClCompile Include="src\cgameobj.cpp" />
     <ClCompile Include="src\catacombs.cpp" />
+    <ClCompile Include="src\catacomb_maze.cpp" />
     <ClCompile Include="src\cerberus_lair.cpp" />
     <ClCompile Include="src\wisdom_escort.cpp" />
     <ClCompile Include="src\cheatcmd.cpp" />

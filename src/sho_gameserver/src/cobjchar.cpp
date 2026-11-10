@@ -610,8 +610,11 @@ CObjCHAR::Nav_Chase(CObjCHAR* pTarget) {
     q.z1 = pTarget->Nav_WalkZ();
     q.iPrefClass = this->Nav_PrefClass();
     std::vector<tPOINTF> points;
+    // a zone with a router of its own (the Karkia crypts' maze) is asked first
     const Nav::PathResult r =
-        Nav::FindPath(*pZone->NavGrid(), q, pZone->m_NavBudget, pZone->m_NavMeter, points);
+        pZone->m_pNavRouter && pZone->m_pNavRouter->Route(q.x0, q.y0, q.x1, q.y1, points)
+            ? Nav::PathResult::Found
+            : Nav::FindPath(*pZone->NavGrid(), q, pZone->m_NavBudget, pZone->m_NavMeter, points);
     if (Nav::PathResult::Found == r || Nav::PathResult::Partial == r) {
         const DWORD dwLead = (DWORD)Nav::settings().path_lead_ms.load(std::memory_order_relaxed);
         if (this->Nav_Start(new Nav::Agent(std::move(points), true, dwLead, pTarget->Get_INDEX(), true,
@@ -711,8 +714,11 @@ CObjCHAR::Nav_PathTo(float fX, float fY, float fZ, BYTE btRunMODE, int iGoalSnap
     q.iPrefClass = this->Nav_PrefClass();
     q.iGoalSnapCells = iGoalSnap;
     std::vector<tPOINTF> points;
+    // a zone with a router of its own (the Karkia crypts' maze) is asked first
     const Nav::PathResult r =
-        Nav::FindPath(*pZone->NavGrid(), q, pZone->m_NavBudget, pZone->m_NavMeter, points);
+        pZone->m_pNavRouter && pZone->m_pNavRouter->Route(q.x0, q.y0, q.x1, q.y1, points)
+            ? Nav::PathResult::Found
+            : Nav::FindPath(*pZone->NavGrid(), q, pZone->m_NavBudget, pZone->m_NavMeter, points);
     if (Nav::PathResult::Found != r && Nav::PathResult::Partial != r) {
         return false;
     }

@@ -298,8 +298,10 @@ down over 2 s (`setVisibilityRecursive`, still blocking) and deletes it;
 `CObjectMANAGER::Clear` forgets them on a zone change. **The server enforces nothing**
 (the walk grid is baked from map objects, and these walls are added at run time), so
 a client-only wall is as real as every existing one; monsters do not collide with
-them (tree cylinders only). First use: the Cerberus Lair's ice wall; meant for the
-Karkia catacombs maze. Walls through a map's open ground must be proven: the lair's
+them (tree cylinders only). First use: the Cerberus Lair's ice wall. The Karkia
+catacombs' daily maze is the second (groups 10-13, `CCatacombs::BuildMaze`), and
+there the server does know the walls: it blocks the same cells on the walk grid
+(`Nav::Grid::SetBlockMask`). Walls through a map's open ground must be proven: the lair's
 "rock ring" was a walkable ridge (`scripts/cerberus-wall.py`'s flood fill).
 
 ### Zone Timers (2026-11-10)

@@ -349,6 +349,7 @@ Grid::SpansAt(float x, float y, Span* out, int iMax) const {
         out[0].clearance = (unsigned char)cls;
         out[0].component =
             cls ? (t->components.empty() ? t->mainComponent : t->components[cell]) : 0;
+        Masked(x, y, out, 1);
         return 1;
     }
     const Tile::Cell& rec = t->cells[ci];
@@ -362,7 +363,37 @@ Grid::SpansAt(float x, float y, Span* out, int iMax) const {
         out[n].clearance = s.clearance;
         out[n].component = s.component;
     }
+    Masked(x, y, out, n);
     return n;
+}
+
+void
+Grid::SetBlockMask(float x0, float y0, int w, int h, const unsigned char* cells) {
+    if (!cells || w <= 0 || h <= 0) {
+        m_pMask.store(nullptr, std::memory_order_release);
+        return;
+    }
+    std::unique_ptr<BlockMask> m(new BlockMask());
+    m->x0 = x0;
+    m->y0 = y0;
+    m->w = w;
+    m->h = h;
+    m->cells.assign(cells, cells + (size_t)w * h);
+    m_pMask.store(m.get(), std::memory_order_release);
+    m_Masks.push_back(std::move(m));
+}
+
+// A cell under the block mask keeps its floors and loses SPAN_WALK.
+void
+Grid::Masked(float x, float y, Span* out, int n) const {
+    const BlockMask* m = m_pMask.load(std::memory_order_acquire);
+    if (!m)
+        return;
+    const int cx = (int)floorf((x - m->x0) / 100.f), cy = (int)floorf((y - m->y0) / 100.f);
+    if (cx < 0 || cx >= m->w || cy < 0 || cy >= m->h || !m->cells[(size_t)cy * m->w + cx])
+        return;
+    for (int k = 0; k < n; ++k)
+        out[k].flags &= (unsigned char)~SPAN_WALK;
 }
 
 float

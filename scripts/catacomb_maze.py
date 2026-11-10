@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
 """The Karkia catacombs' maze generator: the Python mirror.
 
-Design: doc/karkia-catacombs-implementation-brief.md, section 3. The game server gets
-its own C++ copy in milestone 3; **the two must produce the same edges for the same
-seed**, which the test vectors at the bottom of this docstring check. Until then this
-file is the generator: `scripts/import-catacombs.py` writes one fixed maze per crypt
-into the map files with it (milestone 2).
+Design: doc/karkia-catacombs-implementation-brief.md, section 3. The game server has
+its own C++ copy since milestone 3 (src/sho_gameserver/src/catacomb_maze.cpp), which
+builds each day's maze; **the two must produce the same edges for the same seed**,
+and the server checks itself against `VECTORS` and `MASK_VECTORS` when it starts (the
+numbers are copied into catacomb_maze.cpp: change them in both). This file is what
+answers "which maze was up on day N": it prints any day's maze.
 
     python scripts/catacomb_maze.py                    # today's static mazes (day 0), as text
     python scripts/catacomb_maze.py --maze 90 --day 20767
+    python scripts/catacomb_maze.py --seed 0x1234      # a GM's `/catacomb seed`
     python scripts/catacomb_maze.py --vectors          # the test vectors
+
+The wall mask
+-------------
+`block_mask` is the walk-grid overlay the server stamps for a maze: 1 m cells over the
+150 m maze, row 0 south. A closed edge blocks the cells within 3 m of its line along
+its 15 m -- what the milestone-2 bake blocked around a wall placed in the map file (the
+wall's 1.75 m and a body), measured on that bake (`import-catacombs.py --check-mask`).
 
 The model
 ---------
@@ -58,6 +67,9 @@ EDGES = 2 * H_EDGES
 MASK = (1 << 64) - 1
 HALL_NODE, BOSS_NODE = N * N, N * N + 1
 
+MASK_SIDE = N * 15             # the mask's side: 1 m cells, 15 to a maze cell
+WALL_HALF = 3                  # cells blocked each side of a closed edge's line
+
 # (maze id, day): FNV-1a 64 of the edge bytes. Filled from a run; `--vectors` re-checks.
 VECTORS = {
     (90, 0): 0x9B0FAB2781071B37,
@@ -66,6 +78,13 @@ VECTORS = {
     (91, 0): 0x6B56403122DACE98,
     (91, 1): 0x3F94487D6960C511,
     (91, 20767): 0xADB6550618BB419D,
+}
+
+
+# (maze id, day): FNV-1a 64 of block_mask's 22,500 bytes.
+MASK_VECTORS = {
+    (90, 0): 0xCE1F5470FBD8E490,
+    (91, 0): 0xCE34136D42D814AB,
 }
 
 
@@ -172,6 +191,30 @@ def generate(seed):
     return closed
 
 
+def block_mask(closed):
+    """The maze's walls as blocked 1 m cells: MASK_SIDE rows (row 0 south) of MASK_SIDE
+    bytes, 1 = blocked."""
+    rows = [bytearray(MASK_SIDE) for _ in range(MASK_SIDE)]
+    for e in range(EDGES):
+        if not closed[e]:
+            continue
+        (ai, aj), _b = edge_cells(e)
+        if e < H_EDGES:                 # between east-west neighbours: a north-south wall
+            xs = range((ai + 1) * 15 - WALL_HALF, (ai + 1) * 15 + WALL_HALF)
+            ys = range(aj * 15, aj * 15 + 15)
+        else:
+            xs = range(ai * 15, ai * 15 + 15)
+            ys = range((aj + 1) * 15 - WALL_HALF, (aj + 1) * 15 + WALL_HALF)
+        for y in ys:
+            for x in xs:
+                rows[y][x] = 1
+    return rows
+
+
+def mask_fnv(rows):
+    return fnv1a64(b"".join(bytes(r) for r in rows))
+
+
 def fnv1a64(closed):
     h = 0xCBF29CE484222325
     for b in closed:
@@ -224,6 +267,7 @@ def main():
     ap.add_argument("--maze", type=int, action="append", help="crypt (90 Reminiscence, 91 Sorrow)")
     ap.add_argument("--day", type=int, default=0)
     ap.add_argument("--vectors", action="store_true")
+    ap.add_argument("--seed", type=lambda v: int(v, 0), help="a seed itself, as `/catacomb seed` takes it")
     args = ap.parse_args()
     if args.vectors:
         bad = 0
@@ -234,7 +278,19 @@ def main():
                 state = "" if want is None else ("  ok" if want == h else "  MISMATCH")
                 bad += state.endswith("MISMATCH")
                 print("    (%d, %d): 0x%016X,%s" % (maze_id, day, h, state))
+        for key in sorted(MASK_VECTORS) or [(90, 0), (91, 0)]:
+            h = mask_fnv(block_mask(generate(seed_for(*key))))
+            want = MASK_VECTORS.get(key)
+            state = "" if want is None else ("  ok" if want == h else "  MISMATCH")
+            bad += state.endswith("MISMATCH")
+            print("    mask (%d, %d): 0x%016X,%s" % (key[0], key[1], h, state))
         return 1 if bad else 0
+    if args.seed is not None:
+        closed = generate(args.seed)
+        print("seed 0x%016X: %d walls of %d edges, dead ends %s, hash 0x%016X" % (
+            args.seed & MASK, sum(closed), EDGES, dead_ends(closed), fnv1a64(closed)))
+        print(render(closed))
+        return 0
     for maze_id in args.maze or (90, 91):
         seed = seed_for(maze_id, args.day)
         closed = generate(seed)
