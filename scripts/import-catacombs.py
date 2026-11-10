@@ -50,7 +50,14 @@ What it writes
   (catacomb_maze.py). Milestone 3 takes the interior walls back out of the map files
   and has the server send the day's.
 
-Not here yet: monsters, the boss, drop rows 90/91.
+* **The monsters** (2026-11-10, catacomb_monsters.py -- its docstring is the record):
+  six rows at levels 235-240 (LIST_NPC 2550-2555, copies of Spire Village's Alpha
+  roster), their AI files (the Alpha files with a 30 m leash, 12 m aggro and no
+  summons: FILE_AI 2269-2274), and 32 regen points per crypt, in the middle of every
+  other cell, none near the hall or the boss room. Their drop table is 912, written
+  with the zone rows 90/91 by `add-karkia-drops.py` (run it after this script).
+
+Not here yet: the boss.
 
 Deploy: restart the servers (LIST_ZONE, LIST_NPC, the QSD, the IFOs and the grids are
 read at start), re-bake the client data (scripts/pack.ps1).
@@ -77,6 +84,7 @@ from mapgen import lighting  # noqa: E402  (the vendored texconv's path)
 from mapgen.zone import EventPoint, Tile, ZoneParams, build_zone  # noqa: E402
 import catacomb_art as art  # noqa: E402
 import catacomb_maze as maze  # noqa: E402
+import catacomb_monsters as mon  # noqa: E402
 
 BUILD_DIR = os.path.join(ROOT, "build", "catacombs")
 JROSE = r"C:\Users\Thomas\Desktop\Testclients\Jrose"
@@ -167,6 +175,7 @@ DIALOG = {
 }
 
 TRACKED = [ZONE_STB_REL, ZONE_STL_REL, NPC_STB_REL, NPC_STL_REL, NPC_CHR_REL, EVENT_STB_REL,
+           mon.AI_STB_REL,
            QSD_REL, LTB_REL, CEMETERY_REL + r"\KCemetery.lnav"] + [
     CEMETERY_REL + "\\" + name for name in ("30_35.IFO", "33_32.IFO", "33_33.IFO", "35_35.IFO")]
 
@@ -211,7 +220,7 @@ def keep_originals(ours):
 def sweep_baks(ours):
     """pack.ps1 refuses to bake while a .bak sits under data/."""
     moved = 0
-    for rel in TRACKED + [r"3DDATA\EVENT\x"]:
+    for rel in TRACKED + [r"3DDATA\EVENT\x", r"3DDATA\AI\x"]:
         folder = os.path.dirname(find_ci(ours, rel))
         for f in os.listdir(folder) if os.path.isdir(folder) else []:
             if f.lower().endswith(".bak"):
@@ -299,7 +308,8 @@ def zone_files(ours, z):
                    events=[EventPoint("start", HALL_CM, HALL_CM, 0.0),
                            EventPoint("restore", HALL_CM, HALL_CM, 0.0)],
                    zone_type=1, start_chunk=(CHUNK_X0, CHUNK_Y0),
-                   objects=art.records_by_chunk(art.placements(static_maze(z), MAZE_SW_CM, CELL_CM)))
+                   objects=art.records_by_chunk(art.placements(static_maze(z), MAZE_SW_CM, CELL_CM)),
+                   regen=mon.regen_by_chunk(z["zone"], MAZE_SW_CM, CELL_CM))
     return build_zone(p, ZonTemplate(church, z))
 
 
@@ -612,6 +622,7 @@ def verify(ours):
         check(n.d[row_no] == keeper_row(n, row_no, name), f"LIST_NPC {row_no} {name}")
         check(nstl.has(keeper_strid(row_no)), f"LIST_NPC_S {keeper_strid(row_no)}")
         check(chr_.chars[row_no] == chr_.chars[KEEPER_TEMPLATE], f"LIST_NPC.CHR {row_no}")
+    mon.verify(ours, check)
     blob = open(P(ours, QSD_REL), "rb").read()
     for name, c, r in triggers():
         check(qsd.trigger_bytes(blob, name) == qsd.build_trigger(name, c, r), f"QP401 {name}")
@@ -624,7 +635,7 @@ def verify(ours):
         placed = [m for m in (f.lump(ifo.MOB) or []) if m.obj_id == row_no]
         check(placed == [want], f"{ifo_name} places {row_no} {name} once")
     leftovers = []
-    for rel in TRACKED + [r"3DDATA\EVENT\x"]:
+    for rel in TRACKED + [r"3DDATA\EVENT\x", r"3DDATA\AI\x"]:
         folder = os.path.dirname(find_ci(ours, rel))
         leftovers += [f for f in os.listdir(folder) if f.lower().endswith(".bak")]
     check(not leftovers, "no .bak left beside the files" + (f": {leftovers[:3]}" if leftovers else ""))
@@ -662,6 +673,7 @@ def restore(ours):
     if os.path.isdir(tdir):
         shutil.rmtree(tdir)
         print(f"    removed {TILE_DIR_REL}")
+    mon.remove_files(ours)
     con = find_ci(ours, r"3DDATA\EVENT" + "\\" + KEEPER_CON)
     if os.path.isfile(con):
         os.remove(con)
@@ -693,6 +705,9 @@ def main():
     tiles(args.ours, dry)
     print("the walls, pillars and medallions")
     art_stage(args.ours, dry)
+    print("the monsters")
+    mon.ai_files(args.ours, dry)
+    mon.npc_rows(args.ours, dry)
     print("the zones")
     zones(args.ours, dry)
     print("the keepers")
@@ -709,7 +724,8 @@ def main():
     with open(os.path.join(BUILD_DIR, "layout.json") if not dry else os.devnull, "w") as fh:
         json.dump({"centre_cm": CENTRE_CM, "maze_sw_cm": MAZE_SW_CM, "cell_cm": CELL_CM,
                    "grid": GRID, "hall_cm": HALL_CM}, fh, indent=1)
-    print("dry run, nothing written" if dry else "done -- run --verify")
+    print("dry run, nothing written" if dry else
+          "done -- run add-karkia-drops.py (table 912, zone rows 90/91), then --verify")
     return 0
 
 

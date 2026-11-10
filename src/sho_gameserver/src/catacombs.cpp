@@ -255,6 +255,10 @@ CCatacombs::ProcCrypt(CZoneTHREAD* pZone, int iSlot) {
             pMob->Add_DAMAGE(pMob->Get_HP() + 1);
         for (CObjITEM* pItem: items)
             pItem->m_iRemainTIME = 0;
+        // The spawn points start over: nothing counted alive, no escalation carried
+        // into the next opening. They refill a sealed crypt at their own pace, so
+        // an opening starts with its packs standing.
+        pZone->Reset_REGEN();
         if (!mobs.empty() || !items.empty() || !users.empty())
             LOG_INFO("[catacomb] {} cleared: {} monsters, {} items, {} players inside",
                 CryptName(nZoneNO),

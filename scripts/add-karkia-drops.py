@@ -13,6 +13,7 @@ placed to match:
 
     900/901/902 + zone 87   Cemetery, mobs lv215-228   -> players 215-238
     906         + zone 88   Spire Village, lv228-240   -> the only cap-level farm
+    912         + zones 90, 91   the catacombs, lv235-240 (2026-11-10)
     903/904/905/907/908     bosses, lv235-240
 
 That is also why the lv240 mythical weapons are boss-only: they have to come off
@@ -151,6 +152,10 @@ MAT_SPIRE = [745, 746, 763, 760, 747, 748, 752, 758]
 #   759 "Nagia forges the key ... from ten of them" god's own jailers
 #   762 "Prised from the ash-grey wyrm"             so: the Drakes, not anything else
 MAT_BOSS = [759, 761]
+# The catacombs (2026-11-10): Green and Blue Hearts first -- the Black ones are the
+# crypt's toll and stay a Cemetery drop, so the crypt does not pay its own way in --
+# then the Spire's upper materials.
+MAT_CRYPT = [152, 153, 763, 760, 747, 748, 752, 758]
 MAT_DRAKE = [762, 758]
 
 # The flashback is Karkia *alive*: bees, plants and beasts in a world the goddess
@@ -191,6 +196,7 @@ OFF_SPIRE = OFF_230 + [OFF_240[0]]                        # 906 / zone 88
 OFF_MEMORIES = OFF_230 + [OFF_230[0]]                     # 909
 OFF_QUEEN = OFF_240 + [OFF_240[0]]                        # 910
 OFF_GARDEN = OFF_240 + OFF_235                            # 911
+OFF_CRYPT = OFF_235 + OFF_230[1:] + [OFF_240[0]]             # 912 / zones 90, 91
 OFF_BOSS = OFF_240[:2]                                    # boss common slots: NEO + Evolved Ushumgal
 
 # Jrose weapons by tier (type 8) -- all above id 999, so all wide-encoded
@@ -292,6 +298,13 @@ TABLES = {
     906: ("Alpha roster (10 mobs, lv228-240)",
           field(MAT_SPIRE, USE_FIELD, OFF_SPIRE, *windows(WPN_235, 0, [5, 5]),
                 armour=windows(ARM_OG, 0, [4]))),
+    # The catacombs' six monsters (import-catacombs.py / catacomb_monsters.py). Paid
+    # like 906, the other cap-level table: two weapon windows (1 in 16) -- a toll and
+    # a maze stand in front of every kill. Placeholder until the loot is tailored
+    # (the user, 2026-11-09: "don't overfocus on the loot"); the boss gets its own.
+    912: ("Catacombs (6 mobs, lv235-240)",
+          field(MAT_CRYPT, USE_FIELD, OFF_CRYPT, *windows(WPN_235, 5, [5, 5]),
+                armour=windows(ARM_OG, 6, [4]))),
     # --- the flashback zones, stage 7b --------------------------------------
     909: ("Memories wildlife (lv230-232)",
           field(MAT_MEMORIES, USE_FIELD, OFF_MEMORIES, windows(WPN_235, 10, [5])[0],
@@ -322,7 +335,7 @@ TABLES = {
 
 # Zone-number rows mirror the dominant table for that zone, so the 20% fallback
 # is not a dead roll. Without these every rate above loses a fifth.
-ZONE_MIRROR = {87: 900, 88: 906,
+ZONE_MIRROR = {87: 900, 88: 906, 90: 912, 91: 912,
                # The flashback pair mirror their own zones. The Burned Forest
                # is present-day Karkia sharing the Cemetery's roster, so its
                # fallback is the Cemetery's table rather than one of its own.

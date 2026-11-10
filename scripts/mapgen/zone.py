@@ -76,6 +76,9 @@ class ZoneParams:
     objects: Optional[dict] = None
     # Construction records per chunk slot (IFO lump 3, obj_id into the CNST ZSC), phase 6.
     cnst: Optional[dict] = None
+    # Monster regen points per chunk slot (IFO lump 8, ifo.Regen records): a zone whose
+    # spawns are placed by a script (the Karkia catacombs, 2026-11-10).
+    regen: Optional[dict] = None
     # Invisible collision boxes per chunk slot (IFO lump 11, the client's
     # Add_CollisionBox: LIST_DECO_SPECIAL.ZSC object 2), phase 7c.
     collision: Optional[dict] = None
@@ -128,7 +131,7 @@ def make_til(t):
     return chunk.Til(16, 16, tiles)
 
 
-def make_ifo(stem_x, stem_y, water_rects=(), objects=(), cnst=(), collision=()):
+def make_ifo(stem_x, stem_y, water_rects=(), objects=(), cnst=(), collision=(), regen=()):
     """An empty chunk IFO laid out exactly as the editor's File > New writes it:
     all 13 lumps in enum order (editor/IFO.cs:1202-1500, New.xaml.cs:266-301)."""
     water = np.zeros(256, dtype=ifo.WATER_CELL)
@@ -139,7 +142,7 @@ def make_ifo(stem_x, stem_y, water_rects=(), objects=(), cnst=(), collision=()):
         (ifo.OBJECT, list(objects)), (ifo.MOB, []), (ifo.CNST, list(cnst)), (ifo.SOUND, []),
         (ifo.EFFECT, []), (ifo.MORPH, []),
         (ifo.WATER, ifo.WideWater(16, 16, water)),
-        (ifo.REGEN, []),
+        (ifo.REGEN, list(regen)),
         (ifo.OCEAN, ifo.Ocean(2000.0, list(water_rects))),   # 2000: retail/editor texture repeat
         (ifo.WARP, []), (ifo.COLLISION, list(collision)), (ifo.EVENT_OBJECT, []),
     ]
@@ -206,7 +209,8 @@ def build_zone(p, template_zon):
         files[stem + ext(".ifo")] = ifo.build(make_ifo(x, 64 - y, (p.water or {}).get((x, y), ()),
                                                        (p.objects or {}).get((x, y), ()),
                                                        (p.cnst or {}).get((x, y), ()),
-                                                       (p.collision or {}).get((x, y), ())))
+                                                       (p.collision or {}).get((x, y), ()),
+                                                       (p.regen or {}).get((x, y), ())))
         if p.lightmaps and (x, y) in p.lightmaps:
             # the client's name: <chunk folder>\<x>_<64-y>_PlaneLightingMap.dds
             files["%s/%s_PLANELIGHTINGMAP.DDS" % (stem, stem)] = p.lightmaps[(x, y)]

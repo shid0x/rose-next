@@ -4,10 +4,11 @@
 zones, the keeper, the openings, the daily registration and the GM commands
 (`scripts/import-catacombs.py`, `src/sho_gameserver/src/catacombs.*`, migration 0006).
 The on-screen timer is built too (2026-11-10, `GSV_ZONE_TIMER`, `RoseRmlZoneTimers`),
-validated and committed. **M2 has started** (2026-11-10): the maze itself is built and
-awaiting its first look in game (walls, pillars, outer wall, medallions, one fixed maze
-per crypt; `scripts/catacomb_maze.py`, `scripts/catacomb_art.py`). Monsters, drops and
-the boss follow. "Built" notes below mark where the
+validated and committed. **M2** (2026-11-10): the maze itself is built, validated and
+committed (walls, pillars, outer wall, medallions, one fixed maze per crypt;
+`scripts/catacomb_maze.py`, `scripts/catacomb_art.py`). The monsters and their drops
+are built and awaiting their test (`scripts/catacomb_monsters.py`, drop table 912).
+The boss follows. "Built" notes below mark where the
 build differs from the plan.
 
 **The design, revised 2026-11-09.** The 2026-10-01 design stands: one
@@ -425,6 +426,19 @@ walls (in the IFO) look like M3's (zone objects, no lightmap).
   100, a per-slot count well under `limitCNT`.
 - Importing the Jrose catacomb monster art (31 NPC rows, under 1 MB) is a later identity
   pass, not a prerequisite.
+- **Built (2026-11-10, `scripts/catacomb_monsters.py`, whose docstring is the record):**
+  six rows, `LIST_NPC` 2550-2555, copies of Spire Village's Alpha roster (the Cemetery's
+  undead already tuned for 228-240) rather than of the Cemetery rows: Entombed Victim
+  235, Entombed Ghoul 236, Grave Wolf 236, Tomb Murilo 235, Entombed Officer 238 and the
+  corridor elite, Crypt Fiend 240 (bronze star). Their AI files are the Alpha files
+  edited, not rewritten (`KCAT_*.AIP`): leash 30 m, aggro 12 m, idle wandering within
+  6 m, **no summons** (the Alpha files summon Spire rows, at random around the caller).
+  Every skill they cast stays. 32 regen points per crypt: the middle of every other
+  cell, none in or touching the hall or the boss room; three packs per crypt, picked
+  by a hash of the cell (Reminiscence: victims and spiders; Sorrow: wolves and ghouls);
+  cap 3-4, interval 40 s, range 4 m, tacticPoint 100. About 106 monsters when full.
+  When a crypt is cleared the controller also resets its regen points; they refill a
+  sealed crypt, so an opening starts with its packs standing.
 
 **Boss. Requirement (2026-11-09): there is always a boss in the far room, and it fights
 with attacks to dodge.** A boss that stands there and hits is not good enough. Jrose's
@@ -502,6 +516,11 @@ sleep, with nothing to move out of.
 **Drop tables.**
 - One table for the catacomb monsters, one for the boss, written by a script in the
   style of `add-karkia-drops.py`, with `--simulate` to check rates.
+- **Built for the monsters (2026-11-10):** table **912** in `add-karkia-drops.py`
+  (`MAT_CRYPT`, `OFF_CRYPT`, two lv235 weapon windows and an OG armour window, paid
+  like the Spire's 906), mirrored into rows 90 and 91. Green and Blue Hearts drop;
+  the Black ones, the toll, stay a Cemetery drop. A placeholder until the loot is
+  tailored. The boss table is not built yet.
 - **Fill rows 90 and 91 too**: table ids and zone ids are one namespace, and with
   `col 20` at 80, about 20% of every roll goes to the zone's row. Left empty, a fifth of
   all rolls drop nothing.
