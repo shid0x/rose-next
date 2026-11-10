@@ -57,7 +57,11 @@ What it writes
   other cell, none near the hall or the boss room. Their drop table is 912, written
   with the zone rows 90/91 by `add-karkia-drops.py` (run it after this script).
 
-Not here yet: the boss.
+* **The boss** (2026-11-10, catacomb_boss.py -- its docstring is the record): the
+  Crypt Necromancer, LIST_NPC 2556, with its two attacks to dodge (LIST_SKILL 7205
+  Grave Burst, 7206 Soul Lances), three clips cut from the Necromancer's own and a
+  small AI file (FILE_AI 2275). No regen point: the controller spawns it, runs its
+  attacks and its phases. Its drop table is 913 (`add-karkia-drops.py`).
 
 Deploy: restart the servers (LIST_ZONE, LIST_NPC, the QSD, the IFOs and the grids are
 read at start), re-bake the client data (scripts/pack.ps1).
@@ -85,6 +89,7 @@ from mapgen.zone import EventPoint, Tile, ZoneParams, build_zone  # noqa: E402
 import catacomb_art as art  # noqa: E402
 import catacomb_maze as maze  # noqa: E402
 import catacomb_monsters as mon  # noqa: E402
+import catacomb_boss as boss  # noqa: E402
 
 BUILD_DIR = os.path.join(ROOT, "build", "catacombs")
 JROSE = r"C:\Users\Thomas\Desktop\Testclients\Jrose"
@@ -175,7 +180,7 @@ DIALOG = {
 }
 
 TRACKED = [ZONE_STB_REL, ZONE_STL_REL, NPC_STB_REL, NPC_STL_REL, NPC_CHR_REL, EVENT_STB_REL,
-           mon.AI_STB_REL,
+           mon.AI_STB_REL, boss.SKILL_STB_REL, boss.SKILL_STL_REL,
            QSD_REL, LTB_REL, CEMETERY_REL + r"\KCemetery.lnav"] + [
     CEMETERY_REL + "\\" + name for name in ("30_35.IFO", "33_32.IFO", "33_33.IFO", "35_35.IFO")]
 
@@ -623,6 +628,7 @@ def verify(ours):
         check(nstl.has(keeper_strid(row_no)), f"LIST_NPC_S {keeper_strid(row_no)}")
         check(chr_.chars[row_no] == chr_.chars[KEEPER_TEMPLATE], f"LIST_NPC.CHR {row_no}")
     mon.verify(ours, check)
+    boss.verify(ours, check)
     blob = open(P(ours, QSD_REL), "rb").read()
     for name, c, r in triggers():
         check(qsd.trigger_bytes(blob, name) == qsd.build_trigger(name, c, r), f"QP401 {name}")
@@ -674,6 +680,7 @@ def restore(ours):
         shutil.rmtree(tdir)
         print(f"    removed {TILE_DIR_REL}")
     mon.remove_files(ours)
+    boss.remove_files(ours)
     con = find_ci(ours, r"3DDATA\EVENT" + "\\" + KEEPER_CON)
     if os.path.isfile(con):
         os.remove(con)
@@ -708,6 +715,8 @@ def main():
     print("the monsters")
     mon.ai_files(args.ours, dry)
     mon.npc_rows(args.ours, dry)
+    print("the boss")
+    boss.apply(args.ours, dry)
     print("the zones")
     zones(args.ours, dry)
     print("the keepers")
@@ -725,7 +734,7 @@ def main():
         json.dump({"centre_cm": CENTRE_CM, "maze_sw_cm": MAZE_SW_CM, "cell_cm": CELL_CM,
                    "grid": GRID, "hall_cm": HALL_CM}, fh, indent=1)
     print("dry run, nothing written" if dry else
-          "done -- run add-karkia-drops.py (table 912, zone rows 90/91), then --verify")
+          "done -- run add-karkia-drops.py (tables 912 and 913, zone rows 90/91), then --verify")
     return 0
 
 

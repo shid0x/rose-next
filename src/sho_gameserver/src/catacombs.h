@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 
+class CObjCHAR;
 class CZoneTHREAD;
 class classUSER;
 
@@ -26,6 +27,14 @@ class classUSER;
 /// by the SQL thread, read at login) and in m_Records while the server runs. Anyone
 /// in a crypt zone whose record is not the current opening's is sent out, GMs
 /// included.
+///
+/// The boss (scripts/catacomb_boss.py). The crypt of the day has one in its far room,
+/// and the controller owns it, not a regen point: it raises it when an opening starts
+/// and 15 minutes after each kill (a countdown on screen, zone timer 2), orders its
+/// two attacks on a clock -- the pace must not depend on how many players hit it --
+/// calls the dead to it at two HP thresholds, and replaces it with a fresh one when
+/// the room has stood empty for a minute (monsters do not heal). Its AI file only
+/// finds a target and answers a hit.
 ///
 /// Threads. ProcZone runs in every zone thread and acts in three:
 ///   * each crypt zone's thread sweeps its own players and, once per break, kills
@@ -61,6 +70,7 @@ public:
     std::string GmDaily(); // jump one day ahead: the other crypt, every pass spent
     std::string GmPass(const std::string& name); // clear a character's record
     std::string GmClock(); // drop the skew: back to the real clock
+    std::string GmBoss(); // a fresh boss in today's crypt, now
 
 private:
     enum class State { Open, Warning, Break };
@@ -81,10 +91,35 @@ private:
         int entrance; // the keeper used last: where the crypt casts the player out (memory only)
     };
 
+    /// One crypt's boss, as its zone thread left it on the last tick.
+    struct Boss {
+        long long llOpening = -1; // the opening this state belongs to
+        bool bUp = false; // raised, and not seen dead since
+        unsigned long dwRaisedAt = 0; // it joins the zone's lists a pass later
+        bool bReturning = false; // killed: it rises again at dwReturnAt
+        unsigned long dwReturnAt = 0;
+        int iReturnStep = 0; // return announcements made
+        unsigned long dwRetryAt = 0; // a spawn that failed is tried again
+        int iWaves = 0; // add waves this boss has called
+        bool bEngaged = false;
+        unsigned long dwNextCast = 0;
+        int iRotation = 0;
+        bool bPair = false; // the second attack of a pair is due
+        unsigned long dwEmptySince = 0; // 0: someone is in the room
+    };
+
     CCatacombs();
 
     Now Clock() const; // under m_Mutex
     void ProcCrypt(CZoneTHREAD* pZone, int iSlot);
+    void ProcBoss(CZoneTHREAD* pZone,
+        int iSlot,
+        unsigned long now,
+        const Now& n,
+        bool bOpenHere,
+        long long llOpening,
+        const std::vector<classUSER*>& users,
+        const std::vector<CObjCHAR*>& mobs);
     void ProcCemetery(CZoneTHREAD* pZone);
     void Evict(classUSER* pUSER, int iEntrance);
     void Save(unsigned long dbid, const Record& r);
@@ -100,6 +135,8 @@ private:
     unsigned long m_dwCryptSweep[2];
     long long m_llCleaned[2]; // the opening (day * 12 + opening) this crypt was last cleared in
     long long m_llWarned[2]; // the last (opening key * 4 + warning step) announced inside
+    Boss m_Boss[2];
+    bool m_bReqBoss[2]; // GM: a fresh boss at the next tick
     unsigned long m_dwCemeteryTick;
     long long m_llAnnounced; // the last (opening key * 2 + sealed) announced at the crypt mouth
     unsigned long m_EnterHash;

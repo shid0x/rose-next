@@ -50,6 +50,19 @@ dodge), see [making-monsters.md](making-monsters.md).
   `Get_CharNO()` and its zone.
 - **Send it at a target**: `SetCMD_RUNnATTACK(targetIndex)`, the summon attack path.
   From then on its own AI decides.
+- **Order a cast from code** (the Crypt Necromancer, `CCatacombs::ProcBoss`, 2026-11-10):
+  `((CObjMOB*)p)->SetCMD_Skill2OBJ(targetIndex, skill, motion)`, what AI action 24
+  calls. A controller's clock keeps a boss's pace the same for one player and for
+  five, which an "every N hits taken" AI rule cannot. Rules:
+  - order only on a target inside the skill's range (col 6; blank = the monster's
+    swing reach), or it walks first and the clients abandon the late cast;
+  - one at a time: skip while `Get_COMMAND()` is `CMD_SKILL2*` or `Get_ActiveSKILL()`
+    is set. That is also how to chain two: order the second on the first tick the
+    monster is free again;
+  - a stunned or silenced monster drops the order and still returns true: check
+    `m_IngSTATUS.IsIgnoreSTATUS()` first;
+  - the order makes that character its target; action mode 2 (col 29) puts it back
+    on the one it was fighting.
 - **Remove it**:
   - with no death and no drop: `pZone->Sub_DIRECT(p); delete p;` (the GM "npc DEL"
     pattern);

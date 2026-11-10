@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <ctime>
 
 #include "CObjITEM.h"
@@ -59,6 +60,46 @@ constexpr BYTE TIMER_SEAL = 1;
 const char* TIMER_SEAL_LABEL = "The crypt seals in";
 constexpr int TIMER_DRIFT_S = 2; // re-sent only when the end moved (a GM shifted the clock)
 
+// ---- the boss (scripts/catacomb_boss.py: keep the two in step)
+constexpr int BOSS_NPC = 2556; // Crypt Necromancer
+const char* BOSS_SPEAKER = "Crypt Necromancer";
+constexpr short SKILL_BURST = 7205, MOTION_BURST = 6; // Grave Burst: a 10 m circle round it
+constexpr short SKILL_LANCES = 7206, MOTION_LANCES = 8; // Soul Lances: five lines at one player
+// A cast ordered on a target out of the skill's range makes the boss walk first, and
+// the clients abandon a cast that has not started within 3 s: order only in reach.
+constexpr float BURST_REACH = 750.f; // cm; the row's range is 800, the circle 1000
+constexpr float LANCES_REACH = 1800.f; // the row's range is 2000, a line 2200
+// The boss room: cells 6..9 of the 10 x 10 maze on both axes (catacomb_maze.BOSS), 15 m
+// cells from (504500, 504500) (import-catacombs.py MAZE_SW_CM, CELL_CM). World cm.
+constexpr float ROOM_MIN = 513500.f, ROOM_MAX = 519500.f, ROOM_MID = 516500.f;
+constexpr unsigned long BOSS_RETURN_MS = 15 * 60 * 1000; // after a kill (the user, 2026-11-09)
+constexpr int BOSS_RETURN_STEPS_S[] = {5 * 60, 60}; // announced inside
+constexpr unsigned long BOSS_RESET_MS = 60 * 1000; // the room empty this long: a fresh boss
+constexpr unsigned long BOSS_GRACE_MS = 3 * 1000; // a new one is not in the zone's lists at once
+constexpr unsigned long BOSS_RETRY_MS = 10 * 1000;
+constexpr float BOSS_HOME = 500.f; // cm from the middle: it has not left its spot
+// The attack clock. One attack every CAST_GAP_MS[waves called]; before the first wave
+// they alternate, after it they come as a pair: the lances, and the burst as soon as
+// the lances have landed.
+constexpr unsigned long FIRST_CAST_MS = 5 * 1000; // into a fight
+constexpr unsigned long CAST_GAP_MS[] = {9 * 1000, 11 * 1000, 9 * 1000};
+constexpr unsigned long CAST_RETRY_MS = 1000; // nobody in reach
+// The dead it calls, at these shares of its HP: {row, count}, crypt by crypt
+// (scripts/catacomb_monsters.py: 2550 Victim, 2551 Ghoul, 2552 Wolf, 2554 Officer).
+constexpr int WAVE_PCT[] = {60, 30};
+constexpr int WAVE_COUNT = (int)(sizeof(WAVE_PCT) / sizeof(int));
+struct Add {
+    int npc;
+    int count;
+};
+constexpr Add WAVES[2][2][3] = {
+    {{{2551, 2}, {2550, 1}, {0, 0}}, {{2551, 2}, {2550, 1}, {2554, 1}}}, // Reminiscence
+    {{{2552, 2}, {2551, 1}, {0, 0}}, {{2552, 2}, {2551, 1}, {2554, 1}}}, // Sorrow
+};
+constexpr int ADD_SPREAD = 700; // cm round the boss
+constexpr BYTE TIMER_BOSS = 2;
+const char* TIMER_BOSS_LABEL = "The Necromancer returns in";
+
 constexpr short KEEPER_SEALED = 0;
 constexpr short KEEPER_OPEN = 1; // the trigger's COND_011 and the dialog's --open-when
 
@@ -70,6 +111,21 @@ constexpr float TALK_RANGE = 2000.f; // cm from the keeper: further is not a dia
 bool
 Reached(unsigned long now, unsigned long when) {
     return (long)(now - when) >= 0;
+}
+
+bool
+InBossRoom(const tPOINTF& pos) {
+    return pos.x >= ROOM_MIN && pos.x <= ROOM_MAX && pos.y >= ROOM_MIN && pos.y <= ROOM_MAX;
+}
+
+float
+Distance(const tPOINTF& a, const tPOINTF& b) {
+    return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y));
+}
+
+void
+Say(short nZoneNO, const char* szSpeaker, const std::string& msg) {
+    g_pZoneLIST->Send_gsv_ANNOUNCE_CHAT(nZoneNO, (char*)msg.c_str(), (char*)szSpeaker);
 }
 
 void
@@ -127,6 +183,7 @@ CCatacombs::CCatacombs():
     m_dwCryptSweep{0, 0},
     m_llCleaned{-1, -1},
     m_llWarned{-1, -1},
+    m_bReqBoss{false, false},
     m_dwCemeteryTick(0),
     m_llAnnounced(-1),
     m_EnterHash(::StrToHashKey(ENTER_TRIGGER)) {}
@@ -267,6 +324,8 @@ CCatacombs::ProcCrypt(CZoneTHREAD* pZone, int iSlot) {
                 users.size());
     }
 
+    this->ProcBoss(pZone, iSlot, now, n, bOpenHere, llOpening, users, mobs);
+
     // The seal's countdown on screen: set once per opening, and again when the end
     // moves. The clients count down by themselves; an arrival gets what is left.
     {
@@ -318,6 +377,240 @@ CCatacombs::ProcCrypt(CZoneTHREAD* pZone, int iSlot) {
             bOpenHere ? "You are not on the list for this opening. Speak to me at the crypt mouth."
                       : "The crypt is sealed. You are cast out to the crypt mouth.");
         this->Evict(pUSER, iEntrance);
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+/// The boss of an open crypt, from its own zone thread (the caller holds m_Mutex and has
+/// collected the living monsters and the players): raise it, notice its death, bring it
+/// back, run its fight.
+void
+CCatacombs::ProcBoss(CZoneTHREAD* pZone,
+    int iSlot,
+    unsigned long now,
+    const Now& n,
+    bool bOpenHere,
+    long long llOpening,
+    const std::vector<classUSER*>& users,
+    const std::vector<CObjCHAR*>& mobs) {
+    Boss& b = m_Boss[iSlot];
+    const short nZoneNO = CRYPT_ZONES[iSlot];
+
+    if (!bOpenHere) {
+        // sealed: the clearing took the boss with everything else
+        b = Boss();
+        m_bReqBoss[iSlot] = false;
+        if (pZone->ZoneTimerLeft(TIMER_BOSS) >= 0)
+            pZone->SetZoneTimer(TIMER_BOSS, "", 0);
+        return;
+    }
+
+    CObjCHAR* pBoss = nullptr;
+    for (CObjCHAR* pMob: mobs) {
+        if (pMob->Get_CharNO() == BOSS_NPC) {
+            pBoss = pMob;
+            break;
+        }
+    }
+
+    // A fresh boss in the middle of its room; every counter starts over.
+    auto raise = [&]() {
+        b = Boss();
+        b.llOpening = llOpening;
+        if (pZone->ZoneTimerLeft(TIMER_BOSS) >= 0)
+            pZone->SetZoneTimer(TIMER_BOSS, "", 0);
+        if (pZone->RegenCharacter(ROOM_MID, ROOM_MID, 1, BOSS_NPC, 1, TEAMNO_MOB, true)) {
+            b.bUp = true;
+            b.dwRaisedAt = now;
+        } else {
+            b.dwRetryAt = now + BOSS_RETRY_MS;
+            LOG_WARN("[catacomb] {}: the boss (npc {}) did not spawn", CryptName(nZoneNO), BOSS_NPC);
+        }
+    };
+    // The boss out with no death and no drop, and whatever stands in its room with it.
+    auto remove = [&]() {
+        for (CObjCHAR* pMob: mobs) {
+            if (pMob != pBoss && InBossRoom(pMob->m_PosCUR))
+                pMob->Add_DAMAGE(pMob->Get_HP() + 1);
+        }
+        if (pBoss) {
+            pZone->Sub_DIRECT(pBoss);
+            delete pBoss;
+            pBoss = nullptr;
+        }
+    };
+
+    if (m_bReqBoss[iSlot]) {
+        m_bReqBoss[iSlot] = false;
+        remove();
+        raise();
+        LOG_INFO("[catacomb] {}: a fresh boss, by GM", CryptName(nZoneNO));
+        return;
+    }
+    if (b.llOpening != llOpening) {
+        // An opening starts (or the server did, in the middle of one): the boss is up.
+        if (pBoss) {
+            b = Boss();
+            b.llOpening = llOpening;
+            b.bUp = true;
+            b.dwRaisedAt = now;
+        } else {
+            raise();
+        }
+        return;
+    }
+
+    if (!pBoss) {
+        if (b.bUp) {
+            if (!Reached(now, b.dwRaisedAt + BOSS_GRACE_MS))
+                return;
+            // Killed. It rises again in 15 minutes if the opening lasts that long.
+            b.bUp = false;
+            if ((long long)n.toSeal * 1000 > (long long)BOSS_RETURN_MS) {
+                b.bReturning = true;
+                b.dwReturnAt = now + BOSS_RETURN_MS;
+                b.iReturnStep = 0;
+                pZone->SetZoneTimer(TIMER_BOSS, TIMER_BOSS_LABEL, (int)(BOSS_RETURN_MS / 1000));
+                Say(nZoneNO, SPEAKER, "The Crypt Necromancer has fallen. It will rise again in 15 minutes.");
+            } else {
+                Say(nZoneNO, SPEAKER, "The Crypt Necromancer has fallen. It will not rise again before the crypt seals.");
+            }
+            LOG_INFO("[catacomb] {}: the boss was killed{}", CryptName(nZoneNO), b.bReturning ? "" : " (no return)");
+        } else if (b.bReturning) {
+            const int iLeft = (int)((long)(b.dwReturnAt - now) / 1000);
+            const int nSteps = (int)(sizeof(BOSS_RETURN_STEPS_S) / sizeof(int));
+            if (Reached(now, b.dwReturnAt)) {
+                raise();
+                Say(nZoneNO, SPEAKER, "The Crypt Necromancer has risen again in the far room.");
+                LOG_INFO("[catacomb] {}: the boss returned", CryptName(nZoneNO));
+            } else if (b.iReturnStep < nSteps && iLeft <= BOSS_RETURN_STEPS_S[b.iReturnStep]) {
+                const int iStep = BOSS_RETURN_STEPS_S[b.iReturnStep++];
+                Say(nZoneNO,
+                    SPEAKER,
+                    fmt::format("Something stirs in the far room. The Necromancer rises in {}.",
+                        iStep >= 120 ? fmt::format("{} minutes", iStep / 60) : std::string("one minute")));
+            }
+        } else if (b.dwRetryAt && Reached(now, b.dwRetryAt)) {
+            raise();
+        }
+        return;
+    }
+    if (!b.bUp) {
+        // one that did not come from here (a GM's /mon): it is the boss now
+        const bool bWas = b.bReturning;
+        b = Boss();
+        b.llOpening = llOpening;
+        b.bUp = true;
+        b.dwRaisedAt = now;
+        if (bWas && pZone->ZoneTimerLeft(TIMER_BOSS) >= 0)
+            pZone->SetZoneTimer(TIMER_BOSS, "", 0);
+    }
+
+    // ---- the fight
+    std::vector<classUSER*> inRoom;
+    for (classUSER* pUSER: users) {
+        if (pUSER->Get_HP() > 0 && InBossRoom(pUSER->m_PosCUR))
+            inRoom.push_back(pUSER);
+    }
+    const int nMaxHP = pBoss->Get_MaxHP();
+    const bool bHurt = pBoss->Get_HP() < nMaxHP;
+    if (inRoom.empty()) {
+        // Nobody left in the room (a wipe, a retreat). After a minute a boss that was
+        // hurt, has called its dead or has wandered off is replaced by a fresh one.
+        tPOINTF mid;
+        mid.x = ROOM_MID;
+        mid.y = ROOM_MID;
+        if (!b.dwEmptySince) {
+            b.dwEmptySince = now ? now : 1;
+        } else if (Reached(now, b.dwEmptySince + BOSS_RESET_MS)
+                   && (bHurt || b.iWaves > 0 || Distance(pBoss->m_PosCUR, mid) > BOSS_HOME)) {
+            remove();
+            raise();
+            LOG_INFO("[catacomb] {}: the boss room stood empty, a fresh boss", CryptName(nZoneNO));
+            return;
+        }
+        b.bEngaged = false;
+        b.bPair = false;
+        return;
+    }
+    b.dwEmptySince = 0;
+
+    // The dead it calls, once per threshold.
+    if (b.iWaves < WAVE_COUNT && nMaxHP > 0
+        && (long long)pBoss->Get_HP() * 100 <= (long long)nMaxHP * WAVE_PCT[b.iWaves]) {
+        for (const Add& a: WAVES[iSlot][b.iWaves]) {
+            if (a.npc)
+                pZone->RegenCharacter(
+                    pBoss->m_PosCUR.x, pBoss->m_PosCUR.y, ADD_SPREAD, a.npc, a.count, TEAMNO_MOB, true);
+        }
+        b.iWaves++;
+        Say(nZoneNO, BOSS_SPEAKER, b.iWaves == 1 ? "Rise. There are guests in my crypt." : "Rise, all of you! Bury them here!");
+        LOG_INFO("[catacomb] {}: the boss called wave {}", CryptName(nZoneNO), b.iWaves);
+    }
+
+    // Its attacks, on the clock.
+    if (!bHurt && pBoss->Get_TargetIDX() == 0) {
+        b.bEngaged = false;
+        b.bPair = false;
+        return;
+    }
+    if (!b.bEngaged) {
+        b.bEngaged = true;
+        b.bPair = false;
+        b.dwNextCast = now + FIRST_CAST_MS;
+    }
+    const WORD wCmd = pBoss->Get_COMMAND();
+    if (wCmd == CMD_SKILL2SELF || wCmd == CMD_SKILL2OBJ || wCmd == CMD_SKILL2POS || pBoss->Get_ActiveSKILL())
+        return; // one at a time: the pair's second waits for the first to end
+    if (pBoss->m_IngSTATUS.IsIgnoreSTATUS())
+        return; // stunned: the order would be dropped
+    if (!b.bPair && !Reached(now, b.dwNextCast))
+        return;
+
+    CObjMOB* pCaster = (CObjMOB*)pBoss;
+    auto burst = [&]() {
+        classUSER* pNear = nullptr;
+        float fNear = BURST_REACH;
+        for (classUSER* pUSER: inRoom) {
+            const float fDist = Distance(pUSER->m_PosCUR, pBoss->m_PosCUR);
+            if (fDist <= fNear) {
+                fNear = fDist;
+                pNear = pUSER;
+            }
+        }
+        return pNear && pCaster->SetCMD_Skill2OBJ(pNear->Get_INDEX(), SKILL_BURST, MOTION_BURST);
+    };
+    auto lances = [&]() {
+        // at anyone in reach, not only at whoever it is hitting: everybody watches the floor
+        std::vector<classUSER*> reach;
+        for (classUSER* pUSER: inRoom) {
+            if (Distance(pUSER->m_PosCUR, pBoss->m_PosCUR) <= LANCES_REACH)
+                reach.push_back(pUSER);
+        }
+        return !reach.empty()
+               && pCaster->SetCMD_Skill2OBJ(reach[rand() % reach.size()]->Get_INDEX(), SKILL_LANCES, MOTION_LANCES);
+    };
+
+    if (b.bPair) {
+        b.bPair = false;
+        burst();
+        return;
+    }
+    bool bCast;
+    if (b.iWaves == 0) {
+        bCast = (b.iRotation % 2 == 0) ? (lances() || burst()) : (burst() || lances());
+    } else {
+        bCast = lances();
+        if (bCast)
+            b.bPair = true;
+        else
+            bCast = burst();
+    }
+    if (bCast) {
+        b.iRotation++;
+        b.dwNextCast = now + CAST_GAP_MS[b.iWaves];
+    } else {
+        b.dwNextCast = now + CAST_RETRY_MS;
     }
 }
 
@@ -462,7 +755,24 @@ CCatacombs::GmStatus() {
     s += fmt::format(" | {} registered for this opening, {} paid today", nRegistered, nToday);
     if (m_llSkew)
         s += fmt::format(" | clock shifted by {} (`catacomb clock` to undo)", Span((int)m_llSkew));
+    if (n.state != State::Break) {
+        const Boss& b = m_Boss[n.crypt == CRYPT_ZONES[0] ? 0 : 1];
+        const unsigned long now = ::GetTickCount();
+        s += b.bUp ? fmt::format(" | boss up, {} wave(s) called", b.iWaves)
+                   : b.bReturning ? fmt::format(" | boss returns in {}", Span((int)((long)(b.dwReturnAt - now) / 1000)))
+                                  : std::string(" | boss down for this opening");
+    }
     return s;
+}
+
+std::string
+CCatacombs::GmBoss() {
+    std::lock_guard<std::mutex> lock(m_Mutex);
+    const Now n = this->Clock();
+    if (n.state == State::Break)
+        return "The crypt is sealed: no boss until it opens.";
+    m_bReqBoss[n.crypt == CRYPT_ZONES[0] ? 0 : 1] = true;
+    return fmt::format("A fresh boss rises in {} within a second.", CryptName(n.crypt));
 }
 
 std::string

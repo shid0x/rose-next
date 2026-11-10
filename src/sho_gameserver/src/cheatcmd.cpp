@@ -290,6 +290,8 @@ catacomb(classUSER* user, CommandInfo info, const std::vector<std::string>& args
         user->send_server_whisper(crypt.GmDaily());
     } else if (action == "clock") {
         user->send_server_whisper(crypt.GmClock());
+    } else if (action == "boss") {
+        user->send_server_whisper(crypt.GmBoss());
     } else if (action == "pass") {
         // no name: the GM's own record
         user->send_server_whisper(crypt.GmPass(args.size() >= 3 ? args[2] : std::string(user->Get_NAME())));

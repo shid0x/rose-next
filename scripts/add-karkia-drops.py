@@ -14,6 +14,7 @@ placed to match:
     900/901/902 + zone 87   Cemetery, mobs lv215-228   -> players 215-238
     906         + zone 88   Spire Village, lv228-240   -> the only cap-level farm
     912         + zones 90, 91   the catacombs, lv235-240 (2026-11-10)
+    913                     the catacombs' boss, lv240
     903/904/905/907/908     bosses, lv235-240
 
 That is also why the lv240 mythical weapons are boss-only: they have to come off
@@ -209,6 +210,10 @@ WPN_235 = [908, 915, 926, 939, 932, 947, 959, 966, 974, 982, 990, 999, 950]
 WPN_240 = [1383, 1386, 1389, 1392, 1395, 1398, 1401, 1404, 1407, 1410, 1413,
            1416, 1419]
 
+# The black blood-stained Jrose set (lv230, red names): the catacomb boss's loot, its
+# only source (the user, 2026-11-09: "red level weapon, it can be tailored later").
+WPN_RED = list(range(1456, 1469))
+
 # Jrose armour sets (armour-endgame-sets.py, 2026-10-20), drop-only by the user's
 # call: the OG cinematic outfits (lv230, rows 266-269) off the lv228-240 field tables,
 # the Norse set (lv240, rows 270-273) off bosses only "for now". Ordered body, cap,
@@ -305,6 +310,13 @@ TABLES = {
     912: ("Catacombs (6 mobs, lv235-240)",
           field(MAT_CRYPT, USE_FIELD, OFF_CRYPT, *windows(WPN_235, 5, [5, 5]),
                 armour=windows(ARM_OG, 6, [4]))),
+    # The Crypt Necromancer (catacomb_boss.py), killed at most about seven times per
+    # opening, and a player has one opening a day. Eight red weapons in the common
+    # slots (~36% a kill), the other five behind a redirect, a Norse window on top.
+    # A placeholder like 912.
+    913: ("BOSS Crypt Necromancer (lv240, the catacombs)",
+          boss(WPN_RED[:8], OFF_BOSS, [758, 752],
+               armour=[[(T_WEAPON, w) for w in WPN_RED[8:]]] + windows(ARM_NORSE, 2, [5]))),
     # --- the flashback zones, stage 7b --------------------------------------
     909: ("Memories wildlife (lv230-232)",
           field(MAT_MEMORIES, USE_FIELD, OFF_MEMORIES, windows(WPN_235, 10, [5])[0],

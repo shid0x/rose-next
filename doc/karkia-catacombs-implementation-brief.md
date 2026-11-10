@@ -7,8 +7,9 @@ The on-screen timer is built too (2026-11-10, `GSV_ZONE_TIMER`, `RoseRmlZoneTime
 validated and committed. **M2** (2026-11-10): the maze itself is built, validated and
 committed (walls, pillars, outer wall, medallions, one fixed maze per crypt;
 `scripts/catacomb_maze.py`, `scripts/catacomb_art.py`). The monsters and their drops
-are built and awaiting their test (`scripts/catacomb_monsters.py`, drop table 912).
-The boss follows. "Built" notes below mark where the
+are validated and committed (`scripts/catacomb_monsters.py`, drop table 912). The
+boss, the Crypt Necromancer, is built and awaiting its test
+(`scripts/catacomb_boss.py`, `CCatacombs::ProcBoss`, drop table 913). "Built" notes below mark where the
 build differs from the plan.
 
 **The design, revised 2026-11-09.** The 2026-10-01 design stands: one
@@ -483,6 +484,29 @@ sleep, with nothing to move out of.
   - a dodge window of about 2 s, and hits worth 30-45% of a typical player's HP, sized
     with `combat-sim.py`;
   - a phase change at an HP threshold.
+- **Built (2026-11-10): the Crypt Necromancer**, `LIST_NPC` 2556, level 240, 720,000 HP
+  (about 2 minutes for three average players, 6 and more for one; sizing table in
+  `catacomb_boss.py`). What differs from the plan above:
+  - **The controller runs the fight, not the AI file.** `CCatacombs::ProcBoss` orders
+    the attacks on a clock, so the pace is the same for one player and for five (an
+    "every N hits taken" AI rule casts five times as often against five). The AI
+    file only finds a target, answers a hit and leashes at 45 m.
+  - **Two attacks**, both drawn on the ground for a 2.1 s wind-up, neither with a
+    status: **Grave Burst** (7205, a 10 m circle round it) and **Soul Lances** (7206,
+    a fan of five 22 m lines, 24 degrees apart, aimed at a random player in reach).
+    A hit takes 30-39% of a light build's HP, 14-19% of a tank's.
+  - **Phases:** above 60% HP one attack every 9 s, alternating. At 60% and again at
+    30% it calls the crypt's dead to it (3, then 4 of the crypt's own monsters), and
+    from the first call the attacks come as a pair: the lances, then the burst as
+    soon as the lances have landed (every 11 s, then every 9 s).
+  - Soul Siphon is left out (nothing to dodge). A monster has two cast/release clip
+    pairs (`MAX_MOB_ANI` 11), so a third attack must share a pair's animation.
+  - Return: 15 minutes after a kill, zone timer 2 "The Necromancer returns in",
+    announced at 5 and 1 minutes; no return when the crypt seals first. A boss room
+    empty for a minute gets a fresh boss (and loses the adds). `/catacomb boss`
+    raises a fresh one.
+  - The daily boss pool does not exist yet: both crypts have the Necromancer.
+  - Loot: table 913, the red weapons 1456-1468 (~36% a kill) and a Norse window.
 - **Bodies, cheapest first:**
   1. **Necromancer** (2414, from tsuki): imported and validated, but spawned nowhere,
      and it fits the crypt. It has Soul Siphon and one skill clip (a three-pulse
