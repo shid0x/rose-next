@@ -5,6 +5,7 @@
 #include "GS_ThreadZONE.h"
 #include "GS_USER.h"
 #include "ZoneLIST.h"
+#include "catacombs.h"
 
 #include "network.h"
 #include "nav/nav_agent.h"
@@ -133,7 +134,11 @@ CObjCHAR::AI_FindFirstOBJ(int iDistance) {
     // nobody through a deck, a cliff or a cave floor (nav/nav_settings.h).
     if (this->GetZONE()) {
         const bool bBand = this->IsA(OBJ_MOB) && Nav::settings().mob_layer_aggro.load(std::memory_order_relaxed);
-        return this->GetZONE()->FindFirstCHAR(this, iDistance, this, bBand ? this->Nav_Z() : Nav::NO_Z);
+        // In a crypt's maze it also sees nobody through a wall (2026-11-10: packs pulled from
+        // the next corridor read as monsters coming out of the walls).
+        const bool bSight = this->IsA(OBJ_MOB) && CCatacombs::IsCrypt(this->GetZONE()->Get_ZoneNO());
+        return this->GetZONE()->FindFirstCHAR(
+            this, iDistance, this, bBand ? this->Nav_Z() : Nav::NO_Z, bSight ? this : nullptr);
     }
 
     return NULL;

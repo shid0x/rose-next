@@ -87,6 +87,7 @@ private:
     CGameOBJ* m_pObjFINDER;
     DWORD m_dwFindGEN = 0; // +1 per FindFirstCHAR: tells a scan it was taken over
     float m_fFindBandZ = Nav::NO_Z; // a monster scan's height, for the vertical rule
+    CObjCHAR* m_pFindSight = nullptr; // a monster scan that walls block: the monster
     bool FindInBand(CObjCHAR* pChar);
     float NavPickSpawn(CRegenPOINT* pRegen, float& fX, float& fY);
 
@@ -237,10 +238,12 @@ public:
 
     /// fBandZ: the scan's height, to apply the vertical rule (monster aggro and help calls,
     /// nav/nav_settings.h); NO_Z scans in 2D.
+    /// pSight: the scanning monster in a zone whose walls block its sight (the Karkia
+    /// crypts): it finds only characters it could walk straight to (FindInBand).
     CObjCHAR* FindFirstCHAR(tPOINTF& PosCENTER, int iDistance, CGameOBJ* pObjFINDER,
         float fBandZ = Nav::NO_Z);
     CObjCHAR* FindFirstCHAR(CObjCHAR* pCenterCHAR, int iDistance, CGameOBJ* pObjFINDER,
-        float fBandZ = Nav::NO_Z);
+        float fBandZ = Nav::NO_Z, CObjCHAR* pSight = nullptr);
     CObjCHAR* FindNextCHAR();
     DWORD GetFindGEN() { return m_dwFindGEN; }
 

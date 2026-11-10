@@ -1038,6 +1038,7 @@ CObjCHAR*
 CZoneTHREAD::FindFirstCHAR(tPOINTF& PosCENTER, int iDistance, CGameOBJ* pObjFINDER, float fBandZ) {
     ++m_dwFindGEN;
     m_fFindBandZ = fBandZ;
+    m_pFindSight = nullptr;
     m_iFindSecIDX = 0;
     m_iFindDistance = iDistance;
     m_pFindObjNODE = NULL;
@@ -1051,9 +1052,14 @@ CZoneTHREAD::FindFirstCHAR(tPOINTF& PosCENTER, int iDistance, CGameOBJ* pObjFIND
 }
 //-------------------------------------------------------------------------------------------------
 CObjCHAR*
-CZoneTHREAD::FindFirstCHAR(CObjCHAR* pCenterCHAR, int iDistance, CGameOBJ* pObjFINDER, float fBandZ) {
+CZoneTHREAD::FindFirstCHAR(CObjCHAR* pCenterCHAR,
+    int iDistance,
+    CGameOBJ* pObjFINDER,
+    float fBandZ,
+    CObjCHAR* pSight) {
     ++m_dwFindGEN;
     m_fFindBandZ = fBandZ;
+    m_pFindSight = pSight;
     m_iFindSecIDX = 0;
     m_iFindDistance = iDistance;
     m_pFindObjNODE = NULL;
@@ -1102,8 +1108,24 @@ CZoneTHREAD::FindNextCHAR() {
 // A monster scan (aggro, help calls) sees only characters within the vertical rule of its
 // own height: nothing through a bridge deck, a cliff or a cave floor
 // (doc/pathfinding-and-z-plan.md, section 3.4). Every other scan is 2D.
+//
+// In a zone whose walls block sight (m_pFindSight, the Karkia crypts), a monster scan
+// also needs a straight walkable line to what it finds: the walk grid's walls are the
+// only walls the server knows. A character standing against a wall is on a cell the
+// grid calls blocked (the bake's body test), so a line that ends within SIGHT_SLACK of
+// it counts; a crypt wall is 3.5 m thick, so nothing is seen through one that way.
 bool
 CZoneTHREAD::FindInBand(CObjCHAR* pChar) {
+    if (m_pFindSight && pChar != m_pFindSight) {
+        constexpr float SIGHT_SLACK = 200.f; // cm
+        float fLX = pChar->m_PosCUR.x, fLY = pChar->m_PosCUR.y;
+        if (!m_pFindSight->Nav_CanWalkTo(pChar->m_PosCUR.x, pChar->m_PosCUR.y, &fLX, &fLY)) {
+            const float sx = pChar->m_PosCUR.x - fLX, sy = pChar->m_PosCUR.y - fLY;
+            if (sx * sx + sy * sy > SIGHT_SLACK * SIGHT_SLACK) {
+                return false;
+            }
+        }
+    }
     if (Nav::NO_Z == m_fFindBandZ) {
         return true;
     }

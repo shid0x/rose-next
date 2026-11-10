@@ -309,6 +309,10 @@ and its §6 decisions before touching movement, height or AoE shape. Phase 0 is 
     - monster scans, through `FindFirstCHAR(..., fBandZ)` from `AI_FindFirstOBJ(int)` of an
       `OBJ_MOB`.
   - Skill collects (`AI_CollectOBJs`) scan in 2D and apply the rule themselves.
+  - **In the Karkia crypts a monster scan also needs a walkable straight line** to what it
+    finds (`FindFirstCHAR(..., pSight)` -> `FindInBand`, 2026-11-10): no aggro or help call
+    through a maze wall. The walk grid's walls are the only walls the server knows; a zone
+    opts in at `CObjCHAR::AI_FindFirstOBJ(int)`.
   - Regen spawns re-roll spots the client would draw on a roof (`NavPickSpawn`, against the
     point's baked anchor).
   - **Stage A:** a monster's height is where the client draws it (`VisualTopZ`), so under a

@@ -656,6 +656,15 @@ comes later (user, 2026-11-09: "we'll deal with it later").
 - **The test**: walk the maze cells that the segment crosses (a DDA on the 15 m grid)
   and check each edge it crosses. It is exact and cheap: at most about 20 edges. A
   segment through a vertex counts as blocked if either edge there is closed.
+- **Built early (2026-11-10, awaiting its test):** monster scans in the crypt zones. The
+  user twice met monsters "coming out of the walls": the log showed no spawn in a wall
+  (0 re-rolls; the bake has no regen square on blocked ground), but packs in the next
+  corridor saw him through the wall and came round. `CZoneTHREAD::FindInBand` now
+  drops what the scanning monster cannot walk straight to (`Nav_CanWalkTo`, 2 m of
+  slack for a character against a wall), for `AI_FindFirstOBJ(int)` of a monster in
+  `CCatacombs::IsCrypt` zones: aggro, calls for help, "move to an ally". A monster
+  that is hit still answers its attacker through a wall. Attacks, skills and area
+  hits below are still to do.
 - **Monster scans** skip a target behind a wall. No aggro through walls, so aggro can
   then grow.
 - **Monster attacks and skills** need a clear line. Without one the monster keeps
