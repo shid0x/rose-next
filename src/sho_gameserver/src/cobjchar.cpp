@@ -560,6 +560,15 @@ CObjCHAR::Nav_ResumeChase(CObjCHAR* pTarget) {
 
 bool
 CObjCHAR::Nav_Chase(CObjCHAR* pTarget) {
+    // A monster that cannot walk (walk and run speed 0: Argentia) does not chase: it lets go
+    // of a target that left its reach and stands. Chasing, every client ran it on the spot.
+    if (pTarget && this->IsA(OBJ_MOB) && this->total_move_speed() == 0) {
+        if (CMD_ATTACK == this->Get_COMMAND() || CMD_SKILL2OBJ == this->Get_COMMAND()) {
+            CObjAI::SetCMD_STOP();
+            this->Send_gsv_STOP();
+        }
+        return true;
+    }
     // A monster running to cast a skill goes straight at its target (below: only an attack
     // chase is put on a path). In a crypt's maze that run ends when a wall comes between
     // them: the cast is given up for a plain attack, which walks round. The Tomb Murilos,
@@ -1535,6 +1544,12 @@ CObjCHAR::SetCMD_RUNnATTACK(int target_id) {
     if (!this->can_attack(target_id)) {
         return;
     }
+    // ... and it takes only a target already in its reach (see Nav_Chase)
+    if (this->IsA(OBJ_MOB) && this->total_move_speed() == 0) {
+        CObjCHAR* pTarget = g_pObjMGR->Get_CharOBJ((WORD)target_id, true);
+        if (!pTarget || !this->IsInRANGE(pTarget, this->Get_AttackRange(0)))
+            return;
+    }
 
     this->m_bRunMODE = true;
 
@@ -1851,6 +1866,16 @@ CObjCHAR::IsProjectilePresentedSkill(short nSkillIDX) {
 }
 
 //-------------------------------------------------------------------------------------------------
+int
+CObjCHAR::Hit_WithSKILL(CObjCHAR* pTarget, short nSkillIDX) {
+    uniDAMAGE sDamage;
+    sDamage.m_wDamage = CCal::Get_SkillDAMAGE(this, pTarget, nSkillIDX, 1);
+    CObjITEM* pOutITEM = NULL;
+    this->Apply_DAMAGE(pTarget, sDamage, &pOutITEM, false);
+    pTarget->Send_gsv_DAMAGE_OF_SKILL(this->Get_INDEX(), nSkillIDX, sDamage.m_wDamage, 0, 0, pOutITEM);
+    return (int)sDamage.m_wVALUE;
+}
+
 void
 CObjCHAR::Give_DAMAGE(CObjCHAR* pTarget,
     uniDAMAGE sDamage,

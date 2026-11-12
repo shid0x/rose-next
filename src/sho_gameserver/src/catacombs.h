@@ -46,6 +46,18 @@ class classUSER;
 /// the room has stood empty for a minute (monsters do not heal). Its AI file only
 /// finds a target and answers a hit.
 ///
+/// The pool. The far room's boss is one of several bodies (BOSSES in catacombs.cpp),
+/// drawn by the day and shared by both crypts; a GM can ask for one by name. A body
+/// joins the draw when its fight is written.
+///
+/// The floor. A fight that is more than one monster's casts is run from here: the
+/// controller draws warning shapes on the room's floor (CZoneTHREAD::SendZoneWarn) and,
+/// when a shape's time is up, hits whoever still stands in it, as the boss, by one of
+/// its skill rows (ProcFloor, every frame of the crypt's thread: a dodge window is two
+/// seconds, so half-second ticks are too coarse). Argentia, who never walks, is built
+/// on it: the room's sixteen tiles erupt in patterns, its arms come down in three
+/// cones, its howl is safe only close to it and then only far from it.
+///
 /// Threads. ProcZone runs in every zone thread and acts in three:
 ///   * each crypt zone's thread sweeps its own players and, once per break, kills
 ///     its monsters and removes its ground items;
@@ -88,7 +100,9 @@ public:
     std::string GmDaily(); // jump one day ahead: the other crypt, every pass spent
     std::string GmPass(const std::string& name); // clear a character's record
     std::string GmClock(); // drop the skew: back to the real clock
-    std::string GmBoss(); // a fresh boss in today's crypt, now
+    /// A fresh boss in today's crypt, now. With a name ("necromancer", "argentia") that
+    /// body, kept until "day" gives the choice back to the calendar.
+    std::string GmBoss(const std::string& arg);
     std::string GmSeed(const std::string& arg); // today's crypt rebuilt from a seed ("" = the day's own)
     std::string GmMaze(); // today's maze as text
 
@@ -126,6 +140,27 @@ private:
         int iRotation = 0;
         bool bPair = false; // the second attack of a pair is due
         unsigned long dwEmptySince = 0; // 0: someone is in the room
+        int iKind = 0; // which body (BOSSES)
+        int iObjIdx = 0; // its object, for the per-frame floor (checked against its row)
+        // a floor mechanic waiting for its animation's cast to start (0: none)
+        int iArmed = 0;
+        short nArmedSkill = 0;
+        unsigned long dwArmedAt = 0;
+    };
+    /// A shape on the floor that hits when its time is up, and a batch of them due later.
+    struct Hazard {
+        tagZONE_WARN shape;
+        unsigned long dwFireAt;
+        short nSkill; // the boss's skill row the hit is computed and shown with
+    };
+    struct Cue {
+        unsigned long dwAt;
+        std::vector<tagZONE_WARN> shapes;
+        WORD wWarnMS;
+        short nEffect;
+        short nSkill;
+        short nWarnSound, nFireSound;
+        int iSeedRadius; // > 0: a circle of this radius under every player in the room instead
     };
 
     /// One crypt's maze, built and read by its zone thread.
@@ -154,6 +189,10 @@ private:
         long long llOpening,
         const std::vector<classUSER*>& users,
         const std::vector<CObjCHAR*>& mobs);
+    void ProcFloor(CZoneTHREAD* pZone, int iSlot);
+    void FightNecromancer(int iSlot, unsigned long now, CObjCHAR* pBoss, const std::vector<classUSER*>& inRoom);
+    void FightArgentia(int iSlot, unsigned long now, CObjCHAR* pBoss);
+    void ArgentiaMechanic(int iSlot, int iMechanic, unsigned long now);
     void ProcCemetery(CZoneTHREAD* pZone);
     void Evict(classUSER* pUSER, int iEntrance);
     void Save(unsigned long dbid, const Record& r);
@@ -171,6 +210,9 @@ private:
     long long m_llWarned[2]; // the last (opening key * 4 + warning step) announced inside
     Boss m_Boss[2];
     bool m_bReqBoss[2]; // GM: a fresh boss at the next tick
+    int m_iForceKind; // GM: the body to raise (-1: the day's draw)
+    std::vector<Hazard> m_Hazards[2]; // each crypt's own thread only
+    std::vector<Cue> m_Cues[2];
     Crypt m_Crypt[2];
     int m_iReqSeed[2]; // GM: 1 = rebuild from m_ullReqSeed, 2 = back to the day's own
     unsigned long long m_ullReqSeed[2];

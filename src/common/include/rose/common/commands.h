@@ -79,7 +79,7 @@ const char* ESCORT_HELP = "Drive the Wisdom Tree escort (Forest of Wisdom): star
 const char* ESCORT_USAGE = "Usage: escort <status|start|stop|skip>";
 
 const char* CATACOMB_HELP = "Drive the Karkia catacombs' clock: seal in a minute, start the next opening, skip a day, clear a daily pass, raise a fresh boss, show or re-seed the maze.";
-const char* CATACOMB_USAGE = "Usage: catacomb <status|close|open|daily|clock|boss|maze|seed [n]|pass [name]>";
+const char* CATACOMB_USAGE = "Usage: catacomb <status|close|open|daily|clock|boss [name|day]|maze|seed [n]|pass [name]>";
 
 
 static const std::vector<CommandInfo> commands = {

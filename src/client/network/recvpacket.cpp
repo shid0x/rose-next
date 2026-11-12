@@ -235,6 +235,42 @@ CRecvPACKET::Recv_gsv_ZONE_TIMER() {
     CZoneTimers::Instance().Set(head.m_btID, label.c_str(), head.m_iSeconds);
 }
 
+//-------------------------------------------------------------------------------------------------
+/// Shapes the server draws on the ground by itself (a boss mechanic that is not one
+/// monster's cast): shown for the packet's time, then each plays the packet's effect.
+void
+CRecvPACKET::Recv_gsv_ZONE_WARN() {
+    const gsv_ZONE_WARN& head = m_pRecvPacket->m_gsv_ZONE_WARN;
+    const int nSize = m_pRecvPacket->m_HEADER.m_nSize;
+    if (nSize < (int)sizeof(gsv_ZONE_WARN)
+        || nSize < (int)(sizeof(gsv_ZONE_WARN) + head.m_btCount * sizeof(tagZONE_WARN)))
+        return;
+    const tagZONE_WARN* pShapes = (const tagZONE_WARN*)((const BYTE*)m_pRecvPacket + sizeof(gsv_ZONE_WARN));
+    // the two sounds play once for the batch, from the middle of its shapes
+    float fMidX = 0.f, fMidY = 0.f;
+    for (int i = 0; i < head.m_btCount; ++i) {
+        const tagZONE_WARN& s = pShapes[i];
+        const float fHalf = s.m_btShape == ZONE_WARN_STRIP ? s.m_wLength * 0.5f : 0.f;
+        const float a = s.m_nDirDeg * 3.14159265f / 180.f;
+        fMidX += (s.m_fX + cosf(a) * fHalf) / head.m_btCount;
+        fMidY += (s.m_fY + sinf(a) * fHalf) / head.m_btCount;
+    }
+    if (head.m_btCount > 0)
+        CGroundTelegraphs::Instance().WarningSounds(fMidX, fMidY, head.m_nWarnSound, head.m_nFireSound, head.m_wWarnMS);
+    for (int i = 0; i < head.m_btCount; ++i) {
+        const tagZONE_WARN& s = pShapes[i];
+        CGroundTelegraphs::Instance().AddWarning(s.m_btShape,
+            s.m_fX,
+            s.m_fY,
+            (float)s.m_nDirDeg,
+            (float)s.m_wLength,
+            (float)s.m_wInner,
+            (float)s.m_wWidth,
+            head.m_wWarnMS,
+            head.m_nEffect);
+    }
+}
+
 void
 CRecvPACKET::Recv_gsv_ANNOUNCE_CHAT() {
     short nOffset = sizeof(t_PACKETHEADER);
@@ -3486,6 +3522,13 @@ CRecvPACKET::Recv_gsv_DAMAGE_OF_SKILL() {
     if (!iDoingSkillIDX && pChar && pChar != (CObjCHAR*)g_pAVATAR
         && pChar->m_CommandQueue.HasSkillCommand(iSkillIDX))
         iDoingSkillIDX = iSkillIDX;
+
+    // A monster's payload for another skill than the one it is doing is not that cast's:
+    // a controller's floor hazard lands while the boss plays an animation-only skill (the
+    // server's CObjCHAR::Hit_WithSKILL; the Karkia catacombs' Argentia, 2026-11-12). It
+    // must not wait for that cast's action frame, which may never present it.
+    if (iDoingSkillIDX && iDoingSkillIDX != iSkillIDX && pChar && pChar->IsA(OBJ_MOB))
+        iDoingSkillIDX = 0;
 
     /*if( pChar && pChar->m_nToDoSkillIDX )
     iDoingSkillIDX = pChar->m_nDoingSkillIDX;   */

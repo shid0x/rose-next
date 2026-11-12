@@ -221,6 +221,13 @@ public:
     void SetZoneObjects(BYTE btGroup, const tagZONE_OBJECT* pObjs, int iCount, bool bOn);
     /// The groups that stand, to a player who just joined (Send_gsv_JOIN_ZONE).
     void SendZoneObjects(classUSER* pUSER);
+    /// Shapes drawn on the ground of every client in the zone for wWarnMS, each playing
+    /// FILE_EFFECT row nEffect when the time is up (GSV_ZONE_WARN). Drawing only: the
+    /// caller decides who is hit, and when. At most 64 shapes.
+    /// nWarnSound / nFireSound: FILE_SOUND rows played once as the shapes appear and as they
+    /// fire, from the middle of the batch.
+    void SendZoneWarn(const tagZONE_WARN* pShapes, int iCount, WORD wWarnMS, short nEffect, short nWarnSound = 0,
+        short nFireSound = 0);
     bool IsZoneObjectsOn(BYTE btGroup);
 
     /// Show the zone a countdown (iSeconds > 0) or remove it (0), remember it, and tell

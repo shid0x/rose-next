@@ -3,6 +3,8 @@
 #include "groundtelegraph.h"
 
 #include "cobjchar.h"
+#include "capplication.h"
+#include "io_effect.h"
 #include "io_terrain.h"
 #include "object.h"
 #include "common/io_skill.h"
@@ -121,6 +123,73 @@ CGroundTelegraphs::OnCastStart(CObjCHAR* pCaster, short nSkillIDX, unsigned long
 }
 
 void
+CGroundTelegraphs::AddWarning(int iShape, float fX, float fY, float fDirDeg, float fLength, float fInner,
+    float fWidth, unsigned long dwWarnMS, short nEffect) {
+    if (fLength <= 0.f || m_List.size() >= 256)
+        return;
+    Telegraph t;
+    t.nObjIdx = 0;
+    t.pCaster = NULL;
+    t.nSkillIDX = 0;
+    t.shape = iShape == ZONE_WARN_STRIP ? SHAPE_STRIP : (iShape == ZONE_WARN_CONE ? SHAPE_CONE : SHAPE_CIRCLE);
+    t.fX = fX;
+    t.fY = fY;
+    bool bNotFound = false;
+    t.fZ = g_pTerrain ? g_pTerrain->GetHeight(fX, fY, &bNotFound) : 0.f;
+    if (bNotFound)
+        t.fZ = 0.f;
+    const float a = fDirDeg * PI / 180.f;
+    t.fDirX = cosf(a);
+    t.fDirY = sinf(a);
+    t.fLength = fLength;
+    t.fHalfAngle = t.shape == SHAPE_CONE ? fWidth * 0.5f * PI / 180.f : PI;
+    t.fHalfWidth = t.shape == SHAPE_STRIP ? fWidth * 0.5f : 0.f;
+    t.dwStart = ::GetTickCount();
+    t.dwCastMS = dwWarnMS ? dwWarnMS : DEFAULT_CAST_MS;
+    t.dwFiredAt = 0;
+    t.bSurfaces = false;
+    t.bFree = true;
+    t.fInner = t.shape == SHAPE_CIRCLE && fInner > 0.f && fInner < fLength ? fInner : 0.f;
+    t.nEffect = nEffect;
+    m_List.push_back(t);
+}
+
+static void
+PlayAt(short nSound, float fX, float fY) {
+    if (nSound <= 0 || !g_pSoundLIST)
+        return;
+    bool bNotFound = false;
+    const float fZ = g_pTerrain ? g_pTerrain->GetHeight(fX, fY, &bNotFound) : 0.f;
+    g_pSoundLIST->IDX_PlaySound3D(nSound, D3DXVECTOR3(fX, fY, bNotFound ? 0.f : fZ));
+}
+
+void
+CGroundTelegraphs::WarningSounds(float fX, float fY, short nWarnSound, short nFireSound, unsigned long dwWarnMS) {
+    PlayAt(nWarnSound, fX, fY);
+    if (nFireSound > 0 && m_Sounds.size() < 64) {
+        LateSound s = {fX, fY, nFireSound, ::GetTickCount() + dwWarnMS};
+        m_Sounds.push_back(s);
+    }
+}
+
+void
+CGroundTelegraphs::Erupt(const Telegraph& t) {
+    if (t.nEffect <= 0 || !g_pEffectLIST)
+        return;
+    float fX = t.fX, fY = t.fY;
+    if (t.shape == SHAPE_STRIP) {
+        fX += t.fDirX * t.fLength * 0.5f;
+        fY += t.fDirY * t.fLength * 0.5f;
+    }
+    CEffect* pEffect = g_pEffectLIST->Add_EffectWithIDX(t.nEffect, true);
+    if (pEffect) {
+        D3DXVECTOR3 pos(fX, fY, this->Height(t, fX, fY) - LIFT_CM);
+        pEffect->SetPOSITION(pos);
+        pEffect->InsertToScene();
+    }
+}
+
+void
 CGroundTelegraphs::Aim(Telegraph& t, CObjCHAR* pCaster) {
     // A cone or a strip points where the server aimed it; without an aim (or aimed at the
     // caster's own feet) the server measures a circle of its length, and so do we.
@@ -177,11 +246,27 @@ CGroundTelegraphs::Update() {
     m_Colors.clear();
     m_iSurfaceBudget = SURF_POINTS_PER_FRAME;
 
+    for (size_t i = 0; i < m_Sounds.size();) {
+        if ((long)(now - m_Sounds[i].dwAt) >= 0) {
+            PlayAt(m_Sounds[i].nSound, m_Sounds[i].fX, m_Sounds[i].fY);
+            m_Sounds.erase(m_Sounds.begin() + i);
+        } else {
+            ++i;
+        }
+    }
+
     for (size_t i = 0; i < m_List.size();) {
         Telegraph& t = m_List[i];
-        const bool bAlive = g_pObjMGR && g_pObjMGR->Get_OBJECT(t.nObjIdx) == t.pCaster;
+        const bool bAlive = !t.bFree && g_pObjMGR && g_pObjMGR->Get_OBJECT(t.nObjIdx) == t.pCaster;
         bool bKeep = true;
-        if (t.dwFiredAt) {
+        if (t.bFree) {
+            // a server warning: nobody casts it, it fires when its time is up
+            if (!t.dwFiredAt && now - t.dwStart >= t.dwCastMS) {
+                t.dwFiredAt = now;
+                this->Erupt(t);
+            }
+            bKeep = !t.dwFiredAt || now - t.dwFiredAt < FLASH_MS;
+        } else if (t.dwFiredAt) {
             bKeep = now - t.dwFiredAt < FLASH_MS;
         } else if (!bAlive) {
             bKeep = false;
@@ -222,6 +307,7 @@ CGroundTelegraphs::Update() {
 void
 CGroundTelegraphs::Forget() {
     m_List.clear();
+    m_Sounds.clear();
     m_Surfaces.clear();
     if (m_bSent) {
         ::setGroundOverlay(NULL, NULL, 0);
@@ -500,7 +586,9 @@ void
 CGroundTelegraphs::AddArea(const Telegraph& t, float fFrom, float fReach, unsigned long c0, unsigned long c1) {
     switch (t.shape) {
         case SHAPE_CIRCLE:
-            this->AddSector(t, fFrom, fReach, -PI, PI, c0, c1);
+            // a ring starts at its inner radius
+            if (fReach > (fFrom > t.fInner ? fFrom : t.fInner))
+                this->AddSector(t, fFrom > t.fInner ? fFrom : t.fInner, fReach, -PI, PI, c0, c1);
             break;
         case SHAPE_CONE:
             this->AddSector(t, fFrom, fReach, -t.fHalfAngle, t.fHalfAngle, c0, c1);
@@ -517,6 +605,8 @@ CGroundTelegraphs::AddOutline(const Telegraph& t, unsigned long rgb, unsigned lo
     const float L = t.fLength;
     this->AddArea(t, 0.f, L, Argb(alphaArea, rgb), Argb(alphaArea, rgb));
     this->AddArea(t, L - RIM_CM, L, Argb(0, rgb), Argb(alphaRim, rgb));
+    if (t.fInner > 0.f) // a ring's inner rim
+        this->AddArea(t, t.fInner, t.fInner + RIM_CM, Argb(alphaRim, rgb), Argb(0, rgb));
     if (t.shape == SHAPE_CONE) {
         // the two sides, from the point to the arc; inward = toward the aim
         for (int side = -1; side <= 1; side += 2) {
@@ -538,7 +628,7 @@ void
 CGroundTelegraphs::AddTelegraph(const Telegraph& t, unsigned long now) {
     // A fan (SKILL_FAN, 2026-11-03): the strip once per line, turned round the caster, the
     // middle one on the aim -- as the server measures it.
-    const int nLines = t.shape == SHAPE_STRIP ? SKILL_FAN_LINES(t.nSkillIDX) : 0;
+    const int nLines = t.shape == SHAPE_STRIP && t.nSkillIDX > 0 ? SKILL_FAN_LINES(t.nSkillIDX) : 0;
     if (nLines < 2) {
         this->AddTelegraphShape(t, now);
         return;
@@ -572,7 +662,7 @@ CGroundTelegraphs::AddTelegraphShape(const Telegraph& t, unsigned long now) {
     this->AddOutline(t, RGB_AREA, ALPHA_AREA, ALPHA_RIM);
 
     // The fill: grows from the caster to the rim over the cast, a brighter leading edge.
-    const float fFill = L * p;
+    const float fFill = t.fInner + (L - t.fInner) * p; // a ring fills from its inner rim
     this->AddArea(t, 0.f, fFill - EDGE_CM, Argb(ALPHA_FILL, RGB_FILL), Argb(ALPHA_FILL, RGB_FILL));
     this->AddArea(t, fFill - EDGE_CM, fFill, Argb(ALPHA_FILL, RGB_FILL), Argb(ALPHA_FILL_EDGE, RGB_FILL));
 }

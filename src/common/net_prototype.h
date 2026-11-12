@@ -412,6 +412,14 @@ using namespace Rose::Common;
 // itself (UI2: RoseRmlZoneTimers) and forgets every timer on a zone change.
 #define GSV_ZONE_TIMER 0x07f2
 
+// Zone warnings (2026-11-12): shapes the server draws on the ground by itself, for a
+// boss mechanic that is not one monster's cast (the Karkia catacombs' Argentia: floor
+// tiles, rings, arms). One packet: how long the shapes are shown before they fire,
+// the effect each plays when it does, and m_btCount x tagZONE_WARN. The client only
+// draws (CGroundTelegraphs::AddWarning): who is hit is the server's business, when the
+// time is up. Not re-sent to a player who arrives while one runs.
+#define GSV_ZONE_WARN 0x07f3
+
 struct cli_CHECK_AUTH: public t_PACKETHEADER {};
 
 struct srv_CHECK_AUTH: public t_PACKETHEADER {
@@ -1160,6 +1168,26 @@ struct gsv_ZONE_OBJECTS: public t_PACKETHEADER {
     BYTE m_btGroup;
     BYTE m_btState; // 1 = present, 0 = gone (the client fades it out)
     BYTE m_btCount; // tagZONE_OBJECT records that follow
+};
+
+// One shape of a zone warning (GSV_ZONE_WARN).
+#define ZONE_WARN_CIRCLE 0 // a disc round m_fX, m_fY, or a ring when m_wInner is set
+#define ZONE_WARN_STRIP 1 // from m_fX, m_fY along m_nDirDeg: m_wLength long, m_wWidth wide
+#define ZONE_WARN_CONE 2 // from m_fX, m_fY along m_nDirDeg: m_wLength long, m_wWidth degrees wide
+struct tagZONE_WARN {
+    BYTE m_btShape;
+    float m_fX, m_fY; // world cm
+    short m_nDirDeg; // strip, cone: heading, degrees from +X towards +Y
+    WORD m_wLength; // cm: the radius, or the length
+    WORD m_wInner; // circle: the ring's inner radius, cm (0 = a disc)
+    WORD m_wWidth; // strip: full width, cm; cone: full angle, degrees
+};
+struct gsv_ZONE_WARN: public t_PACKETHEADER {
+    WORD m_wWarnMS; // shown this long, then it fires
+    short m_nEffect; // FILE_EFFECT row played on each shape as it fires (0 = none)
+    short m_nWarnSound; // FILE_SOUND row played once as the shapes appear (0 = none)
+    short m_nFireSound; // FILE_SOUND row played once as they fire (0 = none)
+    BYTE m_btCount; // tagZONE_WARN records that follow
 };
 
 // One zone timer (GSV_ZONE_TIMER).
@@ -2972,6 +3000,7 @@ struct t_PACKET {
         cli_SUMMON_CONTROL m_cli_SUMMON_CONTROL;
         gsv_ZONE_OBJECTS m_gsv_ZONE_OBJECTS;
         gsv_ZONE_TIMER m_gsv_ZONE_TIMER;
+        gsv_ZONE_WARN m_gsv_ZONE_WARN;
         // gsv_SUMMON_CMD			m_gsv_SUMMON_CMD;
         gsv_PATSTATE_CHANGE m_gsv_PATSTATE_CHANGE;
 

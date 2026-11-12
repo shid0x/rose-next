@@ -242,6 +242,11 @@ public:
     // nSkillIDX is display metadata for the client damage meter (skill
     // attribution in the DamageEvent packet); it does not affect damage or
     // presentation behavior. 0 = normal attack / unknown.
+    /// One of this character's skills landing on pTarget outside any cast (a controller's
+    /// floor hazard, catacombs.cpp): the damage of the row as a cast would compute it, one
+    /// hit, sent as that skill's result -- so the client shows the digit with the row's hit
+    /// effect and plays its hit sound, and a miss shows as one. Returns the damage.
+    int Hit_WithSKILL(CObjCHAR* pTarget, short nSkillIDX);
     void Give_DAMAGE(CObjCHAR* pTarget, uniDAMAGE sDamage, bool bDropItem = true,
         Rose::Network::Packets::DamagePresentationKind kind
         = Rose::Network::Packets::DamagePresentationKind::Immediate,

@@ -43,6 +43,16 @@ public:
     /// The aim reached a cast that had already started without it (Recv_gsv_SKILL_START):
     /// its telegraph turns from the fallback circle into the cone or strip, timing kept.
     void OnAimArrived(CObjCHAR* pCaster);
+    /// A warning the server draws by itself (GSV_ZONE_WARN, 2026-11-12): no caster and no
+    /// skill. iShape is ZONE_WARN_* (net_prototype.h); fWidth is a strip's full width in cm
+    /// or a cone's full angle in degrees; fInner makes a circle a ring. It fills over
+    /// dwWarnMS, then flashes and plays FILE_EFFECT row nEffect (0: none) -- on a circle's
+    /// centre, a strip's middle, a cone's point. Who it hits is the server's business.
+    void AddWarning(int iShape, float fX, float fY, float fDirDeg, float fLength, float fInner, float fWidth,
+        unsigned long dwWarnMS, short nEffect);
+    /// A batch of warnings' two sounds (FILE_SOUND rows, 0 = none), at a spot of the world:
+    /// one now, as the shapes appear, and one dwWarnMS later, as they fire.
+    void WarningSounds(float fX, float fY, short nWarnSound, short nFireSound, unsigned long dwWarnMS);
     /// Per frame (CObjectMANAGER::ProcOBJECT): ends the finished casts, sends the geometry.
     void Update();
     /// CObjectMANAGER::Clear deleted every object: drop them all.
@@ -80,6 +90,9 @@ private:
         unsigned long dwCastMS;
         unsigned long dwFiredAt; // 0 while casting; else when it fired (the flash)
         bool bSurfaces; // follow the map objects as well as the terrain (the player's aim)
+        bool bFree = false; // a server warning (AddWarning): no caster, it fires on time
+        float fInner = 0.f; // circle: the inner radius of a ring, cm
+        short nEffect = 0; // a server warning: FILE_EFFECT row played as it fires
     };
 
     /// The tops of the walkable map objects at one point of a 1 m world lattice: a ray
@@ -99,6 +112,8 @@ private:
     /// The area, a bright rim over its outline (and a cone's or strip's sides).
     void AddOutline(const Telegraph& t, unsigned long rgb, unsigned long alphaArea, unsigned long alphaRim);
     bool StillCasting(const Telegraph& t) const;
+    /// A server warning fires: its effect, where the shape is.
+    void Erupt(const Telegraph& t);
     /// The height a shape's point is drawn at (lifted): the terrain; or, for the player's
     /// aim and for a shape centred on a deck, the surface nearest its centre's height.
     float Height(const Telegraph& t, float fX, float fY);
@@ -128,6 +143,12 @@ private:
     void AddTelegraph(const Telegraph& t, unsigned long now);
     void AddTelegraphShape(const Telegraph& t, unsigned long now);
 
+    struct LateSound {
+        float fX, fY;
+        short nSound;
+        unsigned long dwAt;
+    };
+    std::vector<LateSound> m_Sounds; // warnings' fire sounds still to play
     std::vector<Telegraph> m_List;
     std::vector<float> m_XYZ; // this frame's triangles
     std::vector<unsigned long> m_Colors;

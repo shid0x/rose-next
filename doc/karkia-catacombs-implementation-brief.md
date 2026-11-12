@@ -509,6 +509,43 @@ sleep, with nothing to move out of.
     raises a fresh one.
   - The daily boss pool does not exist yet: both crypts have the Necromancer.
   - Loot: table 913, the red weapons 1456-1468 (~36% a kill) and a Norse window.
+- **The pool, decided 2026-11-12.** The user chose the bodies himself from 3D previews of
+  Jrose's level 180+ monsters (`gm-item-browser --preview-monster`; sheets and the
+  shortlist in `build/catacombs/boss-candidates/`): **Ferdinando** (Jrose 2049, a
+  top-hat vampire lord), **Argentia** (2044, a many-armed giant that never walks),
+  **Gladiomurus** (2487, an antlered demon knight) and the **Ikaness Greater Assassin**
+  (2035). **Both crypts share one pool** (not a pool each, as planned above), with the
+  Necromancer. His brief for the fights: they are the endgame, what gets players hyped
+  -- cool spells and an original mechanic each, a free hand on the design, Dragon Nest
+  animations and effects from EVO-REFORGED allowed.
+  - **Built: the four bodies** (`scripts/catacomb_pool.py`): `LIST_NPC` 2557-2560, level
+    240, the Necromancer's AI file, weapons `LIST_WEAPON` 29 / 30 and our Murasamemaru.
+    They exist for `/mon`; **the controller still raises only the Necromancer** until
+    each has its fight.
+  - **Built, awaiting its test (2026-11-12): the floor layer and Argentia's fight.**
+    `GSV_ZONE_WARN` (0x07f3): the server draws shapes on the floor by itself (circle or
+    ring, strip, cone; `CZoneTHREAD::SendZoneWarn`, client
+    `CGroundTelegraphs::AddWarning`), each playing an effect as it fires.
+    `CCatacombs::ProcFloor` runs every frame of the crypt's thread: cues become
+    warnings, and a warning whose time is up hits whoever stands in it (40 cm of grace
+    inside the edge), as the boss, with the server's skill formula on one of the boss's
+    rows. **Argentia** (`scripts/catacomb_argentia.py`, `FightArgentia` /
+    `ArgentiaMechanic`) stands in the middle and rotates three mechanics, each started
+    by an animation-only skill and timed from the moment that cast begins:
+    **Shattered Floor** (the room's 16 tiles: one half of a checkerboard then the
+    other; later also a wave of rows or columns, or everything but the corners then
+    everything but the middle), **Grasp of the Mad God** (three 50-degree cones a third
+    of a turn apart, landing with its arms; later a second set between them) and
+    **Howl of Madness** (a 14 m disc, then the ring outside it). From the first add
+    wave on, a **Seed of Madness** circle also lands under every player. Gaps 11 / 10 /
+    8.5 s by phase. `/catacomb boss argentia` raises it; the daily draw is between the
+    Necromancer and Argentia.
+  - **Not built: the other three fights** (Ferdinando, Gladiomurus, the Assassin).
+  - **Dragon Nest material: blocked.** EVO's client install is now packed in encrypted
+    `EVOnnn.EPK` archives; the key is not in their repo or on this machine, and their
+    converter (`TOOLS/DNImport`, which writes standard EFT / PTL / ZMS / ZMO our client
+    can play) needs the Dragon Nest game data, which is not here either. Needs the key
+    file or the converted folders from the EVO team.
 - **Bodies, cheapest first:**
   1. **Necromancer** (2414, from tsuki): imported and validated, but spawned nowhere,
      and it fits the crypt. It has Soul Siphon and one skill clip (a three-pulse

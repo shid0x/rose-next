@@ -316,6 +316,17 @@ timer again only when its end moves. A zone change forgets them. The classic int
 no panel. First use: the Karkia catacombs' "The crypt seals in" (`catacombs.cpp`); meant
 for any server-run event with a deadline. Client and server ship together.
 
+### Zone Warnings (2026-11-12)
+
+Shapes the server draws on the ground by itself, for a boss mechanic that is not one
+monster's cast: `GSV_ZONE_WARN` (0x07f3, `common/net_prototype.h`), one packet with a
+warning time, a FILE_EFFECT row and `tagZONE_WARN` shapes (a circle or a ring, a strip, a
+cone; world cm). `CZoneTHREAD::SendZoneWarn` broadcasts it; the client
+(`CGroundTelegraphs::AddWarning`) fills each shape over the time, flashes it and plays the
+effect on it. **Drawing only**: who is hit, and when, is the sender's business (the Karkia
+catacombs' `CCatacombs::ProcFloor`, `doc/making-events.md` section 2). Not re-sent to a
+late arrival. First use: Argentia's floor fight. Client and server ship together.
+
 ### NPC Dialog Quest Options (.CON QEX1 Appendix)
 NPC conversations are `.CON` files (`data/3DDATA/EVENT/`) whose logic is compiled Lua 4 **bytecode** — new functions can't be merged into the blob (Lua 4.0.1 rejects multi-chunk buffers). Our extension: an optional appendix after the Lua tail (`b"QEX1"; i32 len; XOR'd Lua source`) that the client (`cevent.cpp`, `QEX_APPENDIX_MAGIC`) executes into the same `lua_State` via a second `Do_Buffer`. The quest editor uses it to append quest options to an NPC's existing dialog without replacing it (`quest-editor con-append`, or the wizard's append radio). Codec + gotchas (main-blob XOR key depends on file size; menu-0 append ordering) live in `src/tools/quest-editor/src/convo.rs` and the tool's `PROGRESS.md`. `.CON` files are client-only — the server never reads them; quest authority stays in QSD triggers. Appended `.CON`s require the QEX1-aware client: ship client + data together.
 

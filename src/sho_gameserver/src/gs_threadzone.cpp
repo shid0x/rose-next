@@ -495,6 +495,26 @@ CZoneTHREAD::SetZoneObjects(BYTE btGroup, const tagZONE_OBJECT* pObjs, int iCoun
 }
 
 void
+CZoneTHREAD::SendZoneWarn(const tagZONE_WARN* pShapes, int iCount, WORD wWarnMS, short nEffect, short nWarnSound,
+    short nFireSound) {
+    if (iCount <= 0 || iCount > 64)
+        return;
+    classPACKET* pCPacket = Packet_AllocNLock();
+    if (!pCPacket)
+        return;
+    pCPacket->m_HEADER.m_wType = GSV_ZONE_WARN;
+    pCPacket->m_HEADER.m_nSize = sizeof(gsv_ZONE_WARN);
+    pCPacket->m_gsv_ZONE_WARN.m_wWarnMS = wWarnMS;
+    pCPacket->m_gsv_ZONE_WARN.m_nEffect = nEffect;
+    pCPacket->m_gsv_ZONE_WARN.m_nWarnSound = nWarnSound;
+    pCPacket->m_gsv_ZONE_WARN.m_nFireSound = nFireSound;
+    pCPacket->m_gsv_ZONE_WARN.m_btCount = (BYTE)iCount;
+    pCPacket->AppendData((void*)pShapes, (short)(iCount * sizeof(tagZONE_WARN)));
+    this->SendPacketToZONE(pCPacket);
+    Packet_ReleaseNUnlock(pCPacket);
+}
+
+void
 CZoneTHREAD::SendZoneObjects(classUSER* pUSER) {
     std::lock_guard<std::mutex> lock(m_ZoneObjectsMutex);
     for (const auto& it: m_ZoneObjects) {

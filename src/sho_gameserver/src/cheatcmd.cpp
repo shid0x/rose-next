@@ -291,7 +291,7 @@ catacomb(classUSER* user, CommandInfo info, const std::vector<std::string>& args
     } else if (action == "clock") {
         user->send_server_whisper(crypt.GmClock());
     } else if (action == "boss") {
-        user->send_server_whisper(crypt.GmBoss());
+        user->send_server_whisper(crypt.GmBoss(args.size() >= 3 ? args[2] : std::string()));
     } else if (action == "seed") {
         user->send_server_whisper(crypt.GmSeed(args.size() >= 3 ? args[2] : std::string()));
     } else if (action == "maze") {

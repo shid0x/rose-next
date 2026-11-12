@@ -65,6 +65,13 @@ What it writes
   Grave Burst, 7206 Soul Lances), three clips cut from the Necromancer's own and a
   small AI file (FILE_AI 2275). No regen point: the controller spawns it, runs its
   attacks and its phases. Its drop table is 913 (`add-karkia-drops.py`).
+* **The boss pool** (2026-11-12, catacomb_pool.py -- its docstring is the record): four
+  more bodies from the Jrose dump, LIST_NPC 2557-2560 (Ferdinando, Argentia,
+  Gladiomurus, the Ikaness Greater Assassin) with two weapons (LIST_WEAPON 29, 30).
+  Needs the Jrose dump on disk for the first run.
+* **Argentia's fight** (2026-11-12, catacomb_argentia.py): the skill rows the controller
+  hits and animates with (LIST_SKILL 7207-7212) and the tile-eruption effect
+  (FILE_EFFECT 2902).
 
 Deploy: restart the servers (LIST_ZONE, LIST_NPC, the QSD, the IFOs and the grids are
 read at start), re-bake the client data (scripts/pack.ps1).
@@ -93,6 +100,8 @@ import catacomb_art as art  # noqa: E402
 import catacomb_maze as maze  # noqa: E402
 import catacomb_monsters as mon  # noqa: E402
 import catacomb_boss as boss  # noqa: E402
+import catacomb_pool as pool  # noqa: E402
+import catacomb_argentia as argentia  # noqa: E402
 
 BUILD_DIR = os.path.join(ROOT, "build", "catacombs")
 JROSE = r"C:\Users\Thomas\Desktop\Testclients\Jrose"
@@ -182,7 +191,7 @@ DIALOG = {
 }
 
 TRACKED = [ZONE_STB_REL, ZONE_STL_REL, NPC_STB_REL, NPC_STL_REL, NPC_CHR_REL, EVENT_STB_REL,
-           mon.AI_STB_REL, boss.SKILL_STB_REL, boss.SKILL_STL_REL,
+           mon.AI_STB_REL, boss.SKILL_STB_REL, boss.SKILL_STL_REL, *pool.TRACKED, *argentia.TRACKED,
            QSD_REL, LTB_REL, CEMETERY_REL + r"\KCemetery.lnav"] + [
     CEMETERY_REL + "\\" + name for name in ("30_35.IFO", "33_32.IFO", "33_33.IFO", "35_35.IFO")]
 
@@ -684,6 +693,8 @@ def verify(ours):
         check(chr_.chars[row_no] == chr_.chars[KEEPER_TEMPLATE], f"LIST_NPC.CHR {row_no}")
     mon.verify(ours, check)
     boss.verify(ours, check)
+    pool.verify(ours, check)
+    argentia.verify(ours, check)
     blob = open(P(ours, QSD_REL), "rb").read()
     for name, c, r in triggers():
         check(qsd.trigger_bytes(blob, name) == qsd.build_trigger(name, c, r), f"QP401 {name}")
@@ -736,6 +747,7 @@ def restore(ours):
         print(f"    removed {TILE_DIR_REL}")
     mon.remove_files(ours)
     boss.remove_files(ours)
+    argentia.remove_files(ours)
     con = find_ci(ours, r"3DDATA\EVENT" + "\\" + KEEPER_CON)
     if os.path.isfile(con):
         os.remove(con)
@@ -776,6 +788,10 @@ def main():
     mon.npc_rows(args.ours, dry)
     print("the boss")
     boss.apply(args.ours, dry)
+    print("the boss pool")
+    if pool.apply(args.ours, dry) and not dry:
+        pool.finish(args.ours)
+    argentia.apply(args.ours, dry)
     print("the zones")
     zones(args.ours, dry)
     print("the keepers")

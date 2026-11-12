@@ -63,6 +63,32 @@ dodge), see [making-monsters.md](making-monsters.md).
     `m_IngSTATUS.IsIgnoreSTATUS()` first;
   - the order makes that character its target; action mode 2 (col 29) puts it back
     on the one it was fighting.
+- **A mechanic that is not a cast: the floor layer** (the Karkia catacombs' Argentia,
+  2026-11-12; `CCatacombs::ProcFloor`). `CZoneTHREAD::SendZoneWarn(shapes, n, warnMS,
+  effect)` draws circles, rings, strips and cones on every client's floor for a time
+  and plays a FILE_EFFECT row on each as it ends; the controller keeps the same shapes
+  and, when the time is up, hits who stands in them with `boss->Hit_WithSKILL(player,
+  row)`: a skill row kept for the purpose, computed like a cast's hit and sent as that
+  skill's result, so the level gate, resistance and the damage meter work as for a
+  cast and the player gets the row's hit effect and hit sound (cols 74-76; the sound
+  plays only with an effect). The packet carries two FILE_SOUND rows too, one as the
+  shapes appear and one as they fire: **a skill's casting-sound columns are read by
+  nothing**, so without them a mechanic is silent (the user's first remark on Argentia).
+  Rules learned:
+  - run it **every frame** of the zone thread, not on the controller's half-second
+    tick: a dodge window is two seconds;
+  - give the boss something to do meanwhile: a self skill with no effect (a copy of a
+    monster self buff with the status cleared) is only its clips and casting effects.
+    Time the floor from the moment that cast starts (`m_bCastingSTART` and
+    `Get_ActiveSKILL()`), since an order waits for the swing in progress;
+  - a square is a strip as wide as it is long; a late arrival does not see a warning
+    already running;
+  - the client holds a skill result until its caster's action frame while the caster
+    is doing *any* skill: for a monster it now presents at once when the result is
+    for another skill than the one being done (`Recv_gsv_DAMAGE_OF_SKILL`);
+  - **a monster with walk and run speed 0 does not chase** (`CObjCHAR::Nav_Chase`,
+    `SetCMD_RUNnATTACK`): it takes only targets in its reach and lets go of one that
+    leaves it. Before, every client ran it on the spot.
 - **Remove it**:
   - with no death and no drop: `pZone->Sub_DIRECT(p); delete p;` (the GM "npc DEL"
     pattern);

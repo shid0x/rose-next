@@ -17,6 +17,8 @@
 #include "nav/nav_grid.h"
 #include "nav/nav_path.h"
 
+#include "rose/network/packets/combat_generated.h"
+
 namespace {
 
 // Data written by scripts/import-catacombs.py; keep the two in step.
@@ -63,8 +65,54 @@ const char* TIMER_SEAL_LABEL = "The crypt seals in";
 constexpr int TIMER_DRIFT_S = 2; // re-sent only when the end moved (a GM shifted the clock)
 
 // ---- the boss (scripts/catacomb_boss.py: keep the two in step)
-constexpr int BOSS_NPC = 2556; // Crypt Necromancer
-const char* BOSS_SPEAKER = "Crypt Necromancer";
+// The pool (scripts/catacomb_boss.py, catacomb_pool.py). A body is in the daily draw
+// once its fight is written here; the others exist only for /mon until then.
+enum { BOSS_NECROMANCER, BOSS_ARGENTIA, BOSS_KINDS };
+struct BossBody {
+    int npc;
+    const char* key; // `/catacomb boss <key>`
+    const char* name;
+    const char* timer; // the return countdown's label
+};
+constexpr BossBody BOSSES[BOSS_KINDS] = {
+    {2556, "necromancer", "The Crypt Necromancer", "The Necromancer returns in"},
+    {2558, "argentia", "Argentia, the Mad Giant", "Argentia returns in"},
+};
+
+int
+BossKindOf(int iNpc) {
+    for (int k = 0; k < BOSS_KINDS; k++) {
+        if (BOSSES[k].npc == iNpc)
+            return k;
+    }
+    return -1;
+}
+
+// ---- Argentia (LIST_NPC 2558): it never walks, and its fight is the floor
+// (scripts/catacomb_argentia.py writes these rows; keep the two in step).
+constexpr short ARG_SKILL_FLOOR = 7207; // Shattered Floor: a tile erupting
+constexpr short ARG_SKILL_GRASP = 7208; // Grasp of the Mad God: an arm coming down
+constexpr short ARG_SKILL_HOWL = 7209; // Howl of Madness: the ring
+constexpr short ARG_SKILL_SEED = 7210; // Seed of Madness: the circle under a player
+constexpr short ARG_ANIM_HOWL = 7211, ARG_MOTION_HOWL = 8; // its 4 s channel: nothing but the clips
+constexpr short ARG_ANIM_SLAM = 7212, ARG_MOTION_SLAM = 6; // its slam: the arms land 2.5 s in
+constexpr short FX_TILE = 2902; // KCAT_TILE_ERUPT.eft: rock over a whole tile
+constexpr short FX_ROCKS = 3002; // EARTHSPLIT_ROCKS.eft: one cluster
+constexpr short FX_SHOCKWAVE = 400;
+// FILE_SOUND rows: what is heard as a mechanic is drawn, and as it lands
+constexpr short SND_FLOOR_WARN = 1002, SND_FLOOR_FIRE = 1551; // casting02, point_heavy01
+constexpr short SND_GRASP_WARN = 1005, SND_GRASP_FIRE = 147; // casting06, HeavyAtt_001
+constexpr short SND_HOWL_WARN = 1003, SND_HOWL_FIRE = 1569; // casting04, point_thunder01
+constexpr short SND_SEED_FIRE = 1551;
+constexpr int TILES = 4; // the room is 4 x 4 tiles of TILE_CM (the maze's cells)
+constexpr float TILE_CM = 1500.f;
+constexpr int ARG_GRASP_CM = 2800, ARG_GRASP_DEG = 50; // each of three arms, 120 degrees apart
+constexpr int ARG_HOWL_CM = 1400, ARG_HOWL_FAR_CM = 4300; // inside it, then outside it
+constexpr int ARG_SEED_CM = 450;
+constexpr unsigned long ARG_GAP_MS[] = {11000, 10000, 8500}; // between mechanics, by waves called
+constexpr unsigned long ARM_WAIT_MS = 2500; // the animation's cast did not start: go on without it
+constexpr float HAZARD_MARGIN = 40.f; // cm inside a shape's edge that do not count: in the player's favour
+enum { ARG_FLOOR = 1, ARG_GRASP, ARG_HOWL };
 constexpr short SKILL_BURST = 7205, MOTION_BURST = 6; // Grave Burst: a 10 m circle round it
 constexpr short SKILL_LANCES = 7206, MOTION_LANCES = 8; // Soul Lances: five lines at one player
 // A cast ordered on a target out of the skill's range makes the boss walk first, and
@@ -100,7 +148,6 @@ constexpr Add WAVES[2][2][3] = {
 };
 constexpr int ADD_SPREAD = 700; // cm round the boss
 constexpr BYTE TIMER_BOSS = 2;
-const char* TIMER_BOSS_LABEL = "The Necromancer returns in";
 
 // ---- the maze's walls (scripts/catacomb_art.py: object 1 of each crypt's decoration
 // table is its wall, a 1 m model placed at 15x)
@@ -141,6 +188,33 @@ InBossRoom(const tPOINTF& pos) {
 float
 Distance(const tPOINTF& a, const tPOINTF& b) {
     return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y));
+}
+
+/// Whether a point stands in a warning's shape, HAZARD_MARGIN inside its edge.
+bool
+InShape(const tagZONE_WARN& s, const tPOINTF& pos) {
+    const float dx = pos.x - s.m_fX, dy = pos.y - s.m_fY;
+    const float fDist = std::sqrt(dx * dx + dy * dy);
+    const float a = s.m_nDirDeg * 3.14159265f / 180.f;
+    const float ux = std::cos(a), uy = std::sin(a);
+    switch (s.m_btShape) {
+        case ZONE_WARN_CIRCLE:
+            return fDist <= s.m_wLength - HAZARD_MARGIN && (!s.m_wInner || fDist >= s.m_wInner + HAZARD_MARGIN);
+        case ZONE_WARN_STRIP: {
+            const float fAlong = dx * ux + dy * uy, fAcross = std::fabs(-dx * uy + dy * ux);
+            return fAlong >= HAZARD_MARGIN && fAlong <= s.m_wLength - HAZARD_MARGIN
+                   && fAcross <= s.m_wWidth * 0.5f - HAZARD_MARGIN;
+        }
+        case ZONE_WARN_CONE: {
+            if (fDist > s.m_wLength - HAZARD_MARGIN)
+                return false;
+            if (fDist < 1.f)
+                return true;
+            const float fCos = (dx * ux + dy * uy) / fDist;
+            return fCos >= std::cos((s.m_wWidth * 0.5f - 2.f) * 3.14159265f / 180.f);
+        }
+    }
+    return false;
 }
 
 void
@@ -204,6 +278,7 @@ CCatacombs::CCatacombs():
     m_llCleaned{-1, -1},
     m_llWarned{-1, -1},
     m_bReqBoss{false, false},
+    m_iForceKind(-1),
     m_iReqSeed{0, 0},
     m_ullReqSeed{0, 0},
     m_dwCemeteryTick(0),
@@ -297,10 +372,11 @@ CCatacombs::ProcZone(CZoneTHREAD* pZone) {
     const short nZoneNO = pZone->Get_ZoneNO();
     if (nZoneNO == CEMETERY_ZONE)
         this->ProcCemetery(pZone);
-    else if (nZoneNO == CRYPT_ZONES[0])
-        this->ProcCrypt(pZone, 0);
-    else if (nZoneNO == CRYPT_ZONES[1])
-        this->ProcCrypt(pZone, 1);
+    else if (nZoneNO == CRYPT_ZONES[0] || nZoneNO == CRYPT_ZONES[1]) {
+        const int iSlot = nZoneNO == CRYPT_ZONES[0] ? 0 : 1;
+        this->ProcFloor(pZone, iSlot); // every frame: a dodge window is two seconds
+        this->ProcCrypt(pZone, iSlot);
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -494,7 +570,7 @@ CCatacombs::BuildMaze(CZoneTHREAD* pZone,
 
     int nGone = 0;
     for (CObjCHAR* pMob: mobs) {
-        if (pMob->Get_CharNO() != BOSS_NPC && !InBossRoom(pMob->m_PosCUR)) {
+        if (BossKindOf(pMob->Get_CharNO()) < 0 && !InBossRoom(pMob->m_PosCUR)) {
             pMob->Add_DAMAGE(pMob->Get_HP() + 1);
             nGone++;
         }
@@ -530,6 +606,8 @@ CCatacombs::ProcBoss(CZoneTHREAD* pZone,
         // sealed: the clearing took the boss with everything else
         b = Boss();
         m_bReqBoss[iSlot] = false;
+        m_Cues[iSlot].clear();
+        m_Hazards[iSlot].clear();
         if (pZone->ZoneTimerLeft(TIMER_BOSS) >= 0)
             pZone->SetZoneTimer(TIMER_BOSS, "", 0);
         return;
@@ -537,24 +615,30 @@ CCatacombs::ProcBoss(CZoneTHREAD* pZone,
 
     CObjCHAR* pBoss = nullptr;
     for (CObjCHAR* pMob: mobs) {
-        if (pMob->Get_CharNO() == BOSS_NPC) {
+        if (BossKindOf(pMob->Get_CharNO()) >= 0) {
             pBoss = pMob;
             break;
         }
     }
+    // the body to raise: a GM's choice, else the day's draw (one for both crypts)
+    const int iWantKind =
+        m_iForceKind >= 0 ? m_iForceKind : (int)(CatacombMaze::SeedFor(7, n.day) % BOSS_KINDS);
 
     // A fresh boss in the middle of its room; every counter starts over.
     auto raise = [&]() {
         b = Boss();
         b.llOpening = llOpening;
+        b.iKind = iWantKind;
+        m_Cues[iSlot].clear();
+        m_Hazards[iSlot].clear();
         if (pZone->ZoneTimerLeft(TIMER_BOSS) >= 0)
             pZone->SetZoneTimer(TIMER_BOSS, "", 0);
-        if (pZone->RegenCharacter(ROOM_MID, ROOM_MID, 1, BOSS_NPC, 1, TEAMNO_MOB, true)) {
+        if (pZone->RegenCharacter(ROOM_MID, ROOM_MID, 1, BOSSES[iWantKind].npc, 1, TEAMNO_MOB, true)) {
             b.bUp = true;
             b.dwRaisedAt = now;
         } else {
             b.dwRetryAt = now + BOSS_RETRY_MS;
-            LOG_WARN("[catacomb] {}: the boss (npc {}) did not spawn", CryptName(nZoneNO), BOSS_NPC);
+            LOG_WARN("[catacomb] {}: the boss (npc {}) did not spawn", CryptName(nZoneNO), BOSSES[iWantKind].npc);
         }
     };
     // The boss out with no death and no drop, and whatever stands in its room with it.
@@ -574,7 +658,7 @@ CCatacombs::ProcBoss(CZoneTHREAD* pZone,
         m_bReqBoss[iSlot] = false;
         remove();
         raise();
-        LOG_INFO("[catacomb] {}: a fresh boss, by GM", CryptName(nZoneNO));
+        LOG_INFO("[catacomb] {}: a fresh boss, by GM: {}", CryptName(nZoneNO), BOSSES[iWantKind].name);
         return;
     }
     if (b.llOpening != llOpening) {
@@ -584,6 +668,7 @@ CCatacombs::ProcBoss(CZoneTHREAD* pZone,
             b.llOpening = llOpening;
             b.bUp = true;
             b.dwRaisedAt = now;
+            b.iKind = BossKindOf(pBoss->Get_CharNO());
         } else {
             raise();
         }
@@ -600,10 +685,10 @@ CCatacombs::ProcBoss(CZoneTHREAD* pZone,
                 b.bReturning = true;
                 b.dwReturnAt = now + BOSS_RETURN_MS;
                 b.iReturnStep = 0;
-                pZone->SetZoneTimer(TIMER_BOSS, TIMER_BOSS_LABEL, (int)(BOSS_RETURN_MS / 1000));
-                Say(nZoneNO, SPEAKER, "The Crypt Necromancer has fallen. It will rise again in 15 minutes.");
+                pZone->SetZoneTimer(TIMER_BOSS, BOSSES[b.iKind].timer, (int)(BOSS_RETURN_MS / 1000));
+                Say(nZoneNO, SPEAKER, fmt::format("{} has fallen. The far room will not stay empty: 15 minutes.", BOSSES[b.iKind].name));
             } else {
-                Say(nZoneNO, SPEAKER, "The Crypt Necromancer has fallen. It will not rise again before the crypt seals.");
+                Say(nZoneNO, SPEAKER, fmt::format("{} has fallen. Nothing rises again before the crypt seals.", BOSSES[b.iKind].name));
             }
             LOG_INFO("[catacomb] {}: the boss was killed{}", CryptName(nZoneNO), b.bReturning ? "" : " (no return)");
         } else if (b.bReturning) {
@@ -611,13 +696,13 @@ CCatacombs::ProcBoss(CZoneTHREAD* pZone,
             const int nSteps = (int)(sizeof(BOSS_RETURN_STEPS_S) / sizeof(int));
             if (Reached(now, b.dwReturnAt)) {
                 raise();
-                Say(nZoneNO, SPEAKER, "The Crypt Necromancer has risen again in the far room.");
+                Say(nZoneNO, SPEAKER, fmt::format("{} has risen in the far room.", BOSSES[iWantKind].name));
                 LOG_INFO("[catacomb] {}: the boss returned", CryptName(nZoneNO));
             } else if (b.iReturnStep < nSteps && iLeft <= BOSS_RETURN_STEPS_S[b.iReturnStep]) {
                 const int iStep = BOSS_RETURN_STEPS_S[b.iReturnStep++];
                 Say(nZoneNO,
                     SPEAKER,
-                    fmt::format("Something stirs in the far room. The Necromancer rises in {}.",
+                    fmt::format("Something stirs in the far room. It rises in {}.",
                         iStep >= 120 ? fmt::format("{} minutes", iStep / 60) : std::string("one minute")));
             }
         } else if (b.dwRetryAt && Reached(now, b.dwRetryAt)) {
@@ -632,9 +717,12 @@ CCatacombs::ProcBoss(CZoneTHREAD* pZone,
         b.llOpening = llOpening;
         b.bUp = true;
         b.dwRaisedAt = now;
+        b.iKind = BossKindOf(pBoss->Get_CharNO());
         if (bWas && pZone->ZoneTimerLeft(TIMER_BOSS) >= 0)
             pZone->SetZoneTimer(TIMER_BOSS, "", 0);
     }
+
+    b.iObjIdx = pBoss->Get_INDEX();
 
     // ---- the fight
     std::vector<classUSER*> inRoom;
@@ -674,7 +762,10 @@ CCatacombs::ProcBoss(CZoneTHREAD* pZone,
                     pBoss->m_PosCUR.x, pBoss->m_PosCUR.y, ADD_SPREAD, a.npc, a.count, TEAMNO_MOB, true);
         }
         b.iWaves++;
-        Say(nZoneNO, BOSS_SPEAKER, b.iWaves == 1 ? "Rise. There are guests in my crypt." : "Rise, all of you! Bury them here!");
+        if (b.iKind == BOSS_NECROMANCER)
+            Say(nZoneNO, BOSSES[b.iKind].name, b.iWaves == 1 ? "Rise. There are guests in my crypt." : "Rise, all of you! Bury them here!");
+        else
+            Say(nZoneNO, SPEAKER, fmt::format("The dead of the crypt come to {}.", BOSSES[b.iKind].name));
         LOG_INFO("[catacomb] {}: the boss called wave {}", CryptName(nZoneNO), b.iWaves);
     }
 
@@ -689,6 +780,17 @@ CCatacombs::ProcBoss(CZoneTHREAD* pZone,
         b.bPair = false;
         b.dwNextCast = now + FIRST_CAST_MS;
     }
+    if (b.iKind == BOSS_ARGENTIA)
+        this->FightArgentia(iSlot, now, pBoss);
+    else
+        this->FightNecromancer(iSlot, now, pBoss, inRoom);
+}
+
+//-------------------------------------------------------------------------------------------------
+/// The Necromancer's turn: its two attacks on the clock, each a cast of its own.
+void
+CCatacombs::FightNecromancer(int iSlot, unsigned long now, CObjCHAR* pBoss, const std::vector<classUSER*>& inRoom) {
+    Boss& b = m_Boss[iSlot];
     const WORD wCmd = pBoss->Get_COMMAND();
     if (wCmd == CMD_SKILL2SELF || wCmd == CMD_SKILL2OBJ || wCmd == CMD_SKILL2POS || pBoss->Get_ActiveSKILL())
         return; // one at a time: the pair's second waits for the first to end
@@ -742,6 +844,239 @@ CCatacombs::ProcBoss(CZoneTHREAD* pZone,
     } else {
         b.dwNextCast = now + CAST_RETRY_MS;
     }
+}
+
+//-------------------------------------------------------------------------------------------------
+/// The floor of a crypt's boss room, every frame of its thread: the cues that are due
+/// become warnings on every client, and the warnings whose time is up hit whoever
+/// stands in them, as the boss. Nothing fires once the boss is dead or gone.
+void
+CCatacombs::ProcFloor(CZoneTHREAD* pZone, int iSlot) {
+    std::vector<Cue>& cues = m_Cues[iSlot];
+    std::vector<Hazard>& hazards = m_Hazards[iSlot];
+    Boss& b = m_Boss[iSlot];
+    if (cues.empty() && hazards.empty() && !b.iArmed)
+        return;
+    const unsigned long now = ::GetTickCount();
+    // indices are reused: the object must still be that body, here
+    CObjCHAR* pBoss = b.iObjIdx ? g_pObjMGR->Get_CharOBJ((WORD)b.iObjIdx, true) : nullptr;
+    if (pBoss && (BossKindOf(pBoss->Get_CharNO()) != b.iKind || pBoss->GetZONE() != pZone))
+        pBoss = nullptr;
+    if (!pBoss) {
+        cues.clear();
+        hazards.clear();
+        b.iArmed = 0;
+        return;
+    }
+
+    // A mechanic starts with its animation: the floor is timed from the moment the cast
+    // begins (an order waits for the swing in progress), or without it after a while.
+    if (b.iArmed
+        && ((pBoss->m_bCastingSTART && pBoss->Get_ActiveSKILL() == b.nArmedSkill)
+            || Reached(now, b.dwArmedAt + ARM_WAIT_MS))) {
+        const int iMechanic = b.iArmed;
+        b.iArmed = 0;
+        this->ArgentiaMechanic(iSlot, iMechanic, now);
+    }
+
+    bool bDue = false;
+    for (const Hazard& h: hazards)
+        bDue = bDue || Reached(now, h.dwFireAt);
+    bool bCue = false;
+    for (const Cue& c: cues)
+        bCue = bCue || Reached(now, c.dwAt);
+    if (!bDue && !bCue)
+        return;
+
+    std::vector<classUSER*> inRoom;
+    pZone->ForEachObject([&](CGameOBJ* pObj) {
+        if (pObj->IsUSER() && ((classUSER*)pObj)->Get_HP() > 0 && InBossRoom(((classUSER*)pObj)->m_PosCUR))
+            inRoom.push_back((classUSER*)pObj);
+    });
+
+    for (size_t i = 0; i < cues.size();) {
+        Cue& c = cues[i];
+        if (!Reached(now, c.dwAt)) {
+            ++i;
+            continue;
+        }
+        if (c.iSeedRadius > 0) {
+            c.shapes.clear();
+            for (classUSER* pUSER: inRoom) {
+                tagZONE_WARN s = {};
+                s.m_btShape = ZONE_WARN_CIRCLE;
+                s.m_fX = pUSER->m_PosCUR.x;
+                s.m_fY = pUSER->m_PosCUR.y;
+                s.m_wLength = (WORD)c.iSeedRadius;
+                c.shapes.push_back(s);
+            }
+        }
+        if (!c.shapes.empty()) {
+            pZone->SendZoneWarn(
+                c.shapes.data(), (int)c.shapes.size(), c.wWarnMS, c.nEffect, c.nWarnSound, c.nFireSound);
+            for (const tagZONE_WARN& s: c.shapes) {
+                Hazard h;
+                h.shape = s;
+                h.dwFireAt = now + c.wWarnMS;
+                h.nSkill = c.nSkill;
+                hazards.push_back(h);
+            }
+        }
+        cues.erase(cues.begin() + i);
+    }
+
+    for (size_t i = 0; i < hazards.size();) {
+        const Hazard h = hazards[i];
+        if (!Reached(now, h.dwFireAt)) {
+            ++i;
+            continue;
+        }
+        hazards.erase(hazards.begin() + i);
+        for (classUSER* pUSER: inRoom) {
+            if (pUSER->Get_HP() <= 0 || !InShape(h.shape, pUSER->m_PosCUR))
+                continue;
+            // as that skill's result: the digit comes with the row's hit effect and sound
+            pBoss->Hit_WithSKILL(pUSER, h.nSkill);
+        }
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+/// Argentia's turn, on the half-second tick: one mechanic at a time, in rotation. It
+/// orders the animation (a skill row that is nothing but its clips and their effects)
+/// and arms the mechanic; ProcFloor lays the floor when the cast starts.
+void
+CCatacombs::FightArgentia(int iSlot, unsigned long now, CObjCHAR* pBoss) {
+    Boss& b = m_Boss[iSlot];
+    if (b.iArmed || !m_Cues[iSlot].empty() || !m_Hazards[iSlot].empty())
+        return;
+    if (!Reached(now, b.dwNextCast) || pBoss->m_IngSTATUS.IsIgnoreSTATUS())
+        return;
+    const WORD wCmd = pBoss->Get_COMMAND();
+    if (wCmd == CMD_SKILL2SELF || wCmd == CMD_SKILL2OBJ || wCmd == CMD_SKILL2POS || pBoss->Get_ActiveSKILL())
+        return;
+    const int iMechanic = 1 + b.iRotation % 3; // floor, grasp, howl
+    const bool bSlam = iMechanic == ARG_GRASP;
+    ((CObjMOB*)pBoss)->SetCMD_Skill2SELF(bSlam ? ARG_ANIM_SLAM : ARG_ANIM_HOWL, bSlam ? ARG_MOTION_SLAM : ARG_MOTION_HOWL);
+    b.iArmed = iMechanic;
+    b.nArmedSkill = bSlam ? ARG_ANIM_SLAM : ARG_ANIM_HOWL;
+    b.dwArmedAt = now;
+    b.iRotation++;
+    b.dwNextCast = now + ARG_GAP_MS[b.iWaves < 2 ? b.iWaves : 2];
+}
+
+/// One of Argentia's mechanics as cues from `now` (the moment its animation began). The
+/// phase is the number of waves it has called: later ones chain and overlap more.
+void
+CCatacombs::ArgentiaMechanic(int iSlot, int iMechanic, unsigned long now) {
+    std::vector<Cue>& cues = m_Cues[iSlot];
+    const int iPhase = m_Boss[iSlot].iWaves;
+    auto cue = [&](unsigned long dwAfter, WORD wWarnMS, short nEffect, short nSkill, short nWarnSound,
+                   short nFireSound) -> Cue& {
+        Cue c;
+        c.dwAt = now + dwAfter;
+        c.wWarnMS = wWarnMS;
+        c.nEffect = nEffect;
+        c.nSkill = nSkill;
+        c.nWarnSound = nWarnSound;
+        c.nFireSound = nFireSound;
+        c.iSeedRadius = 0;
+        cues.push_back(c);
+        return cues.back();
+    };
+    // a tile: a strip as wide as it is long, from its west edge
+    auto tile = [](int a, int t) {
+        tagZONE_WARN s = {};
+        s.m_btShape = ZONE_WARN_STRIP;
+        s.m_fX = ROOM_MIN + a * TILE_CM;
+        s.m_fY = ROOM_MIN + (t + 0.5f) * TILE_CM;
+        s.m_nDirDeg = 0;
+        s.m_wLength = (WORD)TILE_CM;
+        s.m_wWidth = (WORD)TILE_CM;
+        return s;
+    };
+    auto tiles = [&](Cue& c, int iPattern, int iArg) {
+        for (int t = 0; t < TILES; t++) {
+            for (int a = 0; a < TILES; a++) {
+                const bool bInner = (a == 1 || a == 2) && (t == 1 || t == 2);
+                const bool bCorner = (a == 0 || a == 3) && (t == 0 || t == 3);
+                bool bOn = false;
+                switch (iPattern) {
+                    case 0: bOn = (a + t) % 2 == iArg; break; // a checkerboard
+                    case 1: bOn = t == iArg; break; // a row
+                    case 2: bOn = a == iArg; break; // a column
+                    case 3: bOn = !bCorner; break; // the cross: the corners are safe
+                    case 4: bOn = !bInner; break; // the ring: the middle is safe
+                }
+                if (bOn)
+                    c.shapes.push_back(tile(a, t));
+            }
+        }
+    };
+
+    switch (iMechanic) {
+        case ARG_FLOOR: {
+            const int iPick = iPhase == 0 ? 0 : rand() % 3;
+            if (iPick == 0) {
+                // one half of the board, then the other: stand on a dark tile, then cross
+                const int iFirst = rand() % 2;
+                tiles(cue(0, 2600, FX_TILE, ARG_SKILL_FLOOR, SND_FLOOR_WARN, SND_FLOOR_FIRE), 0, iFirst);
+                tiles(cue(2000, 2200, FX_TILE, ARG_SKILL_FLOOR, 0, SND_FLOOR_FIRE), 0, 1 - iFirst);
+            } else if (iPick == 1) {
+                // a wave across the room, row by row or column by column
+                const int iAxis = 1 + rand() % 2;
+                const bool bBack = rand() % 2 != 0;
+                for (int k = 0; k < TILES; k++)
+                    tiles(cue(k * 700, 2300, FX_TILE, ARG_SKILL_FLOOR, k == 0 ? SND_FLOOR_WARN : 0, SND_FLOOR_FIRE),
+                        iAxis,
+                        bBack ? TILES - 1 - k : k);
+            } else {
+                // everything but the corners, then everything but the middle
+                tiles(cue(0, 2600, FX_TILE, ARG_SKILL_FLOOR, SND_FLOOR_WARN, SND_FLOOR_FIRE), 3, 0);
+                tiles(cue(2200, 2200, FX_TILE, ARG_SKILL_FLOOR, 0, SND_FLOOR_FIRE), 4, 0);
+            }
+            break;
+        }
+        case ARG_GRASP: {
+            // three arms a third of a turn apart; later a second set comes down between them
+            const int iTurn = rand() % 120;
+            for (int iSet = 0; iSet < (iPhase == 0 ? 1 : 2); iSet++) {
+                Cue& c = cue(iSet * 1500, iSet == 0 ? 2530 : 2000, 0, ARG_SKILL_GRASP,
+                    iSet == 0 ? SND_GRASP_WARN : 0, SND_GRASP_FIRE);
+                for (int k = 0; k < 3; k++) {
+                    tagZONE_WARN s = {};
+                    s.m_btShape = ZONE_WARN_CONE;
+                    s.m_fX = ROOM_MID;
+                    s.m_fY = ROOM_MID;
+                    s.m_nDirDeg = (short)((iTurn + iSet * 60 + k * 120) % 360);
+                    s.m_wLength = (WORD)ARG_GRASP_CM;
+                    s.m_wWidth = (WORD)ARG_GRASP_DEG;
+                    c.shapes.push_back(s);
+                }
+            }
+            break;
+        }
+        case ARG_HOWL: {
+            // close to it, then far from it (the other way round, now and then, at the end)
+            const bool bFarFirst = iPhase >= 2 && rand() % 2 != 0;
+            for (int k = 0; k < 2; k++) {
+                const bool bNear = (k == 0) != bFarFirst;
+                tagZONE_WARN s = {};
+                s.m_btShape = ZONE_WARN_CIRCLE;
+                s.m_fX = ROOM_MID;
+                s.m_fY = ROOM_MID;
+                s.m_wLength = (WORD)(bNear ? ARG_HOWL_CM : ARG_HOWL_FAR_CM);
+                s.m_wInner = (WORD)(bNear ? 0 : ARG_HOWL_CM);
+                cue(k * 2200, k == 0 ? 2600 : 2200, FX_SHOCKWAVE, ARG_SKILL_HOWL, k == 0 ? SND_HOWL_WARN : 0,
+                    SND_HOWL_FIRE)
+                    .shapes.push_back(s);
+            }
+            break;
+        }
+    }
+    // from the first wave on, a seed under every player as well: nobody stands still
+    if (iPhase >= 1)
+        cue(1000, 2000, FX_ROCKS, ARG_SKILL_SEED, 0, SND_SEED_FIRE).iSeedRadius = ARG_SEED_CM;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -888,7 +1223,7 @@ CCatacombs::GmStatus() {
     if (n.state != State::Break) {
         const Boss& b = m_Boss[n.crypt == CRYPT_ZONES[0] ? 0 : 1];
         const unsigned long now = ::GetTickCount();
-        s += b.bUp ? fmt::format(" | boss up, {} wave(s) called", b.iWaves)
+        s += b.bUp ? fmt::format(" | {} up, {} wave(s) called", BOSSES[b.iKind].name, b.iWaves)
                    : b.bReturning ? fmt::format(" | boss returns in {}", Span((int)((long)(b.dwReturnAt - now) / 1000)))
                                   : std::string(" | boss down for this opening");
     }
@@ -941,13 +1276,29 @@ CCatacombs::GmMaze() {
 }
 
 std::string
-CCatacombs::GmBoss() {
+CCatacombs::GmBoss(const std::string& arg) {
     std::lock_guard<std::mutex> lock(m_Mutex);
     const Now n = this->Clock();
+    if (!arg.empty()) {
+        int iKind = arg == "day" ? -1 : BOSS_KINDS;
+        for (int k = 0; k < BOSS_KINDS; k++) {
+            if (arg == BOSSES[k].key)
+                iKind = k;
+        }
+        if (iKind == BOSS_KINDS) {
+            std::string s = "Usage: catacomb boss [day";
+            for (int k = 0; k < BOSS_KINDS; k++)
+                s += std::string("|") + BOSSES[k].key;
+            return s + "]";
+        }
+        m_iForceKind = iKind;
+    }
     if (n.state == State::Break)
         return "The crypt is sealed: no boss until it opens.";
     m_bReqBoss[n.crypt == CRYPT_ZONES[0] ? 0 : 1] = true;
-    return fmt::format("A fresh boss rises in {} within a second.", CryptName(n.crypt));
+    return fmt::format("{} rises in {} within a second.",
+        BOSSES[m_iForceKind >= 0 ? m_iForceKind : (int)(CatacombMaze::SeedFor(7, n.day) % BOSS_KINDS)].name,
+        CryptName(n.crypt));
 }
 
 std::string
