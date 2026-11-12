@@ -73,6 +73,14 @@ public:
     /// A crypt zone: for callers that must treat both alike.
     static bool IsCrypt(short nZoneNO);
 
+    /// Whether a maze wall stands between two characters of a crypt: pFrom could not walk
+    /// straight to pTo (the walk grid's walls are the only walls the server knows). Someone
+    /// against a wall stands on a cell the grid calls blocked, so a line that ends within
+    /// 2 m of pTo counts as clear; a wall is 3.5 m thick. False outside the crypts. The
+    /// one rule behind what a crypt monster may notice (CZoneTHREAD::FindInBand) and cast
+    /// at (CObjMOB::SetCMD_Skill2OBJ, CObjCHAR::Nav_Chase).
+    static bool WallBetween(CObjCHAR* pFrom, CObjCHAR* pTo);
+
     /// GM: `/catacomb status|close|open|daily|pass <name>|clock`.
     std::string GmStatus();
     std::string GmClose(); // jump to one minute before the break

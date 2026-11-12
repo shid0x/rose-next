@@ -5,6 +5,7 @@
 #include "GS_ThreadZONE.h"
 #include "IO_Quest.h"
 #include "ZoneLIST.h"
+#include "catacombs.h"
 
 #include "rose/common/store_item_code.h"
 
@@ -173,6 +174,13 @@ bool
 CObjMOB::SetCMD_Skill2OBJ(int iTargetObjIDX, short nSkillIDX, short nMotion) {
     // called from CAI_OBJ..
     if (this->m_IngSTATUS.IsIgnoreSTATUS() || this->m_IngSTATUS.IsSET(FLAG_ING_DUMB))
+        return true;
+
+    // In a crypt's maze a monster casts only at what it has a clear line to. A cast ordered
+    // across a wall sent it running straight at its target, through the wall: a run to cast
+    // is not put on a path (CObjCHAR::Nav_Chase). Dropped like a stunned monster's order;
+    // it keeps attacking, and that chase walks round.
+    if (CCatacombs::WallBetween(this, g_pObjMGR->Get_CharOBJ(iTargetObjIDX, true)))
         return true;
 
     if (CObjAI::SetCMD_Skill2OBJ(iTargetObjIDX, nSkillIDX)) {

@@ -690,8 +690,15 @@ comes later (user, 2026-11-09: "we'll deal with it later").
   drops what the scanning monster cannot walk straight to (`Nav_CanWalkTo`, 2 m of
   slack for a character against a wall), for `AI_FindFirstOBJ(int)` of a monster in
   `CCatacombs::IsCrypt` zones: aggro, calls for help, "move to an ally". A monster
-  that is hit still answers its attacker through a wall. Attacks, skills and area
-  hits below are still to do.
+  that is hit still answers its attacker through a wall.
+- **Built (2026-11-10, awaiting its test): no cast across a wall.** The user saw Tomb
+  Murilos walk through walls, on demand. Their AI orders Savage Bite "at the target"
+  whenever they are hit or chasing, and **a monster's run to cast a skill is never put
+  on a path** (`CObjCHAR::Nav_Chase` acts in `CMD_ATTACK` only), so it went straight.
+  In the crypts `CObjMOB::SetCMD_Skill2OBJ` now drops an order when
+  `CCatacombs::WallBetween(caster, target)`, and a skill run that loses its line
+  becomes a plain attack, which walks round. `WallBetween` is also the sight rule.
+  Area hits reaching through a wall are still to do.
 - **Monster scans** skip a target behind a wall. No aggro through walls, so aggro can
   then grow.
 - **Monster attacks and skills** need a clear line. Without one the monster keeps

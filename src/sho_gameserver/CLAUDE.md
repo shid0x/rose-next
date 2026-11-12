@@ -352,6 +352,11 @@ and its §6 decisions before touching movement, height or AoE shape. Phase 0 is 
     to its last leg (`Nav_ResumeChase`, `RealProc`'s drop).
   - The hook is `CObjAI::Nav_Chase`, called from `Goto_TARGET` and `ProcCMD_ATTACK`'s
     out-of-range branch. It acts only in `CMD_ATTACK`; skill chases still go straight.
+    **So a monster whose AI casts "at the target" from any distance walks through
+    walls to do it** (the crypts' Tomb Murilos, 2026-11-10). The crypts refuse a cast
+    with a wall between (`CCatacombs::WallBetween` in `CObjMOB::SetCMD_Skill2OBJ`) and
+    turn a skill run that loses its line into a plain attack (top of `Nav_Chase`);
+    elsewhere it is still open.
   - Walks (leash, summon follow, CTRL+click) are target-less agents. The agent owns
     `CMD_MOVE` and `CMD_RUNAWAY`, and re-issuing a walk toward a goal within 4 m keeps it.
   - Search arrays are per thread (`thread_local`, about 2 MB each). Searches run only on

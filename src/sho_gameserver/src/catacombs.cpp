@@ -428,6 +428,18 @@ CCatacombs::ProcCrypt(CZoneTHREAD* pZone, int iSlot) {
     }
 }
 
+bool
+CCatacombs::WallBetween(CObjCHAR* pFrom, CObjCHAR* pTo) {
+    constexpr float SLACK = 200.f; // cm
+    if (!pFrom || !pTo || pFrom == pTo || !pFrom->GetZONE() || !IsCrypt(pFrom->GetZONE()->Get_ZoneNO()))
+        return false;
+    float fLX = pTo->m_PosCUR.x, fLY = pTo->m_PosCUR.y;
+    if (pFrom->Nav_CanWalkTo(pTo->m_PosCUR.x, pTo->m_PosCUR.y, &fLX, &fLY))
+        return false;
+    const float dx = pTo->m_PosCUR.x - fLX, dy = pTo->m_PosCUR.y - fLY;
+    return dx * dx + dy * dy > SLACK * SLACK;
+}
+
 //-------------------------------------------------------------------------------------------------
 /// A crypt's maze from a seed, on its own zone thread: the walls on every client, the
 /// same walls on the walk grid, the router. Whatever stands in the corridors goes (a wall

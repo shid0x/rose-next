@@ -560,6 +560,21 @@ CObjCHAR::Nav_ResumeChase(CObjCHAR* pTarget) {
 
 bool
 CObjCHAR::Nav_Chase(CObjCHAR* pTarget) {
+    // A monster running to cast a skill goes straight at its target (below: only an attack
+    // chase is put on a path). In a crypt's maze that run ends when a wall comes between
+    // them: the cast is given up for a plain attack, which walks round. The Tomb Murilos,
+    // which order their bite whenever they are hit, came through the walls (2026-11-10).
+    if (pTarget && CMD_SKILL2OBJ == this->Get_COMMAND() && this->IsA(OBJ_MOB) && !m_bCastingSTART
+        && CCatacombs::WallBetween(this, pTarget)) {
+        this->SetCMD_RUNnATTACK(pTarget->Get_INDEX());
+        if (CMD_SKILL2OBJ == this->Get_COMMAND()) {
+            // it may not attack that target (taunted onto another): it stops, and its AI
+            // picks again
+            CObjAI::SetCMD_STOP();
+            this->Send_gsv_STOP();
+        }
+        return true;
+    }
     // an attack chase only: Goto_TARGET also walks players and monsters up to an NPC
     if (!pTarget || CMD_ATTACK != this->Get_COMMAND() || !this->Nav_Pathing()) {
         return false;
