@@ -91,9 +91,11 @@ const TOWN_NPC_TYPE: i32 = 900;
 pub const MAX_SPAWN_COUNT: i32 = 100;
 
 /// Mob motion slots (`MOB_ANI_*`, `common/shared/datatype.h`).
-pub const MOTION_NAMES: [&str; 11] = [
+/// Slots 12-23 are six more cast / release pairs (2026-11-12, `MAX_MOB_ANI` 24).
+pub const MOTION_NAMES: [&str; 24] = [
     "idle", "walk", "attack", "hit", "death", "run", "cast 1", "skill 1", "cast 2", "skill 2",
-    "extra",
+    "extra", "unused", "cast 3", "skill 3", "cast 4", "skill 4", "cast 5", "skill 5", "cast 6",
+    "skill 6", "cast 7", "skill 7", "cast 8", "skill 8",
 ];
 /// A missing file in one of these slots is visible in every fight.
 const CORE_MOTIONS: usize = 5;

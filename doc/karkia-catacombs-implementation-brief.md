@@ -540,7 +540,22 @@ sleep, with nothing to move out of.
     wave on, a **Seed of Madness** circle also lands under every player. Gaps 11 / 10 /
     8.5 s by phase. `/catacomb boss argentia` raises it; the daily draw is between the
     Necromancer and Argentia.
-  - **Not built: the other three fights** (Ferdinando, Gladiomurus, the Assassin).
+  - **Built and validated in game (2026-11-12): Ferdinando's fight**, "a fancy swordsman
+    with bloody effects" (the user). `scripts/catacomb_ferdinando.py` (its docstring is
+    the record), `FightFerdinando` / `FerdinandoMechanic`. SlopRose's iai katana clips
+    retargeted onto his skeleton with EVO-REFORGED's tool, the kit's effects recoloured
+    to blood, six moves on the floor layer from wherever he stands: **Crimson Draw**
+    (three lines in a fan, later through him), **Night Step** (a zig-zag through three
+    players; he is at the end of each line as it fires), **Sanguine Rain** (a cut under
+    every player, up to three times), **Spiral of Blades** (5-19 m round him; later a
+    cut round himself after), **Rising Crescent** (a cone in front, later behind too)
+    and, as his answer to each wave of the dead, **Severance** (six lines through
+    players while a storm builds 17 m round him). What it needed outside the
+    controller: `MAX_MOB_ANI` 11 -> 24 (six more cast / release slot pairs, 12-23),
+    `GSV_MOB_BLINK` 0x07f4 + `CObjCHAR::Blink_POSITION` (a monster somewhere else at
+    once, mid-clip), and a warning's effect turned along its strip or cone.
+    `/catacomb boss ferdinando` raises him; the daily draw is among three now.
+  - **Not built: the other two fights** (Gladiomurus, the Assassin).
   - **Dragon Nest material: blocked.** EVO's client install is now packed in encrypted
     `EVOnnn.EPK` archives; the key is not in their repo or on this machine, and their
     converter (`TOOLS/DNImport`, which writes standard EFT / PTL / ZMS / ZMO our client

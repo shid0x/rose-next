@@ -271,6 +271,32 @@ CRecvPACKET::Recv_gsv_ZONE_WARN() {
     }
 }
 
+/// A monster the server has put somewhere else at once (a boss stepping through its room
+/// in the middle of a skill clip): its copy goes there, its command and its animation
+/// stay as they are. Never a player: their own client walks them.
+void
+CRecvPACKET::Recv_gsv_MOB_BLINK() {
+    if (m_pRecvPacket->m_HEADER.m_nSize < (int)sizeof(gsv_MOB_BLINK))
+        return;
+    const gsv_MOB_BLINK& p = m_pRecvPacket->m_gsv_MOB_BLINK;
+    CObjCHAR* pCHAR = g_pObjMGR->Get_ClientCharOBJ(p.m_wObjectIDX, true);
+    if (!pCHAR || !pCHAR->IsA(OBJ_MOB))
+        return;
+    D3DXVECTOR3 pos = pCHAR->Get_CurPOS();
+    pos.x = p.m_fX;
+    pos.y = p.m_fY;
+    pCHAR->ResetCUR_POS(pos);
+    pCHAR->m_PosGOTO = pos; // nothing left to walk: the next order starts from here
+    pCHAR->SetServerZ(p.m_nPosZ, true);
+    if (Log::level_enabled(Rose::Common::LogLevel::Debug) && pCHAR->IsCombatTraceSubject()) {
+        LogString(LOG_DEBUG_,
+            "CombatTrace blink received: obj %d to %.0f, %.0f\n",
+            pCHAR->Get_INDEX(),
+            p.m_fX,
+            p.m_fY);
+    }
+}
+
 void
 CRecvPACKET::Recv_gsv_ANNOUNCE_CHAT() {
     short nOffset = sizeof(t_PACKETHEADER);

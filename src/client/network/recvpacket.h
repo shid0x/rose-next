@@ -37,6 +37,7 @@ public:
     void Recv_gsv_ZONE_OBJECTS();
     void Recv_gsv_ZONE_TIMER();
     void Recv_gsv_ZONE_WARN();
+    void Recv_gsv_MOB_BLINK();
 
     bool Recv_lsv_LOGIN_REPLY();
 

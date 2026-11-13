@@ -420,6 +420,12 @@ using namespace Rose::Common;
 // time is up. Not re-sent to a player who arrives while one runs.
 #define GSV_ZONE_WARN 0x07f3
 
+// A monster that is somewhere else at once (2026-11-12): no walk, no stop. The server has
+// already moved it (CObjCHAR::Blink_POSITION); the client puts its copy there and leaves
+// its command and its animation alone, so a boss can step through the room in the middle
+// of a skill clip (the Karkia catacombs' Ferdinando). Sent to the whole zone.
+#define GSV_MOB_BLINK 0x07f4
+
 struct cli_CHECK_AUTH: public t_PACKETHEADER {};
 
 struct srv_CHECK_AUTH: public t_PACKETHEADER {
@@ -1188,6 +1194,12 @@ struct gsv_ZONE_WARN: public t_PACKETHEADER {
     short m_nWarnSound; // FILE_SOUND row played once as the shapes appear (0 = none)
     short m_nFireSound; // FILE_SOUND row played once as they fire (0 = none)
     BYTE m_btCount; // tagZONE_WARN records that follow
+};
+
+struct gsv_MOB_BLINK: public t_PACKETHEADER {
+    WORD m_wObjectIDX;
+    float m_fX, m_fY; // world cm
+    short m_nPosZ; // its floor, as gsv_STOP's (-32768 = none)
 };
 
 // One zone timer (GSV_ZONE_TIMER).
@@ -3001,6 +3013,7 @@ struct t_PACKET {
         gsv_ZONE_OBJECTS m_gsv_ZONE_OBJECTS;
         gsv_ZONE_TIMER m_gsv_ZONE_TIMER;
         gsv_ZONE_WARN m_gsv_ZONE_WARN;
+        gsv_MOB_BLINK m_gsv_MOB_BLINK;
         // gsv_SUMMON_CMD			m_gsv_SUMMON_CMD;
         gsv_PATSTATE_CHANGE m_gsv_PATSTATE_CHANGE;
 

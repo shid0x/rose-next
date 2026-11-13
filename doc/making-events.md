@@ -89,6 +89,29 @@ dodge), see [making-monsters.md](making-monsters.md).
   - **a monster with walk and run speed 0 does not chase** (`CObjCHAR::Nav_Chase`,
     `SetCMD_RUNnATTACK`): it takes only targets in its reach and lets go of one that
     leaves it. Before, every client ran it on the spot.
+  Added with Ferdinando (2026-11-12, `scripts/catacomb_ferdinando.py`), a boss that
+  walks and has six moves:
+  - **more than two skills on one monster**: `MAX_MOB_ANI` is 24, and CHR slots 12-23
+    are six more cast / release pairs (the row's cols 52 / 68 name the slots);
+  - **cast speeds in multiples of 10 %**: the engine plays a clip at a whole number of
+    frames a second, so 25 % of 30 fps runs at 7 on the client and 7.5 on the server
+    and the floor fires off the animation;
+  - **a move with a front is aimed at the boss's current target**: a self skill does
+    not turn the model, and he already faces whoever he is hitting;
+  - **the row's col 29 = 2** sends him back to the fight he was in when the move ends;
+  - **a warning's effect is turned along its strip or cone** (the effect's +X is the
+    heading; at a strip's middle, at a cone's point), so build line and fan effects
+    along +X. An effect linked to the boss by a casting slot is drawn at his size;
+    one played by a warning is in the world at its own;
+  - **`CObjCHAR::Blink_POSITION(x, y)`** puts a monster somewhere else at once
+    (`GSV_MOB_BLINK`): no walk, no stop, its command and clip untouched. The caller
+    answers for the spot (open floor, same level);
+  - **another client's effects may be held**: SlopRose's kit marks effects its client
+    removes by itself (a mesh `repeat` 0, a particle sequence with `loops` 0). Ours
+    never end, so give them a count before using one as a one-shot;
+  - **player clips on a monster**: EVO-REFORGED's `AnimRetarget/retarget.py` (by bone
+    name; 221 of our NPC skeletons carry the avatar's `b1_*` bones), run as a
+    subprocess. Clear the source's frame events and write ours.
 - **Remove it**:
   - with no death and no drop: `pZone->Sub_DIRECT(p); delete p;` (the GM "npc DEL"
     pattern);

@@ -185,6 +185,14 @@ CGroundTelegraphs::Erupt(const Telegraph& t) {
     if (pEffect) {
         D3DXVECTOR3 pos(fX, fY, this->Height(t, fX, fY) - LIFT_CM);
         pEffect->SetPOSITION(pos);
+        // A strip's or a cone's effect lies along it: its +X is the shape's heading (a
+        // line of cuts down a strip, a fan of them from a cone's point). A turn about
+        // the vertical only, in the world, so at the effect's own size.
+        if (t.shape == SHAPE_STRIP || t.shape == SHAPE_CONE) {
+            const float fHalf = atan2f(t.fDirY, t.fDirX) * 0.5f;
+            D3DXQUATERNION turn(0.f, 0.f, sinf(fHalf), cosf(fHalf));
+            pEffect->SetROTATION(turn);
+        }
         pEffect->InsertToScene();
     }
 }

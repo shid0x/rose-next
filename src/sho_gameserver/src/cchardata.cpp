@@ -50,8 +50,9 @@ CCharDATA::Load_MOBorNPC(FILE* fp, t_HASHKEY* pAniKEY, short nAniCNT) {
         fread(&nAniIDX, sizeof(short), 1, fp);
         fread(&nIndex, sizeof(short), 1, fp);
 
-        if (nAniIDX < 0) {
-            // 사용하지 않는다...
+        if (nAniIDX < 0 || nAniIDX >= MAX_MOB_ANI) {
+            // 사용하지 않는다... (or a slot this build does not have: the assert below is
+            // compiled out of a release build, and the write went past the array)
             continue;
         }
 

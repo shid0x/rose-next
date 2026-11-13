@@ -75,6 +75,8 @@ the reasoning in its docstring.
   24/34 launch a projectile, 26 fires, 25 hits; a payload (area hit, status) drains on
   24/34/25/35/26/10/20/56/66. A release clip with none of them lands the damage with no
   animation. `audit-ai-skill-refs.py` warns about every such cast; read its output.
+  Pairs are 6/7 and 8/9, and since 2026-11-12 also 12/13 ... 22/23 (`MAX_MOB_ANI` 24;
+  slot 11 is free): a monster may have eight skills with clips of their own.
 - **Casting effects (LIST_SKILL cols 56-67: three columns per effect, effect / dummy
   point / sound) play only on clip event frames 44, 64, 74, 84** (casting effects 0-3).
   Most monster clips carry none, so the effects you wrote never show, and a spell that

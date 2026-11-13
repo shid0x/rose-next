@@ -247,6 +247,11 @@ public:
     /// hit, sent as that skill's result -- so the client shows the digit with the row's hit
     /// effect and plays its hit sound, and a miss shows as one. Returns the damage.
     int Hit_WithSKILL(CObjCHAR* pTarget, short nSkillIDX);
+    /// This character is at (fX, fY) of its zone at once: no walk, no stop, its command and
+    /// its motion left as they are (a boss stepping through its room in the middle of a
+    /// skill clip). Every client is told (GSV_MOB_BLINK). Not for players: their own client
+    /// walks them. The caller answers for the spot being open floor on the same level.
+    void Blink_POSITION(float fX, float fY);
     void Give_DAMAGE(CObjCHAR* pTarget, uniDAMAGE sDamage, bool bDropItem = true,
         Rose::Network::Packets::DamagePresentationKind kind
         = Rose::Network::Packets::DamagePresentationKind::Immediate,

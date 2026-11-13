@@ -72,6 +72,10 @@ What it writes
 * **Argentia's fight** (2026-11-12, catacomb_argentia.py): the skill rows the controller
   hits and animates with (LIST_SKILL 7207-7212) and the tile-eruption effect
   (FILE_EFFECT 2902).
+* **Ferdinando's fight** (2026-11-12, catacomb_ferdinando.py -- its docstring is the
+  record): SlopRose's iai katana clips retargeted onto his skeleton (CHR slots 2, 6-9,
+  12-19), the kit's effects in blood (FILE_EFFECT 2903-2916) and his rows (LIST_SKILL
+  7213-7224). Needs the SlopRose overrides and EVO-REFORGED's retargeter on disk.
 
 Deploy: restart the servers (LIST_ZONE, LIST_NPC, the QSD, the IFOs and the grids are
 read at start), re-bake the client data (scripts/pack.ps1).
@@ -102,6 +106,7 @@ import catacomb_monsters as mon  # noqa: E402
 import catacomb_boss as boss  # noqa: E402
 import catacomb_pool as pool  # noqa: E402
 import catacomb_argentia as argentia  # noqa: E402
+import catacomb_ferdinando as ferdinando  # noqa: E402
 
 BUILD_DIR = os.path.join(ROOT, "build", "catacombs")
 JROSE = r"C:\Users\Thomas\Desktop\Testclients\Jrose"
@@ -695,6 +700,7 @@ def verify(ours):
     boss.verify(ours, check)
     pool.verify(ours, check)
     argentia.verify(ours, check)
+    ferdinando.verify(ours, check)
     blob = open(P(ours, QSD_REL), "rb").read()
     for name, c, r in triggers():
         check(qsd.trigger_bytes(blob, name) == qsd.build_trigger(name, c, r), f"QP401 {name}")
@@ -748,6 +754,7 @@ def restore(ours):
     mon.remove_files(ours)
     boss.remove_files(ours)
     argentia.remove_files(ours)
+    ferdinando.remove_files(ours)
     con = find_ci(ours, r"3DDATA\EVENT" + "\\" + KEEPER_CON)
     if os.path.isfile(con):
         os.remove(con)
@@ -792,6 +799,7 @@ def main():
     if pool.apply(args.ours, dry) and not dry:
         pool.finish(args.ours)
     argentia.apply(args.ours, dry)
+    ferdinando.apply(args.ours, dry)
     print("the zones")
     zones(args.ours, dry)
     print("the keepers")

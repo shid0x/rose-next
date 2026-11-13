@@ -197,8 +197,8 @@ CCharMODEL::Load_MOBorNPC(CFileSystem* pFileSystem,
         pFileSystem->ReadInt16(&nAniIDX);
         pFileSystem->ReadInt16(&nIndex);
 
-        if (nAniIDX < 0) {
-            // 사용하지 않는다...
+        if (nAniIDX < 0 || nAniIDX >= MAX_MOB_ANI) {
+            // 사용하지 않는다... (or a slot this build does not have: it wrote past the array)
             continue;
         }
 

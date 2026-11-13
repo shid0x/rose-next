@@ -475,7 +475,12 @@ enum {
     MOB_ANI_SKILL_ACTION02,
     MOB_ANI_ETC,
 
-    MAX_MOB_ANI
+    // 11 is free. 12-23 are six more cast / release pairs (a cast plays slot N, its release
+    // N + 1) for a monster with more than two skills: the crypts' Ferdinando, 2026-11-12.
+    // LIST_NPC.CHR names slots by number, so a new pair costs data only.
+    MOB_ANI_CASTION03 = 12,
+
+    MAX_MOB_ANI = 24
 };
 
 //*************************************************************************************************

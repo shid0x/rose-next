@@ -67,7 +67,7 @@ constexpr int TIMER_DRIFT_S = 2; // re-sent only when the end moved (a GM shifte
 // ---- the boss (scripts/catacomb_boss.py: keep the two in step)
 // The pool (scripts/catacomb_boss.py, catacomb_pool.py). A body is in the daily draw
 // once its fight is written here; the others exist only for /mon until then.
-enum { BOSS_NECROMANCER, BOSS_ARGENTIA, BOSS_KINDS };
+enum { BOSS_NECROMANCER, BOSS_ARGENTIA, BOSS_FERDINANDO, BOSS_KINDS };
 struct BossBody {
     int npc;
     const char* key; // `/catacomb boss <key>`
@@ -77,6 +77,7 @@ struct BossBody {
 constexpr BossBody BOSSES[BOSS_KINDS] = {
     {2556, "necromancer", "The Crypt Necromancer", "The Necromancer returns in"},
     {2558, "argentia", "Argentia, the Mad Giant", "Argentia returns in"},
+    {2557, "ferdinando", "Ferdinando, the Eternal", "Ferdinando returns in"},
 };
 
 int
@@ -113,6 +114,44 @@ constexpr unsigned long ARG_GAP_MS[] = {11000, 10000, 8500}; // between mechanic
 constexpr unsigned long ARM_WAIT_MS = 2500; // the animation's cast did not start: go on without it
 constexpr float HAZARD_MARGIN = 40.f; // cm inside a shape's edge that do not count: in the player's favour
 enum { ARG_FLOOR = 1, ARG_GRASP, ARG_HOWL };
+
+// ---- Ferdinando (LIST_NPC 2557): a swordsman, and his sword is the floor's lines
+// (scripts/catacomb_ferdinando.py: the rows, the clips' frames and these times agree).
+// Damage rows are what a player caught takes; animation rows are self "skills" that are
+// only his clips and their effects, cast on `motion` and released on motion + 1.
+constexpr short FERD_SKILL_DRAW = 7213, FERD_SKILL_STEP = 7214, FERD_SKILL_RAIN = 7215;
+constexpr short FERD_SKILL_SEVER = 7216, FERD_SKILL_SPIRAL = 7217, FERD_SKILL_CRESCENT = 7218;
+enum { FERD_DRAW = 1, FERD_STEP, FERD_RAIN, FERD_SEVER, FERD_SPIRAL, FERD_CRESCENT, FERD_MOVES };
+struct FerdMove {
+    short anim, motion;
+    unsigned long castMS; // the cast clip's length at its speed: the action starts then
+};
+constexpr FerdMove FERD_MOVE[FERD_MOVES] = {
+    {0, 0, 0},
+    {7219, 6, 1667}, // Crimson Draw: 15 frames at 30 %
+    {7220, 8, 2333}, // Night Step: 14 frames at 20 %
+    {7221, 12, 1000}, // Sanguine Rain: 12 frames at 40 %
+    {7222, 14, 2000}, // Severance: 30 frames at 50 %
+    {7223, 16, 2167}, // Spiral of Blades: 13 frames at 20 %
+    {7224, 18, 1333}, // Rising Crescent: 12 frames at 30 %
+};
+constexpr int FERD_ORDER[] = {FERD_DRAW, FERD_RAIN, FERD_STEP, FERD_CRESCENT, FERD_SPIRAL};
+constexpr unsigned long FERD_GAP_MS[] = {11000, 10000, 8500}; // between moves, by waves called
+constexpr short FX_BLOOD_RIFT = 2905, FX_BLOOD_LINE = 2914, FX_BLOOD_DASH = 2915, FX_BLOOD_FAN = 2916;
+constexpr short SND_FERD_WARN = 1002, SND_FERD_CUT = 38, SND_FERD_END = 1569; // casting02, Sword_002, point_thunder01
+// the cuts of each action clip, ms after it starts (frame / 30 fps)
+constexpr unsigned long FERD_DRAW_CUT_MS[3] = {133, 600, 1067};
+constexpr unsigned long FERD_STEP_CUT_MS[3] = {167, 633, 1100};
+constexpr unsigned long FERD_SEVER_CUT_MS[6] = {267, 567, 867, 1167, 1467, 1767};
+constexpr unsigned long FERD_SEVER_END_MS = 2967, FERD_CRESCENT_CUT_MS = 133;
+constexpr int FERD_DRAW_CM = 2200, FERD_DRAW_WIDE = 450, FERD_DRAW_FAN_DEG = 35;
+constexpr int FERD_STEP_MIN_CM = 800, FERD_STEP_MAX_CM = 1800, FERD_STEP_PAST_CM = 400, FERD_STEP_WIDE = 400;
+constexpr float FERD_STEP_MARGIN = 250.f; // he lands this far inside the room's walls
+constexpr int FERD_RAIN_CM = 400;
+constexpr int FERD_SEVER_LINE_CM = 3000, FERD_SEVER_WIDE = 400, FERD_SEVER_CM = 1700;
+constexpr unsigned long FERD_SEVER_LINE_WARN_MS = 1400, FERD_SEVER_END_WARN_MS = 3000;
+constexpr int FERD_SPIRAL_IN_CM = 500, FERD_SPIRAL_OUT_CM = 1900, FERD_SPIRAL_CORE_CM = 650;
+constexpr int FERD_CRESCENT_CM = 1500, FERD_CRESCENT_DEG = 120;
 constexpr short SKILL_BURST = 7205, MOTION_BURST = 6; // Grave Burst: a 10 m circle round it
 constexpr short SKILL_LANCES = 7206, MOTION_LANCES = 8; // Soul Lances: five lines at one player
 // A cast ordered on a target out of the skill's range makes the boss walk first, and
@@ -764,6 +803,8 @@ CCatacombs::ProcBoss(CZoneTHREAD* pZone,
         b.iWaves++;
         if (b.iKind == BOSS_NECROMANCER)
             Say(nZoneNO, BOSSES[b.iKind].name, b.iWaves == 1 ? "Rise. There are guests in my crypt." : "Rise, all of you! Bury them here!");
+        else if (b.iKind == BOSS_FERDINANDO)
+            Say(nZoneNO, BOSSES[b.iKind].name, b.iWaves == 1 ? "You bleed so prettily. Let me show you my art." : "Enough. One cut, and the rest is silence.");
         else
             Say(nZoneNO, SPEAKER, fmt::format("The dead of the crypt come to {}.", BOSSES[b.iKind].name));
         LOG_INFO("[catacomb] {}: the boss called wave {}", CryptName(nZoneNO), b.iWaves);
@@ -782,6 +823,8 @@ CCatacombs::ProcBoss(CZoneTHREAD* pZone,
     }
     if (b.iKind == BOSS_ARGENTIA)
         this->FightArgentia(iSlot, now, pBoss);
+    else if (b.iKind == BOSS_FERDINANDO)
+        this->FightFerdinando(iSlot, now, pBoss);
     else
         this->FightNecromancer(iSlot, now, pBoss, inRoom);
 }
@@ -869,6 +912,19 @@ CCatacombs::ProcFloor(CZoneTHREAD* pZone, int iSlot) {
         return;
     }
 
+    std::vector<classUSER*> inRoom;
+    bool bRoom = false;
+    auto room = [&]() -> std::vector<classUSER*>& {
+        if (!bRoom) {
+            bRoom = true;
+            pZone->ForEachObject([&](CGameOBJ* pObj) {
+                if (pObj->IsUSER() && ((classUSER*)pObj)->Get_HP() > 0 && InBossRoom(((classUSER*)pObj)->m_PosCUR))
+                    inRoom.push_back((classUSER*)pObj);
+            });
+        }
+        return inRoom;
+    };
+
     // A mechanic starts with its animation: the floor is timed from the moment the cast
     // begins (an order waits for the swing in progress), or without it after a while.
     if (b.iArmed
@@ -876,7 +932,10 @@ CCatacombs::ProcFloor(CZoneTHREAD* pZone, int iSlot) {
             || Reached(now, b.dwArmedAt + ARM_WAIT_MS))) {
         const int iMechanic = b.iArmed;
         b.iArmed = 0;
-        this->ArgentiaMechanic(iSlot, iMechanic, now);
+        if (b.iKind == BOSS_FERDINANDO)
+            this->FerdinandoMechanic(iSlot, iMechanic, now, pBoss, room());
+        else
+            this->ArgentiaMechanic(iSlot, iMechanic, now);
     }
 
     bool bDue = false;
@@ -887,12 +946,7 @@ CCatacombs::ProcFloor(CZoneTHREAD* pZone, int iSlot) {
         bCue = bCue || Reached(now, c.dwAt);
     if (!bDue && !bCue)
         return;
-
-    std::vector<classUSER*> inRoom;
-    pZone->ForEachObject([&](CGameOBJ* pObj) {
-        if (pObj->IsUSER() && ((classUSER*)pObj)->Get_HP() > 0 && InBossRoom(((classUSER*)pObj)->m_PosCUR))
-            inRoom.push_back((classUSER*)pObj);
-    });
+    room();
 
     for (size_t i = 0; i < cues.size();) {
         Cue& c = cues[i];
@@ -911,6 +965,20 @@ CCatacombs::ProcFloor(CZoneTHREAD* pZone, int iSlot) {
                 c.shapes.push_back(s);
             }
         }
+        if (c.iLineLength > 0 && !inRoom.empty()) {
+            const tPOINTF mid = inRoom[rand() % inRoom.size()]->m_PosCUR;
+            const int iDeg = rand() % 360;
+            const float a = iDeg * 3.14159265f / 180.f;
+            tagZONE_WARN s = {};
+            s.m_btShape = ZONE_WARN_STRIP;
+            s.m_fX = mid.x - std::cos(a) * c.iLineLength * 0.5f;
+            s.m_fY = mid.y - std::sin(a) * c.iLineLength * 0.5f;
+            s.m_nDirDeg = (short)iDeg;
+            s.m_wLength = (WORD)c.iLineLength;
+            s.m_wWidth = (WORD)c.iLineWidth;
+            c.shapes.clear();
+            c.shapes.push_back(s);
+        }
         if (!c.shapes.empty()) {
             pZone->SendZoneWarn(
                 c.shapes.data(), (int)c.shapes.size(), c.wWarnMS, c.nEffect, c.nWarnSound, c.nFireSound);
@@ -919,6 +987,11 @@ CCatacombs::ProcFloor(CZoneTHREAD* pZone, int iSlot) {
                 h.shape = s;
                 h.dwFireAt = now + c.wWarnMS;
                 h.nSkill = c.nSkill;
+                if (c.bBlink && &s == &c.shapes.front()) {
+                    h.bBlink = true;
+                    h.fBlinkX = c.fBlinkX;
+                    h.fBlinkY = c.fBlinkY;
+                }
                 hazards.push_back(h);
             }
         }
@@ -938,6 +1011,8 @@ CCatacombs::ProcFloor(CZoneTHREAD* pZone, int iSlot) {
             // as that skill's result: the digit comes with the row's hit effect and sound
             pBoss->Hit_WithSKILL(pUSER, h.nSkill);
         }
+        if (h.bBlink)
+            pBoss->Blink_POSITION(h.fBlinkX, h.fBlinkY); // he made the cut: he is at its end
     }
 }
 
@@ -963,6 +1038,232 @@ CCatacombs::FightArgentia(int iSlot, unsigned long now, CObjCHAR* pBoss) {
     b.dwArmedAt = now;
     b.iRotation++;
     b.dwNextCast = now + ARG_GAP_MS[b.iWaves < 2 ? b.iWaves : 2];
+}
+
+//-------------------------------------------------------------------------------------------------
+/// Ferdinando's turn, on the half-second tick: between his swings, one move at a time.
+/// After each wave of the dead his next move is Severance; otherwise they rotate. As
+/// Argentia's: the animation is ordered here and the floor laid when its cast starts.
+void
+CCatacombs::FightFerdinando(int iSlot, unsigned long now, CObjCHAR* pBoss) {
+    Boss& b = m_Boss[iSlot];
+    if (b.iArmed || !m_Cues[iSlot].empty() || !m_Hazards[iSlot].empty())
+        return;
+    if (!Reached(now, b.dwNextCast) || pBoss->m_IngSTATUS.IsIgnoreSTATUS())
+        return;
+    const WORD wCmd = pBoss->Get_COMMAND();
+    if (wCmd == CMD_SKILL2SELF || wCmd == CMD_SKILL2OBJ || wCmd == CMD_SKILL2POS || pBoss->Get_ActiveSKILL())
+        return;
+    int iMechanic;
+    if (b.iUlt < b.iWaves) {
+        iMechanic = FERD_SEVER;
+    } else {
+        iMechanic = FERD_ORDER[b.iRotation % (int)(sizeof(FERD_ORDER) / sizeof(int))];
+    }
+    const FerdMove& m = FERD_MOVE[iMechanic];
+    if (!((CObjMOB*)pBoss)->SetCMD_Skill2SELF(m.anim, m.motion)) {
+        b.dwNextCast = now + CAST_RETRY_MS;
+        return;
+    }
+    if (iMechanic == FERD_SEVER)
+        b.iUlt = b.iWaves;
+    else
+        b.iRotation++;
+    b.iArmed = iMechanic;
+    b.nArmedSkill = m.anim;
+    b.dwArmedAt = now;
+    b.dwNextCast = now + FERD_GAP_MS[b.iWaves < 2 ? b.iWaves : 2] + (iMechanic == FERD_SEVER ? 3000 : 0);
+}
+
+/// One of Ferdinando's moves as cues from `now` (the moment its animation began), from
+/// where he stands. A move with a front is aimed at whoever he is fighting, so he faces
+/// it. The phase is the number of waves he has called.
+void
+CCatacombs::FerdinandoMechanic(int iSlot,
+    int iMechanic,
+    unsigned long now,
+    CObjCHAR* pBoss,
+    const std::vector<classUSER*>& inRoom) {
+    std::vector<Cue>& cues = m_Cues[iSlot];
+    const int iPhase = m_Boss[iSlot].iWaves;
+    const unsigned long dwCast = FERD_MOVE[iMechanic].castMS;
+    const tPOINTF at = pBoss->m_PosCUR;
+    auto cue = [&](unsigned long dwAfter, unsigned long dwWarnMS, short nEffect, short nSkill, short nWarnSound,
+                   short nFireSound) -> Cue& {
+        Cue c;
+        c.dwAt = now + dwAfter;
+        c.wWarnMS = (WORD)dwWarnMS;
+        c.nEffect = nEffect;
+        c.nSkill = nSkill;
+        c.nWarnSound = nWarnSound;
+        c.nFireSound = nFireSound;
+        cues.push_back(c);
+        return cues.back();
+    };
+    auto turn = [](int iDeg) { return (short)(((iDeg % 360) + 360) % 360); };
+    auto strip = [&](float fX, float fY, int iDeg, int iLength, int iWidth) {
+        tagZONE_WARN s = {};
+        s.m_btShape = ZONE_WARN_STRIP;
+        s.m_fX = fX;
+        s.m_fY = fY;
+        s.m_nDirDeg = turn(iDeg);
+        s.m_wLength = (WORD)iLength;
+        s.m_wWidth = (WORD)iWidth;
+        return s;
+    };
+    auto circle = [&](int iRadius, int iInner) {
+        tagZONE_WARN s = {};
+        s.m_btShape = ZONE_WARN_CIRCLE;
+        s.m_fX = at.x;
+        s.m_fY = at.y;
+        s.m_wLength = (WORD)iRadius;
+        s.m_wInner = (WORD)iInner;
+        return s;
+    };
+    auto heading = [](const tPOINTF& from, const tPOINTF& to) {
+        return (int)std::lround(std::atan2(to.y - from.y, to.x - from.x) * 180.f / 3.14159265f);
+    };
+    // whoever he is fighting, else whoever is nearest
+    int iAim = rand() % 360;
+    {
+        classUSER* pAim = nullptr;
+        float fNear = 1e9f;
+        for (classUSER* pUSER: inRoom) {
+            const float fDist = pUSER->Get_INDEX() == pBoss->Get_TargetIDX() ? -1.f : Distance(pUSER->m_PosCUR, at);
+            if (fDist < fNear) {
+                fNear = fDist;
+                pAim = pUSER;
+            }
+        }
+        if (pAim && Distance(pAim->m_PosCUR, at) > 1.f)
+            iAim = heading(at, pAim->m_PosCUR);
+    }
+
+    switch (iMechanic) {
+        case FERD_DRAW: {
+            // three draws: left of his front, right of it, down the middle. Later each cut
+            // goes through him, so behind him is no shelter either: stand between two.
+            const int iOff[3] = {-FERD_DRAW_FAN_DEG, FERD_DRAW_FAN_DEG, 0};
+            const unsigned long dwWarn = dwCast + FERD_DRAW_CUT_MS[0];
+            for (int k = 0; k < 3; k++) {
+                Cue& c = cue(FERD_DRAW_CUT_MS[k] - FERD_DRAW_CUT_MS[0], dwWarn, FX_BLOOD_LINE, FERD_SKILL_DRAW,
+                    k == 0 ? SND_FERD_WARN : 0, SND_FERD_CUT);
+                c.shapes.push_back(strip(at.x, at.y, iAim + iOff[k], FERD_DRAW_CM, FERD_DRAW_WIDE));
+                if (iPhase >= 1)
+                    c.shapes.push_back(strip(at.x, at.y, iAim + iOff[k] + 180, FERD_DRAW_CM, FERD_DRAW_WIDE));
+            }
+            break;
+        }
+        case FERD_STEP: {
+            // a zig-zag through three players, all of it on the floor from the start; he
+            // is at the end of each line as it fires
+            std::vector<classUSER*> order(inRoom);
+            for (size_t i = order.size(); i > 1; i--)
+                std::swap(order[i - 1], order[rand() % i]);
+            tPOINTF from = at;
+            for (int k = 0; k < 3; k++) {
+                tPOINTF to;
+                to.x = ROOM_MID;
+                to.y = ROOM_MID;
+                if (!order.empty())
+                    to = order[k % order.size()]->m_PosCUR;
+                float fDist = Distance(from, to);
+                if (fDist < 150.f) {
+                    // standing on him: across the room instead
+                    to.x = ROOM_MIN + ROOM_MAX - from.x;
+                    to.y = ROOM_MIN + ROOM_MAX - from.y;
+                    fDist = Distance(from, to);
+                }
+                int iDeg = fDist > 1.f ? heading(from, to) : rand() % 360;
+                float fLength = (std::min)((float)FERD_STEP_MAX_CM, (std::max)((float)FERD_STEP_MIN_CM, fDist + FERD_STEP_PAST_CM));
+                tPOINTF end = from;
+                for (int iTry = 0; iTry < 2; iTry++) {
+                    const float a = iDeg * 3.14159265f / 180.f;
+                    const float ux = std::cos(a), uy = std::sin(a);
+                    // no further than the room: he never lands in a wall
+                    float fRoom = fLength;
+                    if (ux > 0.001f)
+                        fRoom = (std::min)(fRoom, (ROOM_MAX - FERD_STEP_MARGIN - from.x) / ux);
+                    else if (ux < -0.001f)
+                        fRoom = (std::min)(fRoom, (ROOM_MIN + FERD_STEP_MARGIN - from.x) / ux);
+                    if (uy > 0.001f)
+                        fRoom = (std::min)(fRoom, (ROOM_MAX - FERD_STEP_MARGIN - from.y) / uy);
+                    else if (uy < -0.001f)
+                        fRoom = (std::min)(fRoom, (ROOM_MIN + FERD_STEP_MARGIN - from.y) / uy);
+                    if (fRoom >= 400.f || iTry == 1) {
+                        fLength = (std::max)(fRoom, 100.f);
+                        end.x = from.x + ux * fLength;
+                        end.y = from.y + uy * fLength;
+                        break;
+                    }
+                    // against a wall, facing it: toward the middle of the room
+                    tPOINTF mid;
+                    mid.x = ROOM_MID;
+                    mid.y = ROOM_MID;
+                    iDeg = heading(from, mid);
+                    fLength = (float)FERD_STEP_MIN_CM;
+                }
+                end.x = (std::min)(ROOM_MAX - 100.f, (std::max)(ROOM_MIN + 100.f, end.x));
+                end.y = (std::min)(ROOM_MAX - 100.f, (std::max)(ROOM_MIN + 100.f, end.y));
+                Cue& c = cue(0, dwCast + FERD_STEP_CUT_MS[k], FX_BLOOD_DASH, FERD_SKILL_STEP,
+                    k == 0 ? SND_FERD_WARN : 0, SND_FERD_CUT);
+                c.shapes.push_back(strip(from.x, from.y, iDeg, (int)fLength, FERD_STEP_WIDE));
+                c.bBlink = true;
+                c.fBlinkX = end.x;
+                c.fBlinkY = end.y;
+                from = end;
+            }
+            break;
+        }
+        case FERD_RAIN: {
+            // the air is cut open where each player stands: once, then again, then a third time
+            for (int k = 0; k <= (iPhase < 2 ? iPhase : 2); k++)
+                cue(k * 1100, k == 0 ? 1500 : 1300, FX_BLOOD_RIFT, FERD_SKILL_RAIN, k == 0 ? SND_FERD_WARN : 0,
+                    SND_FERD_CUT)
+                    .iSeedRadius = FERD_RAIN_CM;
+            break;
+        }
+        case FERD_SEVER: {
+            // six cuts across the room, each through one player, while the storm builds
+            // round him: out of its circle before it breaks
+            for (int k = 0; k < 6; k++) {
+                Cue& c = cue(dwCast + FERD_SEVER_CUT_MS[k] - FERD_SEVER_LINE_WARN_MS, FERD_SEVER_LINE_WARN_MS,
+                    FX_BLOOD_LINE, FERD_SKILL_SEVER, k == 0 ? SND_FERD_WARN : 0, SND_FERD_CUT);
+                c.iLineLength = FERD_SEVER_LINE_CM;
+                c.iLineWidth = FERD_SEVER_WIDE;
+            }
+            cue(dwCast + FERD_SEVER_END_MS - FERD_SEVER_END_WARN_MS, FERD_SEVER_END_WARN_MS, 0, FERD_SKILL_SEVER,
+                SND_HOWL_WARN, SND_FERD_END)
+                .shapes.push_back(circle(FERD_SEVER_CM, 0));
+            break;
+        }
+        case FERD_SPIRAL: {
+            // the blades fly out: against him is safe, or far away. Later he cuts round
+            // himself a second after, so nobody stays against him either.
+            cue(0, dwCast, 0, FERD_SKILL_SPIRAL, SND_FERD_WARN, SND_FERD_CUT)
+                .shapes.push_back(circle(FERD_SPIRAL_OUT_CM, FERD_SPIRAL_IN_CM));
+            if (iPhase >= 1)
+                cue(dwCast - 900, 1900, FX_BLOOD_RIFT, FERD_SKILL_SPIRAL, 0, SND_FERD_CUT)
+                    .shapes.push_back(circle(FERD_SPIRAL_CORE_CM, 0));
+            break;
+        }
+        case FERD_CRESCENT: {
+            // a rising cut that opens everything in front of him; later the same behind
+            for (int k = 0; k < (iPhase == 0 ? 1 : 2); k++) {
+                tagZONE_WARN s = {};
+                s.m_btShape = ZONE_WARN_CONE;
+                s.m_fX = at.x;
+                s.m_fY = at.y;
+                s.m_nDirDeg = turn(iAim + k * 180);
+                s.m_wLength = (WORD)FERD_CRESCENT_CM;
+                s.m_wWidth = (WORD)FERD_CRESCENT_DEG;
+                cue(k * 700, dwCast + FERD_CRESCENT_CUT_MS, FX_BLOOD_FAN, FERD_SKILL_CRESCENT,
+                    k == 0 ? SND_FERD_WARN : 0, SND_FERD_CUT)
+                    .shapes.push_back(s);
+            }
+            break;
+        }
+    }
 }
 
 /// One of Argentia's mechanics as cues from `now` (the moment its animation began). The

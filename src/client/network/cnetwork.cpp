@@ -195,6 +195,10 @@ CNetwork::Proc_ZonePacket() {
             Recv_gsv_ZONE_WARN();
             break;
 
+        case GSV_MOB_BLINK:
+            Recv_gsv_MOB_BLINK();
+            break;
+
         case GSV_GM_COMMAND:
             Recv_gsv_GM_COMMAND();
             break;

@@ -325,7 +325,12 @@ cone; world cm). `CZoneTHREAD::SendZoneWarn` broadcasts it; the client
 (`CGroundTelegraphs::AddWarning`) fills each shape over the time, flashes it and plays the
 effect on it. **Drawing only**: who is hit, and when, is the sender's business (the Karkia
 catacombs' `CCatacombs::ProcFloor`, `doc/making-events.md` section 2). Not re-sent to a
-late arrival. First use: Argentia's floor fight. Client and server ship together.
+late arrival. First use: Argentia's floor fight. Client and server ship together. A strip's
+or a cone's effect is turned along it (the effect's +X; Ferdinando's lines of cuts).
+**`GSV_MOB_BLINK`** (0x07f4, `CObjCHAR::Blink_POSITION`) is its companion: a monster the
+server has put somewhere else at once, command and animation untouched (Ferdinando's
+dashes). **A monster has 24 animation slots** (`MAX_MOB_ANI`; 12-23 are six more cast /
+release pairs): a change to `CCharMODEL`'s layout, so that build was a clean one.
 
 ### NPC Dialog Quest Options (.CON QEX1 Appendix)
 NPC conversations are `.CON` files (`data/3DDATA/EVENT/`) whose logic is compiled Lua 4 **bytecode** — new functions can't be merged into the blob (Lua 4.0.1 rejects multi-chunk buffers). Our extension: an optional appendix after the Lua tail (`b"QEX1"; i32 len; XOR'd Lua source`) that the client (`cevent.cpp`, `QEX_APPENDIX_MAGIC`) executes into the same `lua_State` via a second `Do_Buffer`. The quest editor uses it to append quest options to an NPC's existing dialog without replacing it (`quest-editor con-append`, or the wizard's append radio). Codec + gotchas (main-blob XOR key depends on file size; menu-0 append ordering) live in `src/tools/quest-editor/src/convo.rs` and the tool's `PROGRESS.md`. `.CON` files are client-only — the server never reads them; quest authority stays in QSD triggers. Appended `.CON`s require the QEX1-aware client: ship client + data together.

@@ -56,7 +56,12 @@ class classUSER;
 /// its skill rows (ProcFloor, every frame of the crypt's thread: a dodge window is two
 /// seconds, so half-second ticks are too coarse). Argentia, who never walks, is built
 /// on it: the room's sixteen tiles erupt in patterns, its arms come down in three
-/// cones, its howl is safe only close to it and then only far from it.
+/// cones, its howl is safe only close to it and then only far from it. Ferdinando, who
+/// walks and fights with a sword, is the same layer from wherever he stands: lines of
+/// cuts in a fan, a zig-zag of dashes he really makes (CObjCHAR::Blink_POSITION as each
+/// line fires), cuts opening under every player, a ring of blades that is safe only
+/// against him, a rising cut in front, and after each wave of the dead his Severance:
+/// lines through the players while a storm builds round him.
 ///
 /// Threads. ProcZone runs in every zone thread and acts in three:
 ///   * each crypt zone's thread sweeps its own players and, once per break, kills
@@ -142,6 +147,7 @@ private:
         unsigned long dwEmptySince = 0; // 0: someone is in the room
         int iKind = 0; // which body (BOSSES)
         int iObjIdx = 0; // its object, for the per-frame floor (checked against its row)
+        int iUlt = 0; // waves answered with the strongest attack (Ferdinando's Severance)
         // a floor mechanic waiting for its animation's cast to start (0: none)
         int iArmed = 0;
         short nArmedSkill = 0;
@@ -152,15 +158,21 @@ private:
         tagZONE_WARN shape;
         unsigned long dwFireAt;
         short nSkill; // the boss's skill row the hit is computed and shown with
+        bool bBlink = false; // as it fires, the boss is at (fBlinkX, fBlinkY)
+        float fBlinkX = 0.f, fBlinkY = 0.f;
     };
     struct Cue {
-        unsigned long dwAt;
+        unsigned long dwAt = 0;
         std::vector<tagZONE_WARN> shapes;
-        WORD wWarnMS;
-        short nEffect;
-        short nSkill;
-        short nWarnSound, nFireSound;
-        int iSeedRadius; // > 0: a circle of this radius under every player in the room instead
+        WORD wWarnMS = 0;
+        short nEffect = 0;
+        short nSkill = 0;
+        short nWarnSound = 0, nFireSound = 0;
+        int iSeedRadius = 0; // > 0: a circle of this radius under every player in the room instead
+        // > 0: a strip this long and iLineWidth wide through one player of the room, any way round
+        int iLineLength = 0, iLineWidth = 0;
+        bool bBlink = false; // the boss goes to (fBlinkX, fBlinkY) as the cue's shapes fire
+        float fBlinkX = 0.f, fBlinkY = 0.f;
     };
 
     /// One crypt's maze, built and read by its zone thread.
@@ -193,6 +205,12 @@ private:
     void FightNecromancer(int iSlot, unsigned long now, CObjCHAR* pBoss, const std::vector<classUSER*>& inRoom);
     void FightArgentia(int iSlot, unsigned long now, CObjCHAR* pBoss);
     void ArgentiaMechanic(int iSlot, int iMechanic, unsigned long now);
+    void FightFerdinando(int iSlot, unsigned long now, CObjCHAR* pBoss);
+    void FerdinandoMechanic(int iSlot,
+        int iMechanic,
+        unsigned long now,
+        CObjCHAR* pBoss,
+        const std::vector<classUSER*>& inRoom);
     void ProcCemetery(CZoneTHREAD* pZone);
     void Evict(classUSER* pUSER, int iEntrance);
     void Save(unsigned long dbid, const Record& r);

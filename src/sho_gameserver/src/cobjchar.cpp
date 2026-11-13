@@ -1877,6 +1877,36 @@ CObjCHAR::Hit_WithSKILL(CObjCHAR* pTarget, short nSkillIDX) {
 }
 
 void
+CObjCHAR::Blink_POSITION(float fX, float fY) {
+    CZoneTHREAD* pZone = this->GetZONE();
+    if (!pZone || this->IsUSER())
+        return;
+    if (m_pNav)
+        this->Nav_Stop(); // a path's next leg would start from where it was
+    m_PosCUR.x = fX;
+    m_PosCUR.y = fY;
+    m_PosGOTO = m_PosCUR;
+    m_PosMoveSTART = m_PosCUR;
+    // a sector step per call: a blink may cross more than one
+    for (int i = 0; i < 8; i++) {
+        const POINTS was = m_PosSECTOR;
+        if (!pZone->UpdateSECTOR(this) || (was.x == m_PosSECTOR.x && was.y == m_PosSECTOR.y))
+            break;
+    }
+    classPACKET* pCPacket = Packet_AllocNLock();
+    if (!pCPacket)
+        return;
+    pCPacket->m_HEADER.m_wType = GSV_MOB_BLINK;
+    pCPacket->m_HEADER.m_nSize = sizeof(gsv_MOB_BLINK);
+    pCPacket->m_gsv_MOB_BLINK.m_wObjectIDX = this->Get_INDEX();
+    pCPacket->m_gsv_MOB_BLINK.m_fX = fX;
+    pCPacket->m_gsv_MOB_BLINK.m_fY = fY;
+    pCPacket->m_gsv_MOB_BLINK.m_nPosZ = (short)this->Nav_SendZ();
+    pZone->SendPacketToZONE(pCPacket);
+    Packet_ReleaseNUnlock(pCPacket);
+}
+
+void
 CObjCHAR::Give_DAMAGE(CObjCHAR* pTarget,
     uniDAMAGE sDamage,
     bool bDropItem,
