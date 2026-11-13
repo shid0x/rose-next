@@ -22,13 +22,19 @@ What comes across, and what does not
     and the Assassin (the Ikaness soldier's rig) ride skeletons and clips we already
     ship and bring only textures and a head; Argentia and Gladiomurus are whole new
     rigs with their ten and nine clips.
-  * **Weapons.** Ferdinando holds our own Murasamemaru (1462): Jrose's row is that mesh
-    with another texture, and the red set is what the crypt's bosses drop. Gladiomurus'
+  * **Weapons.** Ferdinando holds a **red katana of his own** (row 26, 2026-11-13; the
+    user: "red katana for Ferdinando, how do you suggest to do it? browsing client to
+    find one?"). No dump has a better one than what we hold: Jrose's Ferdinando carries
+    its Muramasa (LIST_WEAPON 1098), **the same mesh as our Murasamemaru (1462)** with a
+    pale blade, red runes and a red grip, and ours is that mesh in black stone with teal
+    cracks. So the red one is ours recoloured -- the teal glow turned blood red, the
+    colour of his effects (`blood_texture`) -- on a monster-only row, and the players'
+    Murasamemaru (teal, his drop) is untouched. He held 1462 itself until then. Gladiomurus'
     greatsword (Jrose LIST_WEAPON 1196, a new mesh) and the Assassin's black Death
     Expeler (4033, our osw41 mesh with a new texture) come in through import-item.py
     --art-only at rows 29 and 30, every stat cloned from our Death Expeler (21).
   * **No stat, no AI, no skill of Jrose's.** Rows are a copy of the Crypt Necromancer's
-    (2556: voice, death effect, drop table 913, skull) with each body's own numbers in
+    (2556: voice, death effect, skull) with each body's own numbers in
     BODIES; all are level 240 and start from the Necromancer's sizing
     (catacomb_boss.SIZING), to be tuned fight by fight. They share its AI file (find a
     target, answer a hit, leash): **the controller runs a crypt boss's fight**, and
@@ -61,11 +67,23 @@ C_NAME, C_MODEL, C_WALK, C_RUN, C_SIZE, C_RWEAPON, C_LWEAPON, C_LEVEL, C_HP, C_A
 C_TARGET, C_RANGE, C_GLOW, C_DEADEVENT, C_HEIGHT = 25, 26, 39, 41, 42
 C_HANDHIT = 33
 
+# Ferdinando's katana: object KATANA_LOOK's mesh with our texture recoloured, row
+# KATANA_COLUMNS' cells (the Black Death Expeler: a monster's one-handed sword).
+KATANA, KATANA_LOOK, KATANA_COLUMNS = 26, 1462, 30
+KATANA_NAME, KATANA_KEY = "Ferdinando's Katana", "LWEA26"
+KATANA_DESC = "A cursed blade split by veins of blood, carried by Ferdinando, the Eternal."
+KATANA_SRC_TEX = r"3DDATA\WEAPON\WEAPON\dsw\muramasa\youtoumurasamemaru.dds"
+KATANA_TEX = r"3Ddata\WEAPON\WEAPON\dsw\muramasa\muramasa_blood.dds"
+C_DROP = 18                         # the boss's own drop table (add-karkia-drops.py CRYPT_BOSSES)
+
 TEMPLATE = boss.BOSS                # 2556, the Crypt Necromancer's row
 WEAPON_TEMPLATE = 21                # Death Expeler: a one-handed sword's columns
 WEAPON_ICON = 1                     # a monster's weapon: never seen in a bag
 
 FERDINANDO, ARGENTIA, GLADIOMURUS, ASSASSIN = 2557, 2558, 2559, 2560
+# Each boss pays one class line of the lv240 gear (2026-11-13): the Necromancer keeps
+# 913. add-karkia-drops.py writes the tables and names the same rows (NPC_TABLE_FIX).
+DROP_TABLE = {FERDINANDO: 914, ARGENTIA: 915, GLADIOMURUS: 916, ASSASSIN: 917}
 # our weapon row -> (Jrose row, name, description)
 WEAPONS = {
     29: (1196, "Gladiomurus' Greatblade", "The blade of the demon knight Gladiomurus."),
@@ -74,7 +92,7 @@ WEAPONS = {
 # our row -> the body. `cells` are what differs from the Crypt Necromancer's row.
 BODIES = {
     FERDINANDO: dict(src=2049, name="Ferdinando, the Eternal", cells={
-        C_WALK: 300, C_RUN: 700, C_SIZE: 220, C_RWEAPON: 1462, C_HEIGHT: 400,
+        C_WALK: 300, C_RUN: 700, C_SIZE: 220, C_RWEAPON: KATANA, C_HEIGHT: 400,
         C_HP: 3000, C_ATK: 2700, C_HIT: 1300, C_DEF: 900, C_RES: 950, C_AVOID: 500, C_ASPD: 115,
         C_MAGIC: "", C_RANGE: 250}),
     # Jrose's walk and run are 0: it stands where it is raised and the fight is about the floor
@@ -116,6 +134,7 @@ def body_row(n, s_npc, row):
     out[C_MODEL] = s_npc.get(body["src"], C_MODEL)          # /mon refuses a row with no model text
     for c, v in body["cells"].items():
         out[c] = b(v)
+    out[C_DROP] = b(DROP_TABLE[row])
     for c in (C_TARGET, C_DEADEVENT, *oro.NPC_SELL_TAB_COLS):
         out[c] = b""
     out[oro.NPC_STRID_COL] = strid(row).encode()
@@ -146,10 +165,94 @@ def weapons(ours, src, dry):
             raise SystemExit("import-item.py failed")
 
 
+# ------------------------------------------------------------- Ferdinando's red katana
+def blood_texture(ours):
+    """Our Murasamemaru texture with its teal glow turned blood red, as an uncompressed
+    BGRA DDS with a full mip chain (each channel resized by itself: an RGBA resize
+    premultiplies and darkens the levels)."""
+    import colorsys
+    from PIL import Image
+    from rosefmt import dds as rfdds
+    img = Image.open(mon.find_ci(ours, KATANA_SRC_TEX)).convert("RGBA")
+    px = img.load()
+    for y in range(img.height):
+        for x in range(img.width):
+            r, g, bl, a = px[x, y]
+            h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, bl / 255)
+            if 0.40 <= h <= 0.62 and s > 0.18:                # the glow and its halo; the steel is grey
+                r2, g2, b2 = colorsys.hsv_to_rgb((0.995 - (h - 0.5) * 0.15) % 1.0, min(1.0, s * 1.15), v)
+                px[x, y] = (int(r2 * 255), int(g2 * 255), int(b2 * 255), a)
+    levels, w, h = [], img.width, img.height
+    while True:
+        lvl = img if (w, h) == img.size else Image.merge(
+            "RGBA", [c.resize((w, h), Image.BOX) for c in img.split()])
+        levels.append(rfdds.bgra_bytes(lvl)[len(rfdds.build_header(rfdds.bgra_header(w, h))):])
+        if w == 1 and h == 1:
+            break
+        w, h = max(1, w // 2), max(1, h // 2)
+    return rfdds.build_header(rfdds.bgra_header(img.width, img.height, len(levels))) + b"".join(levels)
+
+
+def blood_katana(ours, dry):
+    """LIST_WEAPON row KATANA: the Murasamemaru's object with the red texture, the
+    Black Death Expeler's columns (a monster's weapon: never in a bag)."""
+    from rosefmt import zsc as rfzsc
+    tex = blood_texture(ours)
+    tex_path = os.path.join(os.path.dirname(mon.find_ci(ours, KATANA_SRC_TEX)), os.path.basename(KATANA_TEX))
+    if not os.path.isfile(tex_path) or open(tex_path, "rb").read() != tex:
+        if not dry:
+            with open(tex_path, "wb") as fh:
+                fh.write(tex)
+        print(f"    {'muramasa_blood.dds':26s} written ({len(tex)} bytes)")
+    z = rfzsc.Zsc(P(ours, WEAPON_ZSC_REL))
+    names = [p.lower() for p, _f in z.materials]
+    if KATANA_TEX.lower().encode() not in names:
+        cyl, parts, dummies, bb = z.objects[KATANA_LOOK]
+        if z.objects[KATANA][1]:
+            raise SystemExit(f"LIST_WEAPON.ZSC object {KATANA} is not empty")
+        (mesh, mat, props), = parts
+        src_path, flags = z.materials[mat]
+        if os.path.basename(src_path.decode("latin-1").replace("\\", "/")).lower() != os.path.basename(KATANA_SRC_TEX).lower():
+            raise SystemExit(f"object {KATANA_LOOK}'s texture is {src_path!r}: not the Murasamemaru's")
+        z.objects[KATANA] = (cyl, [(mesh, len(z.materials), props)], dummies, bb)
+        blob = z.rebuild_with(extra_mats=[(KATANA_TEX.encode(), flags)])
+        if not dry:
+            with open(P(ours, WEAPON_ZSC_REL), "wb") as fh:
+                fh.write(blob)
+        print(f"    {'LIST_WEAPON.ZSC':26s} object {KATANA} = object {KATANA_LOOK} with {os.path.basename(KATANA_TEX)}")
+    w = oro.Stb(P(ours, WEAPON_STB_REL))
+    cur = w.get(KATANA, 0).decode("latin-1").strip()
+    if cur != KATANA_NAME:
+        if cur or any(c.strip() for c in w.d[KATANA]):
+            raise SystemExit(f"LIST_WEAPON row {KATANA} is {cur!r}: not free")
+        row = list(w.d[KATANA_COLUMNS])
+        row[0] = KATANA_NAME.encode("latin-1")
+        row[-1] = KATANA_KEY.encode()
+        w.d[KATANA] = row
+        w.save(dry, keep_backup=False)
+        stl = oro.Stl(P(ours, WEAPON_STL_REL))
+        if not stl.has(KATANA_KEY):
+            stl.append(KATANA_KEY, KATANA, KATANA_NAME, KATANA_DESC)
+            stl.save(dry, keep_backup=False)
+        print(f"    {'LIST_WEAPON.STB':26s} row {KATANA} {KATANA_NAME}")
+
+
+def verify_katana(ours, check):
+    from rosefmt import zsc as rfzsc
+    z = rfzsc.Zsc(P(ours, WEAPON_ZSC_REL))
+    parts = z.objects[KATANA][1]
+    ok = len(parts) == 1 and z.materials[parts[0][1]][0].lower() == KATANA_TEX.lower().encode() \
+        and parts[0][0] == z.objects[KATANA_LOOK][1][0][0]
+    check(ok, f"LIST_WEAPON.ZSC object {KATANA} is the Murasamemaru's mesh with the red texture")
+    tex = mon.find_ci(ours, KATANA_TEX)
+    check(os.path.isfile(tex) and open(tex, "rb").read() == blood_texture(ours), "the red texture is the recolour of ours")
+
+
 def apply(ours, dry, src=JROSE):
     if not os.path.isdir(src):
         raise SystemExit(f"the Jrose dump is not at {src}")
     weapons(ours, src, dry)
+    blood_katana(ours, dry)
     s_npc = oro.Stb(P(src, NPC_STB_REL), "cp932")
     n = oro.Stb(P(ours, NPC_STB_REL))
     stl = oro.Stl(P(ours, NPC_STL_REL))
@@ -206,6 +309,8 @@ def verify(ours, check, src=JROSE):
     s_npc = oro.Stb(P(src, NPC_STB_REL), "cp932") if os.path.isdir(src) else None
     for row, (_srow, name, _desc) in sorted(WEAPONS.items()):
         check(w.get(row, 0).decode("latin-1").strip() == name, f"LIST_WEAPON {row} {name}")
+    check(w.get(KATANA, 0).decode("latin-1").strip() == KATANA_NAME, f"LIST_WEAPON {KATANA} {KATANA_NAME}")
+    verify_katana(ours, check)
     for row, body in sorted(BODIES.items()):
         if s_npc is not None:
             check(n.d[row] == body_row(n, s_npc, row), f"LIST_NPC {row} {body['name']}")

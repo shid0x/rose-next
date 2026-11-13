@@ -64,7 +64,8 @@ What it writes
   Crypt Necromancer, LIST_NPC 2556, with its two attacks to dodge (LIST_SKILL 7205
   Grave Burst, 7206 Soul Lances), three clips cut from the Necromancer's own and a
   small AI file (FILE_AI 2275). No regen point: the controller spawns it, runs its
-  attacks and its phases. Its drop table is 913 (`add-karkia-drops.py`).
+  attacks and its phases. Its drop table is 913; the four pool bosses have 914-917
+  (`add-karkia-drops.py`, CRYPT_BOSSES).
 * **The boss pool** (2026-11-12, catacomb_pool.py -- its docstring is the record): four
   more bodies from the Jrose dump, LIST_NPC 2557-2560 (Ferdinando, Argentia,
   Gladiomurus, the Ikaness Greater Assassin) with two weapons (LIST_WEAPON 29, 30).
@@ -838,7 +839,7 @@ def main():
         json.dump({"centre_cm": CENTRE_CM, "maze_sw_cm": MAZE_SW_CM, "cell_cm": CELL_CM,
                    "grid": GRID, "hall_cm": HALL_CM}, fh, indent=1)
     print("dry run, nothing written" if dry else
-          "done -- run add-karkia-drops.py (tables 912 and 913, zone rows 90/91), then --verify")
+          "done -- run add-karkia-drops.py --rewrite (tables 912-917, zone rows 90/91), then --verify")
     return 0
 
 

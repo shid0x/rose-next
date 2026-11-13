@@ -508,7 +508,8 @@ sleep, with nothing to move out of.
     empty for a minute gets a fresh boss (and loses the adds). `/catacomb boss`
     raises a fresh one.
   - The daily boss pool does not exist yet: both crypts have the Necromancer.
-  - Loot: table 913, the red weapons 1456-1468 (~36% a kill) and a Norse window.
+  - Loot: table 913, the red weapons 1456-1468 (~36% a kill) and a Norse window
+    (replaced 2026-11-13 by a table per boss: see "Interim loot").
 - **The pool, decided 2026-11-12.** The user chose the bodies himself from 3D previews of
   Jrose's level 180+ monsters (`gm-item-browser --preview-monster`; sheets and the
   shortlist in `build/catacombs/boss-candidates/`): **Ferdinando** (Jrose 2049, a
@@ -608,7 +609,38 @@ sleep, with nothing to move out of.
       as it is walked (`CMazeMap` in `src/client/zoneobjects.*`, from the wall objects
       the client is already sent; `RoseRmlMinimap`). Client only, per player, kept
       while the day's walls are the same. Validated in game. Not done: sharing
-      what a party member has seen (EVO-REFORGED's version does, through its server).
+      what a party member has seen (EVO-REFORGED's version does, through its server);
+      **the user, 2026-11-13: not needed.**
+  - **Interim loot (2026-11-13, committed on the user's word; to be refined later).** The
+    user: "every boss loots the most powerful stuff in the game, each one a different
+    type of weapon / armors. Trash monsters: lvl 130 stuff". `add-karkia-drops.py`
+    (`CRYPT_BOSSES`, `crypt_field`), each boss on a table of its own:
+
+    | table | boss | lv240 mythicals (~36% a kill) | gear behind two redirects |
+    |---|---|---|---|
+    | 913 | Crypt Necromancer | staff, wand | Eir set (Muse) + the casters' tool |
+    | 914 | Ferdinando | 1H sword, 1H blunt | the lv240 shield and charms |
+    | 915 | Argentia | gun, launcher, crossbow | Forseti set (Dealer) |
+    | 916 | Gladiomurus | 2H sword, spear, 2H axe | Fenrir set (Soldier) |
+    | 917 | Ikaness Greater Assassin | katar, dual swords, bow | Sleipnir set (Hawker) |
+
+    Each also pays the red (lv230) weapon of its types behind one redirect -- the red
+    set has no other source, and Ferdinando's is the Murasamemaru. The crypt's monsters
+    (912, rows 90/91) pay the tier below: the thirteen plain lv230 weapons and an OG
+    armour window. **"lvl 130" was read as 230** (a lv235 monster pays nobody ten
+    levels above it, so level-130 gear could reach no one who wants it): to confirm.
+    A redirect re-rolls over five cells and a blank one is a dead roll, so short lists
+    repeat until the window is full.
+  - **Where the Key of Remorse drops** (the user's question, 2026-11-13): one material
+    slot of tables 900 / 901 / 902 (the Cemetery's 20 monsters, lv215-228; the Burned
+    Forest shares them) and 906 (the Spire Village's nine Alphas, lv228-238), about one
+    kill in twenty at level parity. **A level-240 player gets it only from the Alphas of
+    level 231 and more** (D=Victim, D=Ghoul Ein / Eine, Deadly Wolf, Revived Quarantine
+    Officer, D=Error): the Cemetery pays nobody above 237.
+  - **Ferdinando's red katana (2026-11-13, committed on the user's word).** No dump has one:
+    Jrose's Ferdinando holds the mesh of our Murasamemaru with a pale blade, and ours
+    is black stone with teal cracks. His is ours with the glow turned blood red, on
+    monster-only LIST_WEAPON row 26 (`catacomb_pool.py`, `blood_katana`).
   - **Dragon Nest material: blocked.** EVO's client install is now packed in encrypted
     `EVOnnn.EPK` archives; the key is not in their repo or on this machine, and their
     converter (`TOOLS/DNImport`, which writes standard EFT / PTL / ZMS / ZMO our client

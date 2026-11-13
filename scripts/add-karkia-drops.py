@@ -14,7 +14,7 @@ placed to match:
     900/901/902 + zone 87   Cemetery, mobs lv215-228   -> players 215-238
     906         + zone 88   Spire Village, lv228-240   -> the only cap-level farm
     912         + zones 90, 91   the catacombs, lv235-240 (2026-11-10)
-    913                     the catacombs' boss, lv240
+    913-917                 the catacombs' five bosses, lv240, one class line each
     903/904/905/907/908     bosses, lv235-240
 
 That is also why the lv240 mythical weapons are boss-only: they have to come off
@@ -71,6 +71,18 @@ anywhere in the game** until now:
   * 34 weapons across three tiers (`8:1381-1453`), reachable at all only since
     the drop encoding was widened -- ids above 999 could not be addressed by a
     drop cell before. See rose/common/drop_item_code.h.
+
+**The catacombs, interim (2026-11-13, the user: "every boss loots the most powerful
+stuff in the game, each one a different type of weapon / armors. Trash monsters:
+lvl 130 stuff"; to be refined later).** Each of the five bosses has a table of its
+own, 913-917, and pays one class line of the lv240 gear: its weapon types' mythicals
+in the eight common slots (~36% a kill), the red weapon of the same types behind one
+redirect (the red set has no other source) and that line's Norse set behind two
+(Ferdinando, the fifth boss for four armour lines, pays the lv240 off-hands there).
+See CRYPT_BOSSES. The crypt's monsters (912) pay the tier below: the plain lv230
+weapon line, all thirteen, and an OG armour window. **"lvl 130" is read as 230**:
+`Get_DropITEM` pays nobody 10 levels above a lv235 monster, so level-130 gear would
+reach only players who are 95 levels past it. Not confirmed by the user yet.
 
 **Armour (2026-10-20, `armour-endgame-sets.py`):** the OG cinematic set (lv230)
 rides the three lv228-240 field tables as extra redirects paid for by one material
@@ -211,10 +223,40 @@ WPN_220 = [1426, 1427, 1428, 1429, 1430, 1431, 1432, 1433, 1434, 1435, 1436]
 WPN_235 = [908, 915, 926, 939, 932, 947, 959, 966, 974, 982, 990, 999, 950]
 WPN_240 = [1383, 1386, 1389, 1392, 1395, 1398, 1401, 1404, 1407, 1410, 1413,
            1416, 1419]
+# The plain lv230 line (the Arcidian look since weapon-ladder-pass.py), one per type:
+# what the crypt's monsters pay, a tier under their bosses.
+WPN_230 = [1368, 1369, 1370, 1371, 1372, 1373, 1374, 1424, 1375, 1376, 1377,
+           1378, 1379]
 
-# The black blood-stained Jrose set (lv230, red names): the catacomb boss's loot, its
+# The black blood-stained Jrose set (lv230, red names): the catacomb bosses' loot, its
 # only source (the user, 2026-11-09: "red level weapon, it can be tailored later").
 WPN_RED = list(range(1456, 1469))
+
+# The catacombs' five bosses, one class line of the top tier each (2026-11-13).
+# table -> (label, lv240 mythicals, the red weapons of the same types, the gear group).
+# The gear group is the line's Norse set (LIST_BODY/CAP/ARMS/FOOT row) or, for
+# Ferdinando, the lv240 off-hands; the Necromancer's has room for the casters' tool.
+# Ferdinando drops the red katana he fights with (1462). LIST_NPC's drop cells for
+# 2557-2560 are also in catacomb_pool.py (DROP_TABLE), which rebuilds those rows.
+NORSE_SOLDIER, NORSE_MUSE, NORSE_HAWKER, NORSE_DEALER = 270, 271, 272, 273
+
+
+def norse(row):
+    return [(t, row) for t in (T_BODY, T_CAP, T_ARMS, T_FOOT)]
+
+
+CRYPT_BOSSES = {
+    913: ("Crypt Necromancer: staff, wand, Eir (Muse)",
+          [1407, 1410], [1463, 1459], norse(NORSE_MUSE) + [(T_SUBWPN, 317)]),
+    914: ("Ferdinando: 1H sword, 1H blunt, off-hands",
+          [1383, 1386], [1462, 1467], [(T_SUBWPN, s) for s in (330, 318, 319)]),
+    915: ("Argentia: gun, launcher, crossbow, Forseti (Dealer)",
+          [1401, 1404, 1419], [1464, 1456, 1468], norse(NORSE_DEALER)),
+    916: ("Gladiomurus: 2H sword, spear, 2H axe, Fenrir (Soldier)",
+          [1389, 1392, 1395], [1461, 1457, 1465], norse(NORSE_SOLDIER)),
+    917: ("Ikaness Greater Assassin: katar, dual, bow, Sleipnir (Hawker)",
+          [1413, 1416, 1398], [1458, 1466, 1460], norse(NORSE_HAWKER)),
+}
 
 # Jrose armour sets (armour-endgame-sets.py, 2026-10-20), drop-only by the user's
 # call: the OG cinematic outfits (lv230, rows 266-269) off the lv228-240 field tables,
@@ -293,6 +335,31 @@ def boss(mythicals, shields, mats=None, armour=()):
     return common, groups
 
 
+def crypt_boss(mythicals, reds, gear):
+    """A catacomb boss: eight mythical slots of its own types (~36% a kill), two
+    materials, a bottle, then one redirect to its red weapons and two to its gear."""
+    common = [(T_WEAPON, mythicals[i % len(mythicals)]) for i in range(8)]
+    common += [(T_NATURAL, 758), (T_NATURAL, 752), (T_USE, USE_BOSS[0])]
+    common += [("redirect", 1), ("redirect", 2), ("redirect", 2)]
+    # a redirect re-rolls rand(5) over its window and a blank cell is a dead roll:
+    # shorter lists repeat until the five cells are full
+    def five(items):
+        return [items[i % len(items)] for i in range(REDIRECT_WIDTH)]
+    return common, {1: five([(T_WEAPON, w) for w in reds]), 2: five(list(gear))}
+
+
+def crypt_field():
+    """The catacombs' monsters: twelve slots like every field table, four of them
+    redirects -- the thirteen plain lv230 weapons over three groups (with the lv230
+    shield and tool in the third's spare cells) and an OG armour window (lv230)."""
+    common = [(T_NATURAL, m) for m in MAT_CRYPT[:6]] + [(T_USE, u) for u in USE_FIELD]
+    common += [("redirect", g) for g in (1, 2, 3, 4)]
+    w = [(T_WEAPON, x) for x in WPN_230]
+    return common, {1: w[:5], 2: w[5:10],
+                    3: w[10:] + [(T_SUBWPN, OFF_230[0]), (T_SUBWPN, OFF_230[1])],
+                    4: windows(ARM_OG, 6, [4])[0]}
+
+
 TABLES = {
     900: ("Cemetery trash (17 mobs, lv215-228)",
           field(MAT_CEMETERY, USE_FIELD, OFF_CEMETERY, WPN_220[:5])),
@@ -305,20 +372,13 @@ TABLES = {
     906: ("Alpha roster (10 mobs, lv228-240)",
           field(MAT_SPIRE, USE_FIELD, OFF_SPIRE, *windows(WPN_235, 0, [5, 5]),
                 armour=windows(ARM_OG, 0, [4]))),
-    # The catacombs' six monsters (import-catacombs.py / catacomb_monsters.py). Paid
-    # like 906, the other cap-level table: two weapon windows (1 in 16) -- a toll and
-    # a maze stand in front of every kill. Placeholder until the loot is tailored
-    # (the user, 2026-11-09: "don't overfocus on the loot"); the boss gets its own.
-    912: ("Catacombs (6 mobs, lv235-240)",
-          field(MAT_CRYPT, USE_FIELD, OFF_CRYPT, *windows(WPN_235, 5, [5, 5]),
-                armour=windows(ARM_OG, 6, [4]))),
-    # The Crypt Necromancer (catacomb_boss.py), killed at most about seven times per
-    # opening, and a player has one opening a day. Eight red weapons in the common
-    # slots (~36% a kill), the other five behind a redirect, a Norse window on top.
-    # A placeholder like 912.
-    913: ("BOSS Crypt Necromancer (lv240, the catacombs)",
-          boss(WPN_RED[:8], OFF_BOSS, [758, 752],
-               armour=[[(T_WEAPON, w) for w in WPN_RED[8:]]] + windows(ARM_NORSE, 2, [5]))),
+    # The catacombs' six monsters (import-catacombs.py / catacomb_monsters.py): the
+    # lv230 tier, one under their bosses (interim, 2026-11-13; see the docstring).
+    912: ("Catacombs (6 mobs, lv235-240): the lv230 tier", crypt_field()),
+    # The catacombs' five bosses (CRYPT_BOSSES): a boss is killed at most about seven
+    # times per opening, and a player has one opening a day.
+    **{row: ("BOSS " + label, crypt_boss(myth, reds, gear))
+       for row, (label, myth, reds, gear) in CRYPT_BOSSES.items()},
     # --- the flashback zones, stage 7b --------------------------------------
     909: ("Memories wildlife (lv230-232)",
           field(MAT_MEMORIES, USE_FIELD, OFF_MEMORIES, windows(WPN_235, 10, [5])[0],
@@ -359,6 +419,7 @@ ZONE_MIRROR = {87: 900, 88: 906, 90: 912, 91: 912,
 # seven flashback monsters arrived pointing at Jrose's table 831, which is empty
 # on our side.
 NPC_TABLE_FIX = {2729: 907, 2699: 908,
+                 2557: 914, 2558: 915, 2559: 916, 2560: 917,   # the crypt's boss pool
                  2527: 909, 2528: 909, 2529: 909,   # Memories wildlife
                  2530: 910,                          # the queen
                  2539: 911, 2547: 911, 2549: 911}    # Garden wildlife
