@@ -47,6 +47,10 @@ const float EDGE_CM = 40.f;
 
 // the player's own aim (SetPreview): blue-white, never mistaken for a boss's red
 const unsigned long RGB_AIM = 0x70C8FF;
+// A shape to stand in (a server warning with ZONE_WARN_SOAK): green where a danger is red.
+const unsigned long RGB_SOAK_AREA = 0x30E878;
+const unsigned long RGB_SOAK_FILL = 0x58FF98;
+const unsigned long RGB_SOAK_FLASH = 0xB8FFD0;
 const unsigned long ALPHA_AIM_AREA = 0x28;
 const unsigned long ALPHA_AIM_RIM = 0xA0;
 const unsigned long ALPHA_RANGE = 0x50; // the ring at the skill's range
@@ -124,7 +128,7 @@ CGroundTelegraphs::OnCastStart(CObjCHAR* pCaster, short nSkillIDX, unsigned long
 
 void
 CGroundTelegraphs::AddWarning(int iShape, float fX, float fY, float fDirDeg, float fLength, float fInner,
-    float fWidth, unsigned long dwWarnMS, short nEffect) {
+    float fWidth, unsigned long dwWarnMS, short nEffect, bool bSoak) {
     if (fLength <= 0.f || m_List.size() >= 256)
         return;
     Telegraph t;
@@ -151,6 +155,7 @@ CGroundTelegraphs::AddWarning(int iShape, float fX, float fY, float fDirDeg, flo
     t.bFree = true;
     t.fInner = t.shape == SHAPE_CIRCLE && fInner > 0.f && fInner < fLength ? fInner : 0.f;
     t.nEffect = nEffect;
+    t.bSoak = bSoak;
     m_List.push_back(t);
 }
 
@@ -659,7 +664,8 @@ CGroundTelegraphs::AddTelegraphShape(const Telegraph& t, unsigned long now) {
     if (t.dwFiredAt) { // the hit: a flash that fades
         const float f = 1.f - (float)(now - t.dwFiredAt) / FLASH_MS;
         const unsigned long alpha = (unsigned long)(0x90 * (f > 0.f ? f : 0.f));
-        this->AddArea(t, 0.f, L, Argb(alpha, RGB_FLASH), Argb(alpha, RGB_FLASH));
+        const unsigned long rgbFlash = t.bSoak ? RGB_SOAK_FLASH : RGB_FLASH;
+        this->AddArea(t, 0.f, L, Argb(alpha, rgbFlash), Argb(alpha, rgbFlash));
         return;
     }
 
@@ -667,10 +673,11 @@ CGroundTelegraphs::AddTelegraphShape(const Telegraph& t, unsigned long now) {
     if (p > 1.f)
         p = 1.f;
 
-    this->AddOutline(t, RGB_AREA, ALPHA_AREA, ALPHA_RIM);
+    const unsigned long rgbFill = t.bSoak ? RGB_SOAK_FILL : RGB_FILL;
+    this->AddOutline(t, t.bSoak ? RGB_SOAK_AREA : RGB_AREA, ALPHA_AREA, ALPHA_RIM);
 
     // The fill: grows from the caster to the rim over the cast, a brighter leading edge.
     const float fFill = t.fInner + (L - t.fInner) * p; // a ring fills from its inner rim
-    this->AddArea(t, 0.f, fFill - EDGE_CM, Argb(ALPHA_FILL, RGB_FILL), Argb(ALPHA_FILL, RGB_FILL));
-    this->AddArea(t, fFill - EDGE_CM, fFill, Argb(ALPHA_FILL, RGB_FILL), Argb(ALPHA_FILL_EDGE, RGB_FILL));
+    this->AddArea(t, 0.f, fFill - EDGE_CM, Argb(ALPHA_FILL, rgbFill), Argb(ALPHA_FILL, rgbFill));
+    this->AddArea(t, fFill - EDGE_CM, fFill, Argb(ALPHA_FILL, rgbFill), Argb(ALPHA_FILL_EDGE, rgbFill));
 }

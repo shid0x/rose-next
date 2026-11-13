@@ -81,6 +81,9 @@ What it writes
   skeleton (CHR slots 6-9, 12-17), the kit in gold with the sword wall (FILE_EFFECT
   2917-2925) and her rows (LIST_SKILL 7225-7234). catacomb_kit.py is what the two
   fights share.
+* **The Assassin's fight** (2026-11-13, catacomb_assassin.py -- its docstring is the
+  record): SlopRose's iai clips on his skeleton (CHR slots 6-9, 12-17), the kit in
+  violet (FILE_EFFECT 2926-2937) and his rows (LIST_SKILL 7235-7246).
 
 Deploy: restart the servers (LIST_ZONE, LIST_NPC, the QSD, the IFOs and the grids are
 read at start), re-bake the client data (scripts/pack.ps1).
@@ -113,6 +116,7 @@ import catacomb_pool as pool  # noqa: E402
 import catacomb_argentia as argentia  # noqa: E402
 import catacomb_ferdinando as ferdinando  # noqa: E402
 import catacomb_gladiomurus as gladiomurus  # noqa: E402
+import catacomb_assassin as assassin  # noqa: E402
 
 BUILD_DIR = os.path.join(ROOT, "build", "catacombs")
 JROSE = r"C:\Users\Thomas\Desktop\Testclients\Jrose"
@@ -708,6 +712,7 @@ def verify(ours):
     argentia.verify(ours, check)
     ferdinando.verify(ours, check)
     gladiomurus.verify(ours, check)
+    assassin.verify(ours, check)
     blob = open(P(ours, QSD_REL), "rb").read()
     for name, c, r in triggers():
         check(qsd.trigger_bytes(blob, name) == qsd.build_trigger(name, c, r), f"QP401 {name}")
@@ -761,6 +766,7 @@ def restore(ours):
     mon.remove_files(ours)
     boss.remove_files(ours)
     argentia.remove_files(ours)
+    assassin.remove_files(ours)
     gladiomurus.remove_files(ours)
     ferdinando.remove_files(ours)
     con = find_ci(ours, r"3DDATA\EVENT" + "\\" + KEEPER_CON)
@@ -809,6 +815,7 @@ def main():
     argentia.apply(args.ours, dry)
     ferdinando.apply(args.ours, dry)
     gladiomurus.apply(args.ours, dry)
+    assassin.apply(args.ours, dry)
     print("the zones")
     zones(args.ours, dry)
     print("the keepers")

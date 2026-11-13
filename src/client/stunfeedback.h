@@ -30,6 +30,9 @@ public:
     void Draw();
 
     void LoadFont(const char* szFont, int iCharSet);
+    /// The alert font (32 px, outlined), for the other alerts drawn beside this one
+    /// (CZoneAlerts); 0 until the game fonts are loaded.
+    unsigned int Font() const { return m_hFont; }
     void UnloadFont();
 
 private:

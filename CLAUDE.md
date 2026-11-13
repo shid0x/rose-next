@@ -325,12 +325,26 @@ cone; world cm). `CZoneTHREAD::SendZoneWarn` broadcasts it; the client
 (`CGroundTelegraphs::AddWarning`) fills each shape over the time, flashes it and plays the
 effect on it. **Drawing only**: who is hit, and when, is the sender's business (the Karkia
 catacombs' `CCatacombs::ProcFloor`, `doc/making-events.md` section 2). Not re-sent to a
-late arrival. First use: Argentia's floor fight. Client and server ship together. A strip's
+late arrival. First use: Argentia's floor fight. Client and server ship together. A warning
+may be a **soak** (`m_btStyle` = `ZONE_WARN_SOAK`, drawn green): a shape somebody must stand
+in, where red means leave (the Assassin's Black Sun and Execution). A strip's
 or a cone's effect is turned along it (the effect's +X; Ferdinando's lines of cuts).
 **`GSV_MOB_BLINK`** (0x07f4, `CObjCHAR::Blink_POSITION`) is its companion: a monster the
 server has put somewhere else at once, command and animation untouched (Ferdinando's
 dashes), optionally with a facing (Gladiomurus turning to each player she thrusts at). **A monster has 24 animation slots** (`MAX_MOB_ANI`; 12-23 are six more cast /
 release pairs): a change to `CCharMODEL`'s layout, so that build was a clean one.
+
+### Boss Alerts (2026-11-13)
+
+A few words above the middle of the screen telling the players what to do about a boss
+mechanic, with a bar that runs down for the time they have -- what a boss-mod addon does in
+other games (the user's ask: "akin to Deadly Boss Mods"), here the server's own word:
+`GSV_ZONE_ALERT` (0x07f5, `common/net_prototype.h`: time, style, a sound, the text). The
+client shows it (`CZoneAlerts` in `src/client/zoneobjects.*`, drawn beside the STUNNED alert
+with its font, classic interface and UI2 alike; newest on top, three at most; green for a
+shape to stand in, amber otherwise). The sender picks who is told: the Karkia catacombs
+(`Alert()` in `catacombs.cpp`) tell the players in the boss room, for the soaks and the
+moves with one safe place. Short and imperative, in capitals. Client and server ship together.
 
 ### NPC Dialog Quest Options (.CON QEX1 Appendix)
 NPC conversations are `.CON` files (`data/3DDATA/EVENT/`) whose logic is compiled Lua 4 **bytecode** — new functions can't be merged into the blob (Lua 4.0.1 rejects multi-chunk buffers). Our extension: an optional appendix after the Lua tail (`b"QEX1"; i32 len; XOR'd Lua source`) that the client (`cevent.cpp`, `QEX_APPENDIX_MAGIC`) executes into the same `lua_State` via a second `Do_Buffer`. The quest editor uses it to append quest options to an NPC's existing dialog without replacing it (`quest-editor con-append`, or the wizard's append radio). Codec + gotchas (main-blob XOR key depends on file size; menu-0 append ordering) live in `src/tools/quest-editor/src/convo.rs` and the tool's `PROGRESS.md`. `.CON` files are client-only — the server never reads them; quest authority stays in QSD triggers. Appended `.CON`s require the QEX1-aware client: ship client + data together.

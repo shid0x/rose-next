@@ -496,7 +496,7 @@ CZoneTHREAD::SetZoneObjects(BYTE btGroup, const tagZONE_OBJECT* pObjs, int iCoun
 
 void
 CZoneTHREAD::SendZoneWarn(const tagZONE_WARN* pShapes, int iCount, WORD wWarnMS, short nEffect, short nWarnSound,
-    short nFireSound) {
+    short nFireSound, BYTE btStyle) {
     if (iCount <= 0 || iCount > 64)
         return;
     classPACKET* pCPacket = Packet_AllocNLock();
@@ -509,6 +509,7 @@ CZoneTHREAD::SendZoneWarn(const tagZONE_WARN* pShapes, int iCount, WORD wWarnMS,
     pCPacket->m_gsv_ZONE_WARN.m_nWarnSound = nWarnSound;
     pCPacket->m_gsv_ZONE_WARN.m_nFireSound = nFireSound;
     pCPacket->m_gsv_ZONE_WARN.m_btCount = (BYTE)iCount;
+    pCPacket->m_gsv_ZONE_WARN.m_btStyle = btStyle;
     pCPacket->AppendData((void*)pShapes, (short)(iCount * sizeof(tagZONE_WARN)));
     this->SendPacketToZONE(pCPacket);
     Packet_ReleaseNUnlock(pCPacket);

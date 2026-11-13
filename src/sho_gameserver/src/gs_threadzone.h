@@ -226,8 +226,9 @@ public:
     /// caller decides who is hit, and when. At most 64 shapes.
     /// nWarnSound / nFireSound: FILE_SOUND rows played once as the shapes appear and as they
     /// fire, from the middle of the batch.
+    /// btStyle: ZONE_WARN_DANGER (red) or ZONE_WARN_SOAK (green: a shape to stand in).
     void SendZoneWarn(const tagZONE_WARN* pShapes, int iCount, WORD wWarnMS, short nEffect, short nWarnSound = 0,
-        short nFireSound = 0);
+        short nFireSound = 0, BYTE btStyle = 0);
     bool IsZoneObjectsOn(BYTE btGroup);
 
     /// Show the zone a countdown (iSeconds > 0) or remove it (0), remember it, and tell

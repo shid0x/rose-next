@@ -1867,9 +1867,13 @@ CObjCHAR::IsProjectilePresentedSkill(short nSkillIDX) {
 
 //-------------------------------------------------------------------------------------------------
 int
-CObjCHAR::Hit_WithSKILL(CObjCHAR* pTarget, short nSkillIDX) {
+CObjCHAR::Hit_WithSKILL(CObjCHAR* pTarget, short nSkillIDX, float fScale) {
     uniDAMAGE sDamage;
     sDamage.m_wDamage = CCal::Get_SkillDAMAGE(this, pTarget, nSkillIDX, 1);
+    if (fScale != 1.f && sDamage.m_wVALUE > 0) {
+        const float fShare = sDamage.m_wVALUE * fScale;
+        sDamage.m_wVALUE = fShare < 1.f ? 1u : (fShare > 4000000.f ? 4000000u : (unsigned int)fShare);
+    }
     CObjITEM* pOutITEM = NULL;
     this->Apply_DAMAGE(pTarget, sDamage, &pOutITEM, false);
     pTarget->Send_gsv_DAMAGE_OF_SKILL(this->Get_INDEX(), nSkillIDX, sDamage.m_wDamage, 0, 0, pOutITEM);

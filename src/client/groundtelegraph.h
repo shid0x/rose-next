@@ -49,7 +49,7 @@ public:
     /// dwWarnMS, then flashes and plays FILE_EFFECT row nEffect (0: none) -- on a circle's
     /// centre, a strip's middle, a cone's point. Who it hits is the server's business.
     void AddWarning(int iShape, float fX, float fY, float fDirDeg, float fLength, float fInner, float fWidth,
-        unsigned long dwWarnMS, short nEffect);
+        unsigned long dwWarnMS, short nEffect, bool bSoak = false);
     /// A batch of warnings' two sounds (FILE_SOUND rows, 0 = none), at a spot of the world:
     /// one now, as the shapes appear, and one dwWarnMS later, as they fire.
     void WarningSounds(float fX, float fY, short nWarnSound, short nFireSound, unsigned long dwWarnMS);
@@ -93,6 +93,7 @@ private:
         bool bFree = false; // a server warning (AddWarning): no caster, it fires on time
         float fInner = 0.f; // circle: the inner radius of a ring, cm
         short nEffect = 0; // a server warning: FILE_EFFECT row played as it fires
+        bool bSoak = false; // a server warning to stand in, not to leave: drawn green
     };
 
     /// The tops of the walkable map objects at one point of a 1 m world lattice: a ray

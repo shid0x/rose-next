@@ -570,7 +570,26 @@ sleep, with nothing to move out of.
     shape on the dive's spot), and a facing on `GSV_MOB_BLINK`. `scripts/catacomb_kit.py`
     now holds what the two sword fights share. `/catacomb boss gladiomurus`; the
     daily draw is among four.
-  - **Not built: the last fight** (the Ikaness Greater Assassin).
+  - **Built and validated in game (2026-11-13): the Ikaness Greater Assassin's fight**, the
+    last of the pool (`scripts/catacomb_assassin.py`, its docstring is the record;
+    `FightAssassin` / `AssassinMechanic`). In violet, and his floor says where to be:
+    **Shadowstep** (a circle under one player, he is in it a second later, three times;
+    later each strike leaves a cross of cuts), **Fan of Knives** (three volleys, a
+    narrow cone at every player), **Black Sun** (the user's soaking mechanic: green
+    circles, one to three and never more than there are players, each of which must
+    have somebody in it as it lands or the whole room is hit), **Backstab** (he is
+    behind his target and cuts back through) and, after each wave of the dead,
+    **Execution** (one green mark, the rest of the room red; the blow in the mark is
+    shared by whoever stands in it and made for three). New in the layer: the soak
+    style (`gsv_ZONE_WARN::m_btStyle`, drawn green by the client), soak and shared
+    hazards, `Hit_WithSKILL(..., fScale)`, a strike cue, a cone at every player.
+    `/catacomb boss assassin`; the daily draw is among five. **Every body of the pool
+    has its fight.**
+  - **Boss alerts** (2026-11-13, the user's ask after the Assassin's test: "some kind
+    of alert akin to Deadly Boss Mods telling you to soak"): `GSV_ZONE_ALERT`, a line
+    above the middle of the screen with a bar for the time left. Sent to the players in
+    the room for: SOAK THE BLACK SUN, EXECUTION - STACK IN THE MARK (green), VALHALLA'S
+    GATE - GET INSIDE THE SQUARE, SEVERANCE - GET AWAY FROM HIM, SPIRAL - AGAINST HIM.
   - **Dragon Nest material: blocked.** EVO's client install is now packed in encrypted
     `EVOnnn.EPK` archives; the key is not in their repo or on this machine, and their
     converter (`TOOLS/DNImport`, which writes standard EFT / PTL / ZMS / ZMO our client

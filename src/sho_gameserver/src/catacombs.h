@@ -64,7 +64,10 @@ class classUSER;
 /// lines through the players while a storm builds round him. Gladiomurus's shapes stay: a
 /// hazard may linger after it fires and go on hitting (her walls of swords), a cue may
 /// aim itself when it comes due (a thrust from her at one player, her leap onto the
-/// farthest), and her moves are dodged in a room her walls have just cut up.
+/// farthest), and her moves are dodged in a room her walls have just cut up. The
+/// Assassin's floor says where to be: a soak shape (drawn green) must have somebody in
+/// it as it lands -- those in it take its hit, and an empty one hits the whole room --
+/// and his Execution is one such mark whose blow is shared by whoever stands in it.
 ///
 /// Threads. ProcZone runs in every zone thread and acts in three:
 ///   * each crypt zone's thread sweeps its own players and, once per break, kills
@@ -175,6 +178,13 @@ private:
         bool bFired = false;
         std::unordered_map<int, unsigned long> hitAt; // by player object: the last hit
         std::unordered_map<int, float> side; // by player object: cm to one side (+) or the other
+        // a soak (a circle): the players in it take nSkill and, with fewer than iSoakNeed of
+        // them (never asked for more than are in the room), everybody takes nFailSkill.
+        // bSplit: no failure, the blow is shared instead -- each takes the row's damage
+        // x (those asked for / iSoakNeed) / (those in it)
+        int iSoakNeed = 0;
+        short nFailSkill = 0;
+        bool bSplit = false;
     };
     struct Cue {
         unsigned long dwAt = 0;
@@ -196,6 +206,14 @@ private:
         int iDiveRadius = 0; // > 0: a circle on the farthest player, remembered as the boss's spot
         bool bAtSpot = false; // the shapes are centred on that spot
         bool bBlinkToSpot = false; // the boss is at that spot now (a cue with no shape)
+        int iSoakNeed = 0; // > 0: its shapes are soaks (see Hazard), sent as ZONE_WARN_SOAK
+        short nFailSkill = 0;
+        bool bSplit = false;
+        // > 0: a circle on one player (the iThrustPick-th from the move's first) and the boss
+        // there as it fires; with iEchoLength, two cuts crossed on that spot dwEchoMS later
+        int iStrikeRadius = 0, iEchoLength = 0, iEchoWidth = 0;
+        unsigned long dwEchoMS = 0;
+        int iFanLength = 0, iFanDeg = 0; // > 0: a cone from the boss at every player
     };
 
     /// One crypt's maze, built and read by its zone thread.
@@ -231,6 +249,12 @@ private:
     bool FloorBusy(int iSlot) const; // a cue or a shape that has not fired yet
     void FightFerdinando(int iSlot, unsigned long now, CObjCHAR* pBoss);
     void FightGladiomurus(int iSlot, unsigned long now, CObjCHAR* pBoss);
+    void FightAssassin(int iSlot, unsigned long now, CObjCHAR* pBoss);
+    void AssassinMechanic(int iSlot,
+        int iMechanic,
+        unsigned long now,
+        CObjCHAR* pBoss,
+        const std::vector<classUSER*>& inRoom);
     void GladiomurusMechanic(int iSlot,
         int iMechanic,
         unsigned long now,

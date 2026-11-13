@@ -137,6 +137,24 @@ dodge), see [making-monsters.md](making-monsters.md).
     `rosefmt.zmo.with_trailer` gives it an empty one to write events in;
   - **a bigger effect mesh is a scaled copy**: an `.eft` mesh entry has no scale, so
     scale the ZMS's positions and its vertex ZMO's position channels (`great_sword`).
+  Added with the Assassin (2026-11-13, `scripts/catacomb_assassin.py`):
+  - **a soak: a shape to stand in.** A cue's `iSoakNeed` makes its circles soaks, sent
+    with `ZONE_WARN_SOAK` so the client draws them green where a danger is red. As
+    one lands, those in it take its row; with fewer in it than asked, everybody in
+    the room takes `nFailSkill` and the room flashes. **Never ask for more players
+    than are in the room** (`nAsked` is clamped to the living): the user tests alone,
+    and a fight that cannot be done alone cannot be tested. The same for how many
+    soaks appear at once;
+  - **a shared blow** (`bSplit`): no failure, the row's damage x (those asked for /
+    `iSoakNeed`) / (those in it), through `Hit_WithSKILL(target, row, fScale)`. Paired
+    with a red ring over the rest of the room it teaches itself: the only place left
+    to stand is the green one;
+  - **a cue may make another cue** (a strike's echo): push it to a side list and
+    append after the loop, the loop holds a reference into the vector;
+  - **say what to do** (`Alert(players, text, ms, style)` -> `GSV_ZONE_ALERT`): a
+    mechanic with one right place to be gets a line in the middle of the screen for as
+    long as the players have, green for a soak. For the moves that are only "leave the
+    red", the floor is enough: an alert on everything is noise.
 - **Remove it**:
   - with no death and no drop: `pZone->Sub_DIRECT(p); delete p;` (the GM "npc DEL"
     pattern);

@@ -267,7 +267,8 @@ CRecvPACKET::Recv_gsv_ZONE_WARN() {
             (float)s.m_wInner,
             (float)s.m_wWidth,
             head.m_wWarnMS,
-            head.m_nEffect);
+            head.m_nEffect,
+            head.m_btStyle == ZONE_WARN_SOAK);
     }
 }
 
@@ -302,6 +303,21 @@ CRecvPACKET::Recv_gsv_MOB_BLINK() {
             p.m_fX,
             p.m_fY);
     }
+}
+
+/// A boss alert: what to do about a mechanic, in the middle of the screen (CZoneAlerts).
+void
+CRecvPACKET::Recv_gsv_ZONE_ALERT() {
+    const gsv_ZONE_ALERT& head = m_pRecvPacket->m_gsv_ZONE_ALERT;
+    const int nSize = m_pRecvPacket->m_HEADER.m_nSize;
+    if (nSize < (int)sizeof(gsv_ZONE_ALERT))
+        return;
+    // the text must end inside the packet
+    const char* pText = (const char*)m_pRecvPacket + sizeof(gsv_ZONE_ALERT);
+    const int nRoom = nSize - (int)sizeof(gsv_ZONE_ALERT);
+    if (nRoom <= 0 || memchr(pText, 0, nRoom) == NULL)
+        return;
+    CZoneAlerts::Instance().Add(pText, head.m_wMS, head.m_btStyle, head.m_nSound);
 }
 
 void

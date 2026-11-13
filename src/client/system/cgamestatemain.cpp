@@ -10,6 +10,7 @@
 #include "bullet.h"
 #include "BoneEffectBudget.h"
 #include "stunfeedback.h"
+#include "zoneobjects.h"
 #include "ProcessMemory.h"
 #include "rmlui/RoseRmlUi.h"
 #include "ccamera.h"
@@ -367,6 +368,7 @@ CGameStateMain::Render_GameMENU() {
     // CTutorialEventManager::GetSingleton().Draw();
 
     CStunFeedback::Instance().Draw();
+    CZoneAlerts::Instance().Draw(); // a boss mechanic's call (GSV_ZONE_ALERT)
     ::endSprite();
 
     /// Streaming spike diagnostic. OFF by default -- enable with

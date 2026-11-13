@@ -246,7 +246,9 @@ public:
     /// floor hazard, catacombs.cpp): the damage of the row as a cast would compute it, one
     /// hit, sent as that skill's result -- so the client shows the digit with the row's hit
     /// effect and plays its hit sound, and a miss shows as one. Returns the damage.
-    int Hit_WithSKILL(CObjCHAR* pTarget, short nSkillIDX);
+    /// fScale shares it out (a blow split between those who stand together): the damage
+    /// is the row's, times that.
+    int Hit_WithSKILL(CObjCHAR* pTarget, short nSkillIDX, float fScale = 1.f);
     /// This character is at (fX, fY) of its zone at once: no walk, no stop, its command and
     /// its motion left as they are (a boss stepping through its room in the middle of a
     /// skill clip). Every client is told (GSV_MOB_BLINK). Not for players: their own client

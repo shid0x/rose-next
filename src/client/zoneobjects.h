@@ -64,6 +64,35 @@ private:
 /// forgets them all (CObjectMANAGER::Clear), and the new zone sends its own.
 /// UI2 draws them (RoseRmlZoneTimers); the classic interface has no panel and
 /// relies on the zone's announcements.
+/// Boss alerts (GSV_ZONE_ALERT): a few words above the middle of the screen telling the
+/// player what to do about a mechanic, with a bar that runs down for the time they have.
+/// The server's own boss mod: it knows what is coming, so it says so. Drawn like the
+/// STUNNED alert and above it, in the classic interface and UI2 alike, newest on top,
+/// three at most; green for a shape to stand in, amber for the rest. A zone change
+/// forgets them.
+class CZoneAlerts {
+public:
+    static CZoneAlerts& Instance();
+
+    /// From Recv_gsv_ZONE_ALERT.
+    void Add(const char* szText, unsigned long dwMS, unsigned char btStyle, short nSound);
+    /// Inside the HUD sprite block (CGameStateMain::Render_GameMENU).
+    void Draw();
+    void Forget();
+
+private:
+    struct Alert {
+        std::string text;
+        unsigned long dwStart;
+        unsigned long dwMS;
+        unsigned char btStyle;
+    };
+
+    CZoneAlerts() {}
+
+    std::vector<Alert> m_Alerts;
+};
+
 class CZoneTimers {
 public:
     struct Entry {
