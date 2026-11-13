@@ -628,7 +628,7 @@ sleep, with nothing to move out of.
     set has no other source, and Ferdinando's is the Murasamemaru. The crypt's monsters
     (912, rows 90/91) pay the tier below: the thirteen plain lv230 weapons and an OG
     armour window. **"lvl 130" was read as 230** (a lv235 monster pays nobody ten
-    levels above it, so level-130 gear could reach no one who wants it): to confirm.
+    levels above it, so level-130 gear could reach no one who wants it): confirmed.
     A redirect re-rolls over five cells and a blank one is a dead roll, so short lists
     repeat until the window is full.
   - **Where the Key of Remorse drops** (the user's question, 2026-11-13): one material

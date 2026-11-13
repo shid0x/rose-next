@@ -82,7 +82,7 @@ redirect (the red set has no other source) and that line's Norse set behind two
 See CRYPT_BOSSES. The crypt's monsters (912) pay the tier below: the plain lv230
 weapon line, all thirteen, and an OG armour window. **"lvl 130" is read as 230**:
 `Get_DropITEM` pays nobody 10 levels above a lv235 monster, so level-130 gear would
-reach only players who are 95 levels past it. Not confirmed by the user yet.
+reach only players who are 95 levels past it. Confirmed by the user the same day.
 
 **Armour (2026-10-20, `armour-endgame-sets.py`):** the OG cinematic set (lv230)
 rides the three lv228-240 field tables as extra redirects paid for by one material
