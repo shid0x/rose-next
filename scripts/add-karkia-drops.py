@@ -139,13 +139,15 @@ MONEY_BOSS = 0              # bosses pay items; money would eat the mythical rol
 # shop script called those thirteen "reserved for drops or a craft"; this is the
 # drops half of that promise.
 #
-# **The three Hearts stay.** They are the only vanilla material that reads as a
-# graveyard drop, and the catacomb entry design in
-# doc/karkia-catacombs-implementation-brief.md uses them as its toll -- a player
-# clears the cemetery above to pay for the crypt below. Pulling them out here
-# would silently break that before it was built.
-MAT_CEMETERY = [742, 743, 744, 751, 151, 152, 760, 153]
-MAT_SPIRE = [745, 746, 763, 760, 747, 748, 752, 758]
+# **Two Hearts stay** (Green, Blue): the only vanilla material that reads as a
+# graveyard drop. Black Hearts were the catacombs' placeholder toll; since
+# 2026-11-13 the keepers ask a **Key of Remorse** (150, catacomb_toll.py: Jrose's,
+# imported for this), which takes the Black Hearts' slot here -- a player clears
+# the cemetery above to pay for the crypt below -- and Magic Stone Crystal's in the
+# Spire (the Cemetery and the crypt still pay that one).
+KEY_OF_REMORSE = 150
+MAT_CEMETERY = [742, 743, 744, 751, KEY_OF_REMORSE, 152, 760, 153]
+MAT_SPIRE = [745, 746, 763, KEY_OF_REMORSE, 747, 748, 752, 758]
 
 # Two boss pools rather than one, because several descriptions name the creature
 # they come from and it costs nothing to keep that true:
@@ -153,8 +155,8 @@ MAT_SPIRE = [745, 746, 763, 760, 747, 748, 752, 758]
 #   759 "Nagia forges the key ... from ten of them" god's own jailers
 #   762 "Prised from the ash-grey wyrm"             so: the Drakes, not anything else
 MAT_BOSS = [759, 761]
-# The catacombs (2026-11-10): Green and Blue Hearts first -- the Black ones are the
-# crypt's toll and stay a Cemetery drop, so the crypt does not pay its own way in --
+# The catacombs (2026-11-10): Green and Blue Hearts first -- the toll (the Key of
+# Remorse) drops outside, so the crypt does not pay its own way in --
 # then the Spire's upper materials.
 MAT_CRYPT = [152, 153, 763, 760, 747, 748, 752, 758]
 MAT_DRAKE = [762, 758]

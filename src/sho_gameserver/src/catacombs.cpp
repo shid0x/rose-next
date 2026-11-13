@@ -43,13 +43,13 @@ constexpr int KEEPER_COUNT = (int)(sizeof(KEEPERS) / sizeof(KEEPERS[0]));
 const char* ENTER_TRIGGER = "Catacomb-Enter";
 const char* SPEAKER = "The Crypt Keepers"; // the announcements
 
-// The toll, a placeholder (the user, 2026-11-09: "just some Karkia drop as a temp
-// thing"): five Black Hearts, LIST_NATURAL 151, dropped in the Cemetery. The keeper's
-// dialog names it too (import-catacombs.py DIALOG).
+// The toll: one Key of Remorse, LIST_NATURAL 150 (scripts/catacomb_toll.py: Jrose's,
+// imported for this; five Black Hearts until 2026-11-13). The Cemetery's and the
+// Spire's monsters drop it. The keeper's dialog names it too (import-catacombs.py DIALOG).
 constexpr unsigned int TOLL_TYPE = ITEM_TYPE_NATURAL;
-constexpr unsigned int TOLL_NO = 151;
-constexpr unsigned int TOLL_COUNT = 5;
-const char* TOLL_NAME = "five Black Hearts";
+constexpr unsigned int TOLL_NO = 150;
+constexpr unsigned int TOLL_COUNT = 1;
+const char* TOLL_NAME = "a Key of Remorse";
 
 // An opening every two hours, on the even hours: open, warnings, break.
 constexpr int PERIOD_S = 2 * 60 * 60;
@@ -2193,8 +2193,8 @@ CCatacombs::OnEnter(classUSER* pUSER) {
         if (!TakeToll(pUSER)) {
             Whisper(pUSER,
                 iKeeper,
-                fmt::format("The price is {}, once a day. You do not carry it. The dead of this "
-                            "cemetery do.",
+                fmt::format("The price is {}, once a day. You do not carry one. The dead of this "
+                            "cemetery do, and those of the Spire.",
                     TOLL_NAME));
             return;
         }

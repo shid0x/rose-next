@@ -84,6 +84,8 @@ What it writes
 * **The Assassin's fight** (2026-11-13, catacomb_assassin.py -- its docstring is the
   record): SlopRose's iai clips on his skeleton (CHR slots 6-9, 12-17), the kit in
   violet (FILE_EFFECT 2926-2937) and his rows (LIST_SKILL 7235-7246).
+* **The toll** (2026-11-13, catacomb_toll.py): Jrose's Key of Remorse as LIST_NATURAL
+  150, which the keepers ask in place of five Black Hearts.
 
 Deploy: restart the servers (LIST_ZONE, LIST_NPC, the QSD, the IFOs and the grids are
 read at start), re-bake the client data (scripts/pack.ps1).
@@ -117,6 +119,7 @@ import catacomb_argentia as argentia  # noqa: E402
 import catacomb_ferdinando as ferdinando  # noqa: E402
 import catacomb_gladiomurus as gladiomurus  # noqa: E402
 import catacomb_assassin as assassin  # noqa: E402
+import catacomb_toll as toll  # noqa: E402
 
 BUILD_DIR = os.path.join(ROOT, "build", "catacombs")
 JROSE = r"C:\Users\Thomas\Desktop\Testclients\Jrose"
@@ -195,7 +198,7 @@ DIALOG = {
                "and seals again before the next.",
     "--ask": "Let me into the catacombs.",
     "--bye": "Mind the door.",
-    "--offer": "The price is five Black Hearts, once a day. It buys you this opening: leave "
+    "--offer": "The price is a Key of Remorse, once a day. It buys you this opening: leave "
                "and come back as you like until the crypt seals. If you have already paid "
                "for this opening, pass freely.",
     "--lack": "The crypt is sealed.",
@@ -206,7 +209,7 @@ DIALOG = {
 }
 
 TRACKED = [ZONE_STB_REL, ZONE_STL_REL, NPC_STB_REL, NPC_STL_REL, NPC_CHR_REL, EVENT_STB_REL,
-           mon.AI_STB_REL, boss.SKILL_STB_REL, boss.SKILL_STL_REL, *pool.TRACKED, *argentia.TRACKED,
+           mon.AI_STB_REL, boss.SKILL_STB_REL, boss.SKILL_STL_REL, *pool.TRACKED, *argentia.TRACKED, *toll.TRACKED,
            QSD_REL, LTB_REL, CEMETERY_REL + r"\KCemetery.lnav"] + [
     CEMETERY_REL + "\\" + name for name in ("30_35.IFO", "33_32.IFO", "33_33.IFO", "35_35.IFO")]
 
@@ -713,6 +716,7 @@ def verify(ours):
     ferdinando.verify(ours, check)
     gladiomurus.verify(ours, check)
     assassin.verify(ours, check)
+    toll.verify(ours, check)
     blob = open(P(ours, QSD_REL), "rb").read()
     for name, c, r in triggers():
         check(qsd.trigger_bytes(blob, name) == qsd.build_trigger(name, c, r), f"QP401 {name}")
@@ -816,6 +820,7 @@ def main():
     ferdinando.apply(args.ours, dry)
     gladiomurus.apply(args.ours, dry)
     assassin.apply(args.ours, dry)
+    toll.apply(args.ours, dry)
     print("the zones")
     zones(args.ours, dry)
     print("the keepers")
