@@ -555,7 +555,22 @@ sleep, with nothing to move out of.
     `GSV_MOB_BLINK` 0x07f4 + `CObjCHAR::Blink_POSITION` (a monster somewhere else at
     once, mid-clip), and a warning's effect turned along its strip or cone.
     `/catacomb boss ferdinando` raises him; the daily draw is among three now.
-  - **Not built: the other two fights** (Gladiomurus, the Assassin).
+  - **Built and validated in game (2026-11-13): Gladiomurus's fight**, the wall of swords
+    (`scripts/catacomb_gladiomurus.py`, its docstring is the record; `FightGladiomurus`
+    / `GladiomurusMechanic`). A valkyrie in gold where Ferdinando is blood, and her
+    shapes stay: **Sword Wall** (a line of great swords across the whole room through
+    one player, standing 11 s and hurting whoever stands in it or goes through it; later a cross), **Valkyrie's
+    Lance** (four thrusts, each aimed at another player as its line appears; later
+    tridents), **Crescent Wheel** (eight wedges fired one after the other round her;
+    later back the other way), **Skyfall** (she leaps onto the farthest player, two
+    rings roll out) and, after each wave of the dead, **Valhalla's Gate** (a 24 m
+    square of sword walls round her; everything outside it burns as she lands, and
+    the cage stands 13 s while she fights in it). New in the floor layer: a hazard
+    that lingers, cues that aim themselves when they come due (a thrust, a dive, a
+    shape on the dive's spot), and a facing on `GSV_MOB_BLINK`. `scripts/catacomb_kit.py`
+    now holds what the two sword fights share. `/catacomb boss gladiomurus`; the
+    daily draw is among four.
+  - **Not built: the last fight** (the Ikaness Greater Assassin).
   - **Dragon Nest material: blocked.** EVO's client install is now packed in encrypted
     `EVOnnn.EPK` archives; the key is not in their repo or on this machine, and their
     converter (`TOOLS/DNImport`, which writes standard EFT / PTL / ZMS / ZMO our client

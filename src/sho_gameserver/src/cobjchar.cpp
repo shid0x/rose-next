@@ -1877,7 +1877,7 @@ CObjCHAR::Hit_WithSKILL(CObjCHAR* pTarget, short nSkillIDX) {
 }
 
 void
-CObjCHAR::Blink_POSITION(float fX, float fY) {
+CObjCHAR::Blink_POSITION(float fX, float fY, short nDirDeg) {
     CZoneTHREAD* pZone = this->GetZONE();
     if (!pZone || this->IsUSER())
         return;
@@ -1902,6 +1902,7 @@ CObjCHAR::Blink_POSITION(float fX, float fY) {
     pCPacket->m_gsv_MOB_BLINK.m_fX = fX;
     pCPacket->m_gsv_MOB_BLINK.m_fY = fY;
     pCPacket->m_gsv_MOB_BLINK.m_nPosZ = (short)this->Nav_SendZ();
+    pCPacket->m_gsv_MOB_BLINK.m_nDirDeg = nDirDeg;
     pZone->SendPacketToZONE(pCPacket);
     Packet_ReleaseNUnlock(pCPacket);
 }

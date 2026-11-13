@@ -251,7 +251,10 @@ public:
     /// its motion left as they are (a boss stepping through its room in the middle of a
     /// skill clip). Every client is told (GSV_MOB_BLINK). Not for players: their own client
     /// walks them. The caller answers for the spot being open floor on the same level.
-    void Blink_POSITION(float fX, float fY);
+    /// nDirDeg turns it as well (degrees from +X towards +Y; -1 = as it was): the server
+    /// keeps no facing, so this is for the clients' eyes only. The same spot with a
+    /// facing is a turn on the spot.
+    void Blink_POSITION(float fX, float fY, short nDirDeg = -1);
     void Give_DAMAGE(CObjCHAR* pTarget, uniDAMAGE sDamage, bool bDropItem = true,
         Rose::Network::Packets::DamagePresentationKind kind
         = Rose::Network::Packets::DamagePresentationKind::Immediate,

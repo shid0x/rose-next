@@ -288,6 +288,13 @@ CRecvPACKET::Recv_gsv_MOB_BLINK() {
     pCHAR->ResetCUR_POS(pos);
     pCHAR->m_PosGOTO = pos; // nothing left to walk: the next order starts from here
     pCHAR->SetServerZ(p.m_nPosZ, true);
+    if (p.m_nDirDeg >= 0) {
+        const float a = p.m_nDirDeg * 3.14159265f / 180.f;
+        t_POSITION look = pos;
+        look.x += cosf(a) * 1000.f;
+        look.y += sinf(a) * 1000.f;
+        pCHAR->Set_ModelDIR(look, true);
+    }
     if (Log::level_enabled(Rose::Common::LogLevel::Debug) && pCHAR->IsCombatTraceSubject()) {
         LogString(LOG_DEBUG_,
             "CombatTrace blink received: obj %d to %.0f, %.0f\n",

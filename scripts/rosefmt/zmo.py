@@ -10,7 +10,7 @@ Trailer (``EZMO`` / ``3ZMO``): ``... body ... | u16 n | n x i16 event-per-frame
 ``truncated`` cuts a clip to its first N frames (frame records, events and the
 header count together) -- for an imported clip with a dead tail; ``sliced`` takes any
 frame range, e.g. to split a shot at its firing frame; ``joined`` plays two clips of
-one skeleton back to back. The events are what makes a clip *do*
+one skeleton back to back; ``with_trailer`` gives a clip without events an empty table. The events are what makes a clip *do*
 something: a normal attack lands at frame 21 (melee) or fires at 22/23
 (bow/gun); a skill release launches at 24/34 (or 26/25). **A bare-handed
 monster on a 22/23 clip has nothing to fire** and used to deal damage with no
@@ -165,6 +165,21 @@ def joined(first_blob, second_blob):
     head = bytearray(a[:fa])
     struct.pack_into("<I", head, o + 4, frames)
     return bytes(head) + body + tail
+
+
+def with_trailer(blob):
+    """The clip with an (empty) ``EZMO`` event trailer when it has none -- a monster's
+    idle or casting clip often ships without, and ``with_events`` needs one to write in.
+    A clip that has a trailer comes back as it is; one with anything after its frame
+    records that is not a trailer is refused."""
+    b = read_file(blob)
+    if events(b)[0] is not None:
+        return b
+    first, stride, (_, frames, _) = frame_layout(b)
+    body_end = first + stride * frames
+    if len(b) != body_end:
+        raise ValueError("clip has %d bytes after its frames and no trailer" % (len(b) - body_end))
+    return b + struct.pack("<H", frames) + bytes(2) * frames + struct.pack("<I", body_end) + b"EZMO"
 
 
 def with_events(blob, changes):

@@ -112,6 +112,31 @@ dodge), see [making-monsters.md](making-monsters.md).
   - **player clips on a monster**: EVO-REFORGED's `AnimRetarget/retarget.py` (by bone
     name; 221 of our NPC skeletons carry the avatar's `b1_*` bones), run as a
     subprocess. Clear the source's frame events and write ours.
+  Added with Gladiomurus (2026-11-13, `scripts/catacomb_gladiomurus.py`; the shared
+  tools are `scripts/catacomb_kit.py`):
+  - **a shape that stays**: a cue's `dwLingerMS` / `dwTickMS` keep its hazards after
+    they fire. Nothing is drawn for it: the effect played as it fires must last as
+    long (her sword walls: a mesh entry's `repeat` x its loop). **It is looked at every
+    frame, and a strip also hits whoever crossed it**: checked twice a second, a wall
+    3 m wide let every runner through (0.25 s to cross). Each player is hit at most
+    once per tick, standing in it or going through. Since crossing is caught at any
+    width, make the shape as wide as what is drawn (her walls: 1.2 m, the blades are
+    0.9 m): at 3 m it hurt players who stood clear of the swords;
+  - **the next move does not wait for a standing shape**: `FloorBusy` counts cues and
+    hazards that have not fired, so a wall is still up during the move after it;
+  - **cues that aim themselves when they come due**: `iThrustLength` (a strip from
+    the boss at one player, the boss turned to it), `iDiveRadius` (a circle on the
+    farthest player, kept as the boss's spot), `bAtSpot` (shapes centred there),
+    `bBlinkToSpot` (a cue with no shape that puts the boss there);
+  - **`Blink_POSITION(x, y, deg)` also turns the model** (the server keeps no facing):
+    the same spot with a facing is a turn on the spot, which is how a self skill is
+    pointed at someone other than the current target;
+  - **a 3ds Max biped under its default names** ("Bip01 L Thigh") needs a map file
+    for the retargeter (`BONE_MAP` in her script); the avatar's bones are `b1_*`;
+  - **a monster's idle or casting clip may ship without an event table**:
+    `rosefmt.zmo.with_trailer` gives it an empty one to write events in;
+  - **a bigger effect mesh is a scaled copy**: an `.eft` mesh entry has no scale, so
+    scale the ZMS's positions and its vertex ZMO's position channels (`great_sword`).
 - **Remove it**:
   - with no death and no drop: `pZone->Sub_DIRECT(p); delete p;` (the GM "npc DEL"
     pattern);

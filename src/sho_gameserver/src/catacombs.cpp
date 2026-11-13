@@ -67,7 +67,7 @@ constexpr int TIMER_DRIFT_S = 2; // re-sent only when the end moved (a GM shifte
 // ---- the boss (scripts/catacomb_boss.py: keep the two in step)
 // The pool (scripts/catacomb_boss.py, catacomb_pool.py). A body is in the daily draw
 // once its fight is written here; the others exist only for /mon until then.
-enum { BOSS_NECROMANCER, BOSS_ARGENTIA, BOSS_FERDINANDO, BOSS_KINDS };
+enum { BOSS_NECROMANCER, BOSS_ARGENTIA, BOSS_FERDINANDO, BOSS_GLADIOMURUS, BOSS_KINDS };
 struct BossBody {
     int npc;
     const char* key; // `/catacomb boss <key>`
@@ -78,6 +78,7 @@ constexpr BossBody BOSSES[BOSS_KINDS] = {
     {2556, "necromancer", "The Crypt Necromancer", "The Necromancer returns in"},
     {2558, "argentia", "Argentia, the Mad Giant", "Argentia returns in"},
     {2557, "ferdinando", "Ferdinando, the Eternal", "Ferdinando returns in"},
+    {2559, "gladiomurus", "Gladiomurus", "Gladiomurus returns in"},
 };
 
 int
@@ -122,11 +123,11 @@ enum { ARG_FLOOR = 1, ARG_GRASP, ARG_HOWL };
 constexpr short FERD_SKILL_DRAW = 7213, FERD_SKILL_STEP = 7214, FERD_SKILL_RAIN = 7215;
 constexpr short FERD_SKILL_SEVER = 7216, FERD_SKILL_SPIRAL = 7217, FERD_SKILL_CRESCENT = 7218;
 enum { FERD_DRAW = 1, FERD_STEP, FERD_RAIN, FERD_SEVER, FERD_SPIRAL, FERD_CRESCENT, FERD_MOVES };
-struct FerdMove {
+struct BossMove {
     short anim, motion;
     unsigned long castMS; // the cast clip's length at its speed: the action starts then
 };
-constexpr FerdMove FERD_MOVE[FERD_MOVES] = {
+constexpr BossMove FERD_MOVE[FERD_MOVES] = {
     {0, 0, 0},
     {7219, 6, 1667}, // Crimson Draw: 15 frames at 30 %
     {7220, 8, 2333}, // Night Step: 14 frames at 20 %
@@ -152,6 +153,43 @@ constexpr int FERD_SEVER_LINE_CM = 3000, FERD_SEVER_WIDE = 400, FERD_SEVER_CM = 
 constexpr unsigned long FERD_SEVER_LINE_WARN_MS = 1400, FERD_SEVER_END_WARN_MS = 3000;
 constexpr int FERD_SPIRAL_IN_CM = 500, FERD_SPIRAL_OUT_CM = 1900, FERD_SPIRAL_CORE_CM = 650;
 constexpr int FERD_CRESCENT_CM = 1500, FERD_CRESCENT_DEG = 120;
+
+// ---- Gladiomurus (LIST_NPC 2559): the wall of swords (scripts/catacomb_gladiomurus.py: the
+// rows, the clips' frames and these times agree). Rows as Ferdinando's.
+constexpr short GLAD_SKILL_WALL = 7225, GLAD_SKILL_LANCE = 7226, GLAD_SKILL_WHEEL = 7227;
+constexpr short GLAD_SKILL_SKY = 7228, GLAD_SKILL_GATE = 7229;
+enum { GLAD_WALL = 1, GLAD_LANCE, GLAD_WHEEL, GLAD_SKY, GLAD_GATE, GLAD_MOVES };
+constexpr BossMove GLAD_MOVE[GLAD_MOVES] = {
+    {0, 0, 0},
+    {7230, 12, 1333}, // Sword Wall: 12 frames at 30 %
+    {7231, 14, 1333}, // Valkyrie's Lance: 12 frames at 30 %
+    {7232, 8, 1833}, // Crescent Wheel: 11 frames at 20 %
+    {7233, 6, 1833}, // Skyfall: 11 frames at 20 %
+    {7234, 16, 2000}, // Valhalla's Gate: 12 frames at 20 %
+};
+constexpr int GLAD_ORDER[] = {GLAD_WALL, GLAD_LANCE, GLAD_WHEEL, GLAD_WALL, GLAD_SKY};
+constexpr unsigned long GLAD_GAP_MS[] = {11000, 10000, 8500};
+constexpr short FX_GOLD_BURST = 2919, FX_GOLD_LINE = 2922, FX_GOLD_WEDGE = 2923, FX_GOLD_WALL = 2924,
+                FX_GOLD_CAGE = 2925;
+// casting04, Sword_003, point_heavy01, point_thunder01
+constexpr short SND_GLAD_WARN = 1003, SND_GLAD_CUT = 39, SND_GLAD_HEAVY = 1551, SND_GLAD_END = 1569;
+constexpr int ROOM_CM = 6000;
+// a wall: it falls two seconds after it is shown and stands as long as GOLD_WALL.EFT (seven bobs)
+constexpr unsigned long GLAD_WALL_WARN_MS = 2000, GLAD_WALL_MS = 11200, GLAD_WALL_TICK_MS = 500;
+// As wide as the swords look (a blade is 90 cm across): at 3 m it hurt players standing
+// well clear of them. Crossing is caught whatever the width (ProcFloor).
+constexpr int GLAD_WALL_WIDE = 120;
+constexpr unsigned long GLAD_LANCE_CUT_MS[4] = {167, 500, 1467, 2700}; // the thrusts, into the action clip
+constexpr unsigned long GLAD_LANCE_WARN_MS = 900;
+constexpr int GLAD_LANCE_CM = 2200, GLAD_LANCE_WIDE = 260, GLAD_LANCE_FAN_DEG = 18;
+constexpr int GLAD_WHEEL_CM = 1400, GLAD_WEDGES = 8;
+constexpr unsigned long GLAD_WHEEL_FIRST_MS = 200, GLAD_WHEEL_WARN_MS = 1500;
+constexpr unsigned long GLAD_WHEEL_STEP_MS[2] = {220, 150}; // one way round; there and back
+constexpr unsigned long GLAD_SKY_LEAP_MS = 1100, GLAD_SKY_LAND_MS = 1467, GLAD_SKY_WARN_MS = 1800;
+constexpr int GLAD_SKY_CM = 550, GLAD_SKY_RING_CM[2] = {1100, 1700}, GLAD_SKY_SEED_CM = 350;
+constexpr unsigned long GLAD_SKY_RING_GAP_MS = 450, GLAD_SKY_RING_WARN_MS = 1200;
+constexpr unsigned long GLAD_GATE_SLAM_MS = 2867, GLAD_CAGE_WARN_MS = 2000, GLAD_CAGE_MS = 12800;
+constexpr int GLAD_GATE_HALF_CM = 1200; // the square is twice this a side
 constexpr short SKILL_BURST = 7205, MOTION_BURST = 6; // Grave Burst: a 10 m circle round it
 constexpr short SKILL_LANCES = 7206, MOTION_LANCES = 8; // Soul Lances: five lines at one player
 // A cast ordered on a target out of the skill's range makes the boss walk first, and
@@ -227,6 +265,17 @@ InBossRoom(const tPOINTF& pos) {
 float
 Distance(const tPOINTF& a, const tPOINTF& b) {
     return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y));
+}
+
+/// Degrees from +X towards +Y of the way from one point to another, and any angle in 0..359.
+int
+Heading(const tPOINTF& from, const tPOINTF& to) {
+    return (int)std::lround(std::atan2(to.y - from.y, to.x - from.x) * 180.f / 3.14159265f);
+}
+
+short
+Turn(int iDeg) {
+    return (short)(((iDeg % 360) + 360) % 360);
 }
 
 /// Whether a point stands in a warning's shape, HAZARD_MARGIN inside its edge.
@@ -805,6 +854,8 @@ CCatacombs::ProcBoss(CZoneTHREAD* pZone,
             Say(nZoneNO, BOSSES[b.iKind].name, b.iWaves == 1 ? "Rise. There are guests in my crypt." : "Rise, all of you! Bury them here!");
         else if (b.iKind == BOSS_FERDINANDO)
             Say(nZoneNO, BOSSES[b.iKind].name, b.iWaves == 1 ? "You bleed so prettily. Let me show you my art." : "Enough. One cut, and the rest is silence.");
+        else if (b.iKind == BOSS_GLADIOMURUS)
+            Say(nZoneNO, BOSSES[b.iKind].name, b.iWaves == 1 ? "The hall is closing. Stand inside it, or burn outside." : "Valhalla shuts its gate. Die in my hall!");
         else
             Say(nZoneNO, SPEAKER, fmt::format("The dead of the crypt come to {}.", BOSSES[b.iKind].name));
         LOG_INFO("[catacomb] {}: the boss called wave {}", CryptName(nZoneNO), b.iWaves);
@@ -825,6 +876,8 @@ CCatacombs::ProcBoss(CZoneTHREAD* pZone,
         this->FightArgentia(iSlot, now, pBoss);
     else if (b.iKind == BOSS_FERDINANDO)
         this->FightFerdinando(iSlot, now, pBoss);
+    else if (b.iKind == BOSS_GLADIOMURUS)
+        this->FightGladiomurus(iSlot, now, pBoss);
     else
         this->FightNecromancer(iSlot, now, pBoss, inRoom);
 }
@@ -934,13 +987,15 @@ CCatacombs::ProcFloor(CZoneTHREAD* pZone, int iSlot) {
         b.iArmed = 0;
         if (b.iKind == BOSS_FERDINANDO)
             this->FerdinandoMechanic(iSlot, iMechanic, now, pBoss, room());
+        else if (b.iKind == BOSS_GLADIOMURUS)
+            this->GladiomurusMechanic(iSlot, iMechanic, now, pBoss, room());
         else
             this->ArgentiaMechanic(iSlot, iMechanic, now);
     }
 
-    bool bDue = false;
+    bool bDue = false; // one fires now, or one stands
     for (const Hazard& h: hazards)
-        bDue = bDue || Reached(now, h.dwFireAt);
+        bDue = bDue || h.bFired || Reached(now, h.dwFireAt);
     bool bCue = false;
     for (const Cue& c: cues)
         bCue = bCue || Reached(now, c.dwAt);
@@ -979,6 +1034,59 @@ CCatacombs::ProcFloor(CZoneTHREAD* pZone, int iSlot) {
             c.shapes.clear();
             c.shapes.push_back(s);
         }
+        if (c.iThrustLength > 0 && !inRoom.empty()) {
+            // from the boss at one player, where each stands now; she turns to it
+            const tPOINTF from = pBoss->m_PosCUR;
+            const tPOINTF to = inRoom[(unsigned)(b.iPick + c.iThrustPick) % inRoom.size()]->m_PosCUR;
+            const int iDeg = Distance(from, to) > 1.f ? Heading(from, to) : rand() % 360;
+            c.shapes.clear();
+            for (int k = -1; k <= 1; k++) {
+                if (k != 0 && c.iThrustFan <= 0)
+                    continue;
+                tagZONE_WARN s = {};
+                s.m_btShape = ZONE_WARN_STRIP;
+                s.m_fX = from.x;
+                s.m_fY = from.y;
+                s.m_nDirDeg = Turn(iDeg + k * c.iThrustFan);
+                s.m_wLength = (WORD)c.iThrustLength;
+                s.m_wWidth = (WORD)c.iThrustWidth;
+                c.shapes.push_back(s);
+            }
+            pBoss->Blink_POSITION(from.x, from.y, Turn(iDeg));
+        }
+        if (c.iDiveRadius > 0) {
+            // on the farthest player, a little inside the walls: where the boss comes down
+            c.shapes.clear();
+            classUSER* pFar = nullptr;
+            float fFar = -1.f;
+            for (classUSER* pUSER: inRoom) {
+                const float fDist = Distance(pUSER->m_PosCUR, pBoss->m_PosCUR);
+                if (fDist > fFar) {
+                    fFar = fDist;
+                    pFar = pUSER;
+                }
+            }
+            if (pFar) {
+                b.fSpotX = (std::min)(ROOM_MAX - 300.f, (std::max)(ROOM_MIN + 300.f, pFar->m_PosCUR.x));
+                b.fSpotY = (std::min)(ROOM_MAX - 300.f, (std::max)(ROOM_MIN + 300.f, pFar->m_PosCUR.y));
+                tagZONE_WARN s = {};
+                s.m_btShape = ZONE_WARN_CIRCLE;
+                s.m_fX = b.fSpotX;
+                s.m_fY = b.fSpotY;
+                s.m_wLength = (WORD)c.iDiveRadius;
+                c.shapes.push_back(s);
+            }
+        }
+        if (c.bAtSpot) {
+            if (b.fSpotX == 0.f && b.fSpotY == 0.f)
+                c.shapes.clear(); // the leap had nowhere to land
+            for (tagZONE_WARN& s: c.shapes) {
+                s.m_fX = b.fSpotX;
+                s.m_fY = b.fSpotY;
+            }
+        }
+        if (c.bBlinkToSpot && (b.fSpotX != 0.f || b.fSpotY != 0.f))
+            pBoss->Blink_POSITION(b.fSpotX, b.fSpotY);
         if (!c.shapes.empty()) {
             pZone->SendZoneWarn(
                 c.shapes.data(), (int)c.shapes.size(), c.wWarnMS, c.nEffect, c.nWarnSound, c.nFireSound);
@@ -991,6 +1099,11 @@ CCatacombs::ProcFloor(CZoneTHREAD* pZone, int iSlot) {
                     h.bBlink = true;
                     h.fBlinkX = c.fBlinkX;
                     h.fBlinkY = c.fBlinkY;
+                    h.nFaceDeg = c.nFaceDeg;
+                }
+                if (c.dwLingerMS) {
+                    h.dwUntil = h.dwFireAt + c.dwLingerMS;
+                    h.dwTickMS = c.dwTickMS ? c.dwTickMS : 500;
                 }
                 hazards.push_back(h);
             }
@@ -999,11 +1112,17 @@ CCatacombs::ProcFloor(CZoneTHREAD* pZone, int iSlot) {
     }
 
     for (size_t i = 0; i < hazards.size();) {
-        const Hazard h = hazards[i];
-        if (!Reached(now, h.dwFireAt)) {
+        if (hazards[i].bFired || !Reached(now, hazards[i].dwFireAt)) {
             ++i;
             continue;
         }
+        if (hazards[i].dwUntil) {
+            // it stands from now on: the loop below hits with it, this frame too
+            hazards[i].bFired = true;
+            ++i;
+            continue;
+        }
+        const Hazard h = hazards[i];
         hazards.erase(hazards.begin() + i);
         for (classUSER* pUSER: inRoom) {
             if (pUSER->Get_HP() <= 0 || !InShape(h.shape, pUSER->m_PosCUR))
@@ -1012,7 +1131,53 @@ CCatacombs::ProcFloor(CZoneTHREAD* pZone, int iSlot) {
             pBoss->Hit_WithSKILL(pUSER, h.nSkill);
         }
         if (h.bBlink)
-            pBoss->Blink_POSITION(h.fBlinkX, h.fBlinkY); // he made the cut: he is at its end
+            pBoss->Blink_POSITION(h.fBlinkX, h.fBlinkY, h.nFaceDeg); // he made the cut: he is at its end
+    }
+
+    // What stands (a wall of swords), every frame. Standing in it hurts each tick; so
+    // does going through it, however fast: a strip remembers which side each player was
+    // on, and a player found on the other side has crossed it. Its whole width counts.
+    for (size_t i = 0; i < hazards.size();) {
+        Hazard& h = hazards[i];
+        if (!h.bFired) {
+            ++i;
+            continue;
+        }
+        if (Reached(now, h.dwUntil)) {
+            hazards.erase(hazards.begin() + i);
+            continue;
+        }
+        const tagZONE_WARN& s = h.shape;
+        const float a = s.m_nDirDeg * 3.14159265f / 180.f;
+        const float ux = std::cos(a), uy = std::sin(a);
+        for (classUSER* pUSER: inRoom) {
+            if (pUSER->Get_HP() <= 0)
+                continue;
+            const int iWho = pUSER->Get_INDEX();
+            bool bCaught;
+            if (s.m_btShape == ZONE_WARN_STRIP) {
+                const float dx = pUSER->m_PosCUR.x - s.m_fX, dy = pUSER->m_PosCUR.y - s.m_fY;
+                const float fAlong = dx * ux + dy * uy, fAcross = -dx * uy + dy * ux;
+                if (fAlong < 0.f || fAlong > s.m_wLength) {
+                    h.side.erase(iWho); // past its end: walking round it is not crossing it
+                    continue;
+                }
+                const auto was = h.side.find(iWho);
+                const bool bCrossed = was != h.side.end() && (was->second < 0.f) != (fAcross < 0.f);
+                h.side[iWho] = fAcross;
+                bCaught = bCrossed || std::fabs(fAcross) <= s.m_wWidth * 0.5f;
+            } else {
+                bCaught = InShape(s, pUSER->m_PosCUR);
+            }
+            if (!bCaught)
+                continue;
+            const auto last = h.hitAt.find(iWho);
+            if (last != h.hitAt.end() && !Reached(now, last->second + h.dwTickMS))
+                continue;
+            h.hitAt[iWho] = now;
+            pBoss->Hit_WithSKILL(pUSER, h.nSkill);
+        }
+        ++i;
     }
 }
 
@@ -1023,7 +1188,7 @@ CCatacombs::ProcFloor(CZoneTHREAD* pZone, int iSlot) {
 void
 CCatacombs::FightArgentia(int iSlot, unsigned long now, CObjCHAR* pBoss) {
     Boss& b = m_Boss[iSlot];
-    if (b.iArmed || !m_Cues[iSlot].empty() || !m_Hazards[iSlot].empty())
+    if (b.iArmed || this->FloorBusy(iSlot))
         return;
     if (!Reached(now, b.dwNextCast) || pBoss->m_IngSTATUS.IsIgnoreSTATUS())
         return;
@@ -1047,7 +1212,7 @@ CCatacombs::FightArgentia(int iSlot, unsigned long now, CObjCHAR* pBoss) {
 void
 CCatacombs::FightFerdinando(int iSlot, unsigned long now, CObjCHAR* pBoss) {
     Boss& b = m_Boss[iSlot];
-    if (b.iArmed || !m_Cues[iSlot].empty() || !m_Hazards[iSlot].empty())
+    if (b.iArmed || this->FloorBusy(iSlot))
         return;
     if (!Reached(now, b.dwNextCast) || pBoss->m_IngSTATUS.IsIgnoreSTATUS())
         return;
@@ -1060,7 +1225,7 @@ CCatacombs::FightFerdinando(int iSlot, unsigned long now, CObjCHAR* pBoss) {
     } else {
         iMechanic = FERD_ORDER[b.iRotation % (int)(sizeof(FERD_ORDER) / sizeof(int))];
     }
-    const FerdMove& m = FERD_MOVE[iMechanic];
+    const BossMove& m = FERD_MOVE[iMechanic];
     if (!((CObjMOB*)pBoss)->SetCMD_Skill2SELF(m.anim, m.motion)) {
         b.dwNextCast = now + CAST_RETRY_MS;
         return;
@@ -1211,6 +1376,7 @@ CCatacombs::FerdinandoMechanic(int iSlot,
                 c.bBlink = true;
                 c.fBlinkX = end.x;
                 c.fBlinkY = end.y;
+                c.nFaceDeg = turn(iDeg);
                 from = end;
             }
             break;
@@ -1261,6 +1427,207 @@ CCatacombs::FerdinandoMechanic(int iSlot,
                     k == 0 ? SND_FERD_WARN : 0, SND_FERD_CUT)
                     .shapes.push_back(s);
             }
+            break;
+        }
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+/// Whether the floor still has something coming: a cue, or a shape that has not fired. A
+/// wall that stands is not it -- the next move is made while it does.
+bool
+CCatacombs::FloorBusy(int iSlot) const {
+    if (!m_Cues[iSlot].empty())
+        return true;
+    for (const Hazard& h: m_Hazards[iSlot]) {
+        if (!h.bFired)
+            return true;
+    }
+    return false;
+}
+
+/// Gladiomurus's turn, on the half-second tick. As Ferdinando's; her answer to a wave of
+/// the dead is the Gate, and she raises no wall while its cage stands.
+void
+CCatacombs::FightGladiomurus(int iSlot, unsigned long now, CObjCHAR* pBoss) {
+    Boss& b = m_Boss[iSlot];
+    if (b.iArmed || this->FloorBusy(iSlot))
+        return;
+    if (!Reached(now, b.dwNextCast) || pBoss->m_IngSTATUS.IsIgnoreSTATUS())
+        return;
+    const WORD wCmd = pBoss->Get_COMMAND();
+    if (wCmd == CMD_SKILL2SELF || wCmd == CMD_SKILL2OBJ || wCmd == CMD_SKILL2POS || pBoss->Get_ActiveSKILL())
+        return;
+    const int nOrder = (int)(sizeof(GLAD_ORDER) / sizeof(int));
+    int iMechanic;
+    if (b.iUlt < b.iWaves) {
+        iMechanic = GLAD_GATE;
+    } else {
+        iMechanic = GLAD_ORDER[b.iRotation % nOrder];
+        if (iMechanic == GLAD_WALL && b.dwCagedUntil && !Reached(now, b.dwCagedUntil))
+            iMechanic = GLAD_ORDER[++b.iRotation % nOrder];
+    }
+    const BossMove& m = GLAD_MOVE[iMechanic];
+    if (!((CObjMOB*)pBoss)->SetCMD_Skill2SELF(m.anim, m.motion)) {
+        b.dwNextCast = now + CAST_RETRY_MS;
+        return;
+    }
+    b.dwNextCast = now + GLAD_GAP_MS[b.iWaves < 2 ? b.iWaves : 2];
+    if (iMechanic == GLAD_GATE) {
+        b.iUlt = b.iWaves;
+        b.dwCagedUntil = now + m.castMS + GLAD_GATE_SLAM_MS + GLAD_CAGE_MS;
+        b.dwNextCast = now + m.castMS + GLAD_GATE_SLAM_MS + 2500; // she fights on inside the cage
+    } else {
+        b.iRotation++;
+    }
+    b.iArmed = iMechanic;
+    b.nArmedSkill = m.anim;
+    b.dwArmedAt = now;
+}
+
+/// One of Gladiomurus's moves as cues from `now` (the moment its animation began), from
+/// where she stands.
+void
+CCatacombs::GladiomurusMechanic(int iSlot,
+    int iMechanic,
+    unsigned long now,
+    CObjCHAR* pBoss,
+    const std::vector<classUSER*>& inRoom) {
+    std::vector<Cue>& cues = m_Cues[iSlot];
+    Boss& b = m_Boss[iSlot];
+    const int iPhase = b.iWaves;
+    const unsigned long dwCast = GLAD_MOVE[iMechanic].castMS;
+    const tPOINTF at = pBoss->m_PosCUR;
+    b.iPick = rand();
+    auto cue = [&](unsigned long dwAfter, unsigned long dwWarnMS, short nEffect, short nSkill, short nWarnSound,
+                   short nFireSound) -> Cue& {
+        Cue c;
+        c.dwAt = now + dwAfter;
+        c.wWarnMS = (WORD)dwWarnMS;
+        c.nEffect = nEffect;
+        c.nSkill = nSkill;
+        c.nWarnSound = nWarnSound;
+        c.nFireSound = nFireSound;
+        cues.push_back(c);
+        return cues.back();
+    };
+    auto strip = [](float fX, float fY, int iDeg, float fLength, float fWidth) {
+        tagZONE_WARN s = {};
+        s.m_btShape = ZONE_WARN_STRIP;
+        s.m_fX = fX;
+        s.m_fY = fY;
+        s.m_nDirDeg = Turn(iDeg);
+        s.m_wLength = (WORD)fLength;
+        s.m_wWidth = (WORD)fWidth;
+        return s;
+    };
+    auto circle = [](float fX, float fY, int iRadius, int iInner) {
+        tagZONE_WARN s = {};
+        s.m_btShape = ZONE_WARN_CIRCLE;
+        s.m_fX = fX;
+        s.m_fY = fY;
+        s.m_wLength = (WORD)iRadius;
+        s.m_wInner = (WORD)iInner;
+        return s;
+    };
+    auto inside = [](float f, float fMargin) {
+        return (std::min)(ROOM_MAX - fMargin, (std::max)(ROOM_MIN + fMargin, f));
+    };
+
+    switch (iMechanic) {
+        case GLAD_WALL: {
+            // a line of swords across the whole room through one player, east-west or
+            // north-south; later both, a cross that quarters the room
+            tPOINTF through = at;
+            if (!inRoom.empty())
+                through = inRoom[rand() % inRoom.size()]->m_PosCUR;
+            const bool bEastWest = rand() % 2 != 0;
+            Cue& c = cue(0, GLAD_WALL_WARN_MS, FX_GOLD_WALL, GLAD_SKILL_WALL, SND_GLAD_WARN, SND_GLAD_HEAVY);
+            c.dwLingerMS = GLAD_WALL_MS;
+            c.dwTickMS = GLAD_WALL_TICK_MS;
+            if (bEastWest || iPhase >= 1)
+                c.shapes.push_back(strip(ROOM_MIN, inside(through.y, 200.f), 0, (float)ROOM_CM, (float)GLAD_WALL_WIDE));
+            if (!bEastWest || iPhase >= 1)
+                c.shapes.push_back(strip(inside(through.x, 200.f), ROOM_MIN, 90, (float)ROOM_CM, (float)GLAD_WALL_WIDE));
+            break;
+        }
+        case GLAD_LANCE: {
+            // four thrusts, each aimed when its line appears, each at the next player round
+            for (int k = 0; k < 4; k++) {
+                Cue& c = cue(dwCast + GLAD_LANCE_CUT_MS[k] - GLAD_LANCE_WARN_MS, GLAD_LANCE_WARN_MS, FX_GOLD_LINE,
+                    GLAD_SKILL_LANCE, k == 0 ? SND_GLAD_WARN : 0, SND_GLAD_CUT);
+                c.iThrustLength = GLAD_LANCE_CM;
+                c.iThrustWidth = GLAD_LANCE_WIDE;
+                c.iThrustFan = iPhase >= 1 ? GLAD_LANCE_FAN_DEG : 0;
+                c.iThrustPick = k;
+            }
+            break;
+        }
+        case GLAD_WHEEL: {
+            // her blade goes round like a clock hand, a wedge at a time, from whoever she
+            // is fighting; later it comes back the way it went
+            int iAim = rand() % 360;
+            for (classUSER* pUSER: inRoom) {
+                if (pUSER->Get_INDEX() == pBoss->Get_TargetIDX() && Distance(pUSER->m_PosCUR, at) > 1.f)
+                    iAim = Heading(at, pUSER->m_PosCUR);
+            }
+            const int iSign = rand() % 2 ? 1 : -1;
+            const int nSweeps = iPhase >= 1 ? 2 : 1;
+            for (int n = 0; n < nSweeps * GLAD_WEDGES; n++) {
+                const int iWedge = n < GLAD_WEDGES ? n : 2 * GLAD_WEDGES - 1 - n;
+                tagZONE_WARN s = {};
+                s.m_btShape = ZONE_WARN_CONE;
+                s.m_fX = at.x;
+                s.m_fY = at.y;
+                s.m_nDirDeg = Turn(iAim + iSign * iWedge * (360 / GLAD_WEDGES));
+                s.m_wLength = (WORD)GLAD_WHEEL_CM;
+                s.m_wWidth = (WORD)(360 / GLAD_WEDGES);
+                cue(dwCast + GLAD_WHEEL_FIRST_MS + n * GLAD_WHEEL_STEP_MS[nSweeps - 1] - GLAD_WHEEL_WARN_MS,
+                    GLAD_WHEEL_WARN_MS, FX_GOLD_WEDGE, GLAD_SKILL_WHEEL, n == 0 ? SND_GLAD_WARN : 0,
+                    n % 2 == 0 ? SND_GLAD_CUT : 0)
+                    .shapes.push_back(s);
+            }
+            break;
+        }
+        case GLAD_SKY: {
+            // she leaps onto the farthest player: the circle is where that player stands
+            // when it appears, she is there as she comes down, and two rings roll out
+            b.fSpotX = b.fSpotY = 0.f;
+            const unsigned long dwLand = dwCast + GLAD_SKY_LAND_MS;
+            cue(dwLand - GLAD_SKY_WARN_MS, GLAD_SKY_WARN_MS, FX_GOLD_BURST, GLAD_SKILL_SKY, SND_GLAD_WARN,
+                SND_GLAD_HEAVY)
+                .iDiveRadius = GLAD_SKY_CM;
+            cue(dwCast + GLAD_SKY_LEAP_MS, 0, 0, 0, 0, 0).bBlinkToSpot = true;
+            for (int k = 0; k < 2; k++) {
+                Cue& c = cue(dwLand + (k + 1) * GLAD_SKY_RING_GAP_MS - GLAD_SKY_RING_WARN_MS, GLAD_SKY_RING_WARN_MS,
+                    FX_SHOCKWAVE, GLAD_SKILL_SKY, 0, SND_GLAD_HEAVY);
+                c.shapes.push_back(circle(0.f, 0.f, GLAD_SKY_RING_CM[k], k == 0 ? GLAD_SKY_CM : GLAD_SKY_RING_CM[0]));
+                c.bAtSpot = true;
+            }
+            if (iPhase >= 1) // and swords for everyone else as she lands
+                cue(dwLand - 1500, 1500, FX_GOLD_LINE, GLAD_SKILL_SKY, 0, SND_GLAD_CUT).iSeedRadius = GLAD_SKY_SEED_CM;
+            break;
+        }
+        case GLAD_GATE: {
+            // a square of sword walls round her (as far inside the room as it has to be):
+            // everything outside it burns as she lands, and the cage stands
+            const float h = (float)GLAD_GATE_HALF_CM;
+            const float cx = inside(at.x, h + 150.f), cy = inside(at.y, h + 150.f);
+            const unsigned long dwSlam = dwCast + GLAD_GATE_SLAM_MS;
+            Cue& out = cue(0, dwSlam, 0, GLAD_SKILL_GATE, SND_HOWL_WARN, SND_GLAD_END);
+            out.shapes.push_back(strip(ROOM_MIN, ROOM_MID, 0, cx - h - ROOM_MIN, (float)ROOM_CM)); // west of it
+            out.shapes.push_back(strip(cx + h, ROOM_MID, 0, ROOM_MAX - (cx + h), (float)ROOM_CM)); // east
+            out.shapes.push_back(strip(cx - h, (ROOM_MIN + cy - h) * 0.5f, 0, 2.f * h, cy - h - ROOM_MIN)); // south
+            out.shapes.push_back(strip(cx - h, (cy + h + ROOM_MAX) * 0.5f, 0, 2.f * h, ROOM_MAX - (cy + h))); // north
+            Cue& cage = cue(dwSlam - GLAD_CAGE_WARN_MS, GLAD_CAGE_WARN_MS, FX_GOLD_CAGE, GLAD_SKILL_WALL, 0,
+                SND_GLAD_HEAVY);
+            cage.dwLingerMS = GLAD_CAGE_MS;
+            cage.dwTickMS = GLAD_WALL_TICK_MS;
+            const float fSide = 2.f * h + GLAD_WALL_WIDE;
+            cage.shapes.push_back(strip(cx - fSide * 0.5f, cy - h, 0, fSide, (float)GLAD_WALL_WIDE));
+            cage.shapes.push_back(strip(cx - fSide * 0.5f, cy + h, 0, fSide, (float)GLAD_WALL_WIDE));
+            cage.shapes.push_back(strip(cx - h, cy - fSide * 0.5f, 90, fSide, (float)GLAD_WALL_WIDE));
+            cage.shapes.push_back(strip(cx + h, cy - fSide * 0.5f, 90, fSide, (float)GLAD_WALL_WIDE));
             break;
         }
     }

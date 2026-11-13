@@ -1200,6 +1200,7 @@ struct gsv_MOB_BLINK: public t_PACKETHEADER {
     WORD m_wObjectIDX;
     float m_fX, m_fY; // world cm
     short m_nPosZ; // its floor, as gsv_STOP's (-32768 = none)
+    short m_nDirDeg; // the way it faces now, degrees from +X towards +Y (-1 = as it was)
 };
 
 // One zone timer (GSV_ZONE_TIMER).

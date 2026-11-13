@@ -329,7 +329,7 @@ late arrival. First use: Argentia's floor fight. Client and server ship together
 or a cone's effect is turned along it (the effect's +X; Ferdinando's lines of cuts).
 **`GSV_MOB_BLINK`** (0x07f4, `CObjCHAR::Blink_POSITION`) is its companion: a monster the
 server has put somewhere else at once, command and animation untouched (Ferdinando's
-dashes). **A monster has 24 animation slots** (`MAX_MOB_ANI`; 12-23 are six more cast /
+dashes), optionally with a facing (Gladiomurus turning to each player she thrusts at). **A monster has 24 animation slots** (`MAX_MOB_ANI`; 12-23 are six more cast /
 release pairs): a change to `CCharMODEL`'s layout, so that build was a clean one.
 
 ### NPC Dialog Quest Options (.CON QEX1 Appendix)

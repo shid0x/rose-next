@@ -61,7 +61,10 @@ class classUSER;
 /// cuts in a fan, a zig-zag of dashes he really makes (CObjCHAR::Blink_POSITION as each
 /// line fires), cuts opening under every player, a ring of blades that is safe only
 /// against him, a rising cut in front, and after each wave of the dead his Severance:
-/// lines through the players while a storm builds round him.
+/// lines through the players while a storm builds round him. Gladiomurus's shapes stay: a
+/// hazard may linger after it fires and go on hitting (her walls of swords), a cue may
+/// aim itself when it comes due (a thrust from her at one player, her leap onto the
+/// farthest), and her moves are dodged in a room her walls have just cut up.
 ///
 /// Threads. ProcZone runs in every zone thread and acts in three:
 ///   * each crypt zone's thread sweeps its own players and, once per break, kills
@@ -148,6 +151,9 @@ private:
         int iKind = 0; // which body (BOSSES)
         int iObjIdx = 0; // its object, for the per-frame floor (checked against its row)
         int iUlt = 0; // waves answered with the strongest attack (Ferdinando's Severance)
+        float fSpotX = 0.f, fSpotY = 0.f; // where a leap lands, for the cues after it (0: nowhere)
+        int iPick = 0; // which player a move's first aimed cue takes; the next ones follow round
+        unsigned long dwCagedUntil = 0; // Gladiomurus's cage stands until then (0: none)
         // a floor mechanic waiting for its animation's cast to start (0: none)
         int iArmed = 0;
         short nArmedSkill = 0;
@@ -160,6 +166,15 @@ private:
         short nSkill; // the boss's skill row the hit is computed and shown with
         bool bBlink = false; // as it fires, the boss is at (fBlinkX, fBlinkY)
         float fBlinkX = 0.f, fBlinkY = 0.f;
+        short nFaceDeg = -1; // and faces this way (-1: as it did)
+        // lingering: once fired it stands until dwUntil. Looked at every frame: whoever is
+        // in it, or has gone from one side of it to the other since the last frame (a
+        // runner is through a wall in a quarter of a second), is hit, at most once per
+        // dwTickMS each
+        unsigned long dwUntil = 0, dwTickMS = 0;
+        bool bFired = false;
+        std::unordered_map<int, unsigned long> hitAt; // by player object: the last hit
+        std::unordered_map<int, float> side; // by player object: cm to one side (+) or the other
     };
     struct Cue {
         unsigned long dwAt = 0;
@@ -173,6 +188,14 @@ private:
         int iLineLength = 0, iLineWidth = 0;
         bool bBlink = false; // the boss goes to (fBlinkX, fBlinkY) as the cue's shapes fire
         float fBlinkX = 0.f, fBlinkY = 0.f;
+        short nFaceDeg = -1; // facing that way
+        unsigned long dwLingerMS = 0, dwTickMS = 0; // its shapes stay this long after firing
+        // > 0: a strip this long from the boss at one player (the iThrustPick-th from the
+        // move's first), with one more each side iThrustFan degrees off; the boss turns to it
+        int iThrustLength = 0, iThrustWidth = 0, iThrustFan = 0, iThrustPick = 0;
+        int iDiveRadius = 0; // > 0: a circle on the farthest player, remembered as the boss's spot
+        bool bAtSpot = false; // the shapes are centred on that spot
+        bool bBlinkToSpot = false; // the boss is at that spot now (a cue with no shape)
     };
 
     /// One crypt's maze, built and read by its zone thread.
@@ -205,7 +228,14 @@ private:
     void FightNecromancer(int iSlot, unsigned long now, CObjCHAR* pBoss, const std::vector<classUSER*>& inRoom);
     void FightArgentia(int iSlot, unsigned long now, CObjCHAR* pBoss);
     void ArgentiaMechanic(int iSlot, int iMechanic, unsigned long now);
+    bool FloorBusy(int iSlot) const; // a cue or a shape that has not fired yet
     void FightFerdinando(int iSlot, unsigned long now, CObjCHAR* pBoss);
+    void FightGladiomurus(int iSlot, unsigned long now, CObjCHAR* pBoss);
+    void GladiomurusMechanic(int iSlot,
+        int iMechanic,
+        unsigned long now,
+        CObjCHAR* pBoss,
+        const std::vector<classUSER*>& inRoom);
     void FerdinandoMechanic(int iSlot,
         int iMechanic,
         unsigned long now,
