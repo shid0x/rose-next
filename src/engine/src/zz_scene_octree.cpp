@@ -397,6 +397,25 @@ static float foliage_core_scale (zz_visible * vis, const zz_render_state * rs)
 	return (fade >= 0.25f) ? fade : 0.0f;
 }
 
+// A see-through node asked to be drawn last (ZZ_DP_LOWEST: the client's damage digits).
+// The transparent pass sorts far to near and the glow, ocean and particle passes come
+// after it, so a number over a character was painted over by whatever see-through
+// model stood nearer the camera (a boss with one alpha part is a see-through node
+// whole) and by every effect. Such nodes skip the transparent pass and are drawn by
+// render_last, after the particles (2026-11-13).
+static bool drawn_last (zz_visible * vis)
+{
+	return vis->get_draw_priority() >= ZZ_DP_LOWEST;
+}
+
+void zz_scene_octree::render_last ()
+{
+	for (zz_vislist::iterator it = delayed_nodes.begin(), it_end = delayed_nodes.end(); it != it_end; ++it)
+	{
+		if (drawn_last(*it)) (*it)->render();
+	}
+}
+
 void zz_scene_octree::render_transparent ()
 {
 	num_delayed = (int)delayed_nodes.size();
@@ -409,6 +428,7 @@ void zz_scene_octree::render_transparent ()
 	if (znzin->get_rs()->use_draw_bounding_volume) {
 		for (zz_vislist::iterator it = delayed_nodes.begin(), it_end = delayed_nodes.end(); it != it_end; ++it)
 		{
+			if (drawn_last(*it)) continue;
 			zz_arm_foliage_split(foliage_core_scale(*it, rs));
 			(*it)->render();
 			if ((*it)->get_bvolume()) {
@@ -419,6 +439,7 @@ void zz_scene_octree::render_transparent ()
 	else {
 		for (zz_vislist::iterator it = delayed_nodes.begin(), it_end = delayed_nodes.end(); it != it_end; ++it)
 		{
+			if (drawn_last(*it)) continue;
 			zz_arm_foliage_split(foliage_core_scale(*it, rs));
 			(*it)->render();
 		}
@@ -426,6 +447,7 @@ void zz_scene_octree::render_transparent ()
 #else
 	for (zz_vislist::iterator it = delayed_nodes.begin(), it_end = delayed_nodes.end(); it != it_end; ++it)
 	{
+		if (drawn_last(*it)) continue;
 		zz_arm_foliage_split(foliage_core_scale(*it, rs));
 		(*it)->render();
 	}
@@ -625,6 +647,7 @@ void zz_scene_octree::render_cull ()
 
 		// render particles
 		pass = 0; ZZ_TIMED_PASS(ZZ_RPASS_PARTICLE, render_particle());
+		render_last(); // the damage digits: over everything
 	}
 	else { // if single pass
 		pass = 0;
@@ -640,6 +663,7 @@ void zz_scene_octree::render_cull ()
 		ZZ_TIMED_PASS(ZZ_RPASS_GLOW, render_glow());
 		ZZ_TIMED_PASS(ZZ_RPASS_OCEAN, render_ocean());
 		ZZ_TIMED_PASS(ZZ_RPASS_PARTICLE, render_particle());
+		render_last(); // the damage digits: over everything
 	}
 	#undef ZZ_TIMED_PASS
 

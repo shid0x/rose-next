@@ -40,17 +40,25 @@ Where it comes from
     IAI_UPPER (the cut from behind), IAI_STOP / IAI_SEVERANCE (the execution).
   * **The effects** are the katana kit in violet (`catacomb_kit.Kit`), with a line, a wide
     fan and a narrow one built from its slashes.
+  * **His hat stays as Jrose flags it** (alpha 1). Clearing the flag to draw the hat with
+    the solid things was tried on 2026-11-13, for damage digits hidden behind him, and
+    was wrong twice: **a material's alpha flag is also what turns its alpha test on**, so
+    the hat's cut-out became a black banner, and the digits were still hidden. `apply`
+    puts the flag back if that version of this script cleared it. The digits are the
+    client's and the engine's business (CDigitEffect, zz_scene_octree::render_last).
 
     python scripts/catacomb_assassin.py            # the plan
     python scripts/catacomb_assassin.py --sheet    # contact sheets of the clips on him
 """
 import os
+import struct
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import rosedata as oro  # noqa: E402
+from rosefmt import zsc as rfzsc  # noqa: E402
 import catacomb_boss as boss  # noqa: E402
 import catacomb_kit as kit  # noqa: E402
 import catacomb_monsters as mon  # noqa: E402
@@ -63,6 +71,8 @@ DST_SKEL = r"3Ddata\NPC\etc\Icanes_G\Icanes_G.ZMD"
 FILL = r"3Ddata\MOTION\NPC\Icanes03\warning_01.ZMO"
 CLIP_DIR = r"3Ddata\MOTION\NPC\ASSASSIN"
 NPC_CHR_REL = mon.NPC_CHR_REL
+PART_ZSC_REL = r"3DDATA\NPC\PART_NPC.ZSC"
+HAT_MATERIAL = "Icanes_G_head1_gray_0422_cr.dds"
 
 # our clip -> (SlopRose's player clip, frames [a, b) or None for all of it, {frame: event})
 CLIPS = {
@@ -169,6 +179,33 @@ def effect_files(ours):
     return files
 
 
+# ---------------------------------------------------------------------- the hat
+def hat_material(z):
+    """(index, flags as a dict) of the head's material in PART_NPC.ZSC."""
+    hits = [i for i, (path, _f) in enumerate(z.materials)
+            if os.path.basename(path.decode("latin-1").replace("\\", "/")).lower() == HAT_MATERIAL.lower()]
+    if len(hits) != 1:
+        raise SystemExit(f"PART_NPC.ZSC has {len(hits)} materials named {HAT_MATERIAL}: expected one")
+    return hits[0], rfzsc.material_flags(z.materials[hits[0]][1])
+
+
+def restore_hat(ours, dry):
+    """The head's material as Jrose flags it: alpha 1 (see the docstring)."""
+    z = rfzsc.Zsc(P(ours, PART_ZSC_REL))
+    i, flags = hat_material(z)
+    if flags["alpha"] == 1:
+        return
+    path, raw = z.materials[i]
+    z.materials[i] = (path, raw[:2] + struct.pack("<h", 1) + raw[4:])     # the second i16 is the alpha flag
+    blob = z.without()                  # every record rewritten as it is, this one changed
+    if len(blob) != len(z.d) or sum(a != b for a, b in zip(blob, z.d)) != 1:
+        raise SystemExit("PART_NPC.ZSC would change in more than the hat's alpha flag -- refusing")
+    if not dry:
+        with open(P(ours, PART_ZSC_REL), "wb") as fh:
+            fh.write(blob)
+    print(f"    {'PART_NPC.ZSC':26s} material {i} ({HAT_MATERIAL}): alpha back to 1")
+
+
 # ---------------------------------------------------------------------- apply
 def apply(ours, dry):
     changed = sum(kit.write(ours, rel, blob, dry) for rel, blob in build_clips(ours).items())
@@ -184,6 +221,7 @@ def apply(ours, dry):
     print(f"    {'the violet kit':26s} {len(files)} files, {changed} written")
     kit.apply_effect_rows(ours, FX_FIRST, FX, "VIOLET", dry)
     kit.apply_skill_rows(ours, SKILLS, dry)
+    restore_hat(ours, dry)
 
 
 def verify(ours, check):
@@ -193,6 +231,8 @@ def verify(ours, check):
     check(all(os.path.isfile(mon.find_ci(ours, clip_rel(n))) for n in CLIPS), f"{len(CLIPS)} ASSN_* clips")
     kit.verify_effect_rows(ours, FX_FIRST, FX, "VIOLET", check)
     kit.verify_skill_rows(ours, SKILLS, check)
+    flags = hat_material(rfzsc.Zsc(P(ours, PART_ZSC_REL)))[1]
+    check(flags["alpha"] == 1 and flags["alpha_test"] == 1, "the Assassin's hat keeps its cut-out (alpha 1, alpha test on)")
 
 
 def remove_files(ours):

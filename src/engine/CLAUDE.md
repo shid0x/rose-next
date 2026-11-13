@@ -202,6 +202,17 @@ shape is geometry, sampled on the terrain by the client. Adding the buffer chang
 `zz_scene_octree`'s layout (a member of `zz_system`, which the client's dev UI includes):
 clean-rebuild `engine` and `client`, and ship `rosenext.exe` + `znzin.dll` together.
 
+### Drawn Last: ZZ_DP_LOWEST (Engine, 2026-11-13)
+
+The scene's passes run sky, terrain, solid nodes, see-through nodes (far to near), glow,
+ocean, particles and effect meshes. A node is see-through *whole* as soon as one of its
+materials has the alpha flag (`zz_visible::get_transparent`), a boss model with one alpha
+part included. So something meant to sit over the world -- the client's damage digits,
+which already ignore depth -- was still painted over by any see-through model nearer the
+camera and by every effect. A node with `setDrawPriority(node, ZZ_DP_LOWEST)` now skips the
+see-through pass and is drawn by `zz_scene_octree::render_last`, after the particles.
+Nothing else uses that priority (the ocean is `ZZ_DP_LOW`). Validated in game.
+
 ### Transparency Antialiasing (Engine, 2026-09-29)
 
 MSAA only smooths polygon edges; an alpha-tested cut-out (fences, leaves, railings)

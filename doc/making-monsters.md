@@ -77,6 +77,13 @@ the reasoning in its docstring.
   animation. `audit-ai-skill-refs.py` warns about every such cast; read its output.
   Pairs are 6/7 and 8/9, and since 2026-11-12 also 12/13 ... 22/23 (`MAX_MOB_ANI` 24;
   slot 11 is free): a monster may have eight skills with clips of their own.
+- **Never clear a material's alpha flag to change when a part is drawn** (2026-11-13, the
+  Assassin's hat). The flag (ZSC material, the second i16) is also what turns the
+  material's alpha test on: with it off the cut-out's holes are painted, black. And a
+  model with one alpha part is a see-through node *whole*, drawn in the far-to-near pass
+  with everything else see-through. If something must be drawn over it, give that thing
+  a later draw (`setDrawPriority(node, ZZ_DP_LOWEST)`: the engine draws those after every
+  other pass, which is how the damage digits stay on top), not the model an earlier one.
 - **Casting effects (LIST_SKILL cols 56-67: three columns per effect, effect / dummy
   point / sound) play only on clip event frames 44, 64, 74, 84** (casting effects 0-3).
   Most monster clips carry none, so the effects you wrote never show, and a spell that

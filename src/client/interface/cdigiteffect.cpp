@@ -109,6 +109,13 @@ CDigitEffect::Init() {
         /// near its full height in front of that column buried the number in its body.
         ::setMaterialZWrite(hMat, 0);
         ::setMaterialZTest(hMat, 0);
+        /// ... and drawn last. Ignoring depth is not enough: the see-through pass draws far
+        /// to near, and the effects after it, so a boss standing between the camera and the
+        /// player (a model with one alpha part is see-through whole) and any effect on the
+        /// spot were painted over the number (the user, 2026-11-13: "the damage I took was
+        /// displayed behind the monster"). The engine draws ZZ_DP_LOWEST nodes after every
+        /// other pass of the scene (zz_scene_octree::render_last).
+        ::setDrawPriority(hAnimatable, 4 /* ZZ_DP_LOWEST */);
 
         ///
         ::setBillboard(m_DigitNode[i].m_hAnimatable, 1);

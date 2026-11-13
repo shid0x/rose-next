@@ -184,6 +184,7 @@ protected:
 	void render_rterrain (); // render rough terrain
 	void render_cterrain (); // render batched terrain
 	void render_particle ();
+	void render_last (); // ZZ_DP_LOWEST nodes: after every other pass of the scene
 	void render_fonts ();
 	void render_glow ();
 	void render_sky ();
