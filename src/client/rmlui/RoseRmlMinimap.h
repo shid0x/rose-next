@@ -20,6 +20,11 @@
  * title bar and L cycles the size ( CMinimapDLG hands both keys over ).
  * Zone name and coordinates sit in the title bar. The window opens and closes
  * through IT_MGR, so clan zones hide it as they hid the classic one.
+ *
+ * A Karkia crypt has no map image ( its maze changes daily ). There the view
+ * draws the maze as it is walked ( CMazeMap, zoneobjects.h ): the floor of the
+ * cells seen so far and the walls round them, dark everywhere else, with the
+ * same arrow, player marks, drag and zoom.
  */
 
 #include <RmlUi/Core/DataModelHandle.h>
@@ -61,6 +66,17 @@ public:
         MARK_ENEMY = 4, ///< another team ( clan wars, PvP zones )
     };
 
+    /// A piece of the crypt's map: a floor run or a wall, dp inside the maze layer.
+    struct MazeVM {
+        float l, t, w, h;
+        bool room; ///< the boss hall's floor
+
+        bool operator==(const MazeVM& o) const {
+            return l == o.l && t == o.t && w == o.w && h == o.h && room == o.room;
+        }
+        bool operator!=(const MazeVM& o) const { return !(*this == o); }
+    };
+
     struct MarkVM {
         int kind;
         float x; ///< dp from the view's left, the mark's centre
@@ -84,6 +100,10 @@ private:
     void UpdateTooltip();
     void PlaceDefault();
     void SaveSettings();
+
+    /// World cm per map pixel at zoom 1: the zone map's, or the crypt map's.
+    float WorldPerPixel() const;
+    void SampleMaze();
 
     /// World position -> dp from the view's top-left.
     void WorldToView(float fWorldX, float fWorldY, float& fX, float& fY) const;
@@ -135,6 +155,16 @@ private:
     float m_fArrowDeg;
     Rml::String m_strArrowSrc;
     bool m_bExploring; ///< bound: shows Re-center
+
+    /// --- the crypt's map ( CMazeMap ) ----------------------------------------
+    bool m_bHasMaze; ///< bound: this zone's map is the maze walked so far
+    float m_fMazeX; ///< dp: the maze layer's top-left in the view
+    float m_fMazeY;
+    float m_fMazeSide; ///< dp
+    std::vector<MazeVM> m_MazeFloors;
+    std::vector<MazeVM> m_MazeWalls;
+    unsigned int m_uMazeVersion; ///< CMazeMap's when the lists were built
+    float m_fMazeZoom; ///< ... and the zoom
 
     /// The hovered NPC's name, drawn by RmlUi above its mark: a classic
     /// tooltip draws before the RmlUi pass and so ended up behind the map.

@@ -143,6 +143,14 @@ and labels need
 **CSS `transform` works now**: `RoseRmlRenderer::SetTransform` (world = translation x transform;
 Rml's column-major data read as-is is the D3D row-vector matrix).
 
+**The minimap in a Karkia crypt** (2026-11-13): no image (the maze changes daily), so the
+view draws the maze as it is walked -- `CMazeMap` (`zoneobjects.*`) turns the wall objects
+the server sends into a 10 x 10 grid and keeps the cells seen; the panel asks for floor runs
+and wall segments and places them as `div`s inside one layer (`.maze`) that moves like the
+map image. The pieces are rebuilt only when a cell is seen or the zoom changes (`Version`),
+the layer's offset every frame. `WorldPerPixel()` answers for both kinds of map, so the
+arrow, the player marks, the drag and the zoom are shared. Classic interface: nothing.
+
 **Conversation** (2026-09-26, `RoseRmlConversation`): one window for the three conversation
 dialogs (`DLG_TYPE_DIALOG` / `SELECTEVENT` / `EVENTDIALOG`, three looks). **Not a view over the
 classic dialogs**: their `Hide()` wipes text and answers (callbacks included). The engine

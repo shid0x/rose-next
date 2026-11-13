@@ -156,3 +156,22 @@
     padding: 0dp 6dp;
     font-size: 9dp;
 }
+
+/* A Karkia crypt's map ( CMazeMap ): no image, only the maze walked so far. The layer
+   is the whole maze, moved like the map image; its pieces are placed from C++ in dp.
+   Floor first, walls over it; unseen ground is the view's own dark. The boss hall's
+   floor is the dark red of its door. */
+.maze {
+    position: absolute;
+}
+.mfloor {
+    position: absolute;
+    background-color: #2e2a24ff;
+}
+.mfloor.room {
+    background-color: #4c2222ff;
+}
+.mwall {
+    position: absolute;
+    background-color: #c9b47cff;
+}

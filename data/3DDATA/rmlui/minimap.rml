@@ -31,7 +31,19 @@
             <img class="map" data-if="has_map" data-attr-src="map_src"
                  data-style-left="map_x + 'dp'" data-style-top="map_y + 'dp'"
                  data-style-width="map_w + 'dp'" data-style-height="map_h + 'dp'"/>
-            <div class="nomap ui-muted" data-if="!has_map">No map for this area.</div>
+            <!-- A Karkia crypt: no image, the maze as it is walked ( CMazeMap ). The layer is
+                 the whole maze; only the floor seen so far and its walls are in it. -->
+            <div class="maze" data-if="has_maze"
+                 data-style-left="maze_x + 'dp'" data-style-top="maze_y + 'dp'"
+                 data-style-width="maze_side + 'dp'" data-style-height="maze_side + 'dp'">
+                <div class="mfloor" data-for="f : maze_floors" data-class-room="f.room"
+                     data-style-left="f.l + 'dp'" data-style-top="f.t + 'dp'"
+                     data-style-width="f.w + 'dp'" data-style-height="f.h + 'dp'"></div>
+                <div class="mwall" data-for="w : maze_walls"
+                     data-style-left="w.l + 'dp'" data-style-top="w.t + 'dp'"
+                     data-style-width="w.w + 'dp'" data-style-height="w.h + 'dp'"></div>
+            </div>
+            <div class="nomap ui-muted" data-if="!has_map" data-visible="!has_maze">No map for this area.</div>
 
             <!-- Grow-only list: unused entries are kind -1, hidden ( .off ). -->
             <div class="mark" data-for="m : marks" data-attr-tip="m.tip"
@@ -44,7 +56,7 @@
                  data-style-left="(arrow_x - 8) + 'dp'" data-style-top="(arrow_y - 8) + 'dp'"
                  data-style-transform="'rotate(' + arrow_deg + 'deg)'"/>
 
-            <div class="zoombox" data-if="has_map">
+            <div class="zoombox" data-if="has_map || has_maze">
                 <span class="ui-btn zb" data-class-ui-static="zoom == 4" data-event-click="zoom_in()">+</span>
                 <span class="ui-btn zb" data-class-ui-static="zoom == 0" data-event-click="zoom_out()">-</span>
             </div>

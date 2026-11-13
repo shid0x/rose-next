@@ -590,6 +590,25 @@ sleep, with nothing to move out of.
     above the middle of the screen with a bar for the time left. Sent to the players in
     the room for: SOAK THE BLACK SUN, EXECUTION - STACK IN THE MARK (green), VALHALLA'S
     GATE - GET INSIDE THE SQUARE, SEVERANCE - GET AWAY FROM HIM, SPIRAL - AGAINST HIM.
+  - **The user's notes after playing all five (2026-11-13), and what was done:**
+    - *decided*: loot is tailored last; area skills through maze walls are fine as
+      they are ("not sure it's even necessary"); **no PvP in the crypts** ("now that I
+      see how small the corridors are it would be a civil war").
+    - *the damage he took was drawn behind the Assassin*: first blamed on its hat's
+      see-through material and "fixed" by clearing the flag, which was wrong twice (the
+      hat lost its cut-out, the digits stayed hidden); the hat is back as it was. The
+      digits are now the last thing the scene draws (`setDrawPriority(.., ZZ_DP_LOWEST)`
+      in `CDigitEffect`, `zz_scene_octree::render_last`): after the see-through models
+      and after the effects. Validated in game; which of those hid them is not
+      established.
+    - *the toll*: one **Key of Remorse** (Jrose's, LIST_NATURAL 150, `catacomb_toll.py`)
+      in place of five Black Hearts; the Cemetery's and the Spire's monsters drop it.
+      Validated in game.
+    - *a map that reveals itself, as in Diablo*: the UI2 minimap draws a crypt's maze
+      as it is walked (`CMazeMap` in `src/client/zoneobjects.*`, from the wall objects
+      the client is already sent; `RoseRmlMinimap`). Client only, per player, kept
+      while the day's walls are the same. Validated in game. Not done: sharing
+      what a party member has seen (EVO-REFORGED's version does, through its server).
   - **Dragon Nest material: blocked.** EVO's client install is now packed in encrypted
     `EVOnnn.EPK` archives; the key is not in their repo or on this machine, and their
     converter (`TOOLS/DNImport`, which writes standard EFT / PTL / ZMS / ZMO our client

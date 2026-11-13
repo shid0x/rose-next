@@ -24,6 +24,7 @@
 #include "../interface/it_mgr.h"
 #include "../interface/interfacetype.h"
 #include "../interface/Dlgs/CMinimapDLG.h"
+#include "../zoneobjects.h"
 #include "tgamectrl/resourcemgr.h"
 
 #include "rose/common/log.h"
@@ -45,6 +46,12 @@ const int kZoomDefault = 2;
 
 /// The map texture has a one-map border ( CMinimapDLG, MINIMAP_RESOLUTION_PER_MAP ).
 const float kMapBorderPx = 64.0f;
+
+/// The crypt's map ( CMazeMap ) has no texture: world cm per "pixel" at zoom 1. A 15 m
+/// cell is 30 dp, so the small view shows six cells across; zoom out for the whole maze.
+const float kMazeWorldPerPixel = 50.0f;
+/// A wall's thickness, dp.
+const float kMazeWallDp = 2.0f;
 
 /// A mark's box ( dp ): marks are centred on their point.
 const float kMarkHalf = 10.0f;
@@ -118,6 +125,12 @@ RoseRmlMinimap::RoseRmlMinimap():
     m_fArrowY(0.0f),
     m_fArrowDeg(0.0f),
     m_bExploring(false),
+    m_bHasMaze(false),
+    m_fMazeX(0.0f),
+    m_fMazeY(0.0f),
+    m_fMazeSide(0.0f),
+    m_uMazeVersion(0),
+    m_fMazeZoom(0.0f),
     m_pHoverLabel(NULL),
     m_iHoverTip(-2),
     m_iHoverPop(1) {}
@@ -152,6 +165,14 @@ RoseRmlMinimap::Initialise(Rml::Context* pContext, const std::string& strAssetDi
         mark.RegisterMember("tip", &MarkVM::tip);
     }
     constructor.RegisterArray<std::vector<MarkVM>>();
+    if (auto piece = constructor.RegisterStruct<MazeVM>()) {
+        piece.RegisterMember("l", &MazeVM::l);
+        piece.RegisterMember("t", &MazeVM::t);
+        piece.RegisterMember("w", &MazeVM::w);
+        piece.RegisterMember("h", &MazeVM::h);
+        piece.RegisterMember("room", &MazeVM::room);
+    }
+    constructor.RegisterArray<std::vector<MazeVM>>();
 
     constructor.Bind("map_size", &m_iSize); /// "size" is reserved ( array .size )
     constructor.Bind("zoom", &m_iZoom);
@@ -172,6 +193,12 @@ RoseRmlMinimap::Initialise(Rml::Context* pContext, const std::string& strAssetDi
     constructor.Bind("arrow_deg", &m_fArrowDeg);
     constructor.Bind("arrow_src", &m_strArrowSrc);
     constructor.Bind("exploring", &m_bExploring);
+    constructor.Bind("has_maze", &m_bHasMaze);
+    constructor.Bind("maze_x", &m_fMazeX);
+    constructor.Bind("maze_y", &m_fMazeY);
+    constructor.Bind("maze_side", &m_fMazeSide);
+    constructor.Bind("maze_floors", &m_MazeFloors);
+    constructor.Bind("maze_walls", &m_MazeWalls);
     constructor.Bind("hover", &m_strHover);
     constructor.Bind("hover_role", &m_strHoverRole);
     constructor.Bind("hover_tip", &m_iHoverTip);
@@ -206,7 +233,7 @@ RoseRmlMinimap::Initialise(Rml::Context* pContext, const std::string& strAssetDi
     /// A press on the map starts a pan; UpdatePan follows the mouse.
     constructor.BindEventCallback("pan_start",
         [this](Rml::DataModelHandle, Rml::Event& ev, const Rml::VariantList&) {
-            if (ev.GetParameter<int>("button", 0) != 0 || !m_bHasMap)
+            if (ev.GetParameter<int>("button", 0) != 0 || !(m_bHasMap || m_bHasMaze))
                 return;
             m_bPanning = true;
             m_iPanX = ev.GetParameter<int>("mouse_x", 0);
@@ -295,10 +322,76 @@ RoseRmlMinimap::SetVisible(bool bVisible) {
         m_pDocument->Hide();
 }
 
+float
+RoseRmlMinimap::WorldPerPixel() const {
+    if (m_bHasMaze)
+        return kMazeWorldPerPixel;
+    CMinimapDLG* pDlg = MinimapDlg();
+    return pDlg ? pDlg->GetWorldPerPixel() : 1.0f;
+}
+
+/// The crypt's map: where its layer sits in the view ( every frame, as the map image ) and,
+/// when a new cell was seen or the zoom changed, its floor and wall pieces.
+void
+RoseRmlMinimap::SampleMaze() {
+    float fWest, fSouth, fEast, fNorth;
+    CMazeMap::Bounds(fWest, fSouth, fEast, fNorth);
+    const float fScale = m_fZoom / kMazeWorldPerPixel; /// dp per world cm
+    const float fRatio = RoseRmlLayout::GetScaleRatio();
+    const float fX = floorf((m_fViewSize * 0.5f + (fWest - m_fCenterX) * fScale) * fRatio) / fRatio;
+    const float fY = floorf((m_fViewSize * 0.5f + (m_fCenterY - fNorth) * fScale) * fRatio) / fRatio;
+    const float fSide = (fEast - fWest) * fScale;
+    if (fX != m_fMazeX || fY != m_fMazeY || fSide != m_fMazeSide) {
+        m_fMazeX = fX;
+        m_fMazeY = fY;
+        m_fMazeSide = fSide;
+        m_Model.DirtyVariable("maze_x");
+        m_Model.DirtyVariable("maze_y");
+        m_Model.DirtyVariable("maze_side");
+    }
+
+    const unsigned int uVersion = CMazeMap::Instance().Version();
+    if (uVersion == m_uMazeVersion && m_fZoom == m_fMazeZoom)
+        return;
+    m_uMazeVersion = uVersion;
+    m_fMazeZoom = m_fZoom;
+
+    std::vector<CMazeMap::Rect> floors, walls;
+    CMazeMap::Instance().List(floors, walls);
+    std::vector<MazeVM> vmFloors, vmWalls;
+    MazeVM vm;
+    for (size_t i = 0; i < floors.size(); ++i) {
+        const CMazeMap::Rect& r = floors[i];
+        vm.l = (r.x0 - fWest) * fScale;
+        vm.t = (fNorth - r.y1) * fScale;
+        vm.w = (r.x1 - r.x0) * fScale;
+        vm.h = (r.y1 - r.y0) * fScale;
+        vm.room = r.bRoom;
+        vmFloors.push_back(vm);
+    }
+    vm.room = false;
+    for (size_t i = 0; i < walls.size(); ++i) {
+        const CMazeMap::Rect& r = walls[i];
+        /// a wall is as thick at any zoom, centred on its line, its ends squared off
+        vm.l = (r.x0 - fWest) * fScale - kMazeWallDp * 0.5f;
+        vm.t = (fNorth - r.y1) * fScale - kMazeWallDp * 0.5f;
+        vm.w = (r.x1 - r.x0) * fScale + kMazeWallDp;
+        vm.h = (r.y1 - r.y0) * fScale + kMazeWallDp;
+        vmWalls.push_back(vm);
+    }
+    if (vmFloors != m_MazeFloors) {
+        m_MazeFloors.swap(vmFloors);
+        m_Model.DirtyVariable("maze_floors");
+    }
+    if (vmWalls != m_MazeWalls) {
+        m_MazeWalls.swap(vmWalls);
+        m_Model.DirtyVariable("maze_walls");
+    }
+}
+
 void
 RoseRmlMinimap::WorldToView(float fWorldX, float fWorldY, float& fX, float& fY) const {
-    CMinimapDLG* pDlg = MinimapDlg();
-    const float fWpp = pDlg ? pDlg->GetWorldPerPixel() : 1.0f;
+    const float fWpp = WorldPerPixel();
     fX = m_fViewSize * 0.5f + (fWorldX - m_fCenterX) / fWpp * m_fZoom;
     fY = m_fViewSize * 0.5f + (m_fCenterY - fWorldY) / fWpp * m_fZoom;
 }
@@ -334,7 +427,15 @@ RoseRmlMinimap::Sample() {
         m_bHasMap = bHasMap;
         m_Model.DirtyVariable("has_map");
     }
-    if (!bHasMap) {
+    /// No image: a crypt's map is the maze walked so far.
+    const bool bHasMaze = !bHasMap && CMazeMap::Instance().Active();
+    if (bHasMaze != m_bHasMaze) {
+        m_bHasMaze = bHasMaze;
+        m_Model.DirtyVariable("has_maze");
+        m_bExplore = false;
+        m_uMazeVersion = 0; /// rebuild the pieces on the way in
+    }
+    if (!bHasMap && !bHasMaze) {
         if (m_bArrow) {
             m_bArrow = false; /// the arrow sits on the map
             m_Model.DirtyVariable("arrow");
@@ -344,7 +445,7 @@ RoseRmlMinimap::Sample() {
 
     /// A new zone: show its map and release the last one's texture ( each is a
     /// few MB decoded, and a 32-bit client should not keep every zone's ).
-    const Rml::String strSrc = GamePath(pDlg->GetMinimapFile());
+    const Rml::String strSrc = bHasMap ? GamePath(pDlg->GetMinimapFile()) : m_strMapSrc;
     if (strSrc != m_strMapSrc) {
         const Rml::String strOld = m_strMapSrc;
         m_strMapSrc = strSrc;
@@ -373,9 +474,13 @@ RoseRmlMinimap::Sample() {
         m_Model.DirtyVariable("exploring");
     }
 
-    const float fWpp = pDlg->GetWorldPerPixel();
+    if (bHasMaze)
+        SampleMaze();
+
+    const float fWpp = WorldPerPixel();
     int iTexW = 0, iTexH = 0;
-    pDlg->GetMinimapTextureSize(iTexW, iTexH);
+    if (bHasMap)
+        pDlg->GetMinimapTextureSize(iTexW, iTexH);
 
     /// The map image: the centre's texture pixel lands at the view's centre.
     /// Whole pixels, or the map resamples between texels and blurs.
@@ -386,7 +491,7 @@ RoseRmlMinimap::Sample() {
     const float fMapY = floorf((m_fViewSize * 0.5f - fTexY * m_fZoom) * fRatio) / fRatio;
     const float fMapW = iTexW * m_fZoom;
     const float fMapH = iTexH * m_fZoom;
-    if (fMapX != m_fMapX || fMapY != m_fMapY || fMapW != m_fMapW || fMapH != m_fMapH) {
+    if (bHasMap && (fMapX != m_fMapX || fMapY != m_fMapY || fMapW != m_fMapW || fMapH != m_fMapH)) {
         m_fMapX = fMapX;
         m_fMapY = fMapY;
         m_fMapW = fMapW;
@@ -547,14 +652,18 @@ RoseRmlMinimap::UpdatePan() {
 
     /// Screen pixels -> dp -> texture pixels -> world. Dragging right moves
     /// the map right, so the centre goes west ( and north for dragging down ).
-    const float fWpp = pDlg->GetWorldPerPixel();
+    const float fWpp = WorldPerPixel();
     const float fScale = fWpp / (RoseRmlLayout::GetScaleRatio() * m_fZoom);
     float fX = m_fCenterX - iDX * fScale;
     float fY = m_fCenterY + iDY * fScale;
 
     /// Inside the map, as the classic explore mode.
-    fX = max(pDlg->GetMinimapWorldLeft(), min(fX, pDlg->GetMinimapWorldRight()));
-    fY = max(pDlg->GetMinimapWorldBottom(), min(fY, pDlg->GetMinimapWorldTop()));
+    float fWest = pDlg->GetMinimapWorldLeft(), fEast = pDlg->GetMinimapWorldRight();
+    float fSouth = pDlg->GetMinimapWorldBottom(), fNorth = pDlg->GetMinimapWorldTop();
+    if (m_bHasMaze)
+        CMazeMap::Bounds(fWest, fSouth, fEast, fNorth);
+    fX = max(fWest, min(fX, fEast));
+    fY = max(fSouth, min(fY, fNorth));
     m_fCenterX = fX;
     m_fCenterY = fY;
     m_iPanX = ptMouse.x;

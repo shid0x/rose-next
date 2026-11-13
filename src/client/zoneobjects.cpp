@@ -7,6 +7,8 @@
 #include "zz_interface.h"
 #include "CApplication.h"
 #include "stunfeedback.h"
+#include "CObjUSER.h"
+#include "IO_Terrain.h"
 #include "interface/CTDrawImpl.h"
 #include "interface/IO_ImageRes.h"
 #include "tgamectrl/resourcemgr.h"
@@ -37,6 +39,7 @@ CZoneObjects::Destroy(Group& group) {
 
 void
 CZoneObjects::Apply(unsigned char btGroup, bool bOn, const std::vector<Spec>& specs) {
+    CMazeMap::Instance().SetWalls(btGroup, bOn, specs); // a crypt's walls are also its map
     std::map<unsigned char, Group>::iterator it = m_Groups.find(btGroup);
     if (!bOn) {
         if (it == m_Groups.end() || it->second.bFading)
@@ -86,6 +89,7 @@ CZoneObjects::Apply(unsigned char btGroup, bool bOn, const std::vector<Spec>& sp
 
 void
 CZoneObjects::Update() {
+    CMazeMap::Instance().Update();
     if (m_Groups.empty())
         return;
     const unsigned long now = ::GetTickCount();
@@ -113,6 +117,230 @@ CZoneObjects::Update() {
 void
 CZoneObjects::Forget() {
     m_Groups.clear();
+    CMazeMap::Instance().Forget();
+}
+
+//-------------------------------------------------------------------------------------------------
+namespace {
+// The server's (catacomb_maze.h, catacombs.cpp): keep in step.
+const short kCryptZones[2] = {90, 91};
+const float kMazeSW = 504500.f; // the grid's south-west corner, both axes
+const float kMazeCell = 1500.f;
+const int kRoomFirst = 6; // the boss hall: cells 6..9 both ways (ROOM_MIN .. ROOM_MAX)
+const unsigned char kWallGroupFirst = 10, kWallGroupLast = 13;
+const unsigned long kWallsSettleMs = 1500; // the four groups arrive one after the other
+
+bool
+InCrypt() {
+    if (g_pTerrain == NULL)
+        return false;
+    const short nZone = g_pTerrain->GetZoneNO();
+    return nZone == kCryptZones[0] || nZone == kCryptZones[1];
+}
+
+bool
+IsRoom(int iX, int iY) {
+    return iX >= kRoomFirst && iY >= kRoomFirst;
+}
+} // namespace
+
+CMazeMap&
+CMazeMap::Instance() {
+    static CMazeMap s_Map;
+    return s_Map;
+}
+
+CMazeMap::CMazeMap(): m_nWalls(0), m_uWallHash(0), m_uSeenHash(0), m_dwWallsAt(0), m_uVersion(1) {
+    memset(m_bWallV, 0, sizeof(m_bWallV));
+    memset(m_bWallH, 0, sizeof(m_bWallH));
+    memset(m_bSeen, 0, sizeof(m_bSeen));
+}
+
+void
+CMazeMap::Bounds(float& fWest, float& fSouth, float& fEast, float& fNorth) {
+    fWest = fSouth = kMazeSW;
+    fEast = fNorth = kMazeSW + N * kMazeCell;
+}
+
+void
+CMazeMap::SetWalls(unsigned char btGroup, bool bOn, const std::vector<CZoneObjects::Spec>& specs) {
+    if (btGroup < kWallGroupFirst || btGroup > kWallGroupLast)
+        return;
+    if (bOn)
+        m_Groups[btGroup] = specs;
+    else
+        m_Groups.erase(btGroup);
+    this->Rebuild();
+}
+
+void
+CMazeMap::Forget() {
+    m_Groups.clear();
+    this->Rebuild();
+}
+
+/// The closed edges, from the walls' places: a wall stands on a grid line, in the middle
+/// of the edge it closes. Which way it is turned is not needed.
+void
+CMazeMap::Rebuild() {
+    memset(m_bWallV, 0, sizeof(m_bWallV));
+    memset(m_bWallH, 0, sizeof(m_bWallH));
+    m_nWalls = 0;
+    unsigned int uHash = 2166136261u;
+    for (std::map<unsigned char, std::vector<CZoneObjects::Spec> >::const_iterator it = m_Groups.begin();
+         it != m_Groups.end(); ++it) {
+        for (size_t i = 0; i < it->second.size(); ++i) {
+            const CZoneObjects::Spec& s = it->second[i];
+            if (s.btKind != 0)
+                continue;
+            const float gx = (s.fX - kMazeSW) / kMazeCell, gy = (s.fY - kMazeSW) / kMazeCell;
+            const int iLineX = (int)floorf(gx + 0.5f), iLineY = (int)floorf(gy + 0.5f);
+            int iCode = -1;
+            if (fabsf(gx - iLineX) < 0.1f) { // on a north-south line, beside row floor(gy)
+                const int iRow = (int)floorf(gy);
+                if (iLineX >= 0 && iLineX <= N && iRow >= 0 && iRow < N) {
+                    m_bWallV[iLineX][iRow] = true;
+                    iCode = iLineX * 64 + iRow;
+                }
+            } else if (fabsf(gy - iLineY) < 0.1f) { // on an east-west line, under column floor(gx)
+                const int iCol = (int)floorf(gx);
+                if (iLineY >= 0 && iLineY <= N && iCol >= 0 && iCol < N) {
+                    m_bWallH[iCol][iLineY] = true;
+                    iCode = 4096 + iCol * 64 + iLineY;
+                }
+            }
+            if (iCode >= 0) {
+                m_nWalls++;
+                uHash += (unsigned int)iCode * 2654435761u; // order-free: the groups come in any order
+            }
+        }
+    }
+    m_uWallHash = uHash ^ (g_pTerrain ? (unsigned int)g_pTerrain->GetZoneNO() * 40503u : 0u);
+    m_dwWallsAt = ::GetTickCount();
+    m_uVersion++;
+}
+
+bool
+CMazeMap::Active() const {
+    return m_nWalls > 0 && InCrypt();
+}
+
+/// Whether the way from cell (iX, iY) one step (iDX, iDY) is shut: a wall, or the maze's edge.
+bool
+CMazeMap::Closed(int iX, int iY, int iDX, int iDY) const {
+    const int nX = iX + iDX, nY = iY + iDY;
+    if (nX < 0 || nY < 0 || nX >= N || nY >= N)
+        return true;
+    if (iDX != 0)
+        return m_bWallV[iDX > 0 ? iX + 1 : iX][iY];
+    return m_bWallH[iX][iDY > 0 ? iY + 1 : iY];
+}
+
+void
+CMazeMap::See(int iX, int iY) {
+    if (iX < 0 || iY < 0 || iX >= N || iY >= N || m_bSeen[iX][iY])
+        return;
+    m_bSeen[iX][iY] = true;
+    m_uVersion++;
+    if (IsRoom(iX, iY)) { // a hall is seen whole
+        for (int x = kRoomFirst; x < N; ++x) {
+            for (int y = kRoomFirst; y < N; ++y)
+                m_bSeen[x][y] = true;
+        }
+    }
+}
+
+void
+CMazeMap::Update() {
+    if (!this->Active() || g_pAVATAR == NULL)
+        return;
+    if (::GetTickCount() - m_dwWallsAt < kWallsSettleMs)
+        return; // the maze is still arriving
+    if (m_uSeenHash != m_uWallHash) {
+        // another maze than the one that was walked: it starts dark
+        m_uSeenHash = m_uWallHash;
+        memset(m_bSeen, 0, sizeof(m_bSeen));
+        m_uVersion++;
+    }
+    const int iX = (int)floorf((g_pAVATAR->Get_CurPOS().x - kMazeSW) / kMazeCell);
+    const int iY = (int)floorf((g_pAVATAR->Get_CurPOS().y - kMazeSW) / kMazeCell);
+    if (iX < 0 || iY < 0 || iX >= N || iY >= N)
+        return;
+    this->See(iX, iY);
+    // and what it opens onto: the next cell down each open way
+    static const int kStep[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    for (int k = 0; k < 4; ++k) {
+        if (!this->Closed(iX, iY, kStep[k][0], kStep[k][1]))
+            this->See(iX + kStep[k][0], iY + kStep[k][1]);
+    }
+}
+
+void
+CMazeMap::List(std::vector<Rect>& floors, std::vector<Rect>& walls) const {
+    floors.clear();
+    walls.clear();
+    if (m_uSeenHash != m_uWallHash)
+        return; // nothing of this maze has been seen yet
+    Rect r;
+    // the floor: runs of seen cells along each row, the hall apart
+    for (int y = 0; y < N; ++y) {
+        for (int x = 0; x < N;) {
+            if (!m_bSeen[x][y]) {
+                ++x;
+                continue;
+            }
+            const bool bRoom = IsRoom(x, y);
+            const int x0 = x;
+            while (x < N && m_bSeen[x][y] && IsRoom(x, y) == bRoom)
+                ++x;
+            r.x0 = kMazeSW + x0 * kMazeCell;
+            r.x1 = kMazeSW + x * kMazeCell;
+            r.y0 = kMazeSW + y * kMazeCell;
+            r.y1 = r.y0 + kMazeCell;
+            r.bRoom = bRoom;
+            floors.push_back(r);
+        }
+    }
+    // the walls: every shut side of a seen cell, runs along each grid line
+    r.bRoom = false;
+    for (int iLine = 0; iLine <= N; ++iLine) {
+        // east-west line under row iLine: the north side of row iLine - 1, the south side of row iLine
+        for (int x = 0; x < N;) {
+            const bool bBelow = iLine > 0 && m_bSeen[x][iLine - 1] && this->Closed(x, iLine - 1, 0, 1);
+            const bool bAbove = iLine < N && m_bSeen[x][iLine] && this->Closed(x, iLine, 0, -1);
+            if (!bBelow && !bAbove) {
+                ++x;
+                continue;
+            }
+            const int x0 = x;
+            while (x < N
+                   && ((iLine > 0 && m_bSeen[x][iLine - 1] && this->Closed(x, iLine - 1, 0, 1))
+                       || (iLine < N && m_bSeen[x][iLine] && this->Closed(x, iLine, 0, -1))))
+                ++x;
+            r.x0 = kMazeSW + x0 * kMazeCell;
+            r.x1 = kMazeSW + x * kMazeCell;
+            r.y0 = r.y1 = kMazeSW + iLine * kMazeCell;
+            walls.push_back(r);
+        }
+        // north-south line west of column iLine
+        for (int y = 0; y < N;) {
+            const bool bWest = iLine > 0 && m_bSeen[iLine - 1][y] && this->Closed(iLine - 1, y, 1, 0);
+            const bool bEast = iLine < N && m_bSeen[iLine][y] && this->Closed(iLine, y, -1, 0);
+            if (!bWest && !bEast) {
+                ++y;
+                continue;
+            }
+            const int y0 = y;
+            while (y < N
+                   && ((iLine > 0 && m_bSeen[iLine - 1][y] && this->Closed(iLine - 1, y, 1, 0))
+                       || (iLine < N && m_bSeen[iLine][y] && this->Closed(iLine, y, -1, 0))))
+                ++y;
+            r.y0 = kMazeSW + y0 * kMazeCell;
+            r.y1 = kMazeSW + y * kMazeCell;
+            r.x0 = r.x1 = kMazeSW + iLine * kMazeCell;
+            walls.push_back(r);
+        }
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
