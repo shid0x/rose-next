@@ -197,7 +197,11 @@ file before working in that area.
   mark passes; use `fix-oro-spawn-density.py`), `skaaj.md`, `shibuya.md` (`--stage 3`
   rebuilds the band's `.CON`s and drops their quest options, so always follow it with
   `--stage 7`), `ulverick.md`, `hebarn.md`, `cerberus-lair.md` (constants live in both
-  the importer and `cerberus_lair.cpp`).
+  the importer and `cerberus_lair.cpp`), `karkia-catacombs.md` (zones 90 / 91: how the
+  daily maze, its openings and its five bosses stand, the `/catacomb` GM commands, what
+  ships together, the numbers kept in both `catacombs.cpp` and the `catacomb_*.py`
+  scripts; decided: no PvP there; design history in
+  `doc/karkia-catacombs-implementation-brief.md`).
 
 ## Important Patterns
 

@@ -1,5 +1,11 @@
 # Drops — the endgame loot tier
 
+> **Status, 2026-11-16.** Written on 2026-09-07 as the plan. The loot it plans **is
+> authored**: `scripts/add-karkia-drops.py` (tables 900-917 and their zone rows,
+> the catacombs' included; its docstring carries the measured rates) and
+> `scripts/add-oro-drops.py`. Read "drops nothing" below as the state on that date;
+> the sections on how the drop system works still hold.
+
 Karkia stage 5. **The wiring is done; no loot is authored yet.** This is the plan for
 the content pass, plus everything about the drop system that is not obvious from the
 code. Companion to [doc/karkia-roadmap.md](karkia-roadmap.md).

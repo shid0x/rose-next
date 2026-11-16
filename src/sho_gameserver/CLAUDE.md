@@ -37,6 +37,8 @@ main.cpp → lib_gsmain (init) → Zone Threads (gs_threadzone)
 | `src/cobjitem.cpp/h` | Dropped item objects |
 | `src/status_effects.cpp/h` | Buff/debuff system |
 | `src/srv_common/` | Chat rooms (`cchatroom`), `cobjvar.h` |
+| `src/cerberus_lair.cpp/h` | The Cerberus Lair's controller (`doc/zones/cerberus-lair.md`) |
+| `src/catacombs.cpp/h`, `src/catacomb_maze.cpp/h` | The Karkia catacombs' controller (openings, registration, the daily maze, the five boss fights on the floor layer) and its maze generator, the twin of `scripts/catacomb_maze.py`; GM `/catacomb`. `doc/zones/karkia-catacombs.md` |
 | `../common/calculation.cpp` | Combat math (server-only `#ifdef __SERVER`), compiled directly into this project. Skills can crit only for a Hawker/Raider holding a katar (`Is_KatarSkillCRITICAL`, x1.5, 2026-10-16), or when their row sets a critical burst (LIST_SKILL cols 49/50, `SKILL_CRITICAL_ROLL` / `SKILL_CRITICAL_RATE`, which replaces the katar rule for that skill; Shun'ei-zan, 2026-10-18). A skill that requires a shield (need weapon 261, matched against the off-hand) deals +2% per point of the shield's own Defense, item + refine grade, capped at +250% (`Is_ShieldSKILL` / `Get_ShieldDEF`; Shield Bash, 2026-10-18); `scripts/combatsim/formulas.py` mirrors every formula here -- change both |
 | `src/ai_lib/` | Server-side AI behavior |
 | `src/common/` | Server copies of `CObjAI`, regen areas, user data and the AI/motion/skill table readers (the client has its own) |

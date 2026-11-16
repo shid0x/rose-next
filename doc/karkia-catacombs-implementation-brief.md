@@ -1,18 +1,21 @@
 # Karkia catacombs: implementation brief
 
-**Status, 2026-11-09: M1 in progress.** Built and awaiting the first in-game test: the two
-zones, the keeper, the openings, the daily registration and the GM commands
-(`scripts/import-catacombs.py`, `src/sho_gameserver/src/catacombs.*`, migration 0006).
-The on-screen timer is built too (2026-11-10, `GSV_ZONE_TIMER`, `RoseRmlZoneTimers`),
-validated and committed. **M2** (2026-11-10): the maze itself is built, validated and
-committed (walls, pillars, outer wall, medallions, one fixed maze per crypt;
-`scripts/catacomb_maze.py`, `scripts/catacomb_art.py`). The monsters and their drops
-are validated and committed (`scripts/catacomb_monsters.py`, drop table 912). The
-boss, the Crypt Necromancer, is validated and committed (`scripts/catacomb_boss.py`,
-`CCatacombs::ProcBoss`, drop table 913), and so is the first part of M4 (monsters do not
-see through the walls). **M3 is built and awaiting its test** (2026-11-10): the maze
-changes daily (`src/sho_gameserver/src/catacomb_maze.*`, `CCatacombs::BuildMaze`). "Built" notes below mark where the
-build differs from the plan.
+**Status, 2026-11-16: built, validated in game and opened to the testers.** M1 to M4
+are done: the two crypts, the keepers and the daily registration, the openings and
+their timer, a maze that changes every day, six monsters that neither see nor cast
+through its walls, and a pool of five bosses, one drawn each day, each with a fight of
+its own on the floor layer (`GSV_ZONE_WARN`, `GSV_MOB_BLINK`, `GSV_ZONE_ALERT`). After
+the user played all five: the toll is a Key of Remorse, the minimap draws the maze as
+it is walked, and each boss pays one class line of the level-240 gear (interim loot).
+**How it stands today, the GM commands and the release checklist are in
+[zones/karkia-catacombs.md](zones/karkia-catacombs.md)**; this file is the design and
+its history, and its "Built" notes mark where the build differs from the plan.
+
+- **Decided since the plan, not to be re-proposed:** no PvP in the crypts (M5's first
+  item: "it would be a civil war"), players' area skills through the walls stay as
+  they are, a party does not share its map, and both crypts share one boss pool.
+- **Left:** the loot's refinement (the user: "will be refined later"), the bosses' own
+  sounds, Dragon Nest material once the EVO team's key is here.
 
 **The design, revised 2026-11-09.** The 2026-10-01 design stands: one
 shared zone, a new maze every day, the floor is terrain, only the walls are generated,
@@ -69,23 +72,26 @@ rather than replacing it.
 - Four crypt mouths in the Desolate Cemetery (zone 87), its Columbariums. A keeper
   stands in front of each, and all lead to the same crypt.
 - **The catacombs open every 2 hours (even hours), for 1 h 50 min.** Hand the keeper
-  Cemetery hearts to register for the current opening, and you are warped in. You can go
+  a Key of Remorse (a Cemetery and Spire drop; Cemetery hearts until 2026-11-13) to
+  register for the current opening, and you are warped in. You can go
   back in free until that opening ends. **You can register once a day**, so after your
   opening the crypt is closed to you until the next day's maze.
 - **Endgame: levels 235-240.**
 - The catacombs are a **maze that is different every day**, and **the crypt changes with
   it**: Reminiscence (warm stone, amber lamps) one day, Sorrow (cold teal stone, cyan
   lamps) the next. One shared zone per crypt, everyone in it together, no instances.
-  Monsters in the corridors, a boss in the far room.
+  Monsters in the corridors, a boss in the far room: one of five, drawn for the day.
+  The minimap draws the maze as you walk it.
 - **There is always a boss.** It is there when an opening starts, and returns about 15
   minutes after each kill. A timer on screen says when.
-- **Why go in: challenge and loot.** The boss drops red weapons; ordinary monsters
-  drop good things too.
+- **Why go in: challenge and loot.** Each boss drops one class line of the level-240
+  gear and its red weapons; ordinary monsters drop the level-230 tier.
 - Dying puts you back **inside**, at the entrance hall.
 - When an opening ends, everyone still inside is sent back to the crypt mouth, and the
   next opening starts 10 minutes later. On one of those breaks each day, the next day's
   maze and crypt take over.
-- PvPvE is the goal but **comes later** (§7, M5). Everything before that ships as PvE.
+- PvPvE was the goal; **the user dropped it on 2026-11-13** after playing: the
+  corridors are too narrow ("it would be a civil war"). The crypts are PvE.
 
 ## 2. Design principles
 
@@ -351,7 +357,8 @@ clock (a skew added to the wall clock), so every test runs the real code path.
 
 - **Keeper NPC** at the crypt mouth in the Cemetery, placed in the Cemetery's IFO with
   its `.CON` (making-events §4), and a crypt entrance object (or, for M1, just the NPC).
-- **Toll = a few Cemetery hearts, as a placeholder** (user, 2026-11-09: "doesn't matter
+- **Toll = a few Cemetery hearts, as a placeholder; one Key of Remorse since
+  2026-11-13** (`catacomb_toll.py`) (user, 2026-11-09: "doesn't matter
   much for now, just some Karkia drop as a temp thing"). They already drop there
   (`add-karkia-drops.py` `MAT_CEMETERY`): Black 151, Green 152, Blue 153. Keep the item
   and count as constants, so they are easy to change.
@@ -507,7 +514,8 @@ sleep, with nothing to move out of.
     announced at 5 and 1 minutes; no return when the crypt seals first. A boss room
     empty for a minute gets a fresh boss (and loses the adds). `/catacomb boss`
     raises a fresh one.
-  - The daily boss pool does not exist yet: both crypts have the Necromancer.
+  - The daily boss pool did not exist yet at that point (it does since 2026-11-13:
+    five bodies, below).
   - Loot: table 913, the red weapons 1456-1468 (~36% a kill) and a Norse window
     (replaced 2026-11-13 by a table per boss: see "Interim loot").
 - **The pool, decided 2026-11-12.** The user chose the bodies himself from 3D previews of
@@ -521,9 +529,8 @@ sleep, with nothing to move out of.
   animations and effects from EVO-REFORGED allowed.
   - **Built: the four bodies** (`scripts/catacomb_pool.py`): `LIST_NPC` 2557-2560, level
     240, the Necromancer's AI file, weapons `LIST_WEAPON` 29 / 30 and our Murasamemaru.
-    They exist for `/mon`; **the controller still raises only the Necromancer** until
-    each has its fight.
-  - **Built, awaiting its test (2026-11-12): the floor layer and Argentia's fight.**
+    They existed for `/mon` only until each had its fight; all four have one now.
+  - **Built and validated in game (2026-11-12): the floor layer and Argentia's fight.**
     `GSV_ZONE_WARN` (0x07f3): the server draws shapes on the floor by itself (circle or
     ring, strip, cone; `CZoneTHREAD::SendZoneWarn`, client
     `CGroundTelegraphs::AddWarning`), each playing an effect as it fires.
@@ -683,7 +690,8 @@ sleep, with nothing to move out of.
   (`MAT_CRYPT`, `OFF_CRYPT`, two lv235 weapon windows and an OG armour window, paid
   like the Spire's 906), mirrored into rows 90 and 91. Green and Blue Hearts drop;
   the Black ones, the toll, stay a Cemetery drop. A placeholder until the loot is
-  tailored. The boss table is not built yet.
+  tailored. (Since 2026-11-13: 912 pays the lv230 tier and each boss has a table,
+  913-917; see "Interim loot".)
 - **Fill rows 90 and 91 too**: table ids and zone ids are one namespace, and with
   `col 20` at 80, about 20% of every roll goes to the zone's row. Left empty, a fifth of
   all rolls drop nothing.
@@ -755,7 +763,7 @@ Keep the M2 grid (`build/nav/`): it is **the reference** for M3's overlay.
 - the boss fight is worth going in for: both attacks can be read and dodged, it comes
   back on time, and the timer agrees with it.
 
-**M3: walls change daily. Server only.** *Built 2026-11-10, awaiting its test.* What the
+**M3: walls change daily. Server only.** *Built 2026-11-10, validated in game.* What the
 build settled:
 - `catacomb_maze.cpp` is the generator, checked at server start against the Python
   vectors (`[catacomb] maze generator self-test` in the log). A standalone build of it
@@ -820,7 +828,7 @@ comes later (user, 2026-11-09: "we'll deal with it later").
 - **The test**: walk the maze cells that the segment crosses (a DDA on the 15 m grid)
   and check each edge it crosses. It is exact and cheap: at most about 20 edges. A
   segment through a vertex counts as blocked if either edge there is closed.
-- **Built early (2026-11-10, awaiting its test):** monster scans in the crypt zones. The
+- **Built early (2026-11-10, validated in game):** monster scans in the crypt zones. The
   user twice met monsters "coming out of the walls": the log showed no spawn in a wall
   (0 re-rolls; the bake has no regen square on blocked ground), but packs in the next
   corridor saw him through the wall and came round. `CZoneTHREAD::FindInBand` now
@@ -828,7 +836,7 @@ comes later (user, 2026-11-09: "we'll deal with it later").
   slack for a character against a wall), for `AI_FindFirstOBJ(int)` of a monster in
   `CCatacombs::IsCrypt` zones: aggro, calls for help, "move to an ally". A monster
   that is hit still answers its attacker through a wall.
-- **Built (2026-11-10, awaiting its test): no cast across a wall.** The user saw Tomb
+- **Built (2026-11-10, validated in game): no cast across a wall.** The user saw Tomb
   Murilos walk through walls, on demand. Their AI orders Savage Bite "at the target"
   whenever they are hit or chasing, and **a monster's run to cast a skill is never put
   on a path** (`CObjCHAR::Nav_Chase` acts in `CMD_ATTACK` only), so it went straight.
@@ -854,7 +862,8 @@ at a wall.
 - **Area skills** would leave out victims behind a wall.
 - **A ground skill aimed past a wall** would be refused before it costs.
 
-**M5 and later: PvP and polish, in any order.**
+**M5 and later: PvP and polish, in any order.** *PvP is dropped (the user,
+2026-11-13); the minimap is built (2026-11-13, `CMazeMap`); the rest is not planned.*
 - `ZONE_PVP_STATE` 2 (everyone except your party). Check whether that mode needs a zone
   entry trigger to assign teams, as the clan fields do (gameserver `CLAUDE.md`, "PVP
   Ally Rule"), and whether the entrance hall needs protection from spawn camping.
@@ -868,21 +877,22 @@ at a wall.
 
 ## 8. Accepted limitations (v1)
 
-- **Monsters see, aggro and hit through walls until M4.** ROSE has no line-of-sight
+- **Monsters see, aggro and hit through walls until M4** (done 2026-11-10: they no
+  longer see, call for help or cast across a wall). ROSE has no line-of-sight
   check anywhere else either.
-- **The server trusts the client's collision for players until M5**, as in every zone.
-  A modified client can walk through walls.
+- **The server trusts the client's collision for players**, as in every zone.
+  A modified client can walk through walls. It mattered for PvP, which is dropped.
 - **Click-to-move does not path.** Clicking past a wall walks into it, so the player
   walks the maze. The avatar's movement does not change.
 - **Leftover straight walks.** A move that must happen walks straight when its line is
   blocked (`Nav_MoveOrStraight`). The router makes this rare; the zone's `nav:` log line
   counts them.
-- **The usual minimap shows nothing useful.** No minimap until M5, which is arguably
-  right for a maze.
+- **The minimap is UI2 only** (2026-11-13: it draws the maze as it is walked). The
+  classic interface has none here.
 - **Generated walls are unlit** (no lightmap). Flat lighting suits a crypt, and Shibuya
   already ships unlit.
-- **Players' attacks and area skills go through walls** until the player side of M4 is
-  done (deferred).
+- **Players' attacks and area skills go through walls.** Kept as it is (the user,
+  2026-11-13: "not sure it's even necessary").
 - **The on-screen timer is UI2 only.** The classic UI gets the zone announcements.
 
 ## 9. Traps from our codebase that apply here
@@ -918,19 +928,23 @@ at a wall.
 - **Openings**: every 2 hours at even hours, server time, for 1 h 50 min. The maze
   changes once a day.
 - **Toll**: payable once a day, and it buys one opening, with free re-entry until it
-  ends. "That's the catch, you can't spam it." The amount is a placeholder: a few
-  Cemetery hearts.
+  ends. "That's the catch, you can't spam it." The price is one Key of Remorse since
+  2026-11-13 (a few Cemetery hearts before).
 - **Dead ends**: 2 for now, tuned by playing.
 - **Daily change**: on the 23:50 - 0:00 break.
-- **Boss loot**: red weapons, tailored later.
+- **Boss loot**: red weapons, tailored later. Interim since 2026-11-13: a class line of
+  the level-240 gear per boss, the red weapons behind it.
 - **Level band**: 235-240, our endgame content.
 - **Boss return**: about 15 minutes after a kill, with a timer on screen.
-- **First boss**: the Necromancer; the spider and the tree are good next ones.
-- **Player sight through walls**: later. M4 does the monster side.
+- **First boss**: the Necromancer; the spider and the tree are good next ones. (The
+  pool became four bodies the user picked from Jrose's, 2026-11-12.)
+- **Player sight through walls**: later. M4 does the monster side. (2026-11-13: not
+  needed.)
 - **Left to the brief's recommendations**:
   - rooms: hall 2 x 2, boss room 4 x 4 with no pillars (enlarged 2026-11-10), in opposite corners;
   - the boss resets when its room has been empty for a minute;
-  - pools: the spider goes to Reminiscence, the tree to Sorrow.
+  - pools: the spider goes to Reminiscence, the tree to Sorrow (superseded: one pool
+    of five for both crypts).
 
-**Still open:** nothing blocks M1. Tuning waits for play: the dead-end count, the
-toll, the boss's numbers and the loot.
+**Still open (2026-11-16):** the loot's refinement. The toll and the bosses' numbers
+were settled by play.

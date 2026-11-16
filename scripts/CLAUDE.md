@@ -912,6 +912,29 @@ Things that will bite:
 - Same-placement part overlaps (`road01`/`road01top`) are out of scope: they are a
   ZSC matter, already non-zero, and covered by the depth-buffer work (src/engine/CLAUDE.md, "Depth Buffer Precision").
 
+### The Karkia Catacombs' Scripts (2026-11-09 to 11-13)
+
+`scripts/import-catacombs.py` builds zones 90 / 91 and everything in them, and is the
+only entry point: it applies and verifies its modules in order. Each module's docstring
+is the record of its part. How the dungeon stands and the release order:
+[doc/zones/karkia-catacombs.md](../doc/zones/karkia-catacombs.md).
+
+| module | what it owns |
+|---|---|
+| `catacomb_maze.py` | the maze generator, the twin of `src/sho_gameserver/src/catacomb_maze.cpp` (`--vectors` are what the server's self-test checks; `--seed` draws one) |
+| `catacomb_art.py` | each crypt's wall, pillar and medallion objects |
+| `catacomb_monsters.py` | the six corridor monsters, LIST_NPC 2550-2555, drop table 912 |
+| `catacomb_boss.py` | the Crypt Necromancer (2556), its two attacks and its clips |
+| `catacomb_pool.py` | the four other bodies (2557-2560) from Jrose, their weapons (LIST_WEAPON 29, 30 and Ferdinando's red katana, 26) and their drop rows |
+| `catacomb_argentia.py`, `catacomb_ferdinando.py`, `catacomb_gladiomurus.py`, `catacomb_assassin.py` | one boss's clips, effects and skill rows each; the fights themselves are in `catacombs.cpp`, and the rows, the clips' frames and the times there must agree |
+| `catacomb_kit.py` | what the sword fights share: SlopRose's katana kit recoloured per boss (`Kit`), clips retargeted with EVO-REFORGED's tool, the damage and animation row builders |
+| `catacomb_toll.py` | the Key of Remorse (LIST_NATURAL 150) |
+
+After it, `add-karkia-drops.py --rewrite` (tables 912-917, zone rows 90 / 91), both
+`--verify`, `audit-spawned-npcs.py`, then the bake. `import-catacombs.py --emit` prints
+the keepers' table for `catacombs.cpp`. A boss's animation rows are self "skills"
+with cast speeds in multiples of 10% (`doc/making-monsters.md`).
+
 ## Lessons From Zone Imports
 
 General traps found while importing a particular zone; the zone histories are in `doc/zones/`.

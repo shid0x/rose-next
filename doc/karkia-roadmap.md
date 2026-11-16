@@ -1,5 +1,13 @@
 # Karkia Import Roadmap
 
+> **Status, 2026-11-16.** The stage notes below are dated as they were written. Since
+> then the zones, their monsters, shops and drops have been built and validated in
+> game (`scripts/import-karkia.py`, `add-karkia-drops.py`, `add-karkia-shops.py`), and
+> the catacombs under the Cemetery, which this plan set aside with Jrose's
+> instanced-dungeon generator, exist as our own daily maze (zones 90 / 91):
+> [zones/karkia-catacombs.md](zones/karkia-catacombs.md). Still ahead: the towers and
+> quests.
+
 Companion to [doc/karkia-survey.md](karkia-survey.md), which is the evidence. This is the
 plan. **Stages 1-3 are built** (`scripts/import-karkia.py`, `scripts/add-karkia-travel.py`);
 stages 4-6 are not. Stages 1 and 2a are validated in game.

@@ -89,6 +89,15 @@ Everything here is **32-bit (x86) Windows**: a C++/Rust build, Visual Studio
   casts resume the fight afterwards, heals sync HP to the party, Nagle is off
   on every socket, and a client can no longer warp itself anywhere through the
   relay packet.
+- **Boss fights you read on the ground.** A monster's big attack draws its area
+  while it winds up (circle, strip or cone, one cell in `LIST_SKILL`), and a
+  server-run fight can draw shapes of its own: red ones to leave, green ones
+  somebody must stand in, with a line on screen for the moves that have one
+  safe place, a countdown for a deadline, walls that go up and come down
+  mid-fight, and a boss that is somewhere else at once. Players aim their own
+  area skills on the ground the same way. How to build one:
+  [doc/making-monsters.md](doc/making-monsters.md) and
+  [doc/making-events.md](doc/making-events.md).
 
 ### New regions
 
@@ -98,12 +107,14 @@ and balance adapted to this server. Some are still being validated in game.
 | Region | Zones | Origin |
 | --- | --- | --- |
 | **Karkia** — Abandoned Church, Desolate Cemetery, Spire Village, Burned Forest, Memories of Karkia, Infinite Prison, Foot of the Tower, Tower of Despair, Garden of Karkia | 86–88, 131, 133–136, 144 | Jrose |
+| **The Karkia catacombs** — an endgame maze (levels 235–240) under the Cemetery that is different every day, open for 1 h 50 every two hours, entered once a day for a key, with six monsters that neither see nor cast through its walls, a minimap that draws itself as you walk, and one of five bosses drawn each day, each with its own mechanics. Run by the server; see [doc/zones/karkia-catacombs.md](doc/zones/karkia-catacombs.md) | 90, 91 | Jrose (art) + our own maze, controller and fights |
 | **Oro** — Muris, the Portal Room and Temple, the Wasteland, Oasis Shrine, Ruins Path, Golden Ring, Fossil Sanctuary, Colosseum | 14, 71–73, 78–81, 83, 85 | 667 test client |
 | **Skaaj** — a cat-folk island town | 89 | Jrose |
 | **SHIBUYA** and the **Live House SEVEN** — a level 60–80 zombie street with its own monster kit, boss and six quests | 126, 127 | Jrose (SECONDWALL collab) |
 | **Cave of Ulverick** — a spider dungeon with three room bosses and a bone toll at the door | 34 | RoseZA |
 | **Cerberus Lair** — an hourly five-player draw run by the server: whelps, a Warden, an ice wall and Cerberus | 49 | tsuki (map) + our own controller |
 | **[God] Hebarn** — a talk-then-fight challenge boss at the Oasis Shrine | 80 | China ROSE |
+| **Shadow Canyon**, the **Mysterious Cavern**, the **Starlight Lounge** and **Haian Coast** — scenery maps, no monsters yet | 151, 156, 164, 158 | China ROSE's custom map series (three of them through tsuki) |
 
 Plus custom weapons imported from glTF (Meshy exports) with animated parts,
 Jrose's back items and sub-weapons, socketed-gem glows restored, and dozens of
@@ -127,7 +138,7 @@ wrong attack frames, unlit lamps).
   screenshots, a minimap maker, a cross-zone object browser and placement tools.
 - **Quest editor** (CLI + wizard), **NPC shop editor** and a GM item browser,
   and a **VFS browser** in [src/tools/](src/tools/).
-- **130 Python scripts** in [scripts/](scripts/), built on `rosefmt`: region
+- **Over 200 Python scripts** in [scripts/](scripts/), built on `rosefmt`: region
   importers, balance passes, data audits and repairs, item/skill/icon importers,
   VFS verification. Each is idempotent with `--dry-run`, `--verify` and
   `--restore`, and its docstring is the record of why it exists (the game data
@@ -446,6 +457,9 @@ base_crit = 0
 | [doc/relighting-maps.md](doc/relighting-maps.md) | Baking lightmaps for an existing or edited zone. |
 | [doc/zsc-bounding-boxes.md](doc/zsc-bounding-boxes.md) | Why every ZSC bounding box is wrong and how culling works around it. |
 | [doc/cerberus-lair-brief.md](doc/cerberus-lair-brief.md) | Design of the server-run Cerberus Lair instance. |
+| [doc/zones/karkia-catacombs.md](doc/zones/karkia-catacombs.md), [the brief](doc/karkia-catacombs-implementation-brief.md) | The Karkia catacombs: how they stand, the GM commands and the release checklist; the design and its history. |
+| [doc/zones/](doc/zones/) | One page per imported zone: what it is, how to test it, what will bite. |
+| [doc/importing-maps.md](doc/importing-maps.md), [doc/importing-monsters.md](doc/importing-monsters.md) | Bringing a map or a monster in from another client's files. |
 | [doc/data-codecs.md](doc/data-codecs.md) | The `rosefmt` codec package: rules, inventory, how a codec is proven. |
 | [doc/rose-next-build.md](doc/rose-next-build.md) | Build sharp edges, including the hand-written thirdparty projects. |
 
