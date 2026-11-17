@@ -521,27 +521,12 @@ F_QSTCOND006(uniQstENTITY* pCOND, tQST_PARAM* pPARAM) {
         return false;
     }
 
-    // iRadius is authored in metres; the world is in centimetres. The original
-    // client copy of this file scaled by 100 unconditionally and the server copy
-    // did not, and merging the two preserved that divergence behind an #ifdef --
-    // so the client offered the trigger and the server silently refused it.
-    //
-    // The data only resolves at the client's scale. Of the 26 COND_006 areas in
-    // 3DDATA/QUESTDATA that have an event object carrying the same trigger name,
-    // all 26 contain that object at x100 and 3 do at x1; the Golden Ring cacti
-    // behind "In Need of Water" sit 72-343 units out from a radius-50 centre, and
-    // one Wasteland salvage spot is 1011 out.
-    //
-    // Widening the server can only turn a refusal into an acceptance, and no
-    // COND_006 trigger is reachable server-side without a cli_QUEST_REQ that the
-    // client already gated on this same x100 test -- so this aligns the two sides
-    // rather than making the server the looser of the two.
-    //
-    // Correction (2026-11-17): the premise above is wrong for the server. Its loader
-    // already scales iRadius by 100 (CQuestTRIGGER::Init_COND, server only), so on the
-    // server this is x10,000 -- "20 m" is 2 km. Kept as is by decision 11 of
-    // doc/pathfinding-and-z-plan.md; quest data that needs an area to *fail* must allow
-    // for it (scripts/fix-temple-rewarp-radius.py: the Forgotten Temple reload loop).
+    // iRadius is authored in metres; the world is in centimetres. This is the one
+    // place it is scaled, on both sides. From 2026-08-19 (dbdb8335) to 2026-11-17
+    // the server also scaled it at load (CQuestTRIGGER::Init_COND, retail), so it
+    // read every area x10,000 -- "20 m" was 2 km -- and the Forgotten Temple's
+    // arrival chain rewarped the 91-130 bands forever. The load-time scaling is gone;
+    // the 15 areas in our data were checked against what they surround that day.
     const int radius = pCOND->m_Cond006.iRadius * 100;
 
     if (pPARAM->m_pOWNER->Quest_DistanceFrom(pCOND->m_Cond006.iX,
@@ -992,18 +977,17 @@ F_QSTCOND021(uniQstENTITY* pCOND, tQST_PARAM* pPARAM) {
     if (pPARAM->m_pOWNER->Quest_GetZoneNO() != pPARAM->m_pNpcVAR->VGetCur_ZoneNO())
         return false;
 
-    // Same metres-vs-centimetres mistake as COND_006 above, but with no client
-    // counterpart to compare against -- the client copy of this function is
-    // `return true`, so nothing ever hinted the server was measuring in the wrong
-    // unit. Every COND_021 in our quest data asks for 5 or 10, while CObjAI walks
-    // the avatar to NPC_CLICK_EVENT_RANGE (250) and stops: raw, the condition
-    // demands the player stand 10 cm from an NPC it cannot physically approach
-    // closer than 2.5 m, so every accept and turn-in carrying it failed on the
-    // server with no message to the client. That is all 343 of them, including
-    // every Oro dialog quest and 4410-01, the trigger that opens the chain.
-    // Correction (2026-11-17): as for COND_006, Init_COND already scaled this at load,
-    // so the server radius is x10,000 (5 m reads as 500 m); kept by decision 11.
-    const int radius = pCOND->m_Cond021.iRadius * 100;
+    // "Stand near the NPC (or event object)", radius in metres, scaled once here
+    // (it was also scaled at load until 2026-11-17: x10,000, 5 m read as 500 m).
+    // The client copy is `return true`, and the player is already at the NPC when
+    // the dialog sends the trigger: CObjAI walks the avatar to
+    // NPC_CLICK_EVENT_RANGE (2.5 m) and stops, but the server's copy of the
+    // position can trail it by a few metres. Our data asks for 5 or 10 m, so a
+    // floor keeps a turn-in from failing silently on that lag; it is a sanity
+    // check against a player across the map, not a precise ring.
+    const int kMinRadius = 1500;
+    const int iAuthored = pCOND->m_Cond021.iRadius * 100;
+    const int radius = iAuthored > kMinRadius ? iAuthored : kMinRadius;
 
     if (pPARAM->m_pOWNER->Quest_DistanceFrom(static_cast<int>(pSelOBJ->VGetCur_XPOS()),
             static_cast<int>(pSelOBJ->VGetCur_YPOS()),
@@ -3175,14 +3159,9 @@ CQuestTRIGGER::Init_COND(uniQstENTITY* pCOND) {
                 pCOND->m_Cond012.iEventID);
             break;
         }
-#ifdef __SERVER
-        case 6:
-            pCOND->m_Cond006.iRadius *= 100;
-            break;
-        case 21: //
-            pCOND->m_Cond021.iRadius *= 100;
-            break;
-#endif
+        // COND_006 / COND_021 radii are metres, scaled by their check functions on
+        // both sides. The server used to scale them here as well (x10,000 in all;
+        // see F_QSTCOND006), so nothing touches them at load any more.
     }
 }
 void

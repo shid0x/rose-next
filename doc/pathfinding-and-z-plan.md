@@ -939,7 +939,7 @@ Server only. In this codebase the server walks a player's attack and targeted sk
 | AIACT_08 divides by zero when both stand on the same spot (inferred) | `S/ai_lib/ai_action.cpp:224-255` | 1 |
 | `CharacterMoveAttack` built with `CharacterMoveBuilder` | `S/network.cpp:116` | 0 |
 | IFO, regen and event Z discarded | `S/zonefile.cpp:161-163, 501-504` | 2 |
-| Quest COND_006/021 radius ×10,000 (15 COND_006 + 24 COND_021 = 39 triggers in 7 QSDs pass at almost any distance); the comment at :990-997 claiming 343 COND_021 is stale | `src/common/shared/io_quest.cpp:539, 998` (check-time ×100) and `:3170-3175` (load-time ×100 in `Init_COND`) | left alone (decision 11) |
+| Quest COND_006/021 radius ×10,000 (15 COND_006 + 24 COND_021 = 39 triggers in 7 QSDs pass at almost any distance); the comment at :990-997 claiming 343 COND_021 is stale | `src/common/shared/io_quest.cpp:539, 998` (check-time ×100) and `:3170-3175` (load-time ×100 in `Init_COND`) | fixed 2026-11-17 (decision 11) |
 | Item pickup has no range check | `S/gs_user.cpp:4417-4475` | out of scope |
 | Shield reflect is 4,000 cm; the comment says 4 m | `S/cobjchar.cpp:1315` | out of scope |
 | AIACT_37 range not ×100 at load | `src/common/shared/cai_file.cpp` | out of scope; check |
@@ -974,11 +974,14 @@ These answers override anything earlier in this document that disagrees with the
     - Today those 39 conditions ("be within N m of a spot or NPC") pass from almost anywhere.
     - Fixing them would make players really stand there, and any quest with a slightly wrong position in its data would become impossible to complete.
     - The user will not re-test 39 quests, so this stays a known quirk outside this project.
-    - **It did break one thing (2026-11-17):** the Forgotten Temple's arrival chain moves a
-      91-130 player standing near B1's entrance to the band's start point, which lay inside
-      the 2 km "20 m", so every arrival warped again: an endless reload loop. Fixed in the
-      data, not the code (`scripts/fix-temple-rewarp-radius.py`, radius 20 -> 1); an audit
-      of every zone's arrival chain found no other same-zone warp.
+    - **Revisited and fixed 2026-11-17.** It broke the Forgotten Temple: the arrival chain
+      moves a 91-130 player near B1's entrance to the band's start point, which lay inside
+      the 2 km "20 m", so every arrival warped again (an endless reload loop). The code now
+      scales once (`Init_COND` no longer touches COND_006/021), with a 15 m floor on
+      COND_021 so a turn-in never fails on the server's position lag. No per-quest re-test
+      was needed: every one of the 15 COND_006 areas was checked from the data (Union War,
+      10 of them, is not functional; quest 5061's three carry no reward; the temple's two
+      work as authored), and the 24 COND_021 sit under the floor.
 12. **RAM:** approved; there is plenty of headroom.
 13. **Water:** monsters keep walking lake beds as designed. No deep-water cost, so the Phase 8 deep-water item is dropped.
 14. **Deployment:** the server runs locally and reads `data/` directly (`C:\Users\Thomas\Desktop\Rose\rose-next-classic\data`).

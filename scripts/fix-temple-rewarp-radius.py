@@ -39,6 +39,14 @@ server. The client only replays the passed trigger's rewards (a warp is a
 no-op there), so a client re-bake is not needed for the fix; bake it with the
 next data release to keep the two copies equal.
 
+**Superseded the same day (2026-11-17):** the double scaling was then fixed in
+the code (``Init_COND`` no longer scales COND_006/021; a 15 m floor on
+COND_021), so the server reads 20 m as 20 m again and this data change is no
+longer needed. ``--restore`` puts both radii back to 20, which the code fix
+expects: at radius 1 the rewarp would be a 1 m ring the +/-5 m login scatter
+almost never meets. Run it on any data that had the fix applied, with the new
+``sho_gameserver``.
+
 Idempotent, --dry-run, verifies after writing. Backup in
 build/fix-temple-rewarp-radius/.
 """
@@ -86,7 +94,7 @@ def radius_fields(blob):
     return out
 
 
-def patch(blob):
+def patch(blob, frm=OLD_RADIUS, to=NEW_RADIUS):
     """Return (new blob, [(trigger, old, new)], {trigger names seen})."""
     b = bytearray(blob)
     changes = []
@@ -96,23 +104,23 @@ def patch(blob):
             raise SystemExit("%s: position condition names zone %d, expected %d"
                              % (name, zone, TEMPLE_ZONE))
         found.add(name)
-        if radius == OLD_RADIUS:
-            struct.pack_into("<i", b, off, NEW_RADIUS)
-            changes.append((name, radius, NEW_RADIUS))
-        elif radius != NEW_RADIUS:
+        if radius == frm:
+            struct.pack_into("<i", b, off, to)
+            changes.append((name, radius, to))
+        elif radius != to:
             raise SystemExit("%s: unexpected radius %d" % (name, radius))
     return bytes(b), changes, found
 
 
-def verify(path):
+def verify(path, frm=OLD_RADIUS, to=NEW_RADIUS):
     problems = []
     blob = read_file(path)
     ok, _ = qsd.parse_ok(blob)
     if not ok:
         problems.append("%s: does not parse" % path)
-    _, changes, found = patch(blob)
+    _, changes, found = patch(blob, frm, to)
     if changes:
-        problems.append("%s: %d radius still %d" % (path, len(changes), OLD_RADIUS))
+        problems.append("%s: %d radius still %d" % (path, len(changes), frm))
     if found != set(TRIGGERS):
         problems.append("%s: missing %s" % (path, sorted(set(TRIGGERS) - found)))
     return problems
@@ -121,17 +129,20 @@ def verify(path):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--restore", action="store_true",
+                    help="put both radii back to %d (the retail value)" % OLD_RADIUS)
     args = ap.parse_args()
+    frm, to = (NEW_RADIUS, OLD_RADIUS) if args.restore else (OLD_RADIUS, NEW_RADIUS)
 
     blob = read_file(PATH)
-    new, changes, found = patch(blob)
+    new, changes, found = patch(blob, frm, to)
     missing = set(TRIGGERS) - found
     if missing:
         raise SystemExit("QP201.QSD: triggers not found: %s" % sorted(missing))
     for name, old, value in changes:
         print("QP201.QSD %s position radius %d -> %d" % (name, old, value))
     if not changes:
-        print("QP201.QSD: already patched")
+        print("QP201.QSD: already %s" % ("restored" if args.restore else "patched"))
         return
     if args.dry_run:
         print("dry run: nothing written")
@@ -142,7 +153,7 @@ def main():
         shutil.copyfile(PATH, backup)
     with open(PATH, "wb") as fh:
         fh.write(new)
-    problems = verify(PATH)
+    problems = verify(PATH, frm, to)
     if problems:
         raise SystemExit("\n".join(problems))
     print("written and verified; restart the game server")
