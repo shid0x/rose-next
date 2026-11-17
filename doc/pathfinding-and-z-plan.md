@@ -974,6 +974,11 @@ These answers override anything earlier in this document that disagrees with the
     - Today those 39 conditions ("be within N m of a spot or NPC") pass from almost anywhere.
     - Fixing them would make players really stand there, and any quest with a slightly wrong position in its data would become impossible to complete.
     - The user will not re-test 39 quests, so this stays a known quirk outside this project.
+    - **It did break one thing (2026-11-17):** the Forgotten Temple's arrival chain moves a
+      91-130 player standing near B1's entrance to the band's start point, which lay inside
+      the 2 km "20 m", so every arrival warped again: an endless reload loop. Fixed in the
+      data, not the code (`scripts/fix-temple-rewarp-radius.py`, radius 20 -> 1); an audit
+      of every zone's arrival chain found no other same-zone warp.
 12. **RAM:** approved; there is plenty of headroom.
 13. **Water:** monsters keep walking lake beds as designed. No deep-water cost, so the Phase 8 deep-water item is dropped.
 14. **Deployment:** the server runs locally and reads `data/` directly (`C:\Users\Thomas\Desktop\Rose\rose-next-classic\data`).

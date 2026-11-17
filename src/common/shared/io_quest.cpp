@@ -536,6 +536,12 @@ F_QSTCOND006(uniQstENTITY* pCOND, tQST_PARAM* pPARAM) {
     // COND_006 trigger is reachable server-side without a cli_QUEST_REQ that the
     // client already gated on this same x100 test -- so this aligns the two sides
     // rather than making the server the looser of the two.
+    //
+    // Correction (2026-11-17): the premise above is wrong for the server. Its loader
+    // already scales iRadius by 100 (CQuestTRIGGER::Init_COND, server only), so on the
+    // server this is x10,000 -- "20 m" is 2 km. Kept as is by decision 11 of
+    // doc/pathfinding-and-z-plan.md; quest data that needs an area to *fail* must allow
+    // for it (scripts/fix-temple-rewarp-radius.py: the Forgotten Temple reload loop).
     const int radius = pCOND->m_Cond006.iRadius * 100;
 
     if (pPARAM->m_pOWNER->Quest_DistanceFrom(pCOND->m_Cond006.iX,
@@ -995,6 +1001,8 @@ F_QSTCOND021(uniQstENTITY* pCOND, tQST_PARAM* pPARAM) {
     // closer than 2.5 m, so every accept and turn-in carrying it failed on the
     // server with no message to the client. That is all 343 of them, including
     // every Oro dialog quest and 4410-01, the trigger that opens the chain.
+    // Correction (2026-11-17): as for COND_006, Init_COND already scaled this at load,
+    // so the server radius is x10,000 (5 m reads as 500 m); kept by decision 11.
     const int radius = pCOND->m_Cond021.iRadius * 100;
 
     if (pPARAM->m_pOWNER->Quest_DistanceFrom(static_cast<int>(pSelOBJ->VGetCur_XPOS()),

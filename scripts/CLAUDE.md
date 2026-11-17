@@ -181,6 +181,14 @@ Our `data/` is a translated iROSE dump with gaps; the reference dumps in `C:\Use
   character with the row's per-level HP value (259, not 259 x level) under a recomputed max, so the
   bar read near zero on a full-health monster until the next hit (trace: `visible 259 -> hp 47915`).
   The swap itself is abrupt (model deleted and recreated, no effect); cosmetic, left as is.
+- `scripts/fix-temple-rewarp-radius.py` (2026-11-17) — **the Forgotten Temple's endless reload
+  loop** (91-130 bands). The temple's arrival trigger `2051-10` (QP201.QSD) rewarps a 2052/2053
+  player near B1's entrance (COND_006, "20 m") to the band's start, and the server reads every
+  COND_006/021 radius x10,000 (load-time *and* check-time x100, left alone by decision 11 of
+  `doc/pathfinding-and-z-plan.md`), so the start point itself passed and every arrival warped
+  again. Radius 20 -> 1 on `2052-11` / `2053-11` (100 m today). Reproduced and checked on a local
+  server. **A quest condition that must *fail* somewhere needs its radius sized for x10,000.**
+  Server-side data: restart the game server.
 - `scripts/fix-mob-bullet-effects.py` — restores `WEAPON_BULLET_EFFECT` (`LIST_WEAPON.STB` game col 38). Empty there means a ranged monster fires **no projectile and lands no visible hit**: the client's `Get_BulletNO()` skips `Add_BULLET`, and the server's `UsesProjectileAttackPresentation()` picks `MeleeHitFrame`, which nothing on a bow/gun motion consumes.
 - `scripts/import-arrow-bullets.py` — the player-side sibling: an arrow/bullet's projectile is `NATURAL_BULLET_NO` (`LIST_NATURAL.STB` game col 17, a `LIST_EFFECT` row). Angelic Arrow (320 → 597) and Vengeance Arrow (319 → 600) pointed at **blank** `LIST_EFFECT` rows, so they fired nothing (alpha #2). Only the tsuki dump has those rows; the script writes them in place (plus FILE_EFFECT 32/97 and the `arrow_effect_1`/`elect_hit_02` chain) through `import-monster-skills.py`'s `Plan`. Client-only data.
 - `scripts/restore-zone-weather.py` (2026-10-22) — zone weather is `LIST_ZONE` col 27, mapped to an effect by `SE_WeatherEffect` in `SCRIPTS/GLOBALSCR.LUA`. **Weather numbers are per-client** (type 5 is Luna clover in 667/668, rain in QQ, mist in Jrose), so a zone row imported from a dump needs that dump's Lua branch and effect files too. Restores Eldeon's leaves (type 3, stubbed out long ago "for performance"; validated in game, cheap). Karkia's zones carry Jrose's type 5 = `rm_mist.eft`; that mist was tried and **rejected for looks**, so type 5 stays unmapped and `--verify` fails if it gets mapped. Patches the CP949 Lua as bytes. Client-only; re-bake.
