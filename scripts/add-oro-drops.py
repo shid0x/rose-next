@@ -127,7 +127,7 @@ MONEY_FIELD, MONEY_BOSS = 15, 0
 FAMILY_MATS = {
     "Asper":       ["Asper Fang", "Asper Tongue"],
     "Scorpio":     ["Dry Scale", "Broken Rune Piece"],
-    "Scarab":      ["Broken Rune Piece", "Spiritual Stone of Oro"],
+    "Scarab":      ["Broken Rune Piece", "Huge Horn"],
     "Scavenger":   ["Nymph Essence", "Broken Rune Piece"],
     "Ikaness":     ["Ikaness Jewels", "Heavygear Scrap"],
     "Devourer":    ["Devourer Plate", "Devourer Horn"],
@@ -135,12 +135,26 @@ FAMILY_MATS = {
     "Mastyx":      ["Dry Scale", "Dragon Scale"],       # also Armastyx
     "Terrasaurus": ["Dry Scale", "Huge Horn"],
 }
-GENERIC_MATS = ["Spiritual Stone of Oro", "Broken Rune Piece"]   # zone rows
+# Zone rows. "Spiritual Stone of Oro" (row 290) left on 2026-11-19: its col-0 name says Oro
+# but players see its STL text, "[PvP] Tokens ... from the Junon PvP tournament", and Oro
+# paid that on ~10% of kills. Look items up by what players see before using them.
+GENERIC_MATS = ["Broken Rune Piece", "Dry Scale"]
 
-# tier materials (LIST_NATURAL rows we already ship), cheapest first
-TIER_MATS = {"RING":   [9, 10, 49, 50],      # Tiar, Damascus, Transparent/Patterned Leather
-             "WASTE":  [10, 16, 50, 60],     # Damascus, Orihalcon, Patterned Leather, Lace
-             "FOSSIL": [16, 17, 50, 60]}     # Orihalcon, Adamantium, Patterned Leather, Lace
+# Tier materials (LIST_NATURAL rows we already ship). Four per tier until 2026-11-19, all
+# metal, leather and cloth: Oro paid 24 distinct materials against 63-114 in every band
+# below it (economy-audit.py). Since then each tier draws eight vanilla materials across
+# seven classes -- metal, rare metal, wood, leather, cloth, essence, powder -- at the top
+# of each class (q62-70), stepping up a notch per tier; Karkia keeps the very top
+# (Hermes, Lisent Ra / U, Mercury) as its own.
+TIER_MATS = {
+    # Chromium, Tiar, Red Sandalwood, Hard Leather, Plain Weave, Otherworldly Metal, Hime, Lisent (Na)
+    "RING": [8, 9, 38, 48, 58, 18, 67, 86],
+    # Damascus, Otherworldly Wood, Transparent Leather, Twill, Orihalcon, Philosopher Stone,
+    # Low Enthiric, Lisent (Cr)
+    "WASTE": [10, 39, 49, 59, 16, 19, 68, 87],
+    # Adamantium, Sephiroth Wood, Patterned Leather, Lace, Orihalcon, Enthiric, Lisent (Au), Damascus
+    "FOSSIL": [17, 40, 50, 60, 16, 69, 88, 10],
+}
 
 # ---------------------------------------------------------------- equipment
 # Jrose lv200-210. Was 1420-1425 + 1450 + 1447 until 2026-10-20: weapon-ladder-pass.py
@@ -259,7 +273,7 @@ class Plan:
 
     def boss(self, tier, fam_mats, i):
         kd = self.kd
-        mats = self.ids(fam_mats) + [self.mat["Spiritual Stone of Oro"]]
+        mats = self.ids(fam_mats) + TIER_MATS[tier][-2:]
         if tier == "RING":
             top = kd.W(kd.win(kd.WPN_220_ALL, 6 * i, 6))
             armour = []

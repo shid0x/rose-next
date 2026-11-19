@@ -394,6 +394,21 @@ game is the Pumpkin's (108, Valley of Luxem Tower).
 
 **The double drop, built 2026-11-19** (roadmap 1.3): `CCal::DropRoll` -- `Monster` (own table, money) and `Map` (zone row, no money) -- rolled one after the other on every kill (`cobjchar.cpp`); `server.toml [game] map_drop` (default 1; 0 = the retail single roll). The second item reaches clients through the sector broadcast only. Baked and deployed with 1.1 and 1.2 the same day, untested in game.
 
+**Material variety, 2026-11-19** (the user's worry after testing 1.3): Oro paid 24 distinct
+materials (four vanilla ones per tier plus the monster parts) and Karkia 25, against 63-114 in
+every band below; and all 34 imported materials were class 421 / quality 62, copies of
+Chromium, so a Scroll of Might crafted and broke up as ore. `material-classes-200.py` gives
+them real classes (essence, stone, rare metal, metal, other) and qualities 72-80, above
+anything below 200 (the class is what a recipe and break-up read; the quality is the
+progress side of the craft roll). Oro's tiers draw eight vanilla materials across seven
+classes each, Karkia's pools end with the top essence, powder and rare metal (Hermes and
+Lisent (Ra) / (U) dropped nowhere before). Now Oro 38 distinct materials over nine classes,
+Karkia 33 over six, 11-15 per zone. Oro also paid "[PvP] Tokens" on ~10% of kills: row
+290's col-0 name is "Spiritual Stone of Oro", its STL text the Junon PvP token -- the Oro
+pools no longer name it. Found, not changed: Eldeon's retail tables name rows 269 and 276,
+which import-oro-materials.py filled with Asper Tongue and Devourer Horn, so two Eldeon
+monsters drop Oro parts.
+
 Outside the 200+ band, for the record (not changed): Skaaj pays nothing on 94% of kills
 (blank zone row, empty tables), Mount Eruca nothing at all (unreachable), Sunshine Coast
 70% nothing (event zone); Eldeon 190-209 pays gear ~50 levels under the monster and no money.

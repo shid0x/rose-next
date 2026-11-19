@@ -185,6 +185,15 @@ MONEY_BOSS = 0              # bosses pay items; money would eat the mythical rol
 KEY_OF_REMORSE = 150
 MAT_CEMETERY = [742, 743, 744, 751, KEY_OF_REMORSE, 152, 760, 153]
 MAT_SPIRE = [745, 746, 763, KEY_OF_REMORSE, 747, 748, 752, 758]
+# 2026-11-19: Karkia paid 25 distinct materials, all of them "metal" (material-classes-200.py
+# gave them real classes). Every Karkia pool now ends with the top vanilla essence, powder
+# and rare metal -- Enthiric, Hermes (q68, dropped nowhere before), the Lisents up to (Ra)
+# q74 and (U) q78 (nowhere before either), Philosopher Stone, Mercury -- appended, so the
+# slots the Key of Remorse and the signature materials sit in do not move.
+KARKIA_TOP = {"cemetery": [69, 87, 19], "spire": [70, 89, 20], "crypt": [70, 90, 89],
+              "memories": [69, 88, 19], "garden": [70, 88, 20]}
+MAT_CEMETERY = MAT_CEMETERY + KARKIA_TOP["cemetery"]
+MAT_SPIRE = MAT_SPIRE + KARKIA_TOP["spire"]
 
 # Two boss pools rather than one, because several descriptions name the creature
 # they come from and it costs nothing to keep that true:
@@ -195,15 +204,15 @@ MAT_BOSS = [759, 761]
 # The catacombs (2026-11-10): Green and Blue Hearts first -- the toll (the Key of
 # Remorse) drops outside, so the crypt does not pay its own way in --
 # then the Spire's upper materials.
-MAT_CRYPT = [152, 153, 763, 760, 747, 748, 752, 758]
+MAT_CRYPT = [152, 153, 763, 760, 747, 748, 752, 758] + KARKIA_TOP["crypt"]
 MAT_DRAKE = [762, 758]
 
 # The flashback is Karkia *alive*: bees, plants and beasts in a world the goddess
 # still tends. It draws the clean half of the catalogue -- colour cores, star
 # scales, starlight -- where the present day pays in plague crystals and
 # blackened cogs, so the two eras still read differently in your bag.
-MAT_MEMORIES = [753, 754, 755, 756, 757, 745, 763, 741]
-MAT_GARDEN = [755, 756, 757, 741, 749, 750, 764, 758]
+MAT_MEMORIES = [753, 754, 755, 756, 757, 745, 763, 741] + KARKIA_TOP["memories"]
+MAT_GARDEN = [755, 756, 757, 741, 749, 750, 764, 758] + KARKIA_TOP["garden"]
 
 # 740 Graphistone is deliberately absent. Its description says it is "found only
 # in the Tower of Despair", and the Tower has no population yet -- dropping it in
