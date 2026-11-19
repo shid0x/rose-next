@@ -392,6 +392,8 @@ low end of 1-200, because those tables keep their redirects in slots 24-29, whic
 low col 20 (25-60) rarely reaches. The one table left with dead redirects in the whole
 game is the Pumpkin's (108, Valley of Luxem Tower).
 
+**The double drop, built 2026-11-19** (roadmap 1.3): `CCal::DropRoll` -- `Monster` (own table, money) and `Map` (zone row, no money) -- rolled one after the other on every kill (`cobjchar.cpp`); `server.toml [game] map_drop` (default 1; 0 = the retail single roll). The second item reaches clients through the sector broadcast only. Baked and deployed with 1.1 and 1.2 the same day, untested in game.
+
 Outside the 200+ band, for the record (not changed): Skaaj pays nothing on 94% of kills
 (blank zone row, empty tables), Mount Eruca nothing at all (unreachable), Sunshine Coast
 70% nothing (event zone); Eldeon 190-209 pays gear ~50 levels under the monster and no money.

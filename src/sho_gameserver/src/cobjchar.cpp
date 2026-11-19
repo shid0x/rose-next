@@ -1721,63 +1721,91 @@ CObjCHAR::Apply_DAMAGE(CObjCHAR* pTarget,
                         }
 
                         if (bDropItem) {
+                            // A dropped item lands within 1 m of the dead monster, on its
+                            // floor, owned by the killer (and its party for a summon kill).
+                            auto spawn_field_item = [&](tagITEM& sDROP) -> CObjITEM* {
+                                CObjITEM* pItem = new CObjITEM;
+                                if (!pItem)
+                                    return nullptr;
+                                tPOINTF PosSET;
+                                PosSET.x = pTarget->m_PosCUR.x + RANDOM(201) - 100;
+                                PosSET.y = pTarget->m_PosCUR.y + RANDOM(201) - 100;
+
+                                // this는 사용자나 사용자가 소환한 소환수다.
+                                CObjCHAR* pSummonOWNER = (CObjCHAR*)this->Get_CALLER();
+                                CParty* pCParty =
+                                    (pSummonOWNER) ? pSummonOWNER->GetPARTY() : NULL;
+
+                                pItem->InitItemOBJ(NULL,
+                                    PosSET,
+                                    pTarget->m_PosSECTOR,
+                                    sDROP,
+                                    pMobOWNER,
+                                    false,
+                                    pCParty); // 죽을때 떨굼
+                                // on the dead monster's floor (Phase 6)
+                                pItem->m_fFloorZ = pTarget->Nav_FloorAt(PosSET.x, PosSET.y);
+
+                                /// Must precede Add_DIRECT. The item is
+                                /// created inactive (m_iRemainTIME = 0)
+                                /// because the legacy gsv_DAMAGE packets
+                                /// carried the drop inline and called
+                                /// SetACTIVE() while building it. This path
+                                /// sends a FlatBuffer DamageEvent instead,
+                                /// which carries no drop -- so nothing woke
+                                /// the item up, Make_gsv_ADD_OBJECT
+                                /// early-returned on m_iRemainTIME <= 0, and
+                                /// AddObjectToSector skipped its whole
+                                /// broadcast block. The item sat in the zone
+                                /// with a valid index, invisible to everyone.
+                                ///
+                                /// Announcement happens once, at insertion,
+                                /// so activating after Add_DIRECT is too
+                                /// late -- SetACTIVE() also applies the
+                                /// longer party-ownership window, which
+                                /// passing bActive=true above would skip.
+                                pItem->SetACTIVE();
+
+                                this->GetZONE()->Add_DIRECT(pItem); // 드롭 아이템
+                                return pItem;
+                            };
+
+                            // The double drop (roadmap 1.3): the monster's own table, then
+                            // the zone's map table, two independent rolls. server.toml
+                            // [game] map_drop = 0 restores the retail single roll.
+                            const bool bMapDrop = server_config().game.map_drop != 0;
+
                             tagITEM sITEM;
                             sITEM.init();
-
                             if (CCal::Get_DropITEM(pMobOWNER->Get_LEVEL() - pTarget->Get_LEVEL(),
                                     (CObjMOB*)pTarget,
                                     sITEM,
                                     this->GetZONE()->Get_ZoneNO(),
                                     pMobOWNER->GetCur_DropRATE(),
-                                    pMobOWNER->Get_CHARM()))
+                                    pMobOWNER->Get_CHARM(),
+                                    bMapDrop ? CCal::DropRoll::Monster : CCal::DropRoll::Legacy))
                             {
-                                // Create field item ...
-                                *ppOutITEM = new CObjITEM;
-                                if (*ppOutITEM) {
-                                    tPOINTF PosSET;
-                                    PosSET.x = pTarget->m_PosCUR.x + RANDOM(201) - 100;
-                                    PosSET.y = pTarget->m_PosCUR.y + RANDOM(201) - 100;
+                                // The caller may also hand this one to a skill's
+                                // GSV_DAMAGE_OF_SKILL, which carries one drop inline.
+                                *ppOutITEM = spawn_field_item(sITEM);
+                            }
 
-                                    // this는 사용자나 사용자가 소환한 소환수다.
-                                    CObjCHAR* pSummonOWNER = (CObjCHAR*)this->Get_CALLER();
-                                    CParty* pCParty =
-                                        (pSummonOWNER) ? pSummonOWNER->GetPARTY() : NULL;
-
-                                    // pMobOWNER->Set_ItemSN( (*ppOutITEM)->m_ITEM );	// 몹 죽을때
-                                    // => 습득할때로 변경...
-
-                                    (*ppOutITEM)
-                                        ->InitItemOBJ(NULL,
-                                            PosSET,
-                                            pTarget->m_PosSECTOR,
-                                            sITEM,
-                                            pMobOWNER,
-                                            false,
-                                            pCParty); // 죽을때 떨굼
-                                    // on the dead monster's floor (Phase 6)
-                                    (*ppOutITEM)->m_fFloorZ = pTarget->Nav_FloorAt(PosSET.x, PosSET.y);
-
-                                    /// Must precede Add_DIRECT. The item is
-                                    /// created inactive (m_iRemainTIME = 0)
-                                    /// because the legacy gsv_DAMAGE packets
-                                    /// carried the drop inline and called
-                                    /// SetACTIVE() while building it. This path
-                                    /// sends a FlatBuffer DamageEvent instead,
-                                    /// which carries no drop -- so nothing woke
-                                    /// the item up, Make_gsv_ADD_OBJECT
-                                    /// early-returned on m_iRemainTIME <= 0, and
-                                    /// AddObjectToSector skipped its whole
-                                    /// broadcast block. The item sat in the zone
-                                    /// with a valid index, invisible to everyone.
-                                    ///
-                                    /// Announcement happens once, at insertion,
-                                    /// so activating after Add_DIRECT is too
-                                    /// late -- SetACTIVE() also applies the
-                                    /// longer party-ownership window, which
-                                    /// passing bActive=true above would skip.
-                                    (*ppOutITEM)->SetACTIVE();
-
-                                    this->GetZONE()->Add_DIRECT(*ppOutITEM); // 드롭 아이템
+                            if (bMapDrop) {
+                                tagITEM sMAP;
+                                sMAP.init();
+                                if (CCal::Get_DropITEM(pMobOWNER->Get_LEVEL() - pTarget->Get_LEVEL(),
+                                        (CObjMOB*)pTarget,
+                                        sMAP,
+                                        this->GetZONE()->Get_ZoneNO(),
+                                        pMobOWNER->GetCur_DropRATE(),
+                                        pMobOWNER->Get_CHARM(),
+                                        CCal::DropRoll::Map))
+                                {
+                                    // Announced by the sector broadcast alone, never
+                                    // through ppOutITEM: the skill packet holds one item,
+                                    // and a second route to the client is what once left
+                                    // duplicate ground items (root CLAUDE.md, drops).
+                                    spawn_field_item(sMAP);
                                 }
                             }
                         }

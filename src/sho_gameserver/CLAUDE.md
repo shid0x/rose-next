@@ -422,6 +422,19 @@ delete the traded item from the receiver), and, while the storage is unloaded, a
 slot points at. Any new save path must follow the same rule: delete slot rows, never item rows
 someone else still holds.
 
+## The Double Drop (2026-11-19, roadmap 1.3)
+
+A monster kill rolls twice (`CObjCHAR` kill path, `CCal::Get_DropITEM(..., DropRoll)`): the
+monster's own table (col 18) with its money chance, then the zone's row -- the map table --
+with no money, both through the same formula (level gap, drop-rate bonuses). The retail single
+roll read the zone row instead of the own table (100 - col 20)% of the time; `server.toml [game]
+map_drop = 0` restores it. **The map roll's item is announced by the sector broadcast only**
+(`SetACTIVE()` before `Add_DIRECT`), never through `ppOutITEM`: a skill kill hands that one to
+`GSV_DAMAGE_OF_SKILL`, which carries one item inline, and a second route is the duplicate
+ground-item bug (root CLAUDE.md). Zone rows are therefore real map tables with no gear
+(doc/project-drops.md section 7; `scripts/economy-audit.py drops --roll monster|map`). The
+redirect buckets are read at index 25 + 5g + k since the same day (`Rose::Drop::kRedirectBaseColumn`).
+
 ## Warp And Party Rules
 
 - **`Recv_cli_RELAY_REPLY` now honours only the destination the server last

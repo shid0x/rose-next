@@ -46,12 +46,19 @@ private:
 #endif
 
 public:
+    /// Which table a drop roll reads (roadmap 1.3, the double drop).
+    ///  Legacy   retail: the monster's table col 20 % of the time, else the zone row
+    ///  Monster  the monster's own table (col 18) always, with its money roll (col 19)
+    ///  Map      the zone row always, never money -- the second roll of a kill
+    enum class DropRoll { Legacy, Monster, Map };
+
     static bool Get_DropITEM(int iLevelDiff,
         CObjMOB* pMobCHAR,
         tagITEM& sITEM,
         int iZoneNO,
         int iDropRate,
-        int iCharm);
+        int iCharm,
+        DropRoll eRoll = DropRoll::Legacy);
     static __int64 Get_EXP(CObjCHAR* pAtkCHAR, CObjCHAR* pDefCHAR, int iGiveDamage);
 
 #ifdef __SERVER

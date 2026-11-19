@@ -135,7 +135,8 @@ CCal::Get_DropITEM(int level_difference,
     tagITEM& item,
     int iZoneNO,
     int iDropRate,
-    int iCharm) {
+    int iCharm,
+    DropRoll eRoll) {
 
     int iDrop_VAR = 0;
 
@@ -154,7 +155,8 @@ CCal::Get_DropITEM(int level_difference,
         return false;
     }
 
-    if (1 + RANDOM(100) <= NPC_DROP_MONEY(pMobCHAR->Get_CharNO())) {
+    // The map roll of the double drop pays items only: zuly stays the monster's.
+    if (eRoll != DropRoll::Map && 1 + RANDOM(100) <= NPC_DROP_MONEY(pMobCHAR->Get_CharNO())) {
         // µ·»ý¼º
         // DROP_MONEY_Q = { (MOP_LV + 20) * (MOP_LV + DROP_ VAR +40) * WORLD_DROP_M / 3200 }
         int iMoney = (pMobCHAR->Get_LEVEL() + 20) * (pMobCHAR->Get_LEVEL() + iDrop_VAR + 40)
@@ -169,10 +171,17 @@ CCal::Get_DropITEM(int level_difference,
     }
 
     int iDropTBL;
-    if (NPC_DROP_ITEM(pMobCHAR->Get_CharNO()) - (1 + RANDOM(100)) >= 0) {
+    if (eRoll == DropRoll::Monster) {
+        iDropTBL = NPC_DROP_TYPE(pMobCHAR->Get_CharNO());
+    } else if (eRoll == DropRoll::Map) {
+        iDropTBL = iZoneNO;
+    } else if (NPC_DROP_ITEM(pMobCHAR->Get_CharNO()) - (1 + RANDOM(100)) >= 0) {
         iDropTBL = NPC_DROP_TYPE(pMobCHAR->Get_CharNO());
     } else {
         iDropTBL = iZoneNO;
+    }
+    if (iDropTBL <= 0 || iDropTBL >= g_TblDropITEM.row_count) {
+        return false;
     }
 
     int iDropTblIDX = (iDrop_VAR > 30) ? RANDOM(30) : RANDOM(iDrop_VAR);

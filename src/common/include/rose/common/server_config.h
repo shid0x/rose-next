@@ -149,6 +149,10 @@ public:
         if (this->get_uint32("game", "stun_immunity_ms", stun_immunity_ms)) {
             this->game.stun_immunity_ms = stun_immunity_ms;
         }
+        uint32_t map_drop = 0;
+        if (this->get_uint32("game", "map_drop", map_drop)) {
+            this->game.map_drop = map_drop;
+        }
 
         return true;
     }

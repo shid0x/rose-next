@@ -43,6 +43,10 @@ struct GameConfig {
     /// After a monster's stun ends, how long a player cannot be stunned by a monster
     /// again (CObjCHAR::Skill_ApplyIngSTATUS). 0 turns the rule off.
     uint32_t stun_immunity_ms;
+    /// The double drop (roadmap 1.3, 2026-11-19): a monster kill rolls its own table and
+    /// then, separately, its zone's row (the map table). 0 restores the retail single roll,
+    /// which reads the zone row instead of the own table (100 - col 20)% of the time.
+    uint32_t map_drop;
 
     GameConfig():
         base_attack_power(0),
@@ -50,7 +54,8 @@ struct GameConfig {
         base_move_speed(0),
         base_hit_rate(0),
         base_crit(0),
-        stun_immunity_ms(10000) {}
+        stun_immunity_ms(10000),
+        map_drop(1) {}
 };
 
 } // namespace Common
