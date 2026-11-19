@@ -182,7 +182,7 @@ CCal::Get_DropITEM(int level_difference,
             // ´Ù½Ã °è»ê
             iDropTblIDX = Rose::Drop::redirect_column(iDropITEM)
                 + RANDOM(Rose::Drop::kRedirectGroupWidth);
-            if (iDropTblIDX >= g_TblDropITEM.col_count) {
+            if (1 + iDropTblIDX >= g_TblDropITEM.col_count) { // DROPITEM_ITEMNO reads column 1 + index
                 // Å×ÀÌºí ÄÃ·³ °¹¼ö ÃÊ°ú...
                 return false;
             }

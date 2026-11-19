@@ -39,8 +39,11 @@ rows: it is one of the passes the user considers outdated.
 **The level itself moves the rest, with no data change**: who can hit it (Get_SuccessRATE's
 gate), who gets its drops (nobody 10+ levels above it), its money drop, its name colour.
 The drop audiences are milestone 1.2's business: `--dry-run` prints the drop tables each
-group uses and where their audience moves. Known consequences on 2026-11-19: the Fossil
-Sanctuary's lv240 armour buckets now drop off lv224-230 monsters, and the Cemetery's Key of
+group uses and where their audience moves. Known consequences on 2026-11-19 (measured with
+`economy-audit.py drops --by zone`): the weapon and off-hand pools no longer fit the bands --
+the Wasteland pays lv235 weapons, the Fossil Sanctuary lv235 weapons and lv240 off-hands,
+the Cemetery lv210-225 off-hands and lv220 weapons -- while the Sanctuary's armour is the
+Egyptian set, lv225 since armour-endgame-sets.py, and still fits; the Cemetery's Key of
 Remorse tables (900-902) now reach level-240 players too.
 
 **Summons and morphs come along.** A monster an AI file of a moved monster summons or turns

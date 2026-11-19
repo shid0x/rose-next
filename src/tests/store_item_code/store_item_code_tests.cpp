@@ -175,8 +175,11 @@ main() {
         drop_decodes(kMaxSentinel + 1, 1, 1, "one past the ceiling is type 1 id 1");
 
         // Redirect windows are contiguous and non-overlapping, and match the
-        // 26 + g*5 + rand(5) the callers use.
-        expect(redirect_column(1) == 31, "group 1 reads from column 31");
+        // 25 + g*5 + rand(5) the callers use: index 30 = STB column 31 ("Valuable 1"), and
+        // group 4's last cell is index 49 = column 50, the table's last.
+        expect(redirect_column(1) == 30, "group 1 reads from index 30 (column 31)");
+        expect(redirect_column(kMaxRedirectGroup) + Rose::Drop::kRedirectGroupWidth - 1 == 49,
+            "group 4 ends at index 49 (column 50)");
         for (int g = 1; g < kMaxRedirectGroup; ++g) {
             expect(redirect_column(g) + Rose::Drop::kRedirectGroupWidth == redirect_column(g + 1),
                 "redirect windows must be contiguous");

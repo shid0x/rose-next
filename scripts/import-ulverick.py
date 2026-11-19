@@ -323,7 +323,10 @@ DROP_TABLES = {
          2: [(3, 38), (3, 68), (3, 98), (3, 128), (2, 38)]})),
 }
 # the 20% zone roll (col 20 = 80) lands on the row numbered after the zone
-ZONE_DROP_MIRROR = 819
+# Zone row 34 mirrored the Minion's table 819 until 2026-11-19; since the 200+ economy
+# pass (roadmap 1.2) it is a map table from the cave's own materials and consumables,
+# no gear (add-karkia-drops.map_from). ZONE_DROP_OLD_LABEL is the mirror's label, which
+# stage 4 may overwrite.
 ZONE_DROP_LABELS = (b"", b"(Un-Used)")   # what row 34 may hold before us
 
 # ---- stage 5: the gatekeeper
@@ -892,8 +895,9 @@ dropkit = load("add_karkia_drops", "add-karkia-drops.py")   # build_row / encode
 def plan_drops():
     rows = {r: (label, dropkit.build_row(common, groups))
             for r, (label, (common, groups)) in DROP_TABLES.items()}
-    rows[ZONE] = (f"{ZONE_NAME} zone roll (mirrors {ZONE_DROP_MIRROR})",
-                  dict(rows[ZONE_DROP_MIRROR][1]))
+    rows[ZONE] = (f"{ZONE_NAME} map table",
+                  dropkit.build_row(*dropkit.map_from(
+                      [shape for _label, shape in DROP_TABLES.values()])))
     return rows
 
 
@@ -929,7 +933,8 @@ def stage4(ours, src, src_index, dry):
         want = drop_row_cells(d.cols, label, cells)
         if d.d[r] == want:
             continue
-        ours_label = d.get(r, 0) == label.encode("latin-1")
+        ours_label = d.get(r, 0) == label.encode("latin-1") or (
+            r == ZONE and d.get(r, 0).startswith(f"{ZONE_NAME} zone roll".encode("latin-1")))
         free = not any(x.strip() for x in d.d[r][1:]) and d.get(r, 0) in ZONE_DROP_LABELS
         if not (free or ours_label):
             raise SystemExit(f"ITEM_DROP row {r} holds a table we did not author: {d.get(r, 0)!r}")

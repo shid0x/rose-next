@@ -74,9 +74,11 @@ cell = ITEM_DROP[table][1 + rand(0..min(drop_var, 30))]
   `m_nItemNo = cell % 1000`. **Item numbers above 999 cannot be dropped**, full stop.
   That is a tighter limit than the item *encoding*, which `tagBaseITEM` widened to an
   11-bit number (0–2047) — the drop table simply cannot address them.
-- Cells valued **1–4 are redirect groups**, re-rolled at column `26 + value*5 +
-  rand(5)`. A table therefore has a common section (columns 1–25) and four rarity
-  buckets (26–50). `ITEM_DROP.STB` has 51 columns.
+- Cells valued **1–4 are redirect groups**, re-rolled at index `25 + value*5 +
+  rand(5)`, i.e. column `26 + value*5 + k` (**since 2026-11-19**; the retail base was 26,
+  one column late -- section 7). A table therefore has a common section (columns 1–30,
+  "Item 1-20" + "Common 1-10") and four rarity buckets of five (columns 31–50, "Valuable
+  1-20"). `ITEM_DROP.STB` has 51 columns.
 - `Get_DropITEM` returns false outright when the player is **10+ levels above** the
   monster, so lowering a monster's level can silently kill its drops.
 
@@ -300,6 +302,99 @@ nothing and were left alone.
 re-bake the VFS (the Monster Inspector reads these tables client-side).
 
 ---
+
+## 7. The 1-200 philosophy, measured  *(2026-11-19, roadmap 1.2)*
+
+`python scripts/economy-audit.py drops` (exact odds of `Get_DropITEM` at level parity,
+every spawned species once per zone; `--by zone`, `--gap`, `--weight regen`) and
+`economy-audit.py zone-rows`. Field monsters of the reachable 10-199 maps, per kill:
+
+| | 1-200 field | 200+ field (Oro, Karkia, crypts) |
+|---|---|---|
+| nothing | 17-37% | 33-40% |
+| money | 5-30% (0 across Eldeon 170-209) | 15% |
+| materials (a recipe uses them) | 25-45%, **58-64% at 170-199** | 26-30% |
+| junk (sell only) | 0-14% (Luna / Eldeon) | 2-4% |
+| quest items | 5-19%, ~5% past 150 | 0-3% |
+| consumables | ~15% to 49, 3-7% after | 5-8% |
+| jewellery | 0-2% | **0** |
+| gems | 0-1% (bosses 2-6%) | **0** |
+| gear | **1-4%**, ~5-12 levels under the monster | **6-13%**, 2-10 under |
+| uniques (stat-gated, no level) | ~0 field, 0-4% bosses | **0** |
+
+Bosses 1-200 pay gear 3-30% a kill; the 200+ bosses 22-33%.
+
+**Map tables (the zone fallback rows) have a philosophy of their own**: in every retail zone
+1-62 the row is ~60% materials, ~25% consumables, some quest items, **never gear**. From the
+Sikuku zones on, ours carry gear: 63-65 are the Sikuku monster table, Oro's 78-85 are
+generic tier tables with gear buckets, and Karkia's, the crypts', Shibuya's and Ulverick's
+are copies of a monster table. Under the double drop (1.3) every kill rolls its zone row,
+so a row with gear doubles the gear rate.
+
+**Gaps the 200+ band has**: jewellery is graded by quality, not level, and none of the 55
+pieces of quality 50+ (Platinum, Diamond) drops anywhere; seven gems of quality 70-90 have
+no source; the 668 uniques (904-995) have none either.
+
+**Built 2026-11-19** (the user's decisions: all five proposals, bosses ~90% gear):
+`add-karkia-drops.py` and `add-oro-drops.py --rewrite`, shapes in the first docstring
+section of the Karkia script. Per field kill, for the double drop's monster roll: gear
+4.2% Karkia / 3.0% Oro, materials ~40-49%, consumables 6%, jewellery 1.5%, gems 0.8%,
+money 15%, nothing ~23%; bosses (kings, skulls, the crypt and Hebarn bosses) ~90% gear;
+the 200+ zone rows are map tables (~55-65% materials, 12% consumables, no gear). The
+pools follow the re-levelled bands. Measured on today's single-roll server the field
+gear is a fifth lower (the 20% zone fallback reads the gear-free map row): the tables
+are meant to ship with the double drop. Gold stars (Dark Tower, Element Battler) keep
+field tables. Backups of both STBs from before the pass: `build/drops-reshape-2026-11-19/`.
+
+**Below Oro, 2026-11-19** (`scripts/drops-below-oro.py`; the user: "monsters shouldn't have
+an empty table but something adequate to their level band", the Prison "fairly simple"):
+the Sikuku tables left zone rows 63-65 (to 921-923) and those rows are map tables, as are
+Shibuya's 126 and Ulverick's 34 (their importers build them with
+`add-karkia-drops.map_from`); Executor Kera has a boss table (the 668 uniques on top, ~half
+his kills; the vanilla lv200 weapons and armour below, which had no source); the other
+prison monsters carry the Prison's map table; every other empty table copies the nearest
+same-class table of its zone (Lunar Keepers 924-926, Tiger Riders, the Forest of Wandering
+elites), gold stars with gear on top (Turak ~21%, Karkia's Dark Tower / Element Battler
+~26%: "better than the rest but not up to boss level"); the uniques ride a bucket in every
+lv180-210 table of zones 62-64 (about 1 kill in 300-1000 for a plain monster, more on
+stars, 6.5% on the Moss Golem).
+
+**Found, not fixed (2026-11-19):** Xita Refuge and the Shady Jungle (Eldeon, lv140-183)
+point most of their redirects at empty buckets -- 71 of 104 and 79 of 89 redirect slots --
+so their gear almost never drops (0.0-0.2% a kill). **Checked against the reference
+clients the same day: nothing was lost.** ruff (whose rows ours match 30/30), 139, Evo 137,
+Jrose and RoseZA leave the same groups empty: retail authored redirects into buckets it
+never filled. Rose Brazil and QQ-iROSE fill some, their own way (Brazil single weapons
+under ids that are other items here; QQ Sikuku materials in tables it rewrote) -- not
+portable.
+
+**And a server off-by-one, inherited from the original source:** ITEM_DROP's columns are
+named Item 1-20 (1-20), Common 1-10 (21-30), Valuable 1-20 (31-50) -- four buckets of five
+at 31-35, 36-40, 41-45, 46-50 -- but `Get_DropITEM` re-rolls a redirect at index
+`26 + 5g + rand(5)`, read as column `27 + 5g + k`: bucket 1 at 32-36, bucket 4 at 47-51
+(column 51 does not exist; the "slot 50 is dead" rule of add-karkia-drops.py). ruff fills
+"Valuable 1" (column 31, never read) in 211 of its 228 tables with redirects, and
+"Common 10" (column 30, read) in 286, so the common section is right and the buckets are
+one column late: every retail table lost its first valuable item and its buckets bled
+into each other. **Fixed 2026-11-19** (the user's go): `kRedirectBaseColumn` 26 -> 25
+(`drop_item_code.h`, shared by `Get_DropITEM`, the start-up check and the Monster
+Inspector); `CheckSTB_DropITEM` also walked indices 1-50, so column 1 was never checked
+and a column past the end was read -- it walks 0-49 now. Every script-built table was
+regenerated with the new base (`add-karkia-drops.py` / `add-oro-drops.py --rewrite`,
+`import-shibuya.py --stage 5`, `import-ulverick.py --stage 4`, `import-cerberus.py --stage
+4`, `import-hebarn.py --stage 2`, `drops-below-oro.py`). Client and server ship together:
+an old server reads the new tables one column late.
+
+**Eldeon's empty buckets, filled 2026-11-19** (`drops-below-oro.py` step 4): every empty
+bucket a zone 61-65 table reaches holds five pieces of the zone's own bucket gear nearest
+its usual level offset. Field gear a kill: Xita 0.1% -> 0.7%, Shady Jungle -> 1.4% -- the
+low end of 1-200, because those tables keep their redirects in slots 24-29, which their
+low col 20 (25-60) rarely reaches. The one table left with dead redirects in the whole
+game is the Pumpkin's (108, Valley of Luxem Tower).
+
+Outside the 200+ band, for the record (not changed): Skaaj pays nothing on 94% of kills
+(blank zone row, empty tables), Mount Eruca nothing at all (unreachable), Sunshine Coast
+70% nothing (event zone); Eldeon 190-209 pays gear ~50 levels under the monster and no money.
 
 ## 6. Open questions
 

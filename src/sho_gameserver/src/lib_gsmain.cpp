@@ -320,7 +320,10 @@ CLIB_GameSRV::CheckSTB_DropITEM() {
     tagITEM sITEM;
 
     for (short nI = 1; nI < g_TblDropITEM.row_count; nI++) {
-        for (short nC = 1; nC < g_TblDropITEM.col_count; nC++) {
+        // nC is a drop index (DROPITEM_ITEMNO reads column 1 + nC): 0 .. col_count - 2.
+        // It ran 1 .. col_count - 1 until 2026-11-19, so column 1 was never checked and a
+        // column past the table's end was read.
+        for (short nC = 0; 1 + nC < g_TblDropITEM.col_count; nC++) {
             iDropITEM = DROPITEM_ITEMNO(nI, nC);
             if (iDropITEM <= 0)
                 continue;
@@ -333,7 +336,7 @@ CLIB_GameSRV::CheckSTB_DropITEM() {
                     // 다시 계산
                     int iDropTblIDX = Rose::Drop::redirect_column(iDropITEM)
                         + Rose::Drop::kRedirectGroupWidth - 1 /*RANDOM(5)의 최대값 4 */;
-                    if (iDropTblIDX >= g_TblDropITEM.col_count) {
+                    if (1 + iDropTblIDX >= g_TblDropITEM.col_count) {
                         // 테이블 컬럼 갯수 초과...
                         g_LOG.CS_ODS(0xffff, "This drop item[ %d %d ] may be too big\n", nI, nC);
                     }

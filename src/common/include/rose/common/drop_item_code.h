@@ -11,7 +11,7 @@
 /// of `Rose::Store`:
 ///
 ///     0            empty cell
-///     1 .. 4       *redirect group* -- re-roll in column 26 + n*5 + rand(5)
+///     1 .. 4       *redirect group* -- re-roll at index 25 + n*5 + rand(5)
 ///     5 .. 1000    junk; retail's own loader zeroes these
 ///     > 1000       a packed item, legacy or wide
 ///
@@ -48,8 +48,14 @@ constexpr int kMaxSentinel = 1000;
 /// Cells 1..4 select a redirect group instead of naming an item.
 constexpr int kMaxRedirectGroup = 4;
 
-/// Where a redirect group's re-roll reads from: 26 + group * 5 + rand(5).
-constexpr int kRedirectBaseColumn = 26;
+/// Where a redirect group's re-roll reads from: index 25 + group * 5 + rand(5), which
+/// DROPITEM_ITEMNO reads as STB column 26 + group * 5 + k. ITEM_DROP.STB names its columns
+/// Item 1-20 (1-20), Common 1-10 (21-30) and Valuable 1-20 (31-50): four groups of five
+/// at columns 31-35, 36-40, 41-45, 46-50. The retail base was 26 (2026-11-19 and before),
+/// one column late: "Valuable 1" (filled in 211 of ruff's 228 tables with redirects) was
+/// never read, every group took the next group's first cell, and group 4 reached for a
+/// column 51 that does not exist. doc/project-drops.md section 7.
+constexpr int kRedirectBaseColumn = 25;
 constexpr int kRedirectGroupWidth = 5;
 
 /// True for a cell that names a redirect group rather than an item.

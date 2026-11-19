@@ -1,5 +1,18 @@
 """Oro's loot tables: wire the zone rows, then fill every species table.
 
+--- 2026-11-19: reshaped (roadmap 1.2) -- this section supersedes the rates below
+
+Same pass as add-karkia-drops.py's (its shapes, its docstring's first section): per
+field kill materials ~36-49%, consumables 6%, gear 3.0% (Karkia pays 4.2%: the harder
+place keeps the better loot), jewellery 1.5% (Platinum and the named q50-54 pieces),
+gems 0.8% ([5]/[6]), money 15%; bosses ~90% gear; the six zone rows are map tables
+(tier materials and the two Oro generics, consumables, no gear). The pools follow the
+re-levelled bands (relevel-200-band.py): the Golden Ring pays the lv210/215 lines
+(its 1447/1450 oddments left), the Wasteland lv220 + lv225 (Cursed Vermillion, which
+had no source) and the Egyptian set, the Fossil Sanctuary lv225 + lv230 and the
+Egyptian set; kings take the tier's top line. Every row is re-planned in place with
+`--rewrite`. The sections below are the 2026-09 history.
+
 Oro has dropped nothing since it was imported, and it is worse than "empty":
 
   * every Oro monster points `LIST_NPC` col 18 at a table in 773-870, and all
@@ -103,9 +116,9 @@ LEGACY_BAND = 949          # rewire-karkia-drops.py used 940-948
 BOSSES = {2207, 2254, 2281,           # Golden Ring kings
           2226, 2247, 2296,           # Wasteland / Ruins Path
           2221, 2259, 2265, 2276}     # Fossil Sanctuary
-BOSS_ARMOUR_SLOTS = 8      # gauntlets x4 + boots x4 on a Sanctuary king
 
 DROP_RATE = 80             # col 20, add-karkia-drops.py's calibration
+REDIRECT_BASE = 25         # Rose::Drop::kRedirectBaseColumn (26 until 2026-11-19), for --simulate
 MONEY_FIELD, MONEY_BOSS = 15, 0
 
 # ---------------------------------------------------------------- materials
@@ -134,13 +147,15 @@ TIER_MATS = {"RING":   [9, 10, 49, 50],      # Tiar, Damascus, Transparent/Patte
 # made Photon Cannon (1424) the lv230 Arcidian line's launcher, and the other five
 # (1420-1423, 1425) wore the lv230 Arcidian line's models -- no weapon may share a
 # higher tier's look -- and were erased (erase-retired-weapons.py).
-WPN_ORO_210 = [1450, 1447]
+# (The Golden Ring's 1447/1450 oddments left the pool on 2026-11-19: the Ring pays the
+# lv210/215 lines now, add-karkia-drops.WPN_210 / WPN_215.)
 # The Egyptian set: lv240 when this was written, lv225 since 2026-10-20
-# (armour-endgame-sets.py) -- still a fit for the Fossil Sanctuary (lv225-240).
-ARMOUR_240 = {T_CAP: [989, 990, 991, 992],     # Royal Guardian / Sun Prophet /
-              T_BODY: [916, 917, 918, 919],    # Jackal Bandit / Serpent Trader
-              T_ARMS: [892, 893, 894, 895],
-              T_FOOT: [890, 891, 892, 893]}
+# (armour-endgame-sets.py) -- the Wasteland's and the Fossil Sanctuary's armour.
+EGYPT_BY = {T_CAP: [989, 990, 991, 992],     # Royal Guardian / Sun Prophet /
+            T_BODY: [916, 917, 918, 919],    # Jackal Bandit / Serpent Trader
+            T_ARMS: [892, 893, 894, 895],
+            T_FOOT: [890, 891, 892, 893]}
+EGYPT = [(t, EGYPT_BY[t][c]) for c in range(4) for t in (T_BODY, T_CAP, T_ARMS, T_FOOT)]
 
 
 def load(name):
@@ -215,55 +230,51 @@ class Plan:
             raise SystemExit(f"material {name!r} is not in LIST_NATURAL -- run import-oro-materials.py first")
         return (T_NATURAL, self.mat[name])
 
-    # -- table shapes -----------------------------------------------------
-    def buckets(self, tier, i):
-        kd = self.kd
-        # Off-hand windows (2026-10-01, repackage-subweapons.py): one shield per
-        # tier plus that tier's Support Tool and Charms, shield doubled when
-        # there is room -- the same shape as Karkia's OFF_* lists.
-        if tier == "RING":
-            groups = {1: [(T_SUBWPN, s) for s in kd.OFF_CEMETERY],          # Garm x2, Freyja, Fafnir's Scale, silver clock
-                      2: [(T_WEAPON, w) for w in rot(WPN_ORO_210, i)]}
-        elif tier == "WASTE":
-            groups = {1: [(T_SUBWPN, s) for s in kd.OFF_220 + [kd.OFF_230[0]]],  # Golden Angel, Cathedral, Ashura, Reconquista, Davion
-                      2: [(T_WEAPON, w) for w in rot(kd.WPN_220, i)]}
-        else:
-            groups = {1: [(T_SUBWPN, s) for s in kd.OFF_SPIRE],             # Davion, Ushumgal, Zlatorog, Lindwurm Talon, NEO
-                      2: [(T_WEAPON, w) for w in rot(kd.WPN_235, i)],
-                      3: [(T_BODY, b) for b in ARMOUR_240[T_BODY]],
-                      4: [(T_CAP, c) for c in ARMOUR_240[T_CAP]]}
-        return groups
+    # -- table shapes (2026-11-19, roadmap 1.2: add-karkia-drops.py's shapes) ----
+    # Per tier (the zone a species mostly spawns in), after relevel-200-band.py:
+    #   RING   lv205-222  weapons lv210 + lv215, off-hands 210/215, no armour
+    #   WASTE  lv217-226  weapons lv220 + lv225, off-hands 220/225, Egyptian (lv225)
+    #   FOSSIL lv224-230  weapons lv225 + lv230, off-hands 225/230, Egyptian (lv225)
+    # Bosses (~90% gear) take the tier's top line on top and the line below under it:
+    #   RING kings lv220, WASTE bosses lv225 (+ Egyptian body/cap buckets),
+    #   FOSSIL kings lv230 (+ Egyptian gauntlets/boots buckets).
+    def ids(self, mats):
+        return [r for _t, r in mats]
 
     def field(self, tier, fam_mats, i):
-        common = list(fam_mats)
-        common += [(T_NATURAL, r) for r in TIER_MATS[tier]]
-        common += [(T_USE, u) for u in self.kd.USE_FIELD]
-        groups = self.buckets(tier, i)
-        common += [("redirect", g) for g in sorted(groups)]
-        return common, groups
+        kd = self.kd
+        mats = self.ids(fam_mats) + TIER_MATS[tier]
+        if tier == "RING":
+            weapons = kd.W(kd.win(kd.WPN_210, 3 * i, 3) + kd.win(kd.WPN_215, 2 * i, 2))
+            offarm = kd.S(kd.win(kd.OFF_210 + kd.OFF_215, i, 5))
+        elif tier == "WASTE":
+            weapons = kd.W(kd.win(kd.WPN_220_ALL, 3 * i, 3) + kd.win(kd.WPN_225, 2 * i, 2))
+            offarm = kd.S([kd.OFF_220[i % len(kd.OFF_220)], kd.OFF_225[0]]) + kd.win(EGYPT, 3 * i, 3)
+        else:
+            weapons = kd.W(kd.win(kd.WPN_225, 2 * i, 2) + kd.win(kd.WPN_230, 3 * i, 3))
+            offarm = kd.S([kd.OFF_225[0], kd.OFF_230[i % len(kd.OFF_230)]]) + kd.win(EGYPT, 3 * i, 3)
+        return kd.field_table(mats, kd.USE_FIELD, weapons, offarm,
+                              kd.J(kd.win(kd.JEWEL_ORO, 5 * i, 5)),
+                              kd.G(kd.win(kd.GEM_ORO, 4 * i, 4)), gear="oro")
 
     def boss(self, tier, fam_mats, i):
         kd = self.kd
+        mats = self.ids(fam_mats) + [self.mat["Spiritual Stone of Oro"]]
         if tier == "RING":
-            common = [(T_WEAPON, w) for w in rot(WPN_ORO_210, i)]
-            common += [(T_SUBWPN, s) for s in kd.OFF_210[:2]]        # Garm, Freyja
-            groups = {}
+            top = kd.W(kd.win(kd.WPN_220_ALL, 6 * i, 6))
+            armour = []
+            lower = kd.W(kd.win(kd.WPN_215, 5 * i, 10)) + kd.S(kd.OFF_215 + kd.OFF_220[:4])
         elif tier == "WASTE":
-            common = [(T_WEAPON, w) for w in rot(kd.WPN_235, i)]
-            common += [(T_SUBWPN, s) for s in kd.OFF_230[:2]]        # Davion, Ushumgal
-            groups = {}
+            top = kd.W(kd.win(kd.WPN_225, 6 * i, 6))
+            armour = [[(T_BODY, b) for b in EGYPT_BY[T_BODY]], [(T_CAP, c) for c in EGYPT_BY[T_CAP]]]
+            lower = kd.W(kd.win(kd.WPN_220_ALL, 5 * i, 10)) + kd.S(kd.OFF_225 + kd.OFF_230)
         else:
-            # gauntlets and boots only: the field tables already reach body
-            # and cap through their buckets, and adding those here too took a
-            # king to 50% armour a kill against a Karkia boss's 36-38% mythical
-            pieces = [(T_ARMS, a) for a in ARMOUR_240[T_ARMS]] + [(T_FOOT, f) for f in ARMOUR_240[T_FOOT]]
-            common = pieces[:BOSS_ARMOUR_SLOTS]
-            common += [(T_SUBWPN, s) for s in kd.OFF_BOSS]            # NEO, Evolved Ushumgal
-            groups = {}
-        common += list(fam_mats) + [self.m("Spiritual Stone of Oro")]
-        common += [(T_USE, kd.USE_BOSS[0])]
-        common += [("redirect", g) for g in sorted(groups)]
-        return common, groups
+            top = kd.W(kd.win(kd.WPN_230, 6 * i, 6))
+            armour = [[(T_ARMS, a) for a in EGYPT_BY[T_ARMS]], [(T_FOOT, f) for f in EGYPT_BY[T_FOOT]]]
+            lower = kd.W(kd.win(kd.WPN_225, 5 * i, 10)) + kd.S(kd.OFF_230 + kd.OFF_235)
+        return kd.boss_table(top, armour, lower, mats, kd.USE_BOSS[0],
+                             kd.J(kd.win(kd.JEWEL_ORO, 5 * i, 5)),
+                             kd.G(kd.win(kd.GEM_ORO, 4 * i, 4)))
 
     # -- the plan -----------------------------------------------------------
     def tables(self):
@@ -282,8 +293,10 @@ class Plan:
             out[t] = (f"{kind} {self.name(i)[:28]} lv{gi(self.npc, i, 7)} {tier}",
                       self.kd.build_row(common, groups))
         for z, tier in TIER_OF_ZONE.items():
-            common, groups = self.field(tier, [self.m(n) for n in GENERIC_MATS], z)
-            out[z] = (f"zone {z} fallback ({tier})", self.kd.build_row(common, groups))
+            # a real map table since 2026-11-19: tier materials + the two Oro generics
+            mats = TIER_MATS[tier] + self.ids([self.m(n) for n in GENERIC_MATS])
+            common, groups = self.kd.map_table(mats, self.kd.USE_FIELD)
+            out[z] = (f"zone {z} map ({tier})", self.kd.build_row(common, groups))
         return out
 
     def legacy(self, live_rows):
@@ -348,14 +361,14 @@ def simulate(cells, money, fallback, n=300000, seed=7):
         idx = rnd.randrange(30) if drop_var > 30 else rnd.randrange(drop_var)
         v = tbl.get(idx, 0)
         if 0 < v <= 4:
-            idx = 26 + v * 5 + rnd.randrange(5)
+            idx = REDIRECT_BASE + v * 5 + rnd.randrange(5)
             v = tbl.get(idx, 0)
         if v <= 0:
             counts["nothing"] += 1
             continue
         t = v // 100000 if v >= 100000 else v // 1000
         counts[{T_NATURAL: "material", T_USE: "use item", T_SUBWPN: "shield",
-                T_WEAPON: "weapon"}.get(t, "armour")] += 1
+                T_WEAPON: "weapon", 7: "jewel", 11: "gem"}.get(t, "armour")] += 1
     return {k: c / n for k, c in counts.items()}
 
 
@@ -427,6 +440,15 @@ def main():
                 if gi(drop, row, 1 + s) != cells.get(s, 0):
                     bad.append(f"row {row} slot {s}: {gi(drop, row, 1 + s)} != {cells.get(s, 0)}")
                     break
+        # drops-below-oro.py (2026-11-19) owns some cells of the relocated Marsh tables
+        # (a uniques bucket): compare through its manifest's recorded originals
+        below = os.path.join(ROOT, "build", "drops-below-oro", "manifest.json")
+        if os.path.isfile(below):
+            with open(below, encoding="utf-8") as fh:
+                for key, (was, now) in json.load(fh)["drop"].items():
+                    r, c = (int(x) for x in key.split(","))
+                    if drop.get(r, c).strip() == now.encode("latin-1"):
+                        drop.set(r, c, was.encode("latin-1"))
         for z, new in saved["moved"].items():
             if row_cells(drop, int(new)) != saved["drop_rows"][z]:
                 bad.append(f"relocated table {z}->{new} no longer holds its content")

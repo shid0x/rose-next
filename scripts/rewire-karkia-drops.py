@@ -202,7 +202,16 @@ def main():
             if npc.get(r, 0).strip() and r not in karkia_ids \
                     and gi(npc, r, COL_DROP_TYPE) in kt:
                 bad.append(("shared table", r, gi(npc, r, COL_DROP_TYPE)))
-        # every relocated legacy table must still hold what it held
+        # every relocated legacy table must still hold what it held -- seen through
+        # drops-below-oro.py's manifest (2026-11-19): it gave the relocated Marsh tables
+        # (940-942) a uniques bucket and records the cells it changed
+        below = os.path.join(ROOT, "build", "drops-below-oro", "manifest.json")
+        if os.path.isfile(below):
+            with open(below, encoding="utf-8") as fh:
+                for key, (was, now) in json.load(fh)["drop"].items():
+                    r, c = (int(x) for x in key.split(","))
+                    if drop.get(r, c).strip() == now.encode("latin-1"):
+                        drop.set(r, c, was.encode("latin-1"))
         for old, new in saved["moved"].items():
             if row_cells(drop, int(new)) != [c.encode() if isinstance(c, str) else c
                                              for c in saved["drop"][old]]:

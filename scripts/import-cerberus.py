@@ -1638,7 +1638,7 @@ def simulate(cells, n=300000, seed=7):
         idx = rnd.randrange(30) if drop_var > 30 else rnd.randrange(drop_var)
         v = cells.get(idx, 0)
         if 0 < v <= 4:
-            v = cells.get(26 + v * 5 + rnd.randrange(5), 0)
+            v = cells.get(dropkit.REDIRECT_BASE_COL + v * 5 + rnd.randrange(5), 0)
         if v <= 0:
             counts["nothing"] += 1
             continue

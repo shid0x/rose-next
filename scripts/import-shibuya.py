@@ -642,7 +642,9 @@ SBY_TABLES = {
         [(8, 40), (8, 138), (8, 339), (8, 170), (8, 437), (8, 827), (4, 327), (3, 627)],
         [155, 65], 155)),                                              # gear 81-83
 }
-SBY_ZONE_MIRROR = 963        # the 20% zone roll pays the middle band's table
+# The zone row (126) mirrored the middle band's table 963 until 2026-11-19; since the
+# 200+ economy pass (roadmap 1.2) it is a map table: the materials and consumables of the
+# Shibuya tables, no gear (add-karkia-drops.map_from), as every retail zone row is.
 
 # ---- stage 6: the SECONDWALL cosmetics (Jrose's collab items)
 # (item type, Jrose row, our row, name, description, template row, cells to set).
@@ -1632,8 +1634,9 @@ def plan_drops():
     """{ITEM_DROP row: (label, {slot: packed})} -- the Shibuya tables + zone row."""
     rows = {r: (label, dropkit.build_row(common, groups))
             for r, (label, (common, groups)) in SBY_TABLES.items()}
-    rows[SBY_ZONE] = (f"SHIBUYA zone roll (mirrors {SBY_ZONE_MIRROR})",
-                      dict(rows[SBY_ZONE_MIRROR][1]))
+    rows[SBY_ZONE] = ("SHIBUYA map table",
+                      dropkit.build_row(*dropkit.map_from(
+                          [shape for _label, shape in SBY_TABLES.values()])))
     return rows
 
 
@@ -1660,7 +1663,8 @@ def stage5(ours, src, src_index, dry):
     d, npc = O(ours, DROP_STB_REL), O(ours, NPC_STB_REL)
     src_row, dst_row, users = LEGACY_DROP_MOVE
     rows = plan_drops()
-    if d.get(src_row, 0) != rows[src_row][0].encode("latin-1"):
+    # ours already: the current label, or the mirror's label from before 2026-11-19
+    if d.get(src_row, 0) != rows[src_row][0].encode("latin-1") and             not d.get(src_row, 0).startswith(b"SHIBUYA zone roll"):
         legacy = list(d.d[src_row])
         if any(x.strip() for x in d.d[dst_row]) and d.d[dst_row] != legacy:
             raise SystemExit(f"ITEM_DROP row {dst_row} is not free")

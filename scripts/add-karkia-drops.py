@@ -1,5 +1,29 @@
 """Stage 5b: Karkia's loot tables.
 
+--- 2026-11-19: reshaped (roadmap 1.2) -- this section supersedes the rates below
+
+The tables were measured against the whole game (`economy-audit.py drops`,
+doc/project-drops.md section 7) and brought onto the 1-200 philosophy, the user's
+decisions: a field kill paid gear 6-13% of the time against 1-4% everywhere below 200,
+materials 26-30% against 58-64% at 170-199, and no jewellery or gems at all. Now, per
+kill at level parity, measured for the double drop (roadmap 1.3: the monster's own table
+always, then the zone row):
+
+    field      materials ~40-49%, consumables 6%, gear 4.2%, jewellery 1.5% (Diamond,
+               q56-74 earrings), gems 0.8% ([6]/[7]), money 15%, nothing ~23%
+    bosses     ~90% gear ("i don't wanna frustrate the players"): six top slots (the
+               mythicals' 36%), two armour buckets (Norse / OG), fifteen slots of the tier
+               below; then materials, a bottle, jewellery, a gem
+    zone rows  real map tables: ~55-65% materials, 12% consumables, no gear
+
+The shapes (`field_table` / `boss_table` / `map_table`, slot odds in the comment above
+them) are shared with add-oro-drops.py. The pools follow relevel-200-band.py: the
+Cemetery band (lv230-235) mixes the lv230 and lv235 lines, the Spire band, the
+flashbacks and the crypts' corridors pay lv235 (the crypts paid the lv230 line from
+2026-11-13 to 11-19), Asmodeus (124, lv235) has a source at last. The Neg Golem, the
+Cemetery's king, has a boss table of its own (918; it shared the trash table). The rate
+tables in the sections below are the 2026-09/11 history.
+
 Karkia's tables were wired at stage 5 and left empty. This fills them, and it is
 the first authored endgame loot tier the game has had -- Oro's 38 tables are
 still empty and should get the same treatment next (doc/project-drops.md #5).
@@ -109,6 +133,7 @@ After running: restart the servers (they cache STBs at startup) and re-bake the
 client VFS (the Monster Inspector reads these tables client-side).
 """
 import argparse
+import collections
 import importlib.util
 import json
 import os
@@ -127,10 +152,10 @@ WIDE_BASE = 100000          # Rose::Store::kWideBase
 LEGACY_MAX_NO = 999
 MAX_ITEM_NO = 2047          # tagBaseITEM: m_nItemNo is 11 bits
 MAX_SENTINEL = 1000         # Rose::Drop::kMaxSentinel
-REDIRECT_BASE_COL = 26      # Rose::Drop::kRedirectBaseColumn
+REDIRECT_BASE_COL = 25      # Rose::Drop::kRedirectBaseColumn (26 until 2026-11-19: one column late)
 REDIRECT_WIDTH = 5
 COMMON_SLOTS = 30           # the main roll is RANDOM(30)
-LAST_SLOT = 49              # slot 50 reads col 51 on a 51-column table -> dead
+LAST_SLOT = 49              # column 50, the table's last (group 4's fifth cell since the base fix)
 
 T_BACK, T_WEAPON, T_SUBWPN, T_USE, T_NATURAL = 6, 8, 9, 10, 12
 T_CAP, T_BODY, T_ARMS, T_FOOT = 2, 3, 4, 5
@@ -279,146 +304,305 @@ def windows(pool, start, sizes):
     return out
 
 # ---------------------------------------------------------------- the tables
-# common: slots 0.. in order. A ("redirect", group) entry costs one common slot
-#         and makes that group reachable.
-# groups: group number -> the five items in its window.
-def field(mats, uses, shields, weapons, extra=None, armour=()):
-    """`armour` windows (the OG set) each take a redirect and the next free group,
-    paid for by one fewer material, so a table still fills 12 slots."""
-    common = [(T_NATURAL, m) for m in mats[:8]] + [(T_USE, u) for u in uses]
-    common = common[:(10 if extra is None else 9) - len(armour)]
-    groups = {1: [(T_SUBWPN, s) for s in shields],
-              2: [(T_WEAPON, w) for w in weapons]}
-    common += [("redirect", 1), ("redirect", 2)]
-    if extra:
-        groups[3] = [(T_WEAPON, w) for w in extra]
-        common.insert(-2, ("redirect", 3))
-    for window in armour:
-        g = max(groups) + 1
-        groups[g] = list(window)
-        common.append(("redirect", g))
-    return common, groups
+# Reshaped 2026-11-19 (roadmap 1.2; the user's decisions: field gear down to the 1-200
+# rate, materials up, the pools re-tiered to the re-levelled bands, top jewellery and
+# gems added, bosses ~90% gear, map rows rebuilt as real map tables). The numbers below
+# are for the double drop (roadmap 1.3): a kill rolls its own table (no zone fallback)
+# and then its zone's row; `economy-audit.py drops --roll monster|map` measures each.
+#
+# A roll at level parity with col 20 = 80 reads slot k (0-based) with these odds:
+#   slots 0-4 6.0% each, 5 5.6, 6 5.1, 7 4.7, 8 4.4, 9 4.1, 10 3.9, 11 3.6, 12 3.4,
+#   13 3.2, 14 3.0, 15 2.8, 16 2.7, 17 2.5, 18 2.4, 19 2.25, 20 2.1, 21 2.0, 22 1.9,
+#   23 1.7, 24 1.65, 25 1.5, 26 1.4, 27 1.3, 28 1.2, 29 1.2   (all 30 = 100%)
+# so a shape is a choice of slots. An empty slot pays nothing; a redirect pays its group
+# (five cells, one in five each; group g is slots 25 + 5g .. 29 + 5g = columns 26 + 5g .. 30 + 5g
+# since the 2026-11-19 base fix -- with the old base 26, group 4's fifth cell was column 51).
+
+T_JEWEL, T_GEM = 7, 11
+
+# Field: 11 material slots (58% of rolls), two consumables (7%), a weapon bucket and an
+# off-hand/armour bucket (Karkia slots 16 + 19 = 4.9%, Oro 20 + 26 = 3.5%), a jewellery
+# bucket (23: 1.7%) and a gem bucket (28: 1.2%). With 15% money first, per kill:
+# materials ~49%, consumables ~6%, gear ~4.2% (Karkia) / ~3.0% (Oro), jewellery ~1.5%,
+# gems ~0.8%, nothing ~21% -- the 1-200 monster roll's shape (doc/project-drops.md s7).
+SLOT_MATS = list(range(11))
+SLOT_USES = [11, 12]
+SLOT_GEAR = {"karkia": (16, 19), "oro": (20, 26)}
+SLOT_JEWEL, SLOT_GEM = 23, 28
+# Boss (~90% gear, the user's call: "i don't wanna frustrate the players"): six top-tier
+# slots (35.7%, the mythical rate it always had), two armour buckets (9.8%), fifteen
+# slots of the tier below (44.3%), then materials, a bottle, jewellery and a gem.
+BOSS_TOP = list(range(6))
+BOSS_ARMOUR = [6, 7]
+BOSS_GEAR = list(range(8, 23))
+BOSS_MATS = [23, 24, 25, 26]
+BOSS_USE, BOSS_JEWEL, BOSS_GEM = 27, 28, 29
+# Elite (a gold star, "pay better than the rest but not up to boss level", the user):
+# three gear slots (18.1%) and two gear buckets (12.0%), eleven materials, two
+# consumables, jewellery and gems. With 15% money: gear ~26% a kill, materials ~33%.
+ELITE_GEAR = [0, 1, 2]
+ELITE_BUCKETS = [3, 4]
+ELITE_MATS = list(range(5, 16))
+ELITE_USES = [16, 17]
+ELITE_JEWEL, ELITE_GEM = 18, 19
+# Map (the zone row): 13 material slots (65%) and four consumables (12%), never gear --
+# what every retail zone row 1-62 is.
+MAP_MATS = list(range(13))
+MAP_USES = [13, 14, 15, 16]
+
+# Weapon tiers, one per type in the same type order (211 212 221 222 223 231 232 233 241
+# 242 251 252 271) so a tier's index i is the same weapon type in every list.
+WPN_210 = [27, 58, 128, 187, 154, 229, 259, 288, 326, 358, 426, 452, 80]     # tsuki's 220 set
+WPN_215 = [1381, 1384, 1387, 1390, 1393, 1396, 1399, 1402, 1405, 1408, 1411, 1414, 1417]
+WPN_220_ALL = [1426, 1427, 1428, 1429, 1430, 1431, 1432, 1433, 1434, 1435, 424, 125, 1436,
+               126, 425]                    # + tsuki's second dual / katar (no source until now)
+WPN_225 = [28, 59, 129, 188, 155, 254, 260, 289, 327, 359, 451, 453, 81]     # Cursed Vermillion
+ASMODEUS = 124                              # tsuki's 2H at 235, no source until now
+WPN_235_POOL = WPN_235 + [ASMODEUS]
+
+# Jewellery is graded by quality, not level, and nothing of quality 50+ dropped anywhere.
+# Oro: Platinum (q50) and the named q50-54 pieces; Karkia: Diamond (q60) and the q56-74
+# earrings. Rings, earrings and necklaces interleave so any window mixes them.
+JEWEL_ORO = [281, 307, 333, 286, 312, 338, 291, 317, 343, 296, 322, 348, 301, 327, 353,
+             359, 364, 369, 28, 178, 108, 29, 179, 109, 30, 180, 110]
+JEWEL_KARKIA = [282, 308, 334, 287, 313, 339, 292, 318, 344, 297, 323, 349, 302, 328, 354,
+                360, 365, 370, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190]
+# Gems by tier: [5] q70, [6] q80, [7] q90 (Garnet .. Pink Opal). Oro [5]-[6], Karkia [6]-[7].
+GEM_5 = [305, 315, 325, 335, 345, 355, 365, 375]
+GEM_6 = [306, 316, 326, 336, 346, 356, 366, 376]
+GEM_7 = [307, 317, 327, 337, 347, 357, 367, 377]
+GEM_ORO = GEM_5 + GEM_6
+GEM_KARKIA = GEM_6 + GEM_7
 
 
-def elite(weapons, shields, mats):
-    """Between trash and a boss: the queen behind the Melitta swarm.
-
-    She only ever comes off the *tactics* list, so she is rare by construction
-    and can afford to pay well -- four weapon slots (about 20% a kill) rather
-    than a boss's eight, then materials and a shield bucket.
-    """
-    common = [(T_WEAPON, w) for w in weapons[:4]]
-    common += [(T_NATURAL, m) for m in mats[:5]]
-    common += [(T_USE, USE_BOSS[0])]
-    common += [("redirect", 1), ("redirect", 2)]
-    groups = {1: [(T_SUBWPN, x) for x in shields],
-              2: [(T_WEAPON, w) for w in weapons[:5]]}
-    return common, groups
+def cycle(pool, n):
+    return [pool[i % len(pool)] for i in range(n)]
 
 
-def boss(mythicals, shields, mats=None, armour=()):
-    """Eight mythical slots -> 36% per kill, then materials and a shield.
+def W(ids):
+    return [(T_WEAPON, n) for n in ids]
 
-    `mats` takes two slots rather than the one it used to, so the seal chain
-    (759 + 761) can come off Hebarn's officers while the Drakes pay their own
-    stone. Twelve of a row's slots are used either way; there is room.
-    `armour` windows (the Norse set) come on top, a redirect each: bosses pay more.
-    """
-    common = [(T_WEAPON, w) for w in mythicals[:8]]
-    common += [(T_SUBWPN, s) for s in shields[:2]]
-    common += [(T_NATURAL, m) for m in (mats or MAT_BOSS)[:2]]
-    common += [(T_USE, USE_BOSS[0])]
+
+def S(ids):
+    return [(T_SUBWPN, n) for n in ids]
+
+
+def J(ids):
+    return [(T_JEWEL, n) for n in ids]
+
+
+def G(ids):
+    return [(T_GEM, n) for n in ids]
+
+
+def win(pool, start, n):
+    return windows(pool, start, [n])[0]
+
+
+def twin_235(mythical):
+    """The lv235 weapon of a lv240 mythical's type."""
+    return WPN_235[WPN_240.index(mythical)]
+
+
+def _bucket(items, n=REDIRECT_WIDTH):
+    """A redirect re-rolls rand(5) over its window and a blank cell is a dead roll:
+    short lists repeat until the cells are full."""
+    return cycle(list(items), n)
+
+
+def field_table(mats, uses, weapons, offarm, jewels, gems, gear="karkia"):
+    """mats/uses: item numbers, cheapest first (repeats favour the first); weapons and
+    offarm: (type, no) lists for the two gear buckets; jewels/gems: windows."""
+    common = [None] * COMMON_SLOTS
+    for s, m in zip(SLOT_MATS, cycle(mats, len(SLOT_MATS))):
+        common[s] = (T_NATURAL, m)
+    for s, u in zip(SLOT_USES, cycle(uses, len(SLOT_USES))):
+        common[s] = (T_USE, u)
+    w, o = SLOT_GEAR[gear]
     groups = {}
-    for g, window in enumerate(armour, 1):
-        groups[g] = list(window)
-        common.append(("redirect", g))
+    for slot, g, items, n in ((w, 1, weapons, 5), (o, 2, offarm, 5), (SLOT_JEWEL, 3, jewels, 5),
+                              (SLOT_GEM, 4, gems, 5)):
+        if items:                                  # an empty bucket would be a dead roll
+            common[slot], groups[g] = ("redirect", g), _bucket(items, n)
     return common, groups
 
 
-def crypt_boss(mythicals, reds, gear):
-    """A catacomb boss: eight mythical slots of its own types (~36% a kill), two
-    materials, a bottle, then one redirect to its red weapons and two to its gear."""
-    common = [(T_WEAPON, mythicals[i % len(mythicals)]) for i in range(8)]
-    common += [(T_NATURAL, 758), (T_NATURAL, 752), (T_USE, USE_BOSS[0])]
-    common += [("redirect", 1), ("redirect", 2), ("redirect", 2)]
-    # a redirect re-rolls rand(5) over its window and a blank cell is a dead roll:
-    # shorter lists repeat until the five cells are full
-    def five(items):
-        return [items[i % len(items)] for i in range(REDIRECT_WIDTH)]
-    return common, {1: five([(T_WEAPON, w) for w in reds]), 2: five(list(gear))}
+def elite_table(gear, weapons, offarm, mats, uses, jewels, gems):
+    """gear: (type, no) for the three direct slots; weapons/offarm: the two buckets."""
+    common = [None] * COMMON_SLOTS
+    groups = {}
+    for s, e in zip(ELITE_GEAR, cycle(gear, len(ELITE_GEAR))):
+        common[s] = e
+    for slot, g, items, n in ((ELITE_BUCKETS[0], 1, weapons, 5), (ELITE_BUCKETS[1], 2, offarm, 5),
+                              (ELITE_JEWEL, 3, jewels, 5), (ELITE_GEM, 4, gems, 5)):
+        if items:
+            common[slot], groups[g] = ("redirect", g), _bucket(items, n)
+    for s, m in zip(ELITE_MATS, cycle(mats, len(ELITE_MATS))):
+        common[s] = (T_NATURAL, m)
+    for s, u in zip(ELITE_USES, cycle(uses, len(ELITE_USES))):
+        common[s] = (T_USE, u)
+    return common, groups
 
 
-def crypt_field():
-    """The catacombs' monsters: twelve slots like every field table, four of them
-    redirects -- the thirteen plain lv230 weapons over three groups (with the lv230
-    shield and tool in the third's spare cells) and an OG armour window (lv230)."""
-    common = [(T_NATURAL, m) for m in MAT_CRYPT[:6]] + [(T_USE, u) for u in USE_FIELD]
-    common += [("redirect", g) for g in (1, 2, 3, 4)]
-    w = [(T_WEAPON, x) for x in WPN_230]
-    return common, {1: w[:5], 2: w[5:10],
-                    3: w[10:] + [(T_SUBWPN, OFF_230[0]), (T_SUBWPN, OFF_230[1])],
-                    4: windows(ARM_OG, 6, [4])[0]}
+def boss_table(top, armour, gear, mats, use, jewels, gems):
+    """top: (type, no) for the six top slots; armour: up to two bucket windows (empty:
+    the armour slots take gear too); gear: the tier below, fifteen or more."""
+    common = [None] * COMMON_SLOTS
+    groups = {}
+    for s, e in zip(BOSS_TOP, cycle(top, len(BOSS_TOP))):
+        common[s] = e
+    gear = list(gear)
+    for k, s in enumerate(BOSS_ARMOUR):
+        if armour:
+            g = k % len(armour) + 1
+            groups[g] = _bucket(armour[g - 1])
+            common[s] = ("redirect", g)
+        else:
+            common[s] = gear.pop()
+    for s, e in zip(BOSS_GEAR, cycle(gear, len(BOSS_GEAR))):
+        common[s] = e
+    for s, m in zip(BOSS_MATS, cycle(mats, len(BOSS_MATS))):
+        common[s] = (T_NATURAL, m)
+    common[BOSS_USE] = (T_USE, use)
+    common[BOSS_JEWEL], common[BOSS_GEM] = ("redirect", 3), ("redirect", 4)
+    groups[3], groups[4] = _bucket(jewels), _bucket(gems)
+    return common, groups
+
+
+def map_table(mats, uses):
+    common = [None] * COMMON_SLOTS
+    for s, m in zip(MAP_MATS, cycle(mats, len(MAP_MATS))):
+        common[s] = (T_NATURAL, m)
+    for s, u in zip(MAP_USES, cycle(uses, len(MAP_USES))):
+        common[s] = (T_USE, u)
+    return common, {}
+
+
+def map_from(shapes, uses=None):
+    """A zone row's map table from the materials and consumables of the zone's own
+    tables, most frequent first (the importers' zone rows: Shibuya, Ulverick)."""
+    mats, cons = collections.Counter(), collections.Counter()
+    for common, groups in shapes:
+        for e in list(common) + [x for g in groups.values() for x in g]:
+            if e and e[0] == T_NATURAL:
+                mats[e[1]] += 1
+            elif e and e[0] == T_USE:
+                cons[e[1]] += 1
+    return map_table([m for m, _ in mats.most_common()],
+                     [u for u, _ in cons.most_common()] or uses or USE_FIELD)
+
+
+def no_key(pool):
+    """The Key of Remorse stays a monster drop (about 1 kill in 20): out of map rows."""
+    return [m for m in pool if m != KEY_OF_REMORSE]
+
+
+def karkia_field(mats, w230, w235, offhands, og, jewel_at, gem_at):
+    """Cemetery-band tables mix the lv230 and lv235 weapon lines; Spire-band ones are lv235."""
+    weapons = W(win(WPN_230, w230, 3) + win(WPN_235_POOL, w235, 2)) if w230 is not None \
+        else W(win(WPN_235_POOL, w235, 5))
+    return field_table(mats, USE_FIELD, weapons, S(offhands) + win(ARM_OG, og, 3),
+                       J(win(JEWEL_KARKIA, jewel_at, 5)), G(win(GEM_KARKIA, gem_at, 4)))
+
+
+def karkia_boss(mythicals, norse_at, mats=None, at=0):
+    """A Karkia boss: six of its eight mythicals on top, the Norse set in the two armour
+    buckets, and below them the lv235 twin of every mythical it carries, the lv240
+    off-hands, Lord of Riot and its last two mythicals."""
+    lower = W([twin_235(m) for m in mythicals]) + S(OFF_240) + S(OFF_235) + W(mythicals[6:8])
+    return boss_table(W(mythicals[:6]), windows(ARM_NORSE, norse_at, [5, 5]), lower,
+                      mats or MAT_BOSS, USE_BOSS[0], J(win(JEWEL_KARKIA, at, 5)),
+                      G(win(GEM_KARKIA, at, 4)))
+
+
+def crypt_boss(mythicals, reds, gear, at):
+    """A catacomb boss: its mythicals on top, its red weapons and its gear group (the
+    line's Norse set, or Ferdinando's lv240 off-hands) in the two armour buckets, and
+    below them its types' lv235 weapons, its gear and its red weapons again."""
+    twins = [twin_235(m) for m in mythicals]
+    lower = W(cycle(twins, 6)) + cycle(list(gear), 5) + W(cycle(reds, 4))
+    return boss_table(W(mythicals), [W(reds), list(gear)], lower, [758, 752], USE_BOSS[0],
+                      J(win(JEWEL_KARKIA, at, 5)), G(win(GEM_KARKIA, at, 4)))
 
 
 TABLES = {
-    900: ("Cemetery trash (17 mobs, lv215-228)",
-          field(MAT_CEMETERY, USE_FIELD, OFF_CEMETERY, WPN_220[:5])),
-    901: ("Revived Quarantine Officer (lv223)",
-          field(MAT_CEMETERY, USE_FIELD, OFF_OFFICER, WPN_220[5:10])),
-    902: ("D-Seed (lv215)",
-          field(MAT_CEMETERY, USE_FIELD, OFF_DSEED, [WPN_220[10]] + WPN_220[:4])),
-    # The OG set (lv230) rides the three lv228-240 field tables: 4 + 9 + 9 window
-    # slots cover all 16 pieces (906 has only group 4 left, 4 wide).
-    906: ("Alpha roster (10 mobs, lv228-240)",
-          field(MAT_SPIRE, USE_FIELD, OFF_SPIRE, *windows(WPN_235, 0, [5, 5]),
-                armour=windows(ARM_OG, 0, [4]))),
-    # The catacombs' six monsters (import-catacombs.py / catacomb_monsters.py): the
-    # lv230 tier, one under their bosses (interim, 2026-11-13; see the docstring).
-    912: ("Catacombs (6 mobs, lv235-240): the lv230 tier", crypt_field()),
-    # The catacombs' five bosses (CRYPT_BOSSES): a boss is killed at most about seven
-    # times per opening, and a player has one opening a day.
-    **{row: ("BOSS " + label, crypt_boss(myth, reds, gear))
-       for row, (label, myth, reds, gear) in CRYPT_BOSSES.items()},
-    # --- the flashback zones, stage 7b --------------------------------------
-    909: ("Memories wildlife (lv230-232)",
-          field(MAT_MEMORIES, USE_FIELD, OFF_MEMORIES, windows(WPN_235, 10, [5])[0],
-                armour=windows(ARM_OG, 4, [5, 4]))),
-    910: ("ELITE Basilissa Melitta (lv238)",
-          elite(windows(WPN_235, 2, [5])[0], OFF_QUEEN, MAT_GARDEN)),
-    911: ("Garden wildlife (lv235-240)",
-          field(MAT_GARDEN, USE_FIELD, OFF_GARDEN, windows(WPN_235, 7, [5])[0],
-                armour=windows(ARM_OG, 13, [5, 4]))),
-    # The Norse set (lv240) is boss-only: two windows per boss (10 of 16 pieces),
-    # started 3 apart so the five bosses together cover the set several times.
+    # --- Cemetery band (lv230-235 since relevel-200-band.py): lv230 + lv235 weapons ----
+    900: ("Cemetery trash (17 mobs, lv230-235)",
+          karkia_field(MAT_CEMETERY, 0, 0, [OFF_230[0], OFF_235[0]], 0, 0, 0)),
+    901: ("Revived Quarantine Officer (lv233)",
+          karkia_field(MAT_CEMETERY, 3, 2, [OFF_230[1], OFF_235[0]], 3, 5, 4)),
+    902: ("D-Seed (lv230)",
+          karkia_field(MAT_CEMETERY, 6, 4, [OFF_230[2], OFF_230[0]], 6, 10, 8)),
+    # --- Spire band (lv234-240): lv235 weapons, the OG set (lv230) ---------------------
+    906: ("Alpha roster (10 mobs, lv234-239)",
+          karkia_field(MAT_SPIRE, None, 0, [OFF_240[0], OFF_235[0]], 9, 15, 12)),
+    909: ("Memories wildlife (lv235-236)",
+          karkia_field(MAT_MEMORIES, None, 5, [OFF_235[0], OFF_240[1]], 12, 20, 0)),
+    911: ("Garden wildlife (lv238-240)",
+          karkia_field(MAT_GARDEN, None, 10, [OFF_240[0], OFF_240[2]], 2, 25, 4)),
+    # The catacombs' six monsters: lv235 (was the lv230 line, the 2026-11-13 interim)
+    912: ("Catacombs (6 mobs, lv235-240)",
+          karkia_field(MAT_CRYPT, None, 8, [OFF_240[0], OFF_235[0]], 5, 2, 8)),
+    # --- bosses: ~90% gear ----------------------------------------------------------
     903: ("BOSS Hebarn Officer Pazugenti (lv240)",
-          boss([1389, 1398, 1404, 1407, 1419, 1395, 1392, 1386], OFF_BOSS,
-               armour=windows(ARM_NORSE, 0, [5, 5]))),
+          karkia_boss([1389, 1398, 1404, 1407, 1419, 1395, 1392, 1386], 0, at=0)),
     904: ("BOSS Hebarn Officer Scylla Mira (lv240)",
-          boss([1383, 1386, 1392, 1401, 1410, 1413, 1416, 1389], OFF_BOSS,
-               armour=windows(ARM_NORSE, 3, [5, 5]))),
-    905: ("BOSS Corroded Golem + Revived Veteran (lv238/235)",
-          boss([1395, 1404, 1416, 1413, 1401, 1410, 1383, 1398], OFF_BOSS,
-               armour=windows(ARM_NORSE, 6, [5, 5]))),
-    907: ("BOSS Deadly Drake (lv238, Cemetery)",
-          boss([1389, 1392, 1395, 1398, 1401, 1404, 1407, 1410], OFF_BOSS,
-               MAT_DRAKE, armour=windows(ARM_NORSE, 9, [5, 5]))),
+          karkia_boss([1383, 1386, 1392, 1401, 1410, 1413, 1416, 1389], 3, at=5)),
+    905: ("BOSS Corroded Golem + Revived Veteran (lv239/238)",
+          karkia_boss([1395, 1404, 1416, 1413, 1401, 1410, 1383, 1398], 6, at=10)),
+    907: ("BOSS Deadly Drake (lv239, Cemetery)",
+          karkia_boss([1389, 1392, 1395, 1398, 1401, 1404, 1407, 1410], 9, MAT_DRAKE, at=15)),
     908: ("BOSS Deadly Drake Alpha (lv240, Spire Village)",
-          boss([1383, 1386, 1413, 1416, 1419, 1389, 1398, 1404], OFF_BOSS,
-               MAT_DRAKE, armour=windows(ARM_NORSE, 12, [5, 5]))),
+          karkia_boss([1383, 1386, 1413, 1416, 1419, 1389, 1398, 1404], 12, MAT_DRAKE, at=20)),
+    # The queen behind the Melitta swarm (king icon, lv239): lv235 weapons on top, the OG
+    # set in her buckets, the lv240 off-hands and lv230 weapons below.
+    910: ("BOSS Basilissa Melitta (lv239)",
+          boss_table(W(win(WPN_235_POOL, 2, 6)), windows(ARM_OG, 4, [5, 5]),
+                     S(OFF_240) + S(OFF_235) + W(win(WPN_230, 0, 10)),
+                     MAT_GARDEN, USE_BOSS[0], J(win(JEWEL_KARKIA, 25, 5)),
+                     G(win(GEM_KARKIA, 12, 4)))),
+    # The Cemetery's king (Neg Golem, lv235) paid the trash table 900 until 2026-11-19:
+    # a king gets a boss table. lv235 weapons on top, the OG set in its buckets.
+    918: ("BOSS Neg Golem (lv235, Cemetery king)",
+          boss_table(W(win(WPN_235_POOL, 8, 6)), windows(ARM_OG, 8, [5, 5]),
+                     S(OFF_235 + OFF_230) + W(win(WPN_230, 4, 10)),
+                     MAT_CEMETERY[:4], USE_BOSS[0], J(win(JEWEL_KARKIA, 10, 5)),
+                     G(win(GEM_KARKIA, 8, 4)))),
+    # The Cemetery's two gold stars (sub-bosses, two-player content) shared the trash
+    # table 900 until 2026-11-19: elite tables, the Cemetery band's gear a quarter of
+    # the time.
+    919: ("ELITE Dark Tower (lv233, gold star)",
+          elite_table(W(win(WPN_235_POOL, 4, 2)) + win(ARM_OG, 1, 1),
+                      W(win(WPN_230, 1, 3) + win(WPN_235_POOL, 6, 2)),
+                      S([OFF_230[0], OFF_235[0]]) + win(ARM_OG, 2, 3),
+                      MAT_CEMETERY, USE_FIELD, J(win(JEWEL_KARKIA, 3, 5)), G(win(GEM_KARKIA, 2, 4)))),
+    920: ("ELITE Element Battler (lv233, gold star)",
+          elite_table(W(win(WPN_235_POOL, 9, 2)) + win(ARM_OG, 7, 1),
+                      W(win(WPN_230, 7, 3) + win(WPN_235_POOL, 11, 2)),
+                      S([OFF_230[1], OFF_235[0]]) + win(ARM_OG, 10, 3),
+                      MAT_CEMETERY, USE_FIELD, J(win(JEWEL_KARKIA, 13, 5)), G(win(GEM_KARKIA, 6, 4)))),
+    # The catacombs' five bosses (CRYPT_BOSSES)
+    **{row: ("BOSS " + label, crypt_boss(myth, reds, gear, 3 * k))
+       for k, (row, (label, myth, reds, gear)) in enumerate(sorted(CRYPT_BOSSES.items()))},
 }
 
-# Zone-number rows mirror the dominant table for that zone, so the 20% fallback
-# is not a dead roll. Without these every rate above loses a fifth.
-ZONE_MIRROR = {87: 900, 88: 906, 90: 912, 91: 912,
-               # The flashback pair mirror their own zones. The Burned Forest
-               # is present-day Karkia sharing the Cemetery's roster, so its
-               # fallback is the Cemetery's table rather than one of its own.
-               133: 909, 144: 911, 131: 900}
+# The zone rows: real map tables since 2026-11-19 (they mirrored a monster table, gear
+# included, so the 20% fallback was not a dead roll). The Burned Forest is present-day
+# Karkia beside the Cemetery and shares its row's shape.
+ZONE_TABLES = {
+    87: ("Cemetery map", map_table(no_key(MAT_CEMETERY), USE_FIELD)),
+    131: ("Burned Forest map", map_table(no_key(MAT_CEMETERY), USE_FIELD)),
+    88: ("Spire Village map", map_table(no_key(MAT_SPIRE), USE_FIELD)),
+    90: ("Catacombs of Reminiscence map", map_table(MAT_CRYPT, USE_FIELD)),
+    91: ("Catacombs of Sorrow map", map_table(MAT_CRYPT, USE_FIELD)),
+    133: ("Memories of Karkia map", map_table(MAT_MEMORIES, USE_FIELD)),
+    144: ("Garden of Karkia map", map_table(MAT_GARDEN, USE_FIELD)),
+}
 
 # npc row -> new drop table. Both Drakes were sharing a trash table, and the
 # seven flashback monsters arrived pointing at Jrose's table 831, which is empty
 # on our side.
-NPC_TABLE_FIX = {2729: 907, 2699: 908,
+NPC_TABLE_FIX = {2729: 907, 2699: 908, 2722: 918, 2720: 919, 2721: 920,
                  2557: 914, 2558: 915, 2559: 916, 2560: 917,   # the crypt's boss pool
                  2527: 909, 2528: 909, 2529: 909,   # Memories wildlife
                  2530: 910,                          # the queen
@@ -431,7 +615,7 @@ NPC_TABLE_FIX = {2729: 907, 2699: 908,
 DROP_ITEM_FIX = {2527: 80, 2528: 80, 2529: 80, 2530: 80,
                  2539: 80, 2547: 80, 2549: 80}
 
-BOSS_ROWS = {2685, 2686, 2687, 2688, 2699, 2729}
+BOSS_ROWS = {2685, 2686, 2687, 2688, 2699, 2729, 2530, 2722}   # 2530 the queen: a boss table since 2026-11-19
 KARKIA_NPC_RANGE = list(range(2685, 2732)) + [2527, 2528, 2529, 2530,
                                               2539, 2547, 2549]
 
@@ -465,6 +649,8 @@ def build_row(common, groups):
     for slot, entry in enumerate(common):
         if slot >= COMMON_SLOTS:
             raise SystemExit(f"common section overflows slot {COMMON_SLOTS - 1}")
+        if entry is None:
+            continue
         if entry[0] == "redirect":
             cells[slot] = entry[1]
         else:
@@ -478,7 +664,7 @@ def build_row(common, groups):
             if slot > LAST_SLOT:
                 raise SystemExit(f"group {group} entry {i} lands on dead slot {slot}")
             cells[slot] = encode(*entry)
-    reachable = {e[1] for e in common if e[0] == "redirect"}
+    reachable = {e[1] for e in common if e and e[0] == "redirect"}
     for group in groups:
         if group not in reachable:
             raise SystemExit(f"group {group} has no redirect pointing at it")
@@ -489,8 +675,8 @@ def plan():
     rows = {}
     for row, (label, (common, groups)) in TABLES.items():
         rows[row] = (label, build_row(common, groups))
-    for zone, src in ZONE_MIRROR.items():
-        rows[zone] = (f"zone {zone} fallback, mirrors {src}", dict(rows[src][1]))
+    for zone, (label, (common, groups)) in ZONE_TABLES.items():
+        rows[zone] = (f"zone {zone}: {label}", build_row(common, groups))
     return rows
 
 
@@ -629,7 +815,7 @@ def main():
 
     if args.verify:
         bad = verify(oro)
-        print(f"{len(TABLES)} tables + {len(ZONE_MIRROR)} zone mirrors; "
+        print(f"{len(TABLES)} tables + {len(ZONE_TABLES)} zone map tables; "
               f"{len(bad)} problem(s)" + ("\n  " + "\n  ".join(bad[:10]) if bad else ""))
         return 1 if bad else 0
 
@@ -654,7 +840,7 @@ def main():
         with open(path, "wb") as fh:
             fh.write(blob)
     with open(SIDECAR, "w", encoding="utf-8") as fh:
-        json.dump({"tables": sorted(TABLES), "zones": ZONE_MIRROR,
+        json.dump({"tables": sorted(TABLES), "zones": sorted(ZONE_TABLES),
                    "npc_table_fix": NPC_TABLE_FIX,
                    "npc_cells": npc_before}, fh, indent=1)
 
