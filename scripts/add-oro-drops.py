@@ -170,6 +170,8 @@ EGYPT_BY = {T_CAP: [989, 990, 991, 992],     # Royal Guardian / Sun Prophet /
             T_ARMS: [892, 893, 894, 895],
             T_FOOT: [890, 891, 892, 893]}
 EGYPT = [(t, EGYPT_BY[t][c]) for c in range(4) for t in (T_BODY, T_CAP, T_ARMS, T_FOOT)]
+# what drops of it: the gauntlets are the Artisan's (add-karkia-drops.CRAFT_ARMOUR)
+EGYPT_DROP = [(t, n) for t, n in EGYPT if t != T_ARMS]
 
 
 def load(name):
@@ -262,11 +264,11 @@ class Plan:
             weapons = kd.W(kd.win(kd.WPN_210, 3 * i, 3) + kd.win(kd.WPN_215, 2 * i, 2))
             offarm = kd.S(kd.win(kd.OFF_210 + kd.OFF_215, i, 5))
         elif tier == "WASTE":
-            weapons = kd.W(kd.win(kd.WPN_220_ALL, 3 * i, 3) + kd.win(kd.WPN_225, 2 * i, 2))
-            offarm = kd.S([kd.OFF_220[i % len(kd.OFF_220)], kd.OFF_225[0]]) + kd.win(EGYPT, 3 * i, 3)
+            weapons = kd.W(kd.win(kd.WPN_220_ALL, 3 * i, 3) + kd.win(kd.WPN_225_DROP, 2 * i, 2))
+            offarm = kd.S([kd.OFF_220[i % len(kd.OFF_220)], kd.OFF_225[0]]) + kd.win(EGYPT_DROP, 3 * i, 3)
         else:
-            weapons = kd.W(kd.win(kd.WPN_225, 2 * i, 2) + kd.win(kd.WPN_230, 3 * i, 3))
-            offarm = kd.S([kd.OFF_225[0], kd.OFF_230[i % len(kd.OFF_230)]]) + kd.win(EGYPT, 3 * i, 3)
+            weapons = kd.W(kd.win(kd.WPN_225_DROP, 2 * i, 2) + kd.win(kd.WPN_230_DROP, 3 * i, 3))
+            offarm = kd.S([kd.OFF_225[0], kd.OFF_230[i % len(kd.OFF_230)]]) + kd.win(EGYPT_DROP, 3 * i, 3)
         return kd.field_table(mats, kd.USE_FIELD, weapons, offarm,
                               kd.J(kd.win(kd.JEWEL_ORO, 5 * i, 5)),
                               kd.G(kd.win(kd.GEM_ORO, 4 * i, 4)), gear="oro")
@@ -279,13 +281,14 @@ class Plan:
             armour = []
             lower = kd.W(kd.win(kd.WPN_215, 5 * i, 10)) + kd.S(kd.OFF_215 + kd.OFF_220[:4])
         elif tier == "WASTE":
-            top = kd.W(kd.win(kd.WPN_225, 6 * i, 6))
+            top = kd.W(kd.win(kd.WPN_225_DROP, 6 * i, 6))
             armour = [[(T_BODY, b) for b in EGYPT_BY[T_BODY]], [(T_CAP, c) for c in EGYPT_BY[T_CAP]]]
             lower = kd.W(kd.win(kd.WPN_220_ALL, 5 * i, 10)) + kd.S(kd.OFF_225 + kd.OFF_230)
         else:
-            top = kd.W(kd.win(kd.WPN_230, 6 * i, 6))
-            armour = [[(T_ARMS, a) for a in EGYPT_BY[T_ARMS]], [(T_FOOT, f) for f in EGYPT_BY[T_FOOT]]]
-            lower = kd.W(kd.win(kd.WPN_225, 5 * i, 10)) + kd.S(kd.OFF_230 + kd.OFF_235)
+            top = kd.W(kd.win(kd.WPN_230_DROP, 6 * i, 6))
+            # boots and body: the gauntlets are craft-only since 2026-11-19 (roadmap 1.4)
+            armour = [[(T_FOOT, f) for f in EGYPT_BY[T_FOOT]], [(T_BODY, b) for b in EGYPT_BY[T_BODY]]]
+            lower = kd.W(kd.win(kd.WPN_225_DROP, 5 * i, 10)) + kd.S(kd.OFF_230 + kd.OFF_235)
         return kd.boss_table(top, armour, lower, mats, kd.USE_BOSS[0],
                              kd.J(kd.win(kd.JEWEL_ORO, 5 * i, 5)),
                              kd.G(kd.win(kd.GEM_ORO, 4 * i, 4)))

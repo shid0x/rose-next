@@ -237,8 +237,11 @@ MAP_XY_OFF, POS_OFF = 12, 36
 
 # loot
 WEAPONS = (1389, 1392, 1395, 1398, 1401, 1404, 1407, 1410, 1383, 1386, 1413, 1416, 1419)
-GAUNTLETS, BOOTS = (892, 893, 894, 895), (890, 891, 892, 893)
-BODIES, CAPS = (916, 917, 918, 919), (989, 990, 991, 992)
+# The Norse set (lv240, rows 270-273 of each armour table) since 2026-11-19. Hebarn paid
+# the Egyptian set, lv240 when this was written and lv225 since armour-endgame-sets.py --
+# and its gauntlets are the Artisan's now (add-karkia-drops.CRAFT_ARMOUR, roadmap 1.4).
+GAUNTLETS, BOOTS = (270, 271, 272, 273), (270, 271, 272, 273)
+BODIES, CAPS = (270, 271, 272, 273), (270, 271, 272, 273)
 T_CAP, T_BODY, T_ARMS, T_FOOT, T_WEAPON, T_SUBWPN, T_USE, T_NATURAL = 2, 3, 4, 5, 8, 9, 10, 12
 DROP_LABEL = "Hebarn, God of Malice"
 DEATH_DROPS = [[T_BODY * 1000 + n for n in BODIES] + [-1],     # AIACT17 picks 1 of 5
@@ -542,7 +545,8 @@ def drop_cells():
     common += [(T_ARMS, g) for g in GAUNTLETS] + [(T_FOOT, f) for f in BOOTS]
     common += [("redirect", 1), ("redirect", 2)]
     common += [(T_SUBWPN, 330), (T_SUBWPN, 317)]
-    common += [(T_NATURAL, 762), (T_NATURAL, 758), (T_NATURAL, 276), (T_NATURAL, 290), (T_USE, 35)]
+    # 759 Phil Tempest's Magic Stone in place of row 290, which players see as "[PvP] Tokens"
+    common += [(T_NATURAL, 762), (T_NATURAL, 758), (T_NATURAL, 276), (T_NATURAL, 759), (T_USE, 35)]
     groups = {1: [(T_BODY, x) for x in BODIES], 2: [(T_CAP, x) for x in CAPS]}
     return kd.build_row(common, groups)
 

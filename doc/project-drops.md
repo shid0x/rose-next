@@ -409,6 +409,21 @@ pools no longer name it. Found, not changed: Eldeon's retail tables name rows 26
 which import-oro-materials.py filled with Asper Tongue and Devourer Horn, so two Eldeon
 monsters drop Oro parts.
 
+**The Artisan's 200+ crafts, 2026-11-19** (roadmap 1.4, `scripts/artisan-crafts-200.py`;
+the split itself is in `add-karkia-drops.py`, CRAFT_*): retail crafting stopped near item
+level 130, and at 200+ the imports had copied craft categories with empty recipes (category
+57 on the armour, which no skill has). The Dealer and Bourgeois keep their ranks 1-5; the
+Artisan (ranks 6+) gets 72 crafts, each with its own LIST_PRODUCT row (1700-1771):
+weapons 225 / 230 split per type into craft-only (4), both (4) and drop-only (5) so every
+type is craftable in one tier; Egyptian gauntlets craft-only, boots both; OG boots craft-only,
+caps both; Jewel Item Craft (which listed nothing: no jewel had a category) makes the Platinum
+and Diamond lines, Diamond necklaces craft-only; four craft-only backs (Antares Ward, Noble
+Sacred Cross, Michael's Half-Wing, Chieftain's Heirloom Blade) need Fafnir's Magic Stone from
+the Drakes. Craft-only items left every drop pool (checked: no drop table names one). 261
+craft listings with empty recipes (lv200+, rank 11+, category 57) lost their category, so the
+craft window no longer offers recipes that cannot be made. Hebarn (an easter egg) pays the
+Norse set now; its Egyptian gauntlets were the Artisan's.
+
 Outside the 200+ band, for the record (not changed): Skaaj pays nothing on 94% of kills
 (blank zone row, empty tables), Mount Eruca nothing at all (unreachable), Sunshine Coast
 70% nothing (event zone); Eldeon 190-209 pays gear ~50 levels under the monster and no money.

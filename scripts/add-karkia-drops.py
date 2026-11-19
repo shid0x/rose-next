@@ -383,6 +383,38 @@ GEM_7 = [307, 317, 327, 337, 347, 357, 367, 377]
 GEM_ORO = GEM_5 + GEM_6
 GEM_KARKIA = GEM_6 + GEM_7
 
+# --- what the Artisan crafts (artisan-crafts-200.py, roadmap 1.4, 2026-11-19) ----------
+# The user: tiers 225 and 230, "some are dropped, some are craftable, some are both", the
+# same for armour; Jewel Item Craft gets something to make; a few craft-only backs. The
+# split lives here because every drop pool is built here: craft-only items leave the drop
+# tables (the *_DROP pools), and artisan-crafts-200.py writes the recipes from the same sets.
+# Weapon picks are indices into the type-ordered tier lists (WPN_225 / WPN_230), chosen so
+# every type has a craftable version in one tier or the other.
+#   0 1H sword  1 blunt  2 2H sword  3 spear  4 2H axe  5 bow  6 gun  7 launcher
+#   8 staff  9 wand  10 katar  11 dual swords  12 crossbow
+CRAFT_225 = {"craft": [2, 5, 8, 10], "both": [0, 6, 11, 12]}     # drop-only: 1 3 4 7 9
+CRAFT_230 = {"craft": [1, 3, 7, 9], "both": [4, 5, 8, 10]}       # drop-only: 0 2 6 11 12
+CRAFT_ONLY_WEAPONS = ({WPN_225[i] for i in CRAFT_225["craft"]}
+                      | {WPN_230[i] for i in CRAFT_230["craft"]})
+WPN_225_DROP = [w for w in WPN_225 if w not in CRAFT_ONLY_WEAPONS]
+WPN_230_DROP = [w for w in WPN_230 if w not in CRAFT_ONLY_WEAPONS]
+# Armour: one piece type of each set is craft-only, one is both, the rest drop only.
+# Egyptian (lv225, add-oro-drops.EGYPT): gauntlets craft-only, boots both.
+# OG (lv230, ARM_OG): boots craft-only, caps both.
+CRAFT_ARMOUR = {"egypt": {"craft": T_ARMS, "both": T_FOOT},
+                "og": {"craft": T_FOOT, "both": T_CAP}}
+ARM_OG_DROP = [(t, n) for t, n in ARM_OG if t != CRAFT_ARMOUR["og"]["craft"]]
+# Jewellery: Platinum (q50) both; Diamond (q60) rings and earrings both, necklaces craft-only.
+PLATINUM = [281, 286, 291, 296, 301, 359, 307, 312, 317, 322, 327, 364,
+            333, 338, 343, 348, 353, 369]
+DIAMOND = [282, 287, 292, 297, 302, 360, 308, 313, 318, 323, 328, 365,
+           334, 339, 344, 349, 354, 370]
+JEWEL_CRAFT_ONLY = {334, 339, 344, 349, 354, 370}                # the Diamond necklaces
+JEWEL_KARKIA_DROP = [j for j in JEWEL_KARKIA if j not in JEWEL_CRAFT_ONLY]
+# The Artisan's exclusives: four Jrose backs that dropped nowhere (LIST_BACK).
+CRAFT_BACKS = {1079: "Antares Ward", 1080: "Noble Sacred Cross",
+               1081: "Michael's Half-Wing", 1082: "Chieftain's Heirloom Blade"}
+
 
 def cycle(pool, n):
     return [pool[i % len(pool)] for i in range(n)]
@@ -508,10 +540,10 @@ def no_key(pool):
 
 def karkia_field(mats, w230, w235, offhands, og, jewel_at, gem_at):
     """Cemetery-band tables mix the lv230 and lv235 weapon lines; Spire-band ones are lv235."""
-    weapons = W(win(WPN_230, w230, 3) + win(WPN_235_POOL, w235, 2)) if w230 is not None \
+    weapons = W(win(WPN_230_DROP, w230, 3) + win(WPN_235_POOL, w235, 2)) if w230 is not None \
         else W(win(WPN_235_POOL, w235, 5))
-    return field_table(mats, USE_FIELD, weapons, S(offhands) + win(ARM_OG, og, 3),
-                       J(win(JEWEL_KARKIA, jewel_at, 5)), G(win(GEM_KARKIA, gem_at, 4)))
+    return field_table(mats, USE_FIELD, weapons, S(offhands) + win(ARM_OG_DROP, og, 3),
+                       J(win(JEWEL_KARKIA_DROP, jewel_at, 5)), G(win(GEM_KARKIA, gem_at, 4)))
 
 
 def karkia_boss(mythicals, norse_at, mats=None, at=0):
@@ -520,7 +552,7 @@ def karkia_boss(mythicals, norse_at, mats=None, at=0):
     off-hands, Lord of Riot and its last two mythicals."""
     lower = W([twin_235(m) for m in mythicals]) + S(OFF_240) + S(OFF_235) + W(mythicals[6:8])
     return boss_table(W(mythicals[:6]), windows(ARM_NORSE, norse_at, [5, 5]), lower,
-                      mats or MAT_BOSS, USE_BOSS[0], J(win(JEWEL_KARKIA, at, 5)),
+                      mats or MAT_BOSS, USE_BOSS[0], J(win(JEWEL_KARKIA_DROP, at, 5)),
                       G(win(GEM_KARKIA, at, 4)))
 
 
@@ -531,7 +563,7 @@ def crypt_boss(mythicals, reds, gear, at):
     twins = [twin_235(m) for m in mythicals]
     lower = W(cycle(twins, 6)) + cycle(list(gear), 5) + W(cycle(reds, 4))
     return boss_table(W(mythicals), [W(reds), list(gear)], lower, [758, 752], USE_BOSS[0],
-                      J(win(JEWEL_KARKIA, at, 5)), G(win(GEM_KARKIA, at, 4)))
+                      J(win(JEWEL_KARKIA_DROP, at, 5)), G(win(GEM_KARKIA, at, 4)))
 
 
 TABLES = {
@@ -566,30 +598,30 @@ TABLES = {
     # The queen behind the Melitta swarm (king icon, lv239): lv235 weapons on top, the OG
     # set in her buckets, the lv240 off-hands and lv230 weapons below.
     910: ("BOSS Basilissa Melitta (lv239)",
-          boss_table(W(win(WPN_235_POOL, 2, 6)), windows(ARM_OG, 4, [5, 5]),
-                     S(OFF_240) + S(OFF_235) + W(win(WPN_230, 0, 10)),
-                     MAT_GARDEN, USE_BOSS[0], J(win(JEWEL_KARKIA, 25, 5)),
+          boss_table(W(win(WPN_235_POOL, 2, 6)), windows(ARM_OG_DROP, 4, [5, 5]),
+                     S(OFF_240) + S(OFF_235) + W(win(WPN_230_DROP, 0, 10)),
+                     MAT_GARDEN, USE_BOSS[0], J(win(JEWEL_KARKIA_DROP, 25, 5)),
                      G(win(GEM_KARKIA, 12, 4)))),
     # The Cemetery's king (Neg Golem, lv235) paid the trash table 900 until 2026-11-19:
     # a king gets a boss table. lv235 weapons on top, the OG set in its buckets.
     918: ("BOSS Neg Golem (lv235, Cemetery king)",
-          boss_table(W(win(WPN_235_POOL, 8, 6)), windows(ARM_OG, 8, [5, 5]),
-                     S(OFF_235 + OFF_230) + W(win(WPN_230, 4, 10)),
-                     MAT_CEMETERY[:4], USE_BOSS[0], J(win(JEWEL_KARKIA, 10, 5)),
+          boss_table(W(win(WPN_235_POOL, 8, 6)), windows(ARM_OG_DROP, 8, [5, 5]),
+                     S(OFF_235 + OFF_230) + W(win(WPN_230_DROP, 4, 10)),
+                     MAT_CEMETERY[:4], USE_BOSS[0], J(win(JEWEL_KARKIA_DROP, 10, 5)),
                      G(win(GEM_KARKIA, 8, 4)))),
     # The Cemetery's two gold stars (sub-bosses, two-player content) shared the trash
     # table 900 until 2026-11-19: elite tables, the Cemetery band's gear a quarter of
     # the time.
     919: ("ELITE Dark Tower (lv233, gold star)",
-          elite_table(W(win(WPN_235_POOL, 4, 2)) + win(ARM_OG, 1, 1),
-                      W(win(WPN_230, 1, 3) + win(WPN_235_POOL, 6, 2)),
-                      S([OFF_230[0], OFF_235[0]]) + win(ARM_OG, 2, 3),
-                      MAT_CEMETERY, USE_FIELD, J(win(JEWEL_KARKIA, 3, 5)), G(win(GEM_KARKIA, 2, 4)))),
+          elite_table(W(win(WPN_235_POOL, 4, 2)) + win(ARM_OG_DROP, 1, 1),
+                      W(win(WPN_230_DROP, 1, 3) + win(WPN_235_POOL, 6, 2)),
+                      S([OFF_230[0], OFF_235[0]]) + win(ARM_OG_DROP, 2, 3),
+                      MAT_CEMETERY, USE_FIELD, J(win(JEWEL_KARKIA_DROP, 3, 5)), G(win(GEM_KARKIA, 2, 4)))),
     920: ("ELITE Element Battler (lv233, gold star)",
-          elite_table(W(win(WPN_235_POOL, 9, 2)) + win(ARM_OG, 7, 1),
-                      W(win(WPN_230, 7, 3) + win(WPN_235_POOL, 11, 2)),
-                      S([OFF_230[1], OFF_235[0]]) + win(ARM_OG, 10, 3),
-                      MAT_CEMETERY, USE_FIELD, J(win(JEWEL_KARKIA, 13, 5)), G(win(GEM_KARKIA, 6, 4)))),
+          elite_table(W(win(WPN_235_POOL, 9, 2)) + win(ARM_OG_DROP, 7, 1),
+                      W(win(WPN_230_DROP, 7, 3) + win(WPN_235_POOL, 11, 2)),
+                      S([OFF_230[1], OFF_235[0]]) + win(ARM_OG_DROP, 10, 3),
+                      MAT_CEMETERY, USE_FIELD, J(win(JEWEL_KARKIA_DROP, 13, 5)), G(win(GEM_KARKIA, 6, 4)))),
     # The catacombs' five bosses (CRYPT_BOSSES)
     **{row: ("BOSS " + label, crypt_boss(myth, reds, gear, 3 * k))
        for k, (row, (label, myth, reds, gear)) in enumerate(sorted(CRYPT_BOSSES.items()))},
