@@ -16,10 +16,11 @@ and how to run it; the design, every decision and the build history are in
   the classic interface gets the announcements).
 - **The price is one Key of Remorse, once a day**, and it buys the opening running at
   that moment, with free re-entry until it seals. The key (LIST_NATURAL 150) drops in
-  the Cemetery and the Burned Forest (20 monsters, lv 215-228) and from the Spire
-  Village's nine Alphas (lv 228-238), about one kill in twenty. A level-240 character
-  gets it only from the Alphas of level 231 and more: a monster pays nobody ten levels
-  above it.
+  the Cemetery and the Burned Forest (20 monsters, lv 230-235 since the 2026-11-19
+  re-level, `relevel-200-band.py`) and from the Spire Village's nine Alphas (lv 234-239),
+  about one kill in twenty. Since the re-level a level-240 character gets it from both
+  (a monster pays nobody ten levels above it; before, the Cemetery sat at 215-228 and only
+  the Alphas of level 231 and more paid a level-240 player).
 - **One crypt a day, turn about**: the Catacombs of Reminiscence (zone 90, warm stone)
   and of Sorrow (zone 91, cold teal). **The maze is different every day**, a 10 x 10
   grid of 15 m cells with the entrance hall in one corner and the boss room in the

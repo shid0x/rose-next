@@ -47,8 +47,15 @@ AMPHISBAENA = frozenset({2911, 2914, 2915, 2920, 2921})
 # of forest monsters; the Grunter Blightchief (lv60) is a Grunter King at 3/4 of its HP.
 WISDOM_ESCORT = frozenset({225, 226, 227, 228, 229})
 
+# import-catacombs.py (catacomb_monsters.py, catacomb_boss.py, catacomb_pool.py): the
+# crypts' six corridor monsters and five bosses, written as finished numbers. The corridor
+# rows are copies of the Spire Alphas taken *after* the role layer, so the layer must not
+# run on them again: a re-application on 2026-11-19 (relevel-200-band.py) applied it a
+# second time (Tomb Murilo HP -11%, Crypt Fiend RES +13%) to monsters already validated.
+CATACOMBS = frozenset(range(2550, 2561))
+
 EXCLUDED = (SHIBUYA | ULVERICK | CERBERUS | NECROMANCER | SHADOW_SOLDIER | CORE_GUARDIAN
-            | AMPHISBAENA | WISDOM_ESCORT)
+            | AMPHISBAENA | WISDOM_ESCORT | CATACOMBS)
 
 
 def excluded(row):
