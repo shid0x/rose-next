@@ -121,6 +121,14 @@ MAPS = {
     "Cemetery": ({87, 131}, (215, 228), (226, 231)),
     "Spire and flashbacks": ({88, 133, 144}, (228, 240), (234, 240)),
 }
+# Single monsters moved to a set level, outside the zone maps and the summon walk (what
+# they summon is not theirs alone). Executor Kera, the Sikuku Prison's skull boss
+# (2026-11-20, the user's call): 240 in a zone of 200-208 monsters, where a player
+# comfortable in the Prison (206-214) passed the hit gate on ~45% of swings. At 225 he is
+# a skull boss well over the zone (the Marsh's Moss Golem sits 10 over its zone). The
+# older reason for 240 (rebalance-eldeon-outliers.py: drops for a level-240 player) no
+# longer holds: 240s farm Karkia, and only players below 235 get his drops now.
+SINGLE = {1719: ("Executor Kera", 225)}
 # Zones whose spawns stay where they are; a row they spawn is not moved by summon closure.
 SUMMON_ACTS = {"Change_CHAR", "Create_PET", "Summon", "SummonMaster", "SummonMasterDist"}
 
@@ -196,6 +204,8 @@ def scope(base):
             rows[mob] = next(iter(gs))
         else:
             kept[mob] = gs
+    for r, (g, _lv) in SINGLE.items():
+        rows[r] = g
     return rows, problems, kept
 
 
@@ -240,7 +250,7 @@ def plan(base, rows, slope):
         old = num(base.get(r, COL_LEVEL))
         if old <= 0:
             continue
-        new = new_level(g, old)
+        new = SINGLE[r][1] if r in SINGLE else new_level(g, old)
         if new == old:
             continue
         moves.append((g, r, old, new))
@@ -311,7 +321,7 @@ def main():
           + ", ".join(f"{k} {100 * (math.exp(s) - 1):+.2f}%" for k, s in SLOPE.items()))
     print(f"   today's fit over {n} plain monsters, levels {FIT_LO}-{FIT_HI}, differs by: "
           + ", ".join(f"{k} {100 * (live[k] - SLOPE[k]):+.3f}" for k in SLOPE) + " pts")
-    for g in MAPS:
+    for g in list(MAPS) + [g for g, _lv in SINGLE.values()]:
         ms = [m for m in moves if m[0] == g]
         if not ms:
             continue

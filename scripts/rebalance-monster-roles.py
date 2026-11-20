@@ -154,7 +154,7 @@ BOSS_HP = {   # row: (name, HP multiplier) -- frozen from the combat sim (see ab
     2296: ('Ikaness Mecha', 22.57),   # skull lv 234, measured 4 s for 10 players
     2221: ('Giant Fiery Snapper', 24.2),   # skull lv 237, measured 4 s for 10 players
     2729: ('Deadly Drake', 8.63),   # skull lv 238, measured 10 s for 10 players
-    1719: ('Executor Kera', 26.5),   # skull lv 240, measured 3 s for 10 players
+    1719: ('Executor Kera', 26.5),   # skull, measured at lv 240 (3 s for 10 players); lv 225 since 2026-11-20
     2699: ('Deadly Drake Alpha', 13.79),   # skull lv 240, measured 7 s for 10 players
 }
 
