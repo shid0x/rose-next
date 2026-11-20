@@ -7,8 +7,8 @@ What the spawn data said on 2026-11-19 (`economy-audit.py bands --min-level 200`
     Golden Ring        205-222 plain, kings 222-226        -> unchanged
     Wasteland (+Ruins) 222-234, kings/skulls 230-234       -> 217-226
     Fossil Sanctuary   230-240, kings/skull 237-240        -> 224-230
-    Desolate Cemetery  215-228, Deadly Drake 238           -> 230-235, Drake 239
-    Burned Forest      220-225 (Cemetery rows)             -> 232-234
+    Desolate Cemetery  215-228, Deadly Drake 238           -> 226-231, Drake 235
+    Burned Forest      220-225 (Cemetery rows)             -> 228-230
     Spire Village      228-240                             -> 234-240
     Memories / Garden  230-240 (Karkia flashbacks)         -> 235-240 (the Spire's map)
     Catacombs          235-240                             -> unchanged (already the target)
@@ -113,7 +113,12 @@ MAX_LEVEL = 240
 MAPS = {
     "Wasteland": ({78, 79, 81}, (222, 234), (217, 226)),
     "Fossil Sanctuary": ({85}, (230, 240), (224, 230)),
-    "Cemetery": ({87, 131}, (215, 228), (230, 235)),
+    # 230-235 until the user's check of the player-level guide (2026-11-19): a player is
+    # comfortable about five levels above a zone's typical monster (the hit gate is
+    # 1.05 x monster level - 10), so a 232 median made Karkia comfortable from 234. 226-231
+    # puts the median at 228 = comfortable at 230. Spire Village and the catacombs stay at
+    # 231+, because a level-240 player gets no drop from a monster below 231.
+    "Cemetery": ({87, 131}, (215, 228), (226, 231)),
     "Spire and flashbacks": ({88, 133, 144}, (228, 240), (234, 240)),
 }
 # Zones whose spawns stay where they are; a row they spawn is not moved by summon closure.

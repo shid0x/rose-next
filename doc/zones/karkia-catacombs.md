@@ -16,11 +16,13 @@ and how to run it; the design, every decision and the build history are in
   the classic interface gets the announcements).
 - **The price is one Key of Remorse, once a day**, and it buys the opening running at
   that moment, with free re-entry until it seals. The key (LIST_NATURAL 150) drops in
-  the Cemetery and the Burned Forest (20 monsters, lv 230-235 since the 2026-11-19
+  the Cemetery and the Burned Forest (20 monsters, lv 226-231 since the 2026-11-19
   re-level, `relevel-200-band.py`) and from the Spire Village's nine Alphas (lv 234-239),
-  about one kill in twenty. Since the re-level a level-240 character gets it from both
-  (a monster pays nobody ten levels above it; before, the Cemetery sat at 215-228 and only
-  the Alphas of level 231 and more paid a level-240 player).
+  about one kill in twenty. A monster pays nobody ten levels above it, so a level-240
+  character gets the key from the Alphas and from the Cemetery's level-231 monsters only.
+  The Cemetery was briefly 230-235 so that it paid at 240 too; it went back down the same
+  day because the player-level guide showed Karkia then only comfortable from 234, and
+  Karkia is meant to open at 230. The Spire Alphas are the cap's key source.
 - **One crypt a day, turn about**: the Catacombs of Reminiscence (zone 90, warm stone)
   and of Sorrow (zone 91, cold teal). **The maze is different every day**, a 10 x 10
   grid of 15 m cells with the entrance hall in one corner and the boss room in the
